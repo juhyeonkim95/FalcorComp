@@ -46,6 +46,7 @@ enum class HitType : uint32_t
     // Add new hit types here
     //
 
+    Float3Hit             = 7,    ///< custom hit to store float3
     Count // Must be last
 };
 

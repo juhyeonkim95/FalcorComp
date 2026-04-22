@@ -56,6 +56,7 @@ RWTexture2D<float4> gDiffOpacity;
 RWTexture2D<float4> gSpecRough;
 RWTexture2D<float4> gEmissive;
 RWTexture2D<float4> gViewW;
+RWTexture2D<float2> gPosNormalFwidth;
 RWTexture2D<uint> gTime;
 RWTexture2D<float> gDisocclusion;
 RWTexture2D<float> gMask;
@@ -354,6 +355,13 @@ struct GBufferRT
             float roughness = bsdfProperties.roughness;
             float materialID = 0.f;
             gNormalWRoughnessMaterialID[pixel] = float4(octNormal, roughness, materialID);
+        }
+
+        // Length of derivatives of position and guide normal.
+        // This is a feature guide for the SVGF denoiser pass.
+        if (is_valid(gPosNormalFwidth))
+        {
+            gPosNormalFwidth[pixel] = float2(length(fwidth(sd.posW)), length(fwidth(bsdfProperties.guideNormal)));
         }
 
         // Encode hit information.

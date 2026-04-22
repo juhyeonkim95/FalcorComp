@@ -201,6 +201,7 @@ FALCOR_API std::vector<std::filesystem::path> globFilesInDirectories(
  * @return Returns true if the file was found, false otherwise.
  */
 FALCOR_API bool findFileInShaderDirectories(const std::filesystem::path& path, std::filesystem::path& fullPath);
+FALCOR_API bool findFileInDataDirectories(const std::filesystem::path& path, std::filesystem::path& fullPath);
 
 /**
  * Get a list of all shader directories.

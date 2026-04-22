@@ -69,6 +69,14 @@ namespace Falcor
         mData.prevViewProjMatNoJitter = mPrevData.viewProjMatNoJitter;
         mData.prevPosW = mPrevData.posW;
 
+        mData.prevNearZ = mPrevData.nearZ;
+        mData.prevCameraU = mPrevData.cameraU;
+        mData.prevFarZ = mPrevData.farZ;
+        mData.prevCameraV = mPrevData.cameraV;
+        mData.prevCameraW = mPrevData.cameraW;
+        mData.prevJitterX = mPrevData.jitterX;
+        mData.prevJitterY = mPrevData.jitterY;
+
         mChanges = is_set(mChanges, Changes::Movement | Changes::Frustum) ? Changes::History : Changes::None;
 
         if (any(mPrevData.posW != mData.posW)) mChanges |= Changes::Movement;

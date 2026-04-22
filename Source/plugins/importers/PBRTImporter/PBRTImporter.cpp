@@ -1929,7 +1929,7 @@ void PBRTImporter::importScene(
         timeReport.measure("Parsing pbrt scene");
 
         pbrt::BuilderContext ctx{pbrtScene, builder};
-        ctx.usePBRTMaterials = builder.getSettings().getOption("PBRTImporter:usePBRTMaterials", false);
+        ctx.usePBRTMaterials = builder.getSettings().getOption("PBRTImporter:usePBRTMaterials", true); // was false
         pbrt::buildScene(ctx);
         timeReport.measure("Building pbrt scene");
         timeReport.printToLog();

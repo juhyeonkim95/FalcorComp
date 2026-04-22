@@ -110,6 +110,9 @@ struct Scene
     EnvMap envMap;
     Camera camera;
 
+    // tri collection
+    LightCollection triCollection;
+
     // Grid volumes
     uint gridVolumeCount;
     StructuredBuffer<GridVolume> gridVolumes;

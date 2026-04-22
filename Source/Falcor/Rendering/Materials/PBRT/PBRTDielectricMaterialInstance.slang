@@ -221,6 +221,9 @@ struct PBRTDielectricMaterialInstance : MaterialInstanceBase, IMaterialInstance
         p.specularReflectionAlbedo = float3(1.0f);
         p.specularTransmissionAlbedo = float3(1.0f);
         p.flags |= (uint)BSDFProperties::Flags::IsTransmissive;
+        
+        // ADDED for SVGF!
+        p.diffuseReflectionAlbedo = float3(1.0f);
 
         return p;
     }

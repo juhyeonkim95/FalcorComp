@@ -50,13 +50,14 @@ namespace Falcor
         const char kFinalizeIntegrationFile[] = "Scene/Lights/FinalizeIntegration.cs.slang";
     }
 
-    LightCollection::LightCollection(ref<Device> pDevice, RenderContext* pRenderContext, Scene* pScene)
+    LightCollection::LightCollection(ref<Device> pDevice, RenderContext* pRenderContext, Scene* pScene, bool force)
         : mpDevice(pDevice)
         , mpScene(pScene)
     {
         FALCOR_ASSERT(mpScene);
 
         // Setup the lights.
+        mForce = force;
         setupMeshLights(*mpScene);
 
         // Create program for integrating emissive textures.
@@ -188,7 +189,7 @@ namespace Falcor
             // Only mesh lights with basic materials are supported.
             auto pMaterial = scene.getMaterial(MaterialID::fromSlang( instanceData.materialID ))->toBasicMaterial();
 
-            if (pMaterial && pMaterial->isEmissive())
+            if (pMaterial && (pMaterial->isEmissive() || mForce))
             {
                 // We've found a mesh instance with an emissive material => Setup mesh light data.
                 MeshLightData meshLight;
@@ -512,6 +513,13 @@ namespace Falcor
         // Iterate over the emissive triangles.
         for (uint32_t triIdx = 0; triIdx < triCount; triIdx++)
         {
+            if(mForce){
+                mMeshLightTriangles[triIdx].flux = mMeshLightTriangles[triIdx].area;
+
+                if(mMeshLightTriangles[triIdx].area > 10000){
+                    mMeshLightTriangles[triIdx].flux = 0.0;
+                }
+            }
             if (mMeshLightTriangles[triIdx].flux > 0.f)
             {
                 mTriToActiveList[triIdx] = (uint32_t)mActiveTriangleList.size();
@@ -699,6 +707,15 @@ namespace Falcor
             {
                 meshLightTri.flux = fluxData[triIdx].flux;
                 meshLightTri.averageRadiance = fluxData[triIdx].averageRadiance;
+
+                if(mForce){
+                    meshLightTri.flux = meshLightTri.area;
+                    meshLightTri.averageRadiance = float3(1.0f);
+                    if(meshLightTri.area > 10000){
+                        meshLightTri.flux = 0.0;
+                        meshLightTri.averageRadiance = float3(0.0f);
+                    }
+                }
             }
         }
 

@@ -1,5 +1,6 @@
 # Build folder.
 /build/
+/build (copy)
 
 # Test output folder.
 /tests/data/
@@ -15,6 +16,7 @@
 # IDE folders.
 /.vs/
 /.vscode/
+/.vscode-default/
 
 # User files.
 /CMakeUserPresets.json
@@ -31,3 +33,6 @@
 *.tlog
 *.bak
 *.swp
+
+# experiment files
+/experiments*

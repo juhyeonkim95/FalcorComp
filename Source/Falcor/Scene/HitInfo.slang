@@ -292,6 +292,32 @@ struct VolumeHit
     }
 };
 
+
+// custom hit to store float3 value.
+struct Float3Hit
+{
+    float3 v;
+
+    __init(const PackedHitInfo packed)
+    {
+        // packed[0] is header/type (leave it alone)
+        v.x = asfloat(packed[1]);
+        v.y = asfloat(packed[2]);
+        v.z = asfloat(packed[3]);
+    }
+
+    PackedHitInfo pack()
+    {
+        PackedHitInfo packed = {};
+        HitInfo::packHeader(packed, HitType::Float3Hit); // add this enum value
+        packed[1] = asuint(v.x);
+        packed[2] = asuint(v.y);
+        packed[3] = asuint(v.z);
+        return packed;
+    }
+};
+
+
 /** Polymorphic hit information type.
 */
 struct HitInfo
@@ -326,6 +352,19 @@ struct HitInfo
     __init(const PackedHitInfo packed)
     {
         data = packed;
+    }
+
+    /** Initialize hit info from a triangle hit.
+        \param[in] Float3Hit Triangle hit information.
+    */
+    __init(const Float3Hit float3hit)
+    {
+        data = float3hit.pack();
+    }
+
+    Float3Hit getFloat3Hit()
+    {
+        return Float3Hit(data);
     }
 
     /** Initialize hit info from a triangle hit.
@@ -375,6 +414,12 @@ struct HitInfo
     {
         return getType() != HitType::None;
     }
+
+    [mutating] void setValid()
+    {
+        data[0] = uint(HitType::Triangle) << kTypeOffset;
+    }
+
 
     /** Return hit type.
     */

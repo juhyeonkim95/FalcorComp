@@ -129,6 +129,7 @@ namespace
     const std::string kLightBVHOptions = "lightBVHOptions";
     const std::string kUseRTXDI = "useRTXDI";
     const std::string kRTXDIOptions = "RTXDIOptions";
+    const std::string kUseReprojSeed = "useReprojSeed";
 
     const std::string kUseAlphaTest = "useAlphaTest";
     const std::string kAdjustShadingNormals = "adjustShadingNormals";
@@ -232,6 +233,7 @@ void PathTracer::parseProperties(const Properties& props)
         else if (key == kLightBVHOptions) mLightBVHOptions = value;
         else if (key == kUseRTXDI) mStaticParams.useRTXDI = value;
         else if (key == kRTXDIOptions) mRTXDIOptions = value;
+        else if (key == kUseReprojSeed) mParams.useReprojSeed = int(value);
 
         // Material parameters
         else if (key == kUseAlphaTest) mStaticParams.useAlphaTest = value;
@@ -1121,6 +1123,7 @@ void PathTracer::bindShaderData(const ShaderVar& var, const RenderData& renderDa
     var["viewDir"] = pViewDir; // Can be nullptr
     var["sampleCount"] = pSampleCount; // Can be nullptr
     var["outputColor"] = renderData.getTexture(kOutputColor);
+    var["mvec"] = renderData.getTexture(kInputMotionVectors);
 
     if (useLightSampling && mpEmissiveSampler)
     {

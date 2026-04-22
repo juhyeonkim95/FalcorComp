@@ -159,7 +159,7 @@ RenderPassReflection SVGFPass::reflect(const CompileData& compileData)
         .format(ResourceFormat::RG32Float)
         .bindFlags(ResourceBindFlags::RenderTarget | ResourceBindFlags::ShaderResource);
 
-    reflector.addOutput(kOutputBufferFilteredImage, "Filtered image").format(ResourceFormat::RGBA16Float);
+    reflector.addOutput(kOutputBufferFilteredImage, "Filtered image").format(ResourceFormat::RGBA32Float);
 
     return reflector;
 }

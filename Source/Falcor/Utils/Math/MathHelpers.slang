@@ -314,6 +314,27 @@ float3 sample_hemisphere(float2 u)
 }
 
 /**
+ * Uniform sampling of the unit hemisphere preserves area
+ * @param[in] u Uniform random numbers in [0,1)^2.
+ * @return Sampled point on the unit hemisphere.
+ */
+float3 sample_hemisphere_preserve_area(float2 u)
+{
+    float sin_theta = sqrt(max(0.0f, 1.0f - u.x * u.x));
+    float phi = M_2PI * u.y;
+	return float3(cos(phi) * sin_theta, sin(phi) * sin_theta, u.x);
+}
+
+float2 inverse_sample_hemisphere_preserve_area(float3 dir)
+{
+    float u_x = dir.z;
+    float phi = atan2(dir.y, dir.x);
+    float u_y = phi * M_1_2PI;
+    if (u_y < 0.0f) u_y += 1.0f;
+    return float2(u_x, u_y);
+}
+
+/**
  * Uniform sampling of the unit disk using Shirley's concentric mapping.
  * @param[in] u Uniform random numbers in [0,1)^2.
  * @return Sampled point on the unit disk.
@@ -549,6 +570,31 @@ float3 perp_stark(float3 u)
     uint zm = 1 ^ (xm | ym); // 1 ^ (xm & ym)
     float3 v = normalize(cross(u, float3(xm, ym, zm)));
     return v;
+}
+
+/**
+ * Optix Onb style perp stack
+ * @param[in] u Unit vector.
+ * @return v Unit vector that is orthogonal to u.
+ */
+float3 perp_stark_onb(float3 normal)
+{
+    // TODO: Validate this and look at numerical precision etc. Are there better ways to do it?
+    float3 binormal;
+    if( abs(normal.x) > abs(normal.z) )
+    {
+      binormal.x = -normal.y;
+      binormal.y =  normal.x;
+      binormal.z =  0;
+    }
+    else
+    {
+      binormal.x =  0;
+      binormal.y = -normal.z;
+      binormal.z =  normal.y;
+    }
+    binormal = normalize(binormal);
+    return binormal;
 }
 
 /**

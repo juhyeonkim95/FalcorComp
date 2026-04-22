@@ -873,6 +873,12 @@ namespace Falcor
         */
         const ref<LightCollection>& getLightCollection(RenderContext* pRenderContext);
 
+        /** Used for Ellipsoidal path connection
+            \param[in] pRenderContext Render context.
+            \return Returns the tri collection.
+        */
+       const ref<LightCollection>& getTriCollection(RenderContext* pRenderContext);
+
         /** Get the environment map or nullptr if it doesn't exist.
         */
         const ref<EnvMap>& getEnvMap() const override { return mpEnvMap; }
@@ -1092,6 +1098,11 @@ namespace Falcor
             return getLightCollection(renderContext);
         }
 
+        ref<ILightCollection> getITriCollection(RenderContext* renderContext) override
+        {
+            return getTriCollection(renderContext);
+        }
+
         RtPipelineFlags getRtPipelineFlags() const override
         {
             if (!hasProceduralGeometry())
@@ -1306,6 +1317,8 @@ namespace Falcor
         ref<LightCollection> mpLightCollection;                     ///< Class for managing emissive geometry. This is created lazily upon first use.
         ref<EnvMap> mpEnvMap;                                       ///< Environment map or nullptr if not loaded.
         bool mEnvMapChanged = false;                                ///< Flag indicating that the environment map has changed since last frame.
+        
+        ref<LightCollection> mpTriCollection;                       ///< All scene triangle collections
 
         // Scene metadata (CPU only)
         std::vector<AABB> mMeshBBs;                                 ///< Bounding boxes for meshes (not instances) in object space.
@@ -1330,7 +1343,7 @@ namespace Falcor
         ref<Buffer> mpLightsBuffer;
         ref<Buffer> mpGridVolumesBuffer;
         ref<ParameterBlock> mpSceneBlock;
-
+        
         // Camera
         UpDirection mUpDirection = UpDirection::YPos;
         CameraControllerType mCamCtrlType = CameraControllerType::FirstPerson;

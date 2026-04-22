@@ -748,6 +748,10 @@ target_sources(Falcor PRIVATE
     Utils/UI/TextRenderer.3d.slang
     Utils/UI/TextRenderer.cpp
     Utils/UI/TextRenderer.h
+
+    Utils/Transient/TransientUtils.slang
+    Utils/Transient/EllipsoidIntersection.slang
+    Utils/Transient/Ellipsoid.slang
 )
 
 

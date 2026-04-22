@@ -34,6 +34,7 @@ struct Camera
     CameraData data;
 
     float3 getPosition() { return data.posW; }
+    float3 getPosition(bool usePrev) { return usePrev ? data.prevPosW : data.posW; }
     float4x4 getViewProj() { return data.viewProjMat; }
 
     /** Computes a camera ray for a given pixel assuming a pinhole camera model.
@@ -58,6 +59,21 @@ struct Camera
         return ray;
     }
 
+    Ray computeRayPinholePrevFrame(uint2 pixel, uint2 frameDim, bool applyJitter = true)
+    {
+        Ray ray;
+
+        // Compute the normalized ray direction assuming a pinhole camera.
+        ray.origin = data.prevPosW;
+        ray.dir = normalize(computeNonNormalizedRayDirPinholePrevFrame(pixel, frameDim, applyJitter));
+
+        float invCos = 1.f / dot(normalize(data.prevCameraW), ray.dir);
+        ray.tMin = data.prevNearZ * invCos;
+        ray.tMax = data.prevFarZ * invCos;
+
+        return ray;
+    }
+
     /** Computes the primary ray's direction, non-normalized assuming pinhole camera model.
         The camera jitter is taken into account to compute the sample position on the image plane.
         \param[in] pixel Pixel coordinates with origin in top-left.
@@ -77,6 +93,17 @@ struct Camera
         return ndc.x * data.cameraU + ndc.y * data.cameraV + data.cameraW;
     }
 
+    float3 computeNonNormalizedRayDirPinholePrevFrame(uint2 pixel, uint2 frameDim, bool applyJitter = true)
+    {
+        // Compute sample position in screen space in [0,1] with origin at the top-left corner.
+        // The camera jitter offsets the sample by +-0.5 pixels from the pixel center.
+        float2 p = (pixel + float2(0.5f, 0.5f)) / frameDim;
+        if (applyJitter) p += float2(-data.prevJitterX, data.prevJitterY);
+        float2 ndc = float2(2, -2) * p + float2(-1, 1);
+
+        // Compute the non-normalized ray direction assuming a pinhole camera.
+        return ndc.x * data.prevCameraU + ndc.y * data.prevCameraV + data.prevCameraW;
+    }
 
     /** Computes a camera ray for a given pixel assuming a thin-lens camera model.
         The camera jitter is taken into account to compute the sample position on the image plane.

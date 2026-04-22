@@ -25,6 +25,16 @@ target_sources(GBuffer PRIVATE
     VBuffer/VBufferRT.h
     VBuffer/VBufferRT.rt.slang
     VBuffer/VBufferRT.slang
+
+    LaserVBuffer/LaserVBufferRT.cpp
+    LaserVBuffer/LaserVBufferRT.h
+    LaserVBuffer/LaserVBufferRT.rt.slang
+    LaserVBuffer/LaserVBufferRT.slang
+
+    HemiVBuffer/HemiVBufferRT.cpp
+    HemiVBuffer/HemiVBufferRT.h
+    HemiVBuffer/HemiVBufferRT.rt.slang
+    HemiVBuffer/HemiVBufferRT.slang
 )
 
 target_copy_shaders(GBuffer RenderPasses/GBuffer)

@@ -173,6 +173,7 @@ public:
     /// TODO: Remove the `renderContext` when not needed
     /// TODO: Ideally this wouldn't be non-const and build-on-demand (as Scene1 does)
     virtual ref<ILightCollection> getILightCollection(RenderContext* renderContext) = 0;
+    virtual ref<ILightCollection> getITriCollection(RenderContext* renderContext) = 0;
 
     /// Returns list of active analytic lights.
     /// TODO: This implementation requires lights to be tightly repacked every time activity

@@ -34,8 +34,8 @@ interface ISampleGenerator
     /**
      * Returns the next sample value. This function updates the state.
      */
-    [mutating]
-    uint next();
+    [mutating] uint next();
+    uint getCurrentSeed();
 };
 
 /**

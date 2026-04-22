@@ -105,6 +105,12 @@ struct PBRTConductorBSDF : IBSDF, IDifferentiable
         return AlbedoContributions(r, 1.0f - r, 0.0f, 0.0f);
     }
 
+    float3 evalSVGFAlbedo()
+    {
+        float3 r = evalFresnelConductor(eta, k, 1.0);
+        return r;
+    }
+
     float3 getIorAsReflectance()
     {
         return float3(1.f);
@@ -175,6 +181,9 @@ struct PBRTConductorMaterialInstance : MaterialInstanceBase, IMaterialInstance
         p.guideNormal = sf.N;
         p.roughness = bsdf.D.getIsotropicRoughness();
         p.specularReflectionAlbedo = float3(1.0f); // TODO: Compute approximate albedo from eta/k
+
+        // ADDED for SVGF!
+        p.diffuseReflectionAlbedo = bsdf.evalSVGFAlbedo();
 
         return p;
     }

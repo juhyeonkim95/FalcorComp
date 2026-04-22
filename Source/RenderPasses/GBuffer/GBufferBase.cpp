@@ -30,6 +30,8 @@
 #include "GBuffer/GBufferRT.h"
 #include "VBuffer/VBufferRaster.h"
 #include "VBuffer/VBufferRT.h"
+#include "LaserVBuffer/LaserVBufferRT.h"
+#include "HemiVBuffer/HemiVBufferRT.h"
 #include "RenderGraph/RenderPassStandardFlags.h"
 #include "Utils/SampleGenerators/DxSamplePattern.h"
 #include "Utils/SampleGenerators/HaltonSamplePattern.h"
@@ -41,6 +43,9 @@ extern "C" FALCOR_API_EXPORT void registerPlugin(Falcor::PluginRegistry& registr
     registry.registerClass<RenderPass, GBufferRT>();
     registry.registerClass<RenderPass, VBufferRaster>();
     registry.registerClass<RenderPass, VBufferRT>();
+    registry.registerClass<RenderPass, LaserVBufferRT>();
+    registry.registerClass<RenderPass, HemiVBufferRT>();
+    ScriptBindings::registerBinding(LaserVBufferRT::regLaserVBufferRT);
 }
 
 namespace

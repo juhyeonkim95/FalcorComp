@@ -68,5 +68,10 @@ export struct TinyUniformSampleGenerator : ISampleGenerator
     [mutating]
     uint next() { return nextRandom(rng); }
 
+    uint getCurrentSeed()
+    {
+        return rng.state;
+    }
+
     LCG rng; ///< Simple LCG 32-bit pseudorandom number generator.
 };

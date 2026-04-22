@@ -86,6 +86,7 @@ namespace Falcor
         defines.add("_DISABLE_NODE_FLUX", mOptions.disableNodeFlux ? "1" : "0");
         defines.add("_USE_UNIFORM_TRIANGLE_SAMPLING", mOptions.useUniformTriangleSampling ? "1" : "0");
         defines.add("_ACTUAL_MAX_TRIANGLES_PER_NODE", std::to_string(mOptions.buildOptions.maxTriangleCountPerLeaf));
+        // printf("LEAF NODE : %d\n", mOptions.buildOptions.maxTriangleCountPerLeaf);
         defines.add("_SOLID_ANGLE_BOUND_METHOD", std::to_string((uint32_t)mOptions.solidAngleBoundMethod));
 
         return defines;

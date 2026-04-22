@@ -26,6 +26,7 @@
  # OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  **************************************************************************/
 __exported import Utils.Sampling.SampleGeneratorInterface;
+import Utils.Transient.Ellipsoid;
 
 /** Slang interface and structs used by emissive light samplers.
 */
@@ -55,6 +56,9 @@ struct TriangleLightHit
     float3  normalW;            ///< Face normal of the triangle in world space, flipped for back-facing hits.
 };
 
+static const uint kMaxCandidates = 64;
+static const uint kMaxStackDepth = 64;   // depth of BVH (not # of nodes)
+
 /** Slang interface for emissive light sampler implementations.
 */
 interface IEmissiveLightSampler
@@ -68,7 +72,8 @@ interface IEmissiveLightSampler
         \return True if a sample was generated, false otherwise.
     */
     bool sampleLight<S : ISampleGenerator>(const float3 posW, const float3 normalW, const bool upperHemisphere, inout S sg, out TriangleLightSample ls);
-
+    void skipRandomNumber<S : ISampleGenerator>(inout S sg);
+    
     /** Evaluate the PDF associated with selecting an emissive triangle.
         \param[in] posW Shading point in world space.
         \param[in] normalW Normal at the shading point in world space.
@@ -86,4 +91,23 @@ interface IEmissiveLightSampler
         \return Probability density with respect to solid angle at the shading point.
     */
     float evalPdf(const float3 posW, const float3 normalW, const bool upperHemisphere, const TriangleLightHit hit);
+
+    /** Evaluate triangle index given Ellipse
+     * 
+     */
+    bool sampleTriangleEllipsoid<S : ISampleGenerator>(
+        const Ellipsoid E, inout S sg, out uint triangleIndex, out float pdf);
+        
+    /** Evaluate triangle index given Ellipse
+     * 
+     */
+    bool sampleTriangleEllipsoidConditional<S : ISampleGenerator>(
+        const Ellipsoid E, const Sphere sph, inout S sg, out uint triangleIndex, out float pdf);
+
+    
+    void findAllTrianglesEllipsoid(const Ellipsoid E, out uint triangleCount, out uint indices[kMaxCandidates]){
+        return;
+    }
+
+    float evalPdfEllipsoid(Ellipsoid E, const TriangleLightHit hit);
 };

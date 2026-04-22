@@ -67,12 +67,12 @@ namespace Falcor
             \param[in] pScene The scene.
             \return A pointer to a new light collection object, or throws an exception if creation failed.
         */
-        static ref<LightCollection> create(ref<Device> pDevice, RenderContext* pRenderContext, Scene* pScene)
+        static ref<LightCollection> create(ref<Device> pDevice, RenderContext* pRenderContext, Scene* pScene, bool force=false)
         {
-            return make_ref<LightCollection>(pDevice, pRenderContext, pScene);
+            return make_ref<LightCollection>(pDevice, pRenderContext, pScene, force);
         }
 
-        LightCollection(ref<Device> pDevice, RenderContext* pRenderContext, Scene* pScene);
+        LightCollection(ref<Device> pDevice, RenderContext* pRenderContext, Scene* pScene, bool force=false);
         ~LightCollection() = default;
 
         const ref<Device>& getDevice() const override { return mpDevice; }
@@ -193,6 +193,8 @@ namespace Falcor
         mutable bool                            mStagingBufferValid = true;                 ///< Flag to indicate if the contents of the staging buffer is up-to-date.
 
         UpdateFlagsSignal mUpdateFlagsSignal;
+
+        bool mForce = false; ///< Forced light collection? (true for tricollection)
     };
 
     FALCOR_ENUM_CLASS_OPERATORS(LightCollection::CPUOutOfDateFlags);

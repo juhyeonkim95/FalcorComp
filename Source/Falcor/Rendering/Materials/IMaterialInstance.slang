@@ -86,6 +86,14 @@ struct BSDFProperties
     {
         get { return (flags & (uint)Flags::IsTransmissive) != 0; }
     }
+
+    bool classifyAsRough(float threshold){
+        return roughness > threshold;
+    }
+
+    bool hasRoughComponent(float threshold){
+        return any(diffuseReflectionAlbedo > 0) || roughness > threshold;
+    }
 };
 
 

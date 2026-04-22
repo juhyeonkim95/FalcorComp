@@ -71,6 +71,7 @@ struct PathGenerator
     Texture2D<float3> viewDir;                      ///< Optional view direction. Only valid when kUseViewDir == true.
     Texture2D<uint> sampleCount;                    ///< Optional input sample count buffer. Only valid when kSamplesPerPixel == 0.
     RWTexture2D<uint> sampleOffset;                 ///< Output offset into per-sample buffers. Only valid when kSamplesPerPixel == 0.
+    Texture2D<float2> mvec;
 
     RWStructuredBuffer<ColorType> sampleColor;      ///< Output per-sample color if kSamplesPerPixel != 1.
     RWStructuredBuffer<GuideData> sampleGuideData;  ///< Output per-sample guide data.

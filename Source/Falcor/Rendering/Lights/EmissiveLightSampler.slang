@@ -28,6 +28,7 @@
 #include "EmissiveLightSamplerType.slangh"
 __exported import Rendering.Lights.EmissiveLightSamplerInterface;
 __exported import Utils.Sampling.SampleGeneratorInterface;
+import Utils.Transient.Ellipsoid;
 
 /** The host sets the _EMISSIVE_LIGHT_SAMPLER_TYPE define to select sampler.
 
@@ -70,6 +71,10 @@ __exported import Utils.Sampling.SampleGeneratorInterface;
             return false;
         }
 
+        void skipRandomNumber<S : ISampleGenerator>(inout S sg)
+        {
+        }
+
         float evalTriangleSelectionPdf(const float3 posW, const float3 normalW, const bool upperHemisphere, const uint triangleIndex)
         {
             return 0.f;
@@ -79,6 +84,33 @@ __exported import Utils.Sampling.SampleGeneratorInterface;
         {
             return 0.f;
         }
+        
+        float evalPdfEllipsoid(Ellipsoid E, const TriangleLightHit hit)
+        {
+            return 0.f;
+        }
+
+        void findAllTrianglesEllipsoid(const Ellipsoid E, 
+            out uint triangleCount, out uint indices[kMaxCandidates]){
+            return;
+        }
+
+        bool sampleTriangleEllipsoid<S : ISampleGenerator>(
+            const Ellipsoid E, inout S sg, out uint triangleIndex, out float pdf)
+        {
+            triangleIndex = {};
+            pdf = {};
+            return false;
+        }
+
+        bool sampleTriangleEllipsoidConditional<S : ISampleGenerator>(
+            const Ellipsoid E, Sphere sph, inout S sg, out uint triangleIndex, out float pdf)
+        {
+            triangleIndex = {};
+            pdf = {};
+            return false;
+        }
+
 
         int _dummy; // Dummy variable to make sure Slang doesn't remove the struct.
     };

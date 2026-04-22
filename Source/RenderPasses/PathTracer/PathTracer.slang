@@ -77,6 +77,7 @@ struct PathTracer
     Texture2D<float3> viewDir;                      ///< Optional view direction. Only valid when kUseViewDir == true.
     Texture2D<uint> sampleCount;                    ///< Optional input sample count buffer. Only valid when kSamplesPerPixel == 0.
     Texture2D<uint> sampleOffset;                   ///< Output offset into per-sample buffers. Only valid when kSamplesPerPixel == 0.
+    Texture2D<float2> mvec;
 
     // Outputs
     RWStructuredBuffer<ColorType> sampleColor;      ///< Output per-sample color if kSamplesPerPixel != 1.
@@ -189,6 +190,7 @@ struct PathTracer
         {
             guideData.setGuideNormal(bsdfProperties.guideNormal);
             // Use sum of reflection/transmission albedo as they are denoised together.
+            // guideData.setAlbedo(bsdfProperties.diffuseReflectionAlbedo + bsdfProperties.diffuseTransmissionAlbedo);
             guideData.setAlbedo(bsdfProperties.diffuseReflectionAlbedo + bsdfProperties.diffuseTransmissionAlbedo);
             guideData.setReflectionPos(sd.posW);
 
@@ -284,10 +286,20 @@ struct PathTracer
         if (kUseViewDir) cameraRay.dir = -viewDir[pixel];
         path.origin = cameraRay.origin;
         path.dir = cameraRay.dir;
-
+        
+        
         // Create sample generator.
         const uint maxSpp = kSamplesPerPixel > 0 ? kSamplesPerPixel : kMaxSamplesPerPixel;
-        path.sg = SampleGenerator(pixel, params.seed * maxSpp + path.getSampleIdx());
+
+        // motion vector
+        if(params.useReprojSeed){
+            const float2 motion = mvec[pixel].xy;
+            const int2 prevPixel = int2(float2(pixel) + motion.xy * params.frameDim + float2(0.5, 0.5));
+            path.sg = SampleGenerator(prevPixel, (params.seed) * maxSpp + path.getSampleIdx());
+        } else {
+            path.sg = SampleGenerator(pixel, params.seed * maxSpp + path.getSampleIdx());
+        }
+        
 
         // Load the primary hit info from the V-buffer.
         const HitInfo hit = unpackHitInfo(vbuffer[pixel]);
@@ -1171,6 +1183,10 @@ struct PathTracer
         if (kSamplesPerPixel == 1)
         {
             // Write color directly to frame buffer.
+            // float x = luminance(path.L);
+            // float x2 = luminance(path.guideData.getAlbedo());
+            // x = x / (x2 + 1e-10);
+            // outputColor[pixel] = float4(x, x, x, 1.f);
             outputColor[pixel] = float4(path.L, 1.f);
         }
         else
