@@ -13,6 +13,13 @@ import Rendering.Lights.EmissiveLightSamplerHelpers;
 import Utils.Transient.Ellipsoid;
 import Scene.RaytracingInline;
 import GeometricShiftmapping;
+import ProjectorLight;
+import ProjectorPatterns.ProjectorPatternInterface;
+import ProjectorPatterns.PeriodicPattern;
+import ProjectorPatterns.XORPattern;
+import ProjectorPatterns.GrayPattern;
+// import ProjectorPatterns.OTBitFlipPattern;
+import ProjectorPatterns.ArbitraryAntitheticPattern;
 
 
 cbuffer CB
@@ -28,6 +35,11 @@ cbuffer CB
     float laserCosAngle;
     
     uint samplesPerPixel;
+
+    uint gPatternTotalBits;
+    uint gPatternCurrentBit;
+    uint gPatternBaseBit;
+    bool gPatternUseVertical;
 }
 
 // Inputs
@@ -248,6 +260,65 @@ float3 evalDirectConnection(
     return L * float(V);
 }
 
+float3 evalProjectedLightContribution(
+    const ShadingData sd, const ProjectorLight light, 
+    const IMaterialInstance mi, inout SampleGenerator sg
+)
+{
+    ProjectorSample ls = evalProjectorLight(light, sd.posW);
+    bool V = traceVisibilityRay(sd.computeRayOrigin(), ls.wi, ls.distance);
+
+    if (!ls.valid || !V) return 0.0f;
+    float G = 1.0 / (ls.distance * ls.distance);
+
+    float3 L = mi.eval(sd, ls.wi, sg) * ls.radiance * G;
+    return L;
+}
+
+float3 evalProjectedLightContributionAntithetic(
+    const ShadingData sdRef, const ShadingData sdPrev, 
+    const ProjectorLight light, float2 uvShift,
+){
+    // ------------------------------------------------------------
+    // (1) Find the reference UV corresponding to sdRef.posW
+    // ------------------------------------------------------------
+    float2 uvRef;
+    if (!worldToProjectorUV(light, sdRef.posW, uvRef))
+        return 0.0;
+
+    // ------------------------------------------------------------
+    // (2) Shift to the antithetic UV
+    // ------------------------------------------------------------
+    float2 uvAnti = uvRef + uvShift;
+
+    // Optional: reject if outside [0,1]^2.
+    if (any(uvAnti < 0.0) || any(uvAnti > 1.0))
+        return 0.0;
+
+    // ------------------------------------------------------------
+    // (3) Generate projector ray through shifted UV
+    // ------------------------------------------------------------
+    float3 projRayDirW;
+    if (!projectorUVToWorldRay(light, uvAnti, projRayDirW))
+        return 0.0;
+
+    // ------------------------------------------------------------
+    // (4) Trace from projector center into the scene
+    // ------------------------------------------------------------
+    float antiHitT;
+    HitInfo antiHit = traceRay(light.positionW, projRayDirW, antiHitT);
+    if (!antiHit.isValid())
+        return 0.0;
+
+    // ------------------------------------------------------------
+    // (5) Load shading/material at the antithetic hit point
+    // ------------------------------------------------------------
+    ShadingData sdAnti = loadShadingData(antiHit, sdPrev.posW, projRayDirW);
+    IMaterialInstance miAnti = gScene.materials.getMaterialInstance(
+        sdAnti,
+        ExplicitLodTextureSampler(0.f)
+    );
+}
 
 
 float3 tracePath(const uint2 pixel, const uint2 frameDim)
@@ -258,33 +329,58 @@ float3 tracePath(const uint2 pixel, const uint2 frameDim)
     const float3 primaryRayDir = getPrimaryRayDir(pixel, frameDim, gScene.camera);
 
     const HitInfo hit0 = HitInfo(gVBuffer[pixel]);
-
+    
     if (hit0.isValid())
     {
         SampleGenerator sg = SampleGenerator(pixel, gFrameCount + 151);
-
+        
         ShadingData sd0 = loadShadingData(hit0, primaryRayOrigin, primaryRayDir);
         IMaterialInstance mi0 = gScene.materials.getMaterialInstance(sd0, ExplicitLodTextureSampler(0.f));
         BSDFProperties bsdfProperties0 = mi0.getProperties(sd0);
-        //
-        // Laser Hit Material
-        //
-        // show laser spot?
-        // if(kComputeDirect)
-        // {
-        //     float3 toLaserDir = normalize(laserOrigin - sd0.posW);
-        //     float toLaserDist = length(laserOrigin - sd0.posW);
-        //     bool V = traceVisibilityRay(sd0.computeRayOrigin(), toLaserDir, toLaserDist);
-        //     float minCosAngle = min(laserCosAngle, 1.0-(1e-5));
-        //     bool inspot = (dot(-toLaserDir, laserDirection) > minCosAngle);
-        //     float3 L = mi0.eval(sd0, toLaserDir, sg) * laserPower / (toLaserDist * toLaserDist) * float(inspot);
-        //     L = float3(L.x, 0.0, 0.0);
-        //     outColor += samplesPerPixel * L;
-        // }
-        
-        float maxPathLength = getMaxpathLength(tcurr);
-        LaserLightSampler lls = LaserLightSampler(laserOrigin, laserDirection, laserCosAngle, laserPower);
+        // return sd0.posW;
 
+        ProjectorLight light;
+        light.positionW = float3(0.1, 1.0, 6.8);
+        light.dirW = float3(0.0, 0.0, -1.0);
+        light.rightW = float3(1.0, 0.0, 0.0);
+        light.upW = float3(0.0, 1.0, 0.0);
+        light.tanHalfFovX = 0.2;
+        light.tanHalfFovY = 0.2;
+        light.intensity = float3(1.0);
+        light.nearZ = 0.01;
+        light.farZ = 10000.0;
+
+        // PeriodicPattern pattern;
+        // pattern.type = ProjectorPatternType::kPatternSinusoidal;
+        // pattern.axis = float2(1,0);
+        // pattern.wavelength = time_gate_window;
+        // pattern.phase = 0.0;
+
+        // OTBitFlipPattern pattern;
+        // pattern.width = 1024;
+        // pattern.useVertical = gPatternUseVertical;
+
+        ArbitraryAntitheticPattern pattern;
+        pattern.width = 1024;
+        pattern.useVertical = gPatternUseVertical;
+        pattern.useOTMapping = (gPatternBaseBit > 0);
+
+        // XORPattern pattern;
+        // pattern.totalBits = gPatternTotalBits;
+        // pattern.currentBit = gPatternCurrentBit;
+        // pattern.useVertical = gPatternUseVertical;
+        // pattern.baseBit = gPatternBaseBit;
+
+        // GrayPattern pattern;
+        // pattern.totalBits = gPatternTotalBits;
+        // pattern.currentBit = gPatternCurrentBit;
+        // pattern.useVertical = gPatternUseVertical;
+        
+        // pattern.axis = float2(1,0);
+        // pattern.wavelength = time_gate_window;
+        // pattern.phase = 0.0;
+
+        light.pattern = pattern;
 
         for(uint i=0; i<samplesPerPixel; i++){
             float3 result = float3(0.0f);
@@ -296,93 +392,315 @@ float3 tracePath(const uint2 pixel, const uint2 frameDim)
             ShadingData sd = sd0;
             IMaterialInstance mi = mi0;
             BSDFSample bsdfSample;
-            float pathLength = length(sd.posW - primaryRayOrigin);
 
             HitInfo hit = hit0;
             float hitT;
             
-            // show direct?
+            // no need for antithetic for first hit.
             if(kComputeDirect){
-                // sample light
-                LightSample ls = {};
-                lls.generateLightSample(sg, ls);
-                result += throughput * evalDirectConnection(sd, ls, mi, pathLength, sg);
+                if(hit.isValid() && any(throughput > 0.)){
+                    float3 f = throughput * evalProjectedLightContribution(sd, light, mi, sg);
+                    result += f;
+                }
             }
-            for(uint depth=1; depth<kMaxBounces && any(throughput > 0.) && !any(throughput < 0.) && hit.isValid() && pathLength < maxPathLength; depth++){
+#if USE_ANTITHETIC_SAMPLING
+            ShadingData sd_prev = sd;
+            IMaterialInstance mi_prev = mi;
+            for(uint depth=1; depth<kMaxBounces && any(throughput > 0.) && !any(throughput < 0.) && hit.isValid(); depth++){
+                // -------------------- BSDF Sampling ----------------------
+                if(!mi.sample(sd, sg, bsdfSample, kUseImportanceSampling)){
+                    break;
+                }
+                // throughput *= bsdfSample.weight;
+                
+                bool is_transmission = bsdfSample.isLobe(LobeType::Transmission);
+
+                hit = traceRay(sd.computeRayOrigin(!is_transmission), bsdfSample.wo, hitT);
+
+                if(hit.isValid() && any(throughput * bsdfSample.weight > 0.)){
+                    // update sd, mi
+                    sd = loadShadingData(hit, sd.computeRayOrigin(!is_transmission), bsdfSample.wo);
+                    mi = gScene.materials.getMaterialInstance(sd, ExplicitLodTextureSampler(0.f));
+                    
+                    // ------------------------------------------------------------
+                    // primal + antithetic with MIS
+                    // ------------------------------------------------------------
+                    float3 f_primal      = float3(0.0f);
+                    float3 f_antithetic = float3(0.0f);
+
+                    bool primalValid = false;
+                    bool antiDefined = false;
+
+                    const float eps = 1e-6f;
+                    
+                    // ============================================================
+                    // (1) Primal contribution data
+                    // ============================================================
+                    ProjectorSample ls = evalProjectorLight(light, sd.posW);
+
+                    float3 L_primal = float3(0.0f);
+                    float3 brdf_primal = float3(0.0f);
+                    float p_bsdf_primal = bsdfSample.pdf;
+
+                    if (ls.valid && p_bsdf_primal > eps)
+                    {
+                        bool V_light_primal = traceVisibilityRay(sd.computeRayOrigin(), ls.wi, ls.distance);
+
+                        if (V_light_primal)
+                        {
+                            float G = 1.0f / (ls.distance * ls.distance);
+
+                            L_primal = mi.eval(sd, ls.wi, sg) * ls.radiance * G;
+
+                            // bsdfSample.weight = f / pdf
+                            // so f = weight * pdf
+                            brdf_primal = bsdfSample.weight * p_bsdf_primal;
+
+                            primalValid = true;
+                        }
+                    }
+
+                    // ============================================================
+                    // (2) Antithetic mapping
+                    // ============================================================
+                    float3 L_anti = float3(0.0f);
+                    float3 brdf_anti = float3(0.0f);
+
+                    float p_bsdf_anti = 0.0f;
+                    float p_map_anti  = 0.0f;
+                    float p_map_primal = 0.0f;
+
+                    float Jacobian = 0.0f;
+
+                    if (primalValid)
+                    {
+                        float2 uv_primal;
+
+                        if (worldToProjectorUV(light, sd.posW, uv_primal))
+                        {
+                            float2 uv_anti = light.pattern.antitheticCoord(uv_primal, sampleNext1D(sg));
+                            
+                            if (all(uv_anti >= 0.0) && all(uv_anti <= 1.0))
+                            {
+                                float3 antiProjDirW;
+
+                                if (projectorUVToWorldRay(light, uv_anti, antiProjDirW))
+                                {
+                                    float antiHitT;
+                                    HitInfo hit_anti = traceRay(light.positionW, antiProjDirW, antiHitT);
+
+                                    if (hit_anti.isValid())
+                                    {
+                                        ShadingData sd_anti = loadShadingData(hit_anti, light.positionW, antiProjDirW);
+
+                                        IMaterialInstance mi_anti =
+                                            gScene.materials.getMaterialInstance(
+                                                sd_anti,
+                                                ExplicitLodTextureSampler(0.f)
+                                            );
+
+                                        // ------------------------------------------------
+                                        // Geometry for Jacobian
+                                        // ------------------------------------------------
+                                        float3 x  = sd_prev.posW;
+                                        float3 y  = sd.posW;
+                                        float3 ya = sd_anti.posW;
+                                        float3 o  = light.positionW;
+
+                                        float3 ny  = sd.getOrientedFaceNormal();       // preferably geometric normal
+                                        float3 nya = sd_anti.getOrientedFaceNormal();  // preferably geometric normal
+
+                                        float3 omega_primal = normalize(y  - x);
+                                        float3 omega_anti   = normalize(ya - x);
+
+                                        float3 d_primal = normalize(y  - o);
+                                        float3 d_anti   = normalize(ya - o);
+
+                                        float dist_x_y2  = dot(y  - x, y  - x);
+                                        float dist_x_ya2 = dot(ya - x, ya - x);
+                                        float dist_o_y2  = dot(y  - o, y  - o);
+                                        float dist_o_ya2 = dot(ya - o, ya - o);
+
+                                        float cos_y_w  = abs(dot(ny,  -omega_primal));
+                                        float cos_ya_w = abs(dot(nya, -omega_anti));
+                                        float cos_y_d  = abs(dot(ny,  -d_primal));
+                                        float cos_ya_d = abs(dot(nya, -d_anti));
+
+                                        antiDefined =
+                                            (dist_x_y2  > eps) &&
+                                            (dist_x_ya2 > eps) &&
+                                            (dist_o_y2  > eps) &&
+                                            (dist_o_ya2 > eps) &&
+                                            (cos_y_w  > eps) &&
+                                            (cos_ya_w > eps) &&
+                                            (cos_y_d  > eps) &&
+                                            (cos_ya_d > eps);
+
+                                        if (antiDefined)
+                                        {
+                                            // J = |d omega / d omega_anti|
+                                            Jacobian =
+                                                ((cos_y_w  / dist_x_y2 ) * (dist_o_y2  / cos_y_d )) /
+                                                ((cos_ya_w / dist_x_ya2) * (dist_o_ya2 / cos_ya_d));
+                                            
+                                            Jacobian /= light.pattern.antitheticJacobian(uv_primal);
+
+                                            if (Jacobian > eps)
+                                            {
+                                                // ------------------------------------------------
+                                                // PDFs
+                                                // ------------------------------------------------
+
+                                                // Forward mapped pdf:
+                                                // p_map(omega_anti) = p_bsdf(omega_primal) * J
+                                                p_map_anti = p_bsdf_primal * Jacobian;
+
+                                                // Ordinary BSDF pdf at antithetic direction.
+                                                // Replace evalPdf with your actual Falcor PDF function.
+                                                p_bsdf_anti = mi_prev.evalPdf(sd_prev, omega_anti);
+
+                                                // Reverse mapped pdf at primal:
+                                                // p_map(omega_primal) = p_bsdf(omega_anti) / J
+                                                p_map_primal = p_bsdf_anti / Jacobian;
+
+                                                // ------------------------------------------------
+                                                // Visibility of sd_prev -> sd_anti
+                                                // This affects contribution, not antiDefined.
+                                                // ------------------------------------------------
+                                                float dist_prev_to_anti = sqrt(dist_x_ya2);
+
+                                                bool V_prev_anti = traceVisibilityRay(
+                                                    sd_prev.computeRayOrigin(),
+                                                    omega_anti,
+                                                    dist_prev_to_anti
+                                                );
+
+                                                if (V_prev_anti)
+                                                {
+                                                    ProjectorSample ls_anti = evalProjectorLight(light, sd_anti.posW);
+
+                                                    if (ls_anti.valid)
+                                                    {
+                                                        bool V_light_anti = traceVisibilityRay(
+                                                            sd_anti.computeRayOrigin(),
+                                                            ls_anti.wi,
+                                                            ls_anti.distance
+                                                        );
+
+                                                        if (V_light_anti)
+                                                        {
+                                                            float G_anti = 1.0f / (ls_anti.distance * ls_anti.distance);
+
+                                                            L_anti =
+                                                                mi_anti.eval(sd_anti, ls_anti.wi, sg)
+                                                                * ls_anti.radiance
+                                                                * G_anti;
+
+                                                            brdf_anti = mi_prev.eval(sd_prev, omega_anti, sg);
+                                                        }
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+
+                    // ============================================================
+                    // (3) MIS accumulation
+                    // ============================================================
+
+                    if (antiDefined && p_map_anti > eps && p_map_primal > eps)
+                    {
+                        // Balance heuristic.
+                        float w_primal =
+                            p_bsdf_primal / max(p_bsdf_primal + p_map_primal, eps);
+
+                        float w_anti =
+                            p_map_anti / max(p_map_anti + p_bsdf_anti, eps);
+
+                        f_primal =
+                            throughput
+                            * w_primal
+                            * brdf_primal
+                            / max(p_bsdf_primal, eps)
+                            * L_primal;
+
+                        f_antithetic =
+                            throughput
+                            * w_anti
+                            * brdf_anti
+                            / max(p_map_anti, eps)
+                            * L_anti;
+
+                        result += f_primal + f_antithetic;
+                    }
+                    else
+                    {
+                        // Mapping failed, so only primal technique exists.
+                        if (primalValid)
+                        {
+                            f_primal =
+                                throughput
+                                * brdf_primal
+                                / max(p_bsdf_primal, eps)
+                                * L_primal;
+
+                            result += f_primal;
+                        }
+                    }
+                    // final update throughput
+                    throughput *= bsdfSample.weight;
+                    sd_prev = sd;
+                    mi_prev = mi;
+                }
+            }
+#else
+            for(uint depth=1; depth<kMaxBounces && any(throughput > 0.) && !any(throughput < 0.) && hit.isValid(); depth++){
                 // -------------------- BSDF Sampling ----------------------
                 if(!mi.sample(sd, sg, bsdfSample, kUseImportanceSampling)){
                     break;
                 }
                 throughput *= bsdfSample.weight;
-                
                 bool is_transmission = bsdfSample.isLobe(LobeType::Transmission);
-
                 hit = traceRay(sd.computeRayOrigin(!is_transmission), bsdfSample.wo, hitT);
-                float pathLengthPrev = pathLength;
-                pathLength += hitT * sd.IoR;
 
-                if(hit.isValid() && (pathLength < maxPathLength) && any(throughput > 0.)){
+                if(hit.isValid() && any(throughput > 0.)){
                     // update sd, mi
                     sd = loadShadingData(hit, sd.computeRayOrigin(!is_transmission), bsdfSample.wo);
                     mi = gScene.materials.getMaterialInstance(sd, ExplicitLodTextureSampler(0.f));
-                    
-                    // sample light
-                    LightSample ls = {};
-                    lls.generateLightSample(sg, ls);
-                    float3 f = throughput * evalDirectConnection(sd, ls, mi, pathLength, sg);
 
-                    ///////////////////////
-                    // antithetic sampling
-                    ///////////////////////
-                    ShadingData sd2;
+                    ProjectorSample ls = evalProjectorLight(light, sd.posW);
 
-                    sd2.posW = ls.posW();
-                    sd2.frontFacing = true;
-                    sd2.faceN = normalize(sd.posW - ls.posW());
-                    
-                    float dt = 0.05 * 0.5;
-                    float jacobian = 0.0;
-                    float  tol = 1e-6;
-                    ShiftMapDebugInfo debugInfo;
-                    float2 a_const = float2(1.0, 0.0);
+                    if(ls.valid){
+                        bool V_light = traceVisibilityRay(
+                            sd.computeRayOrigin(),
+                            ls.wi,
+                            ls.distance
+                        );
+                        if(V_light)
+                        {
+                            float G = 1.0f / (ls.distance * ls.distance);
 
-                    HitInfo hit_new = transient_shift_mapping(
-                        sd0, hit, sd2, dt, a_const, jacobian, debugInfo, tol
-                    );
+                            float3 L =
+                                mi.eval(sd, ls.wi, sg)
+                                * ls.radiance
+                                * G;
 
-                    if(jacobian > 0.0){
-                        // load information at new point
-                        VertexData v_new = gScene.getVertexData(hit_new.getTriangleHit());
-                        ShadingData sd_new = loadShadingData(
-                                hit_new, sd0.posW,
-                                normalize(v_new.posW - sd0.posW));
-                        let mi_new = gScene.materials.getMaterialInstance(sd_new, ExplicitLodTextureSampler(0));
-                        
-                        float3 f1 = mi0.eval(sd0, normalize(sd_new.posW - sd0.posW), sg);
-                        float3 f2 = evalDirectConnection(sd_new, ls, mi_new, pathLengthPrev + length(sd_new.posW - sd0.posW), sg);
-
-                        // eval p_brdf
-                        float n21 = abs(dot(sd.getOrientedFaceNormal(), normalize(sd0.posW - sd.posW)));
-                        float G12 = max(length(sd0.posW - sd.posW) * length(sd0.posW - sd.posW), kMinLightDistSqr);
-                        
-                        float n21_new = abs(dot(sd_new.getOrientedFaceNormal(), normalize(sd0.posW - sd_new.posW)));
-                        float G12_new = max(length(sd0.posW - sd_new.posW) * length(sd0.posW - sd_new.posW), kMinLightDistSqr);
-                        
-                        float p_omega_new = bsdfSample.pdf * (n21 / G12) / (n21_new / G12_new) * 1.0 / jacobian;
-                        
-                        float3 f_antithetic = f1 * f2 / p_omega_new;
-                        
-                        result += 0.5 * (f + f_antithetic);
-                    } else {
-                        result += f;
+                            // bsdfSample.weight already contains f / pdf for
+                            // the sampled segment from previous vertex to current vertex.
+                            result += throughput * L;
+                        }
                     }
-                    
                 }
             }
-
+#endif
             if (any(isinf(result) || isnan(result))) result = 0.f;
             outColor += result;
         }
+        
         outColor /= samplesPerPixel;
     }
     else

@@ -112,7 +112,9 @@ public:
     // Scripting functions
     void incrementTimeGateFrame();
     void setTimeGateInfo(float timeMin, float timemax, uint timeBin);
-    
+    void setPatternInfo(uint patternTotalBits, uint patternCurrentBit, uint patternBaseBit, bool patternUseVertical);
+    ref<Texture> createUintTexture1D(const std::vector<uint32_t>& data);
+
 private:
     void parseProperties(const Properties& props);
     void prepareVars();
@@ -158,6 +160,11 @@ private:
     bool mUseEllipsoidalMIS = true;
     bool mUseSingleChannel = false;
     bool mIsLightSourceLaser = true;
+    bool mUseAntitheticSampling = true;
+    uint mPatternTotalBits = 0;
+    uint mPatternCurrentBit = 0;
+    uint mPatternBaseBit = 0;
+    bool mPatternUseVertical = false;
 
     /// Frame count since scene was loaded.
     uint mFrameCount = 0;
@@ -178,4 +185,17 @@ private:
     
     // Ray tracing program.
     ref<ComputePass> mpComputePass;
+
+
+    // explicit mapping
+    bool mUseExplicitPatternMapping = false;
+    std::string mPatternTexturePath;
+    std::string mAntitheticIndexTexturePath;
+    std::string mIntervalIdTexturePath;
+    std::string mIntervalTexturePath;
+
+    ref<Texture> mpPatternTexture;
+    ref<Texture> mpAntitheticIndexTexture;
+    ref<Texture> mpIntervalIdTex;
+    ref<Texture> mpIntervalTex;
 };

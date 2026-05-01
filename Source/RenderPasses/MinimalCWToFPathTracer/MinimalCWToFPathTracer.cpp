@@ -28,6 +28,7 @@
 #include "MinimalCWToFPathTracer.h"
 #include "RenderGraph/RenderPassHelpers.h"
 #include "RenderGraph/RenderPassStandardFlags.h"
+#include <fstream>
 
 static void regMinimalCWToFPathTracer(pybind11::module& m)
 {
@@ -35,6 +36,7 @@ static void regMinimalCWToFPathTracer(pybind11::module& m)
     // pass.def_property("m", &MinimalCWToFPathTracer::isEnabled, &MinimalCWToFPathTracer::setEnabled);
     pass.def("increment_time_gate_frame", &MinimalCWToFPathTracer::incrementTimeGateFrame);
     pass.def("set_time_gate_info", &MinimalCWToFPathTracer::setTimeGateInfo);
+    pass.def("set_pattern_info", &MinimalCWToFPathTracer::setPatternInfo);
 }
 
 
@@ -42,6 +44,29 @@ extern "C" FALCOR_API_EXPORT void registerPlugin(Falcor::PluginRegistry& registr
 {
     registry.registerClass<RenderPass, MinimalCWToFPathTracer>();
     ScriptBindings::registerBinding(regMinimalCWToFPathTracer);
+}
+
+
+// ---- helper (local to this file) ----
+static std::vector<uint32_t> loadUintArrayFromTxt(const std::string& filename)
+{
+    std::ifstream file(filename);
+    if (!file.is_open())
+        throw std::runtime_error("Failed to open file: " + filename);
+
+    std::vector<uint32_t> data;
+    std::string line;
+
+    while (std::getline(file, line))
+    {
+        std::stringstream ss(line);
+        uint32_t value;
+
+        while (ss >> value)
+            data.push_back(value);
+    }
+
+    return data;
 }
 
 namespace
@@ -55,11 +80,11 @@ const ChannelList kInputChannels = {
     { kInputViewDir,    "gViewW",       "World-space view direction (xyz float format)", true /* optional */ },
 };
 
-const ChannelList kLaserInputChannels = {
-    // 1 x 1 laser hit buffer
-    { "laservbuffer",        "gLaserVBuffer",     "Laser visibility buffer in packed format" },
-    { "laserviewW",    "gLaserViewW",       "World-space view direction (xyz float format)", true /* optional */ },
-};
+// const ChannelList kLaserInputChannels = {
+//     // 1 x 1 laser hit buffer
+//     { "laservbuffer",        "gLaserVBuffer",     "Laser visibility buffer in packed format" },
+//     { "laserviewW",    "gLaserViewW",       "World-space view direction (xyz float format)", true /* optional */ },
+// };
 
 const ChannelList kOutputChannels = {
     // clang-format off
@@ -89,6 +114,16 @@ const char kGaugeAxis[] = "gaugeAxis";
 const char kGaugeMode[] = "gaugeMode";
 const char kNewtonMaxIteration[] = "NewtonMaxIteration";
 const char kNewtonRelativeTolerance[] = "NewtonRelativeTolerance";
+const char kUseAntitheticSampling[] = "useAntitheticSampling";
+const char kPatternTotalBits[] = "patternTotalBits";
+const char kPatternCurrentBit[] = "patternCurrentBit";
+const char kPatternBaseBit[] = "patternBaseBit";
+const char kPatternUseVertical[] = "patternUseVertical";
+const char kUseExplicitPatternMapping[] = "useExplicitPatternMapping";
+const char kPatternTexturePath[] = "patternTexturePath";
+const char kAntitheticIndexTexturePath[] = "antitheticIndexTexturePath";
+const char kIntervalIdTexturePath[] = "intervalIdTexturePath";
+const char kIntervalTexturePath[] = "intervalTexturePath";
 } // namespace
 
 MinimalCWToFPathTracer::MinimalCWToFPathTracer(ref<Device> pDevice, const Properties& props) : RenderPass(pDevice)
@@ -112,6 +147,15 @@ void MinimalCWToFPathTracer::setTimeGateInfo(float timeMin, float timeMax, uint 
     mTimeMax = timeMax;
     mTimeBin = timeBin;
 }
+
+void MinimalCWToFPathTracer::setPatternInfo(uint patternTotalBits, uint patternCurrentBit, uint patternBaseBit, bool patternUseVertical)
+{
+    mPatternTotalBits = patternTotalBits;
+    mPatternCurrentBit = patternCurrentBit;
+    mPatternBaseBit = patternBaseBit;
+    mPatternUseVertical = patternUseVertical;
+}
+
 
 void MinimalCWToFPathTracer::parseProperties(const Properties& props)
 {
@@ -161,6 +205,26 @@ void MinimalCWToFPathTracer::parseProperties(const Properties& props)
             mNewtonMaxIteration = value;
         else if(key == kNewtonRelativeTolerance)
             mNewtonRelativeTolerance = value;
+        else if (key == kUseAntitheticSampling)
+            mUseAntitheticSampling = value;
+        else if (key == kPatternTotalBits)
+            mPatternTotalBits = value;
+        else if (key == kPatternCurrentBit)
+            mPatternCurrentBit = value;
+        else if (key == kPatternBaseBit)
+            mPatternBaseBit = value;
+        else if (key == kPatternUseVertical)
+            mPatternUseVertical = value;
+        else if (key == kUseExplicitPatternMapping)
+            mUseExplicitPatternMapping = value;
+        else if (key == kPatternTexturePath)
+            mPatternTexturePath = (std::string)value;
+        else if (key == kAntitheticIndexTexturePath)
+            mAntitheticIndexTexturePath = (std::string)value;
+        else if (key == kIntervalIdTexturePath)
+            mIntervalIdTexturePath = (std::string)value;
+        else if (key == kIntervalTexturePath)
+            mIntervalTexturePath = (std::string)value;
         else
             logWarning("Unknown property '{}' in MinimalCWToFPathTracer properties.", key);
     }
@@ -181,7 +245,7 @@ RenderPassReflection MinimalCWToFPathTracer::reflect(const CompileData& compileD
 
     // Define our input/output channels.
     addRenderPassInputs(reflector, kInputChannels);
-    addRenderPassInputs(reflector, kLaserInputChannels, ResourceBindFlags::ShaderResource, uint2(1, 1));
+    // addRenderPassInputs(reflector, kLaserInputChannels, ResourceBindFlags::ShaderResource, uint2(1, 1));
     addRenderPassOutputs(reflector, kOutputChannels);
 
     return reflector;
@@ -200,6 +264,7 @@ DefineList MinimalCWToFPathTracer::getShaderDefines(const RenderData& renderData
     defines.add("USE_ALPHA_TEST", mUseAlphaTest ? "1" : "0");
     defines.add("USE_SINGLE_CHANNEL", mUseSingleChannel ? "1" : "0");
     defines.add("IS_LIGHT_SOURCE_LASER", mIsLightSourceLaser ? "1" : "0");
+    defines.add("USE_ANTITHETIC_SAMPLING", mUseAntitheticSampling ? "1" : "0");
     
     defines.add("LIGHT_SAMPLING_METHOD", std::to_string((uint32_t)mSamplingMethod));
     defines.add("DIRECT_CONNECTION", std::to_string((uint32_t)TimeGatedSamplingMethod::DIRECT));
@@ -210,7 +275,7 @@ DefineList MinimalCWToFPathTracer::getShaderDefines(const RenderData& renderData
     // For optional I/O resources, set 'is_valid_<name>' defines to inform the program of which ones it can access.
     // TODO: This should be moved to a more general mechanism using Slang.
     defines.add(getValidResourceDefines(kInputChannels, renderData));
-    defines.add(getValidResourceDefines(kLaserInputChannels, renderData));
+    // defines.add(getValidResourceDefines(kLaserInputChannels, renderData));
     defines.add(getValidResourceDefines(kOutputChannels, renderData));
 
     return defines;
@@ -233,6 +298,17 @@ void MinimalCWToFPathTracer::bindShaderData(const ShaderVar& var, const RenderDa
     var["CB"]["gPRNGDimension"] = dict.keyExists(kRenderPassPRNGDimension) ? dict[kRenderPassPRNGDimension] : 0u;
     var["CB"]["specularRoughnessThreshold" ] = mSpecularRoughnessThreshold;
     
+    var["CB"]["gPatternTotalBits" ] = mPatternTotalBits;
+    var["CB"]["gPatternCurrentBit" ] = mPatternCurrentBit;
+    var["CB"]["gPatternBaseBit" ] = mPatternBaseBit;
+    var["CB"]["gPatternUseVertical" ] = mPatternUseVertical;
+    
+    if(mUseExplicitPatternMapping){
+        var["CB_pattern"]["patternTex"] = mpPatternTexture;
+        if(mpAntitheticIndexTexture) var["CB_pattern"]["antiIndex"] = mpAntitheticIndexTexture;
+        if(mpIntervalIdTex) var["CB_pattern"]["intervalIdTex"] = mpIntervalIdTex;
+        if(mpIntervalTex) var["CB_pattern"]["intervalTex"] = mpIntervalTex;
+    }
 
     var["Shiftmap_CB"]["gGaugeAxis"] = mGaugeAxis;
     var["Shiftmap_CB"]["gGaugeMode"] = uint(mGaugeMode);
@@ -241,15 +317,15 @@ void MinimalCWToFPathTracer::bindShaderData(const ShaderVar& var, const RenderDa
     var["Shiftmap_CB"]["gNewtonRelativeTolerance"] = mNewtonRelativeTolerance;
 
     // transients
-    if(mLaserCollocated && mpScene){
-        var["CB"]["laserOrigin"] = mpScene->getCamera()->getPosition();
-        var["CB"]["laserDirection"] = normalize(mpScene->getCamera()->getTarget() - mpScene->getCamera()->getPosition());
-    } else {
-        var["CB"]["laserOrigin"] = dict.keyExists("laserPosition") ? dict["laserPosition"] : float3(0,0,0);
-        var["CB"]["laserDirection"] = dict.keyExists("laserDirection") ? dict["laserDirection"] : float3(0,0,1);
-    }
-    var["CB"]["laserPower"] = dict.keyExists("laserPower") ? dict["laserPower"] : float3(1,1,1);
-    var["CB"]["laserCosAngle"] = dict.keyExists("laserCosAngle") ? dict["laserCosAngle"] : 0.0f;
+    // if(mLaserCollocated && mpScene){
+    //     var["CB"]["laserOrigin"] = mpScene->getCamera()->getPosition();
+    //     var["CB"]["laserDirection"] = normalize(mpScene->getCamera()->getTarget() - mpScene->getCamera()->getPosition());
+    // } else {
+    //     var["CB"]["laserOrigin"] = dict.keyExists("laserPosition") ? dict["laserPosition"] : float3(0,0,0);
+    //     var["CB"]["laserDirection"] = dict.keyExists("laserDirection") ? dict["laserDirection"] : float3(0,0,1);
+    // }
+    // var["CB"]["laserPower"] = dict.keyExists("laserPower") ? dict["laserPower"] : float3(1,1,1);
+    // var["CB"]["laserCosAngle"] = dict.keyExists("laserCosAngle") ? dict["laserCosAngle"] : 0.0f;
     
     var["CB"]["samplesPerPixel"] = mSamplesPerPixel;
     // var["CB"]["doSampleLaser"] = mDoSampleLaser;
@@ -270,8 +346,8 @@ void MinimalCWToFPathTracer::bindShaderData(const ShaderVar& var, const RenderDa
     };
     for (auto channel : kInputChannels)
         bind(channel);
-    for (auto channel : kLaserInputChannels)
-        bind(channel);
+    // for (auto channel : kLaserInputChannels)
+    //     bind(channel);
     for (auto channel : kOutputChannels)
         bind(channel);
 }
@@ -297,6 +373,20 @@ void MinimalCWToFPathTracer::execute(RenderContext* pRenderContext, const Render
                 pRenderContext->clearTexture(pDst);
         }
         return;
+    }
+
+    if(mUseExplicitPatternMapping && !mpPatternTexture){
+        auto patternData   = loadUintArrayFromTxt(mPatternTexturePath);
+        mpPatternTexture   = createUintTexture1D(patternData);
+        
+        auto intervalIdData   = loadUintArrayFromTxt(mIntervalIdTexturePath);
+        mpIntervalIdTex   = createUintTexture1D(intervalIdData);
+        
+        auto intervalData   = loadUintArrayFromTxt(mIntervalTexturePath);
+        mpIntervalTex   = createUintTexture1D(intervalData);
+        
+        auto antiIndexData = loadUintArrayFromTxt(mAntitheticIndexTexturePath);
+        mpAntitheticIndexTexture = createUintTexture1D(antiIndexData);
     }
 
     // update time
@@ -435,3 +525,17 @@ void MinimalCWToFPathTracer::setScene(RenderContext* pRenderContext, const ref<S
     // Set new scene.
     mpScene = pScene;
 }
+
+ref<Texture> MinimalCWToFPathTracer::createUintTexture1D(const std::vector<uint32_t>& data)
+{
+    uint32_t width = (uint32_t)data.size();
+
+    return mpDevice->createTexture1D(
+        width,
+        ResourceFormat::R32Uint,  // IMPORTANT
+        1,                        // mip levels
+        1,                        // array size
+        data.data()
+    );
+}
+
