@@ -360,16 +360,16 @@ float3 tracePath(const uint2 pixel, const uint2 frameDim)
         // pattern.width = 1024;
         // pattern.useVertical = gPatternUseVertical;
 
-        ArbitraryAntitheticPattern pattern;
-        pattern.width = 1024;
-        pattern.useVertical = gPatternUseVertical;
-        pattern.useOTMapping = (gPatternBaseBit > 0);
-
-        // XORPattern pattern;
-        // pattern.totalBits = gPatternTotalBits;
-        // pattern.currentBit = gPatternCurrentBit;
+        // ArbitraryAntitheticPattern pattern;
+        // pattern.width = 1024;
         // pattern.useVertical = gPatternUseVertical;
-        // pattern.baseBit = gPatternBaseBit;
+        // pattern.useOTMapping = (gPatternBaseBit > 0);
+
+        XORPattern pattern;
+        pattern.totalBits = gPatternTotalBits;
+        pattern.currentBit = gPatternCurrentBit;
+        pattern.useVertical = gPatternUseVertical;
+        pattern.baseBit = gPatternBaseBit;
 
         // GrayPattern pattern;
         // pattern.totalBits = gPatternTotalBits;
