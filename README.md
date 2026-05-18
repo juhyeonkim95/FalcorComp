@@ -4,14 +4,11 @@
 
 ![visualization](assets/teaser.png)
 
-This repository is the official Mitsuba0.6 implementation of **"ToF ReSTIR: Time-of-Flight Rendering with Spatio-temporal Reservoir Resampling"** by 
+This repository is the official Falcor implementation of **"ToF ReSTIR: Time-of-Flight Rendering with Spatio-temporal Reservoir Resampling"** by 
 [Juhyeon Kim](https://juhyeonkim.netlify.app/), 
 [Wojciech Jarosz](https://cs.dartmouth.edu/~wjarosz/), 
 [Adithya Pediredla](https://sites.google.com/view/adithyapediredla/)
 (SIGGRAPH 2026, journal paper).
-
-![Teaser](assets/teaser.png)
-
 
 ---
 ## Compilation
