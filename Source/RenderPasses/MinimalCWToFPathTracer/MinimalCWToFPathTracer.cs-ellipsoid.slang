@@ -345,61 +345,131 @@ float3 tracePath(const uint2 pixel, const uint2 frameDim)
                     ShiftMapDebugInfo debugInfo;
                     float2 a_const = float2(1.0, 0.0);
                     
+                    if(laserCosAngle == 0.0){
+                        HitInfo hit_new = transient_shift_mapping(
+                            sd_prev, hit, sd2, dt, a_const, area_jacobian, debugInfo, tol
+                        );
 
-                    HitInfo hit_new = transient_shift_mapping(
-                        sd_prev, hit, sd2, dt, a_const, area_jacobian, debugInfo, tol
-                    );
 
-
-                    if(area_jacobian > 0.0){
-                        // load information at new point
-                        VertexData v_new = gScene.getVertexData(hit_new.getTriangleHit());
-                        ShadingData sd_new = loadShadingData(
-                                hit_new, sd0.posW,
-                                normalize(v_new.posW - sd0.posW));
-                        let mi_new = gScene.materials.getMaterialInstance(sd_new, ExplicitLodTextureSampler(0));
-                        
-                        float3 dir_x_y = normalize(sd.posW - sd_prev.posW);
-                        float3 dir_x_y2 = normalize(sd_new.posW - sd_prev.posW);
-
-                        float l_x_y = length(sd.posW - sd_prev.posW);
-                        float l_x_y2 = length(sd_new.posW - sd_prev.posW);
-                        l_x_y = max(l_x_y, 1e-6);
-                        l_x_y2 = max(l_x_y2, 1e-6);
-                        
-                        float G1 = abs(dot(sd.getOrientedFaceNormal(), -dir_x_y)) / (l_x_y * l_x_y);
-                        float G2 = abs(dot(sd_new.getOrientedFaceNormal(), -dir_x_y2)) / (l_x_y2 * l_x_y2);
-                        
-                        float J_T = (G2 > 1e-6 && G1 > 1e-6) ? G2 / G1 * area_jacobian : 0.0;
-
-                        if(J_T > 0){
-
-                            float pdf_primal_primal = bsdfSample.pdf;// -mi_prev.evalPdf(sd_prev, dir_x_y);
-                            float pdf_antithetic_antithetic = pdf_primal_primal / J_T;
-                            float pdf_antithetic_primal = mi_prev.evalPdf(sd_prev, dir_x_y2);
-
-                            float pdf_primal_antithetic;
+                        if(area_jacobian > 0.0){
+                            // load information at new point
+                            VertexData v_new = gScene.getVertexData(hit_new.getTriangleHit());
+                            ShadingData sd_new = loadShadingData(
+                                    hit_new, sd0.posW,
+                                    normalize(v_new.posW - sd0.posW));
+                            let mi_new = gScene.materials.getMaterialInstance(sd_new, ExplicitLodTextureSampler(0));
                             
-                            pdf_primal_antithetic = pdf_antithetic_primal * J_T;
+                            float3 dir_x_y = normalize(sd.posW - sd_prev.posW);
+                            float3 dir_x_y2 = normalize(sd_new.posW - sd_prev.posW);
 
-                            float3 f_primal_pdf_primal_primal = 
-                                throughput * 
-                                bsdfSample.weight * // = mi_prev.eval(sd_prev, dir_x_y, sg) / pdf_primal_primal
-                                evalDirectConnection(sd, ls, mi, pathLength + hitT * sd.IoR, sg);
-                            float mis_primal = pdf_primal_primal / (pdf_primal_primal + pdf_primal_antithetic);
+                            float l_x_y = length(sd.posW - sd_prev.posW);
+                            float l_x_y2 = length(sd_new.posW - sd_prev.posW);
+                            l_x_y = max(l_x_y, 1e-6);
+                            l_x_y2 = max(l_x_y2, 1e-6);
+                            
+                            float G1 = abs(dot(sd.getOrientedFaceNormal(), -dir_x_y)) / (l_x_y * l_x_y);
+                            float G2 = abs(dot(sd_new.getOrientedFaceNormal(), -dir_x_y2)) / (l_x_y2 * l_x_y2);
+                            
+                            float J_T = (G2 > 1e-6 && G1 > 1e-6) ? G2 / G1 * area_jacobian : 0.0;
 
-                            float3 f_antithetic = 
-                                throughput * 
-                                mi_prev.eval(sd_prev, dir_x_y2, sg) * 
-                                evalDirectConnection(sd_new, ls, mi_new, pathLength + length(sd_prev.posW - sd_new.posW) * sd_new.IoR, sg);
-                            float mis_antithetic = pdf_antithetic_antithetic / (pdf_antithetic_antithetic + pdf_antithetic_primal);
+                            if(J_T > 0){
 
-                            result += mis_primal * f_primal_pdf_primal_primal + mis_antithetic * f_antithetic / pdf_antithetic_antithetic;  
+                                float pdf_primal_primal = bsdfSample.pdf;// -mi_prev.evalPdf(sd_prev, dir_x_y);
+                                float pdf_antithetic_antithetic = pdf_primal_primal / J_T;
+                                float pdf_antithetic_primal = mi_prev.evalPdf(sd_prev, dir_x_y2);
+
+                                float pdf_primal_antithetic;
+                                
+                                pdf_primal_antithetic = pdf_antithetic_primal * J_T;
+
+                                float3 f_primal_pdf_primal_primal = 
+                                    throughput * 
+                                    bsdfSample.weight * // = mi_prev.eval(sd_prev, dir_x_y, sg) / pdf_primal_primal
+                                    evalDirectConnection(sd, ls, mi, pathLength + hitT * sd.IoR, sg);
+                                float mis_primal = pdf_primal_primal / (pdf_primal_primal + pdf_primal_antithetic);
+
+                                float3 f_antithetic = 
+                                    throughput * 
+                                    mi_prev.eval(sd_prev, dir_x_y2, sg) * 
+                                    evalDirectConnection(sd_new, ls, mi_new, pathLength + length(sd_prev.posW - sd_new.posW) * sd_new.IoR, sg);
+                                float mis_antithetic = pdf_antithetic_antithetic / (pdf_antithetic_antithetic + pdf_antithetic_primal);
+
+                                result += mis_primal * f_primal_pdf_primal_primal + mis_antithetic * f_antithetic / pdf_antithetic_antithetic;  
+                            }
+                        } else {
+                            result += throughput * bsdfSample.weight * evalDirectConnection(sd, ls, mi, pathLength + hitT * sd.IoR, sg);
                         }
-                    } else {
-                        result += throughput * bsdfSample.weight * evalDirectConnection(sd, ls, mi, pathLength + hitT * sd.IoR, sg);
-                    }
+                    } 
+                    else {
+                        // uint triangleCount = gScene.triCollection.getActiveTriangleCount();
 
+                        // return float3(triangleCount);
+
+                        float target_path_length = hitT * sd.IoR + length(sd.posW - ls.posW());
+                        float ellipsePdf;
+
+                        HitInfo hit_new = sampleEllipsoidal(
+                            sd_prev, sd, hit, ls, target_path_length + dt, ellipsePdf, sg
+                        );
+
+                        if(ellipsePdf > 0.0){
+                            // return float3(100.0);
+                            // load information at new point
+                            VertexData v_new = gScene.getVertexData(hit_new.getTriangleHit());
+                            ShadingData sd_new = loadShadingData(
+                                    hit_new, sd0.posW,
+                                    normalize(v_new.posW - sd0.posW));
+                            let mi_new = gScene.materials.getMaterialInstance(sd_new, ExplicitLodTextureSampler(0));
+                            
+
+                            float pdf_primal_primal = bsdfSample.pdf;
+                            float pdf_antithetic_antithetic = ellipsePdf;
+                            
+
+                            float3 dir_x_y = normalize(sd.posW - sd_prev.posW);
+                            float3 dir_x_y2 = normalize(sd_new.posW - sd_prev.posW);
+
+                            float l_x_y = length(sd.posW - sd_prev.posW);
+                            float l_x_y2 = length(sd_new.posW - sd_prev.posW);
+                            l_x_y = max(l_x_y, 1e-6);
+                            l_x_y2 = max(l_x_y2, 1e-6);
+                            
+                            float G1 = abs(dot(sd.getOrientedFaceNormal(), -dir_x_y)) / (l_x_y * l_x_y);
+                            float G2 = abs(dot(sd_new.getOrientedFaceNormal(), -dir_x_y2)) / (l_x_y2 * l_x_y2);
+                            
+                            // float J_T = (G2 > 1e-6 && G1 > 1e-6) ? G2 / G1 * area_jacobian : 0.0;
+
+                            // if(J_T > 0){
+
+                                // float pdf_primal_primal = bsdfSample.pdf;// -mi_prev.evalPdf(sd_prev, dir_x_y);
+                                // float pdf_antithetic_antithetic = pdf_primal_primal / J_T;
+                                // float pdf_antithetic_primal = mi_prev.evalPdf(sd_prev, dir_x_y2);
+
+                                // float pdf_primal_antithetic = pdf_antithetic_primal * J_T;
+
+                                float3 f_primal_pdf_primal_primal = 
+                                    throughput * 
+                                    bsdfSample.weight * // = mi_prev.eval(sd_prev, dir_x_y, sg) / pdf_primal_primal
+                                    evalDirectConnection(sd, ls, mi, pathLength + hitT * sd.IoR, sg);
+                                float mis_primal = 0.5;//pdf_primal_primal / (pdf_primal_primal + pdf_primal_antithetic);
+
+                                float3 f_antithetic = 
+                                    throughput * 
+                                    mi_prev.eval(sd_prev, dir_x_y2, sg) * 
+                                    evalDirectConnection(sd_new, ls, mi_new, pathLength + length(sd_prev.posW - sd_new.posW) * sd_new.IoR, sg);
+                                float mis_antithetic = 0.5;//pdf_antithetic_antithetic / (pdf_antithetic_antithetic + pdf_antithetic_primal);
+
+                                // float pathlength1 = length(sd_prev.posW - sd.posW)+ length(ls.posW() - sd.posW);
+                                // float pathlength2 = length(sd_prev.posW - sd_new.posW) + length(ls.posW() - sd_new.posW);
+                                // return pathlength1 - pathlength2;
+
+                                result += mis_primal * f_primal_pdf_primal_primal + mis_antithetic * f_antithetic / pdf_antithetic_antithetic;  
+                            // }
+                        } else {
+                            // return float3(-1.0);
+                            result += throughput * bsdfSample.weight * evalDirectConnection(sd, ls, mi, pathLength + hitT * sd.IoR, sg);
+                        }
+                    }
 
                     // final update throughput
                     throughput *= bsdfSample.weight;
@@ -446,6 +516,124 @@ float3 tracePath(const uint2 pixel, const uint2 frameDim)
 
     return outColor;
 }
+
+
+HitInfo sampleEllipsoidal(
+    const ShadingData sd, // x
+    const ShadingData sd_now, // x
+    const HitInfo hit_now, // x
+    const LightSample ls, // o
+    float targetpathLength, 
+    out float ellipsePdfA, 
+    inout SampleGenerator sg
+){
+    // float ttarget = targetpathLength;
+    ellipsePdfA = 0.0;
+    // directPdfA = 0.0;
+    Ellipsoid E;
+    // float tSampled;
+    float pdfT = 1.0;
+    
+    HitInfo hit_dummy;
+
+    // build Ellipsoid and check if valid;
+    if(!buildEllipsoidFromFoci(
+        sd.posW, ls.posW(), targetpathLength,
+        sd.getOrientedFaceNormal(), ls.getOrientedFaceNormal(), E))
+    {
+        return hit_dummy;
+    }
+
+    E.p_original = sd_now.posW;
+
+    uint triangleIndex;
+    float trianglePdf;
+
+    TriangleHit triangleHit = hit_now.getTriangleHit();
+    triangleIndex = gScene.triCollection.getTriangleIndex(triangleHit.instanceID, triangleHit.primitiveIndex);
+    trianglePdf = 1.0;
+
+    // if(!emissiveSampler.sampleTriangleEllipsoid(
+    //     E, sg, triangleIndex, trianglePdf)){
+    //     return hit_dummy;
+    // }
+    const EmissiveTriangle tri = gScene.triCollection.getTriangle(triangleIndex);
+
+    // check if sd or ls is on triangle --> no need to check
+    if(abs(dot(tri.normal, normalize(tri.posW[0] - sd.posW))) < 1e-4 
+    || abs(dot(tri.normal, normalize(tri.posW[0] - ls.posW()))) < 1e-4){
+        return hit_dummy;
+    }
+    // ellipsePdfA = 1.0;
+    // return hit_dummy;
+    // ellipsoid-triangle intersection
+    SampleResultArea result = sampleOnTriangleEllipsoid(
+        E,
+        tri.posW[0], tri.posW[1], tri.posW[2],
+        sampleNext1D(sg), sampleNext1D(sg));
+    
+    // valid result
+    if(result.ok && !isinf(result.pdfA) && !isnan(result.pdfA)){
+        // pathLength = pathLength + length(sd.posW - result.p) + length(result.p - ls.posW());
+        
+        // shoot ray to sampled point from sd
+        float hitT;
+        HitInfo hit = traceRay(sd.computeRayOrigin(), normalize(result.p - sd.posW), hitT);
+        ShadingData second_sd = loadShadingData(hit, sd.computeRayOrigin(), normalize(result.p - sd.posW));
+
+        // TriangleHit triangleHit = hit.getTriangleHit();
+        // uint actualTriangleIndex = gScene.triCollection.getTriangleIndex(triangleHit.instanceID, triangleHit.primitiveIndex);
+
+        // valid point?
+        if(hitT > 0 && hit.isValid()
+            && abs(dot(second_sd.getOrientedFaceNormal(), tri.normal)) > 0.99 
+            && abs(hitT - length(sd.posW - result.p)) < 1e-2){
+            
+            // let mi2 = gScene.materials.getMaterialInstance(second_sd, ExplicitLodTextureSampler(0));
+
+            // float directPdfA = mi.evalPdf(sd, normalize(ellipseP - sd.posW));
+
+            const float3 p1 = sd.posW;
+            const float3 p2 = second_sd.posW;
+            const float3 p3 = ls.posW();
+            
+            const float3 n2 = second_sd.getOrientedFaceNormal();
+            const float3 l12 = p2 - p1;
+            const float3 l23 = p3 - p2;
+
+            const float3 v12 = normalize(l12);
+            const float3 v23 = normalize(l23);
+            // const float d12 = length(p2 - p1);
+            // const float d23 = length(p3 - p2);
+
+            // float3 f1 = mi.eval(sd, v12, sg);
+            // float3 f2 = mi2.eval(second_sd, v23, sg);
+            // float3 Li = ls.evalLi(p2, sg);
+            
+            float n21 = max(dot(n2, -v12), 0.0);
+            float n23 = max(dot(n2, v23), 0.0);
+            float G12 = max(dot(l12, l12), kMinLightDistSqr);
+
+            // float3 f = f1 * f2 * Li * n21 / (G12);
+            
+            // Eval Pdfs
+            ellipsePdfA = trianglePdf * result.pdfA * pdfT;
+            ellipsePdfA = (n21 == 0.0) ? 0.0 : ellipsePdfA * G12 / n21;
+            if(ellipsePdfA < 1e-9) ellipsePdfA = 0.0;
+            // float directpdf = mi.evalPdf(sd, normalize(second_sd.posW - sd.posW));
+            // directPdfA = directpdf * n21 / G12;
+            return hit;
+            // bool V = traceVisibilityRay(second_sd.computeRayOrigin(), v23, d23);
+            // f = f / ellipsePdfA;
+            
+            // float pathLengthTotal = pathLength + length(sd.posW - second_sd.posW) + length(second_sd.posW - ls.posW());
+
+            // return f * V * pathLengthImportance(pathLengthTotal, tcurr);
+        }
+    }
+    return hit_dummy;
+}
+
 
 
 [numthreads(16, 16, 1)]

@@ -13,14 +13,13 @@ import Rendering.Lights.EmissiveLightSamplerHelpers;
 import Utils.Transient.Ellipsoid;
 import Scene.RaytracingInline;
 import GeometricShiftmapping;
-// import ProjectorLight;
+import ProjectorLight;
 // import ProjectorPatterns.ProjectorPatternInterface;
 // import ProjectorPatterns.PeriodicPattern;
 // import ProjectorPatterns.XORPattern;
 // import ProjectorPatterns.GrayPattern;
 // import ProjectorPatterns.OTBitFlipPattern;
 // import ProjectorPatterns.ArbitraryAntitheticPattern;
-
 
 cbuffer CB
 {
@@ -245,6 +244,156 @@ struct LaserLightSampler
     }
 }
 
+// struct LightSample
+// {
+//     float3  Li;         ///< Incident radiance at the shading point (unshadowed). This is already divided by the pdf.
+//     float distance;
+//     float laserT;
+//     float3 posW;
+//     float3 dir;
+// };
+
+// bool generateLightSample(
+//     const float3 posW, 
+//     inout SampleGenerator sg, 
+//     out LightSample ls
+// )
+// {
+// #if IS_LIGHT_SOURCE_LASER
+//     // (1) Collimated laser 
+//     float3 local = sample_cone(sampleNext2D(sg), laserCosAngle);
+//     float3 laser_d = normalize(laser_tangent*local.x + laser_bitangent*local.y + laser_normal*local.z);
+//     float laserT;
+//     HitInfo laserhit = traceRay(laserOrigin, laser_d, laserT);
+//     ShadingData laser_sd = loadShadingData(laserhit, laserOrigin, laser_d);
+//     let laser_mi = gScene.materials.getMaterialInstance(laser_sd, ExplicitLodTextureSampler(0.f));
+//     ls.Li = laserPower * laser_mi.eval(laser_sd, -toLaserHitDir, sg);
+//     ls.posW = laser_sd.posW;
+//     ls.laserT = laserT;
+// #else
+//     // (2) Point Light laser 
+//     ls.Li = laserPower;
+//     ls.posW = laserOrigin;
+//     ls.laserT = 0.0;
+// #endif
+//     // common 
+//     float3 toLight = ls.posW - posW;
+//     float distSqr = max(dot(toLight, toLight), kMinLightDistSqr);
+//     ls.Li /= distSqr;
+//     ls.distance = sqrt(distSqr);
+//     ls.dir = toLight / ls.distance;
+// }
+
+
+
+/**
+ * This is the main entry point for the minimal path tracer.
+ *
+ * One path per pixel is generated, which is traced into the scene.
+ * The path tracer is written as a for-loop over path segments.
+ *
+ * Built-in light sources (point, directional) are sampled explicitly at each
+ * path vertex. The contributions from area lights (env map and mesh lights)
+ * are explicitly added by the scatter ray hit/miss shaders.
+ *
+ * @param[in] pixel Pixel to trace a path for.
+ * @param[in] frameDim Dimension of the frame in pixels.
+ * @return Returns the estimated color (radiance).
+ */
+float3 tracePath(const uint2 pixel, const uint2 frameDim)
+{
+    float3 outColor = float3(0.f);
+
+    const float3 primaryRayOrigin = gScene.camera.getPosition();
+    const float3 primaryRayDir = getPrimaryRayDir(pixel, frameDim, gScene.camera);
+
+    const HitInfo hit0 = HitInfo(gVBuffer[pixel]);
+
+    if (hit0.isValid())
+    {
+        SampleGenerator sg = SampleGenerator(pixel, gFrameCount + 151);
+
+        ShadingData sd0 = loadShadingData(hit0, primaryRayOrigin, primaryRayDir);
+        IMaterialInstance mi0 = gScene.materials.getMaterialInstance(sd0, ExplicitLodTextureSampler(0.f));
+        BSDFProperties bsdfProperties0 = mi0.getProperties(sd0);
+        //
+        // Laser Hit Material
+        //
+        // show laser spot?
+        if(kComputeDirect)
+        {
+            float3 toLaserDir = normalize(laserOrigin - sd0.posW);
+            float toLaserDist = length(laserOrigin - sd0.posW);
+            bool V = traceVisibilityRay(sd0.computeRayOrigin(), toLaserDir, toLaserDist);
+            float minCosAngle = min(laserCosAngle, 1.0-(1e-5));
+            bool inspot = (dot(-toLaserDir, laserDirection) > minCosAngle);
+            float3 L = mi0.eval(sd0, toLaserDir, sg) * laserPower / (toLaserDist * toLaserDist) * float(inspot);
+            L = float3(L.x, 0.0, 0.0);
+            outColor += samplesPerPixel * L;
+        }
+        
+        float maxPathLength = getMaxpathLength(tcurr);
+        LaserLightSampler lls = LaserLightSampler(laserOrigin, laserDirection, laserCosAngle, laserPower);
+
+
+        for(uint i=0; i<samplesPerPixel; i++){
+            float3 result = float3(0.0f);
+            float3 throughput = float3(1.0f);
+
+            //
+            // (1) First Hit Material
+            //
+            ShadingData sd = sd0;
+            IMaterialInstance mi = mi0;
+            BSDFSample bsdfSample;
+            float pathLength = length(sd.posW - primaryRayOrigin);
+
+            HitInfo hit = hit0;
+            float hitT;
+            
+            // show direct?
+            // if(kComputeDirect){
+            //     // sample light
+            //     LightSample ls = {};
+            //     lls.generateLightSample(sg, ls);
+            //     result += throughput * evalDirectConnection(sd, ls, mi, pathLength, sg);
+            // }
+            for(uint depth=1; depth<kMaxBounces && any(throughput > 0.) && !any(throughput < 0.) && hit.isValid() && pathLength < maxPathLength; depth++){
+                // -------------------- BSDF Sampling ----------------------
+                if(!mi.sample(sd, sg, bsdfSample, kUseImportanceSampling)){
+                    break;
+                }
+                throughput *= bsdfSample.weight;
+                
+                bool is_transmission = bsdfSample.isLobe(LobeType::Transmission);
+
+                hit = traceRay(sd.computeRayOrigin(!is_transmission), bsdfSample.wo, hitT);
+                pathLength += hitT * sd.IoR;
+
+                if(hit.isValid() && (pathLength < maxPathLength) && any(throughput > 0.)){
+                    // update sd, mi
+                    sd = loadShadingData(hit, sd.computeRayOrigin(!is_transmission), bsdfSample.wo);
+                    mi = gScene.materials.getMaterialInstance(sd, ExplicitLodTextureSampler(0.f));
+
+                    // sample light
+                    LightSample ls = {};
+                    lls.generateLightSample(sg, ls);
+                    result += throughput * evalDirectConnection(sd, ls, mi, pathLength, sg);
+                }
+            }
+            if (any(isinf(result) || isnan(result))) result = 0.f;
+            outColor += result;
+        }
+        outColor /= samplesPerPixel;
+    }
+    else
+    {
+        // Background pixel.
+        outColor = kUseEnvBackground ? gScene.envMap.eval(primaryRayDir) : kDefaultBackgroundColor;
+    }
+
+    return outColor;
+}
 
 float3 evalDirectConnection(
     const ShadingData sd, const LightSample ls, const IMaterialInstance mi,
@@ -262,191 +411,6 @@ float3 evalDirectConnection(
     return L * float(V);
 }
 
-float3 tracePath(const uint2 pixel, const uint2 frameDim)
-{
-    // uint triangleCount = gScene.triCollection.getActiveTriangleCount();
-
-    // return float3(triangleCount);
-
-    float3 outColor = float3(0.f);
-
-    const float3 primaryRayOrigin = gScene.camera.getPosition();
-    const float3 primaryRayDir = getPrimaryRayDir(pixel, frameDim, gScene.camera);
-
-    const HitInfo hit0 = HitInfo(gVBuffer[pixel]);
-    
-    if (hit0.isValid())
-    {
-        SampleGenerator sg = SampleGenerator(pixel, gFrameCount + 151);
-        
-        ShadingData sd0 = loadShadingData(hit0, primaryRayOrigin, primaryRayDir);
-        IMaterialInstance mi0 = gScene.materials.getMaterialInstance(sd0, ExplicitLodTextureSampler(0.f));
-        BSDFProperties bsdfProperties0 = mi0.getProperties(sd0);
-
-        LaserLightSampler lls = LaserLightSampler(laserOrigin, laserDirection, laserCosAngle, laserPower);
-
-        for(uint i=0; i<samplesPerPixel; i++){
-            float3 result = float3(0.0f);
-            float3 throughput = float3(1.0f);
-
-            //
-            // (1) First Hit Material
-            //
-            ShadingData sd = sd0;
-            IMaterialInstance mi = mi0;
-            BSDFSample bsdfSample;
-            float pathLength = length(sd.posW - primaryRayOrigin);
-
-            HitInfo hit = hit0;
-            float hitT;
-            
-            // no need for antithetic for first hit.
-            if(kComputeDirect){
-                // sample light
-                LightSample ls = {};
-                lls.generateLightSample(sg, ls);
-                result += throughput * evalDirectConnection(sd, ls, mi, pathLength, sg);
-            }
-#if USE_ANTITHETIC_SAMPLING
-            ShadingData sd_prev = sd;
-            IMaterialInstance mi_prev = mi;
-            for(uint depth=1; depth<kMaxBounces && any(throughput > 0.) && !any(throughput < 0.) && hit.isValid(); depth++){
-                // -------------------- BSDF Sampling ----------------------
-                if(!mi.sample(sd, sg, bsdfSample, kUseImportanceSampling)){
-                    break;
-                }
-
-                bool is_transmission = bsdfSample.isLobe(LobeType::Transmission);
-                hit = traceRay(sd.computeRayOrigin(!is_transmission), bsdfSample.wo, hitT);
-                // pathLength += hitT * sd.IoR;
-
-                // sample light
-                LightSample ls = {};
-                lls.generateLightSample(sg, ls);
-
-                if(hit.isValid() && any(throughput * bsdfSample.weight > 0.)){
-                    // update sd, mi
-                    sd = loadShadingData(hit, sd.computeRayOrigin(!is_transmission), bsdfSample.wo);
-                    mi = gScene.materials.getMaterialInstance(sd, ExplicitLodTextureSampler(0.f));
-                    
-                    
-                    // antithetic sampling
-                    ShadingData sd2;
-                    
-                    sd2.posW = ls.posW();
-                    sd2.frontFacing = true;
-                    sd2.faceN = ls.getOrientedFaceNormal();
-
-                    float dt = (sampleNext1D(sg) > 0.5) ? time_gate_window * 0.5 : -time_gate_window * 0.5;
-
-                    float area_jacobian = 0.0;
-                    float tol = time_gate_window * 0.001;
-
-                    ShiftMapDebugInfo debugInfo;
-                    float2 a_const = float2(1.0, 0.0);
-                    
-
-                    HitInfo hit_new = transient_shift_mapping(
-                        sd_prev, hit, sd2, dt, a_const, area_jacobian, debugInfo, tol
-                    );
-
-
-                    if(area_jacobian > 0.0){
-                        // load information at new point
-                        VertexData v_new = gScene.getVertexData(hit_new.getTriangleHit());
-                        ShadingData sd_new = loadShadingData(
-                                hit_new, sd0.posW,
-                                normalize(v_new.posW - sd0.posW));
-                        let mi_new = gScene.materials.getMaterialInstance(sd_new, ExplicitLodTextureSampler(0));
-                        
-                        float3 dir_x_y = normalize(sd.posW - sd_prev.posW);
-                        float3 dir_x_y2 = normalize(sd_new.posW - sd_prev.posW);
-
-                        float l_x_y = length(sd.posW - sd_prev.posW);
-                        float l_x_y2 = length(sd_new.posW - sd_prev.posW);
-                        l_x_y = max(l_x_y, 1e-6);
-                        l_x_y2 = max(l_x_y2, 1e-6);
-                        
-                        float G1 = abs(dot(sd.getOrientedFaceNormal(), -dir_x_y)) / (l_x_y * l_x_y);
-                        float G2 = abs(dot(sd_new.getOrientedFaceNormal(), -dir_x_y2)) / (l_x_y2 * l_x_y2);
-                        
-                        float J_T = (G2 > 1e-6 && G1 > 1e-6) ? G2 / G1 * area_jacobian : 0.0;
-
-                        if(J_T > 0){
-
-                            float pdf_primal_primal = bsdfSample.pdf;// -mi_prev.evalPdf(sd_prev, dir_x_y);
-                            float pdf_antithetic_antithetic = pdf_primal_primal / J_T;
-                            float pdf_antithetic_primal = mi_prev.evalPdf(sd_prev, dir_x_y2);
-
-                            float pdf_primal_antithetic;
-                            
-                            pdf_primal_antithetic = pdf_antithetic_primal * J_T;
-
-                            float3 f_primal_pdf_primal_primal = 
-                                throughput * 
-                                bsdfSample.weight * // = mi_prev.eval(sd_prev, dir_x_y, sg) / pdf_primal_primal
-                                evalDirectConnection(sd, ls, mi, pathLength + hitT * sd.IoR, sg);
-                            float mis_primal = pdf_primal_primal / (pdf_primal_primal + pdf_primal_antithetic);
-
-                            float3 f_antithetic = 
-                                throughput * 
-                                mi_prev.eval(sd_prev, dir_x_y2, sg) * 
-                                evalDirectConnection(sd_new, ls, mi_new, pathLength + length(sd_prev.posW - sd_new.posW) * sd_new.IoR, sg);
-                            float mis_antithetic = pdf_antithetic_antithetic / (pdf_antithetic_antithetic + pdf_antithetic_primal);
-
-                            result += mis_primal * f_primal_pdf_primal_primal + mis_antithetic * f_antithetic / pdf_antithetic_antithetic;  
-                        }
-                    } else {
-                        result += throughput * bsdfSample.weight * evalDirectConnection(sd, ls, mi, pathLength + hitT * sd.IoR, sg);
-                    }
-
-
-                    // final update throughput
-                    throughput *= bsdfSample.weight;
-                    sd_prev = sd;
-                    mi_prev = mi;
-                    pathLength += hitT * sd.IoR;
-                }
-            }
-#else
-            for(uint depth=1; depth<kMaxBounces && any(throughput > 0.) && !any(throughput < 0.) && hit.isValid(); depth++){
-                // -------------------- BSDF Sampling ----------------------
-                if(!mi.sample(sd, sg, bsdfSample, kUseImportanceSampling)){
-                    break;
-                }
-                throughput *= bsdfSample.weight;
-                bool is_transmission = bsdfSample.isLobe(LobeType::Transmission);
-                hit = traceRay(sd.computeRayOrigin(!is_transmission), bsdfSample.wo, hitT);
-                pathLength += hitT * sd.IoR;
-
-                if(hit.isValid() && any(throughput > 0.)){
-                    // update sd, mi
-                    sd = loadShadingData(hit, sd.computeRayOrigin(!is_transmission), bsdfSample.wo);
-                    mi = gScene.materials.getMaterialInstance(sd, ExplicitLodTextureSampler(0.f));
-
-                    // sample light
-                    LightSample ls = {};
-                    lls.generateLightSample(sg, ls);
-                    result += throughput * evalDirectConnection(sd, ls, mi, pathLength, sg);
-                }
-            }
-#endif
-            if (any(isinf(result) || isnan(result))) result = 0.f;
-            outColor += result;
-        }
-        
-        outColor /= samplesPerPixel;
-        // outColor = float3(1.0);
-    }
-    else
-    {
-        // Background pixel.
-        outColor = kUseEnvBackground ? gScene.envMap.eval(primaryRayDir) : kDefaultBackgroundColor;
-    }
-
-    return outColor;
-}
-
 
 [numthreads(16, 16, 1)]
 void main(uint3 dispatchThreadId: SV_DispatchThreadID)
@@ -459,5 +423,5 @@ void main(uint3 dispatchThreadId: SV_DispatchThreadID)
 #if USE_SINGLE_CHANNEL
     color = float3(color.x, color.x, color.x);
 #endif
-    gOutputColor[pixel] = float4(color, 1.f);
+    gOutputColor[pixel] = float4(color / time_gate_window, 1.f);
 }

@@ -7,6 +7,7 @@
 #define TIME_GATE_EXP 4
 #define TIME_GATE_GAUSSIAN 5
 #define TIME_GATE_EPANECHNIKOV 6
+#define TIME_GATE_SAWTOOTH 6
 
 cbuffer TimeGate
 {
@@ -79,7 +80,7 @@ float getMaxpathLength(float target_distance, bool use_rough = false)
 		}
 		case TIME_GATE_COS:{
 			// return 0.5 * (cos(M_2PI * v) + 1.0);
-			return (cos(M_2PI * v));
+			return (cos(M_2PI * (v + time_gate_window_rough)));
 		}
 	}
 	return 1.0;

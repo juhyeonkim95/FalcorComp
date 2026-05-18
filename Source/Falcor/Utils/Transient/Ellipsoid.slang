@@ -10,7 +10,8 @@ struct Ellipsoid
     float3 p1;
     float3 p2;
     float  t;
-
+    float3 p_original;
+    
     // normal at each foci
     float3 n1;
     float3 n2;

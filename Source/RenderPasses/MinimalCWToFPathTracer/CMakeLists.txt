@@ -9,12 +9,6 @@ target_sources(MinimalCWToFPathTracer PRIVATE
     SurfaceOps/BarycentricTriSurface.slang
     NewtonSolver.slang
     GeometricShiftmapping.slang
-    ProjectorLight.slang
-    ProjectorPatterns/ProjectorPatternInterface.slang
-    ProjectorPatterns/PeriodicPattern.slang
-    ProjectorPatterns/XORPattern.slang
-    ProjectorPatterns/GrayPattern.slang
-    ProjectorPatterns/ArbitraryAntitheticPattern.slang
 )
 
 target_copy_shaders(MinimalCWToFPathTracer RenderPasses/MinimalCWToFPathTracer)

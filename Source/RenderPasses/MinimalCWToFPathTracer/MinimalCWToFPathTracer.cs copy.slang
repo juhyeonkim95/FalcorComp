@@ -264,10 +264,6 @@ float3 evalDirectConnection(
 
 float3 tracePath(const uint2 pixel, const uint2 frameDim)
 {
-    // uint triangleCount = gScene.triCollection.getActiveTriangleCount();
-
-    // return float3(triangleCount);
-
     float3 outColor = float3(0.f);
 
     const float3 primaryRayOrigin = gScene.camera.getPosition();
@@ -344,12 +340,10 @@ float3 tracePath(const uint2 pixel, const uint2 frameDim)
 
                     ShiftMapDebugInfo debugInfo;
                     float2 a_const = float2(1.0, 0.0);
-                    
 
                     HitInfo hit_new = transient_shift_mapping(
                         sd_prev, hit, sd2, dt, a_const, area_jacobian, debugInfo, tol
                     );
-
 
                     if(area_jacobian > 0.0){
                         // load information at new point
@@ -377,10 +371,7 @@ float3 tracePath(const uint2 pixel, const uint2 frameDim)
                             float pdf_primal_primal = bsdfSample.pdf;// -mi_prev.evalPdf(sd_prev, dir_x_y);
                             float pdf_antithetic_antithetic = pdf_primal_primal / J_T;
                             float pdf_antithetic_primal = mi_prev.evalPdf(sd_prev, dir_x_y2);
-
-                            float pdf_primal_antithetic;
-                            
-                            pdf_primal_antithetic = pdf_antithetic_primal * J_T;
+                            float pdf_primal_antithetic = pdf_antithetic_primal * J_T;
 
                             float3 f_primal_pdf_primal_primal = 
                                 throughput * 
@@ -400,7 +391,6 @@ float3 tracePath(const uint2 pixel, const uint2 frameDim)
                         result += throughput * bsdfSample.weight * evalDirectConnection(sd, ls, mi, pathLength + hitT * sd.IoR, sg);
                     }
 
-
                     // final update throughput
                     throughput *= bsdfSample.weight;
                     sd_prev = sd;
@@ -408,6 +398,7 @@ float3 tracePath(const uint2 pixel, const uint2 frameDim)
                     pathLength += hitT * sd.IoR;
                 }
             }
+
 #else
             for(uint depth=1; depth<kMaxBounces && any(throughput > 0.) && !any(throughput < 0.) && hit.isValid(); depth++){
                 // -------------------- BSDF Sampling ----------------------
@@ -459,5 +450,5 @@ void main(uint3 dispatchThreadId: SV_DispatchThreadID)
 #if USE_SINGLE_CHANNEL
     color = float3(color.x, color.x, color.x);
 #endif
-    gOutputColor[pixel] = float4(color, 1.f);
+    gOutputColor[pixel] = float4(color / time_gate_window, 1.f);
 }

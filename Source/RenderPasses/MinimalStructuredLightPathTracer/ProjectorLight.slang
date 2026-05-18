@@ -253,3 +253,36 @@ bool projectorUVToWorldRay(const ProjectorLight light, float2 uv, out float3 ray
 
     return true;
 }
+
+bool sampleRayfromProjector(
+    const ProjectorLight light,
+    float2 uv,
+    out float3 rayDirW,
+    out float pdfRay
+)
+{
+    float px = (2.f * uv.x - 1.f) * light.tanHalfFovX;
+    float py = (2.f * uv.y - 1.f) * light.tanHalfFovY;
+
+    float3 dir = normalize(light.dirW + px * light.rightW + py * light.upW);
+
+    float cosP = dot(dir, light.dirW);
+
+    // if(cosP <= 0.f)
+    // {
+    //     rayDirW = 0.f;
+    //     pdfRay = 0.f;
+    //     return false;
+    // }
+
+    float pdfUV = 1.f; // uniform uv in [0,1]^2
+
+    float imagePlaneArea = 4.f * light.tanHalfFovX * light.tanHalfFovY;
+
+    // dω = imagePlaneArea * cosP^3 * du dv
+    // p_ω = p_uv / |dω / du dv|
+    pdfRay = pdfUV / (imagePlaneArea * cosP * cosP * cosP);
+
+    rayDirW = dir;
+    return true;
+}

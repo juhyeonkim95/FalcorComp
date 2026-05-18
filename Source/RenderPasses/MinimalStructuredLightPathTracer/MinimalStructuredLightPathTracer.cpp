@@ -25,26 +25,27 @@
  # (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
  # OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  **************************************************************************/
-#include "MinimalCWToFPathTracer.h"
+#include "MinimalStructuredLightPathTracer.h"
 #include "RenderGraph/RenderPassHelpers.h"
 #include "RenderGraph/RenderPassStandardFlags.h"
 #include <fstream>
 
-static void regMinimalCWToFPathTracer(pybind11::module& m)
+static void regMinimalStructuredLightPathTracer(pybind11::module& m)
 {
-    pybind11::class_<MinimalCWToFPathTracer, RenderPass, ref<MinimalCWToFPathTracer>> pass(m, "MinimalCWToFPathTracer");
-    // pass.def_property("m", &MinimalCWToFPathTracer::isEnabled, &MinimalCWToFPathTracer::setEnabled);
-    pass.def("increment_time_gate_frame", &MinimalCWToFPathTracer::incrementTimeGateFrame);
-    pass.def("set_time_gate_info", &MinimalCWToFPathTracer::setTimeGateInfo);
-    pass.def("set_pattern_info", &MinimalCWToFPathTracer::setPatternInfo);
-    pass.def("update_laser_info", &MinimalCWToFPathTracer::updateLaserInfo);
+    pybind11::class_<MinimalStructuredLightPathTracer, RenderPass, ref<MinimalStructuredLightPathTracer>> pass(m, "MinimalStructuredLightPathTracer");
+    // pass.def_property("m", &MinimalStructuredLightPathTracer::isEnabled, &MinimalStructuredLightPathTracer::setEnabled);
+    pass.def("increment_time_gate_frame", &MinimalStructuredLightPathTracer::incrementTimeGateFrame);
+    pass.def("set_time_gate_info", &MinimalStructuredLightPathTracer::setTimeGateInfo);
+    pass.def("set_wave_form", &MinimalStructuredLightPathTracer::setWaveForm);
+    pass.def("set_pattern_info", &MinimalStructuredLightPathTracer::setPatternInfo);
+    pass.def("update_laser_info", &MinimalStructuredLightPathTracer::updateLaserInfo);
 }
 
 
 extern "C" FALCOR_API_EXPORT void registerPlugin(Falcor::PluginRegistry& registry)
 {
-    registry.registerClass<RenderPass, MinimalCWToFPathTracer>();
-    ScriptBindings::registerBinding(regMinimalCWToFPathTracer);
+    registry.registerClass<RenderPass, MinimalStructuredLightPathTracer>();
+    ScriptBindings::registerBinding(regMinimalStructuredLightPathTracer);
 }
 
 
@@ -72,7 +73,7 @@ static std::vector<uint32_t> loadUintArrayFromTxt(const std::string& filename)
 
 namespace
 {
-const char kShaderFile[] = "RenderPasses/MinimalCWToFPathTracer/MinimalCWToFPathTracer.cs.slang";
+const char kShaderFile[] = "RenderPasses/MinimalStructuredLightPathTracer/MinimalStructuredLightPathTracer.cs.slang";
 const char kInputViewDir[] = "viewW";
 
 const ChannelList kInputChannels = {
@@ -128,7 +129,7 @@ const char kIntervalTexturePath[] = "intervalTexturePath";
 const char kStratifiedSample[] = "stratifiedSample";
 } // namespace
 
-MinimalCWToFPathTracer::MinimalCWToFPathTracer(ref<Device> pDevice, const Properties& props) : RenderPass(pDevice)
+MinimalStructuredLightPathTracer::MinimalStructuredLightPathTracer(ref<Device> pDevice, const Properties& props) : RenderPass(pDevice)
 {
     parseProperties(props);
 
@@ -137,20 +138,25 @@ MinimalCWToFPathTracer::MinimalCWToFPathTracer(ref<Device> pDevice, const Proper
     FALCOR_ASSERT(mpSampleGenerator);
 }
 
-void MinimalCWToFPathTracer::incrementTimeGateFrame()
+void MinimalStructuredLightPathTracer::incrementTimeGateFrame()
 {
     mPrevTimeGateFrameCount = mTimeGateFrameCount;
     mTimeGateFrameCount += 1;
 }
 
-void MinimalCWToFPathTracer::setTimeGateInfo(float timeMin, float timeMax, uint timeBin)
+void MinimalStructuredLightPathTracer::setTimeGateInfo(float timeMin, float timeMax, uint timeBin)
 {
     mTimeGateWindow = timeMin;
-    mTimeGateWindowRough = timeMax;
+    mTimeGateWindow = timeMax;
     mTimeBin = timeBin;
 }
 
-void MinimalCWToFPathTracer::setPatternInfo(uint patternTotalBits, uint patternCurrentBit, uint patternBaseBit, bool patternUseVertical)
+void MinimalStructuredLightPathTracer::setWaveForm(std::string value)
+{
+    mTimeGateMode = TimeGateModeTable[value];
+}
+
+void MinimalStructuredLightPathTracer::setPatternInfo(uint patternTotalBits, uint patternCurrentBit, uint patternBaseBit, bool patternUseVertical)
 {
     mPatternTotalBits = patternTotalBits;
     mPatternCurrentBit = patternCurrentBit;
@@ -158,8 +164,19 @@ void MinimalCWToFPathTracer::setPatternInfo(uint patternTotalBits, uint patternC
     mPatternUseVertical = patternUseVertical;
 }
 
+void MinimalStructuredLightPathTracer::updateLaserInfo(
+    const float3& position, 
+    const float3& direction, 
+    const float3& power,
+    const float cosAngle
+){
+    mLaserOrigin = position;
+    mLaserDirection = direction;
+    mLaserPower = power;
+    mLaserCosAngle = cosAngle;
+}
 
-void MinimalCWToFPathTracer::parseProperties(const Properties& props)
+void MinimalStructuredLightPathTracer::parseProperties(const Properties& props)
 {
     for (const auto& [key, value] : props)
     {
@@ -230,11 +247,11 @@ void MinimalCWToFPathTracer::parseProperties(const Properties& props)
         else if (key == kIntervalTexturePath)
             mIntervalTexturePath = (std::string)value;
         else
-            logWarning("Unknown property '{}' in MinimalCWToFPathTracer properties.", key);
+            logWarning("Unknown property '{}' in MinimalStructuredLightPathTracer properties.", key);
     }
 }
 
-Properties MinimalCWToFPathTracer::getProperties() const
+Properties MinimalStructuredLightPathTracer::getProperties() const
 {
     Properties props;
     props[kMaxBounces] = mMaxBounces;
@@ -243,7 +260,7 @@ Properties MinimalCWToFPathTracer::getProperties() const
     return props;
 }
 
-RenderPassReflection MinimalCWToFPathTracer::reflect(const CompileData& compileData)
+RenderPassReflection MinimalStructuredLightPathTracer::reflect(const CompileData& compileData)
 {
     RenderPassReflection reflector;
 
@@ -255,7 +272,7 @@ RenderPassReflection MinimalCWToFPathTracer::reflect(const CompileData& compileD
     return reflector;
 }
 
-DefineList MinimalCWToFPathTracer::getShaderDefines(const RenderData& renderData) const{
+DefineList MinimalStructuredLightPathTracer::getShaderDefines(const RenderData& renderData) const{
     DefineList defines;
 
     defines.add("MAX_BOUNCES", std::to_string(mMaxBounces));
@@ -286,19 +303,7 @@ DefineList MinimalCWToFPathTracer::getShaderDefines(const RenderData& renderData
     return defines;
 }
 
-void MinimalCWToFPathTracer::updateLaserInfo(
-    const float3& position, 
-    const float3& direction, 
-    const float3& power,
-    const float cosAngle
-){
-    mLaserOrigin = position;
-    mLaserDirection = direction;
-    mLaserPower = power;
-    mLaserCosAngle = cosAngle;
-}
-
-void MinimalCWToFPathTracer::bindShaderData(const ShaderVar& var, const RenderData& renderData)
+void MinimalStructuredLightPathTracer::bindShaderData(const ShaderVar& var, const RenderData& renderData)
 {
     auto& dict = renderData.getDictionary();
 
@@ -328,13 +333,13 @@ void MinimalCWToFPathTracer::bindShaderData(const ShaderVar& var, const RenderDa
         if(mpIntervalTex) var["CB_pattern"]["intervalTex"] = mpIntervalTex;
     }
 
-    var["Shiftmap_CB"]["gGaugeAxis"] = mGaugeAxis;
-    var["Shiftmap_CB"]["gGaugeMode"] = uint(mGaugeMode);
+    // var["Shiftmap_CB"]["gGaugeAxis"] = mGaugeAxis;
+    // var["Shiftmap_CB"]["gGaugeMode"] = uint(mGaugeMode);
     // var["Shiftmap_CB"]["gShiftMappingMethod"] = uint(mShiftmapMethod);
-    var["Shiftmap_CB"]["gNewtonMaxIteration"] = mNewtonMaxIteration;
-    var["Shiftmap_CB"]["gNewtonRelativeTolerance"] = mNewtonRelativeTolerance;
+    // var["Shiftmap_CB"]["gNewtonMaxIteration"] = mNewtonMaxIteration;
+    // var["Shiftmap_CB"]["gNewtonRelativeTolerance"] = mNewtonRelativeTolerance;
 
-    // transients
+
     if(mLaserCollocated && mpScene){
         var["CB"]["laserOrigin"] = mpScene->getCamera()->getPosition();
         var["CB"]["laserDirection"] = normalize(mpScene->getCamera()->getTarget() - mpScene->getCamera()->getPosition());
@@ -345,11 +350,11 @@ void MinimalCWToFPathTracer::bindShaderData(const ShaderVar& var, const RenderDa
     var["CB"]["laserPower"] = mLaserPower;
     var["CB"]["laserCosAngle"] = mLaserCosAngle;
     var["CB"]["samplesPerPixel"] = mSamplesPerPixel;
-
+    
+    var["CB"]["samplesPerPixel"] = mSamplesPerPixel;
     // var["CB"]["doSampleLaser"] = mDoSampleLaser;
     
     var["TimeGate"]["time_gate_window"] = mTimeGateWindow;
-    var["TimeGate"]["time_gate_window_rough"] = mTimeGateWindowRough;
     var["TimeGate"]["time_gate_mode"] = uint(mTimeGateMode);
 
     var["TimeGate"]["tcurr"] = mTcurr;
@@ -371,7 +376,7 @@ void MinimalCWToFPathTracer::bindShaderData(const ShaderVar& var, const RenderDa
         bind(channel);
 }
 
-void MinimalCWToFPathTracer::execute(RenderContext* pRenderContext, const RenderData& renderData)
+void MinimalStructuredLightPathTracer::execute(RenderContext* pRenderContext, const RenderData& renderData)
 {
     // Update refresh flag if options that affect the output have changed.
     auto& dict = renderData.getDictionary();
@@ -501,7 +506,7 @@ void MinimalCWToFPathTracer::execute(RenderContext* pRenderContext, const Render
     
 }
 
-void MinimalCWToFPathTracer::renderUI(Gui::Widgets& widget)
+void MinimalStructuredLightPathTracer::renderUI(Gui::Widgets& widget)
 {
     bool dirty = false;
 
@@ -534,7 +539,7 @@ void MinimalCWToFPathTracer::renderUI(Gui::Widgets& widget)
     }
 }
 
-void MinimalCWToFPathTracer::setScene(RenderContext* pRenderContext, const ref<Scene>& pScene)
+void MinimalStructuredLightPathTracer::setScene(RenderContext* pRenderContext, const ref<Scene>& pScene)
 {
     // Clear data for previous scene.
     // After changing scene, the raytracing program should to be recreated.
@@ -545,7 +550,7 @@ void MinimalCWToFPathTracer::setScene(RenderContext* pRenderContext, const ref<S
     mpScene = pScene;
 }
 
-ref<Texture> MinimalCWToFPathTracer::createUintTexture1D(const std::vector<uint32_t>& data)
+ref<Texture> MinimalStructuredLightPathTracer::createUintTexture1D(const std::vector<uint32_t>& data)
 {
     uint32_t width = (uint32_t)data.size();
 

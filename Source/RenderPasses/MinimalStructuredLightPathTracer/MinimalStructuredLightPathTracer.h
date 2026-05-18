@@ -90,17 +90,17 @@ static const std::unordered_map<std::string, GaugeMode> GaugeModeTable = {
  *
  * Note that transmission and nested dielectrics are not yet supported.
  */
-class MinimalCWToFPathTracer : public RenderPass
+class MinimalStructuredLightPathTracer : public RenderPass
 {
 public:
-    FALCOR_PLUGIN_CLASS(MinimalCWToFPathTracer, "MinimalCWToFPathTracer", "Minimal path tracer.");
+    FALCOR_PLUGIN_CLASS(MinimalStructuredLightPathTracer, "MinimalStructuredLightPathTracer", "Minimal path tracer.");
 
-    static ref<MinimalCWToFPathTracer> create(ref<Device> pDevice, const Properties& props)
+    static ref<MinimalStructuredLightPathTracer> create(ref<Device> pDevice, const Properties& props)
     {
-        return make_ref<MinimalCWToFPathTracer>(pDevice, props);
+        return make_ref<MinimalStructuredLightPathTracer>(pDevice, props);
     }
 
-    MinimalCWToFPathTracer(ref<Device> pDevice, const Properties& props);
+    MinimalStructuredLightPathTracer(ref<Device> pDevice, const Properties& props);
 
     virtual Properties getProperties() const override;
     virtual RenderPassReflection reflect(const CompileData& compileData) override;
@@ -120,6 +120,7 @@ public:
         const float3& power,
         const float cosAngle
     );
+    void setWaveForm(std::string value);
 private:
     void parseProperties(const Properties& props);
     void prepareVars();
@@ -148,7 +149,6 @@ private:
 
     // Time Gate Data
     float mTimeGateWindow = 0.05f;
-    float mTimeGateWindowRough = 0.00f;
     TimeGateMode mTimeGateMode = TimeGateMode::BOX;
     float mTimeMin = 9.0f;
     float mTimeMax = 12.0f;
@@ -173,6 +173,11 @@ private:
     bool mPatternUseVertical = false;
     uint mStratifiedSample = 0;
     
+    float3 mLaserOrigin;
+    float3 mLaserDirection;
+    float3 mLaserPower;
+    float mLaserCosAngle;
+
     /// Frame count since scene was loaded.
     uint mFrameCount = 0;
     uint mTimeGateFrameCount = 0;
@@ -185,11 +190,6 @@ private:
     GaugeMode mGaugeMode = GaugeMode::CONSTANT;
     uint mNewtonMaxIteration = 5;
     float mNewtonRelativeTolerance = 0.01;
-
-    float3 mLaserOrigin;
-    float3 mLaserDirection;
-    float3 mLaserPower;
-    float mLaserCosAngle;
     
     EmissiveLightSamplerType emissiveSampler = EmissiveLightSamplerType::LightBVH;  ///< Emissive light sampler to use for NEE.
     std::unique_ptr<EmissiveLightSampler> mpEmissiveSampler;    ///< Emissive light sampler or nullptr if not used.

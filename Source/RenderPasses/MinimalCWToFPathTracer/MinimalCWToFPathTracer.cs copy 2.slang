@@ -264,10 +264,6 @@ float3 evalDirectConnection(
 
 float3 tracePath(const uint2 pixel, const uint2 frameDim)
 {
-    // uint triangleCount = gScene.triCollection.getActiveTriangleCount();
-
-    // return float3(triangleCount);
-
     float3 outColor = float3(0.f);
 
     const float3 primaryRayOrigin = gScene.camera.getPosition();
@@ -344,7 +340,6 @@ float3 tracePath(const uint2 pixel, const uint2 frameDim)
 
                     ShiftMapDebugInfo debugInfo;
                     float2 a_const = float2(1.0, 0.0);
-                    
 
                     HitInfo hit_new = transient_shift_mapping(
                         sd_prev, hit, sd2, dt, a_const, area_jacobian, debugInfo, tol
@@ -400,7 +395,6 @@ float3 tracePath(const uint2 pixel, const uint2 frameDim)
                         result += throughput * bsdfSample.weight * evalDirectConnection(sd, ls, mi, pathLength + hitT * sd.IoR, sg);
                     }
 
-
                     // final update throughput
                     throughput *= bsdfSample.weight;
                     sd_prev = sd;
@@ -447,6 +441,110 @@ float3 tracePath(const uint2 pixel, const uint2 frameDim)
     return outColor;
 }
 
+
+float3 evalEllipsoidalConnection(
+    const ShadingData sd, const LightSample ls, 
+    float pathLength, out float ellipsePdfA, out float directPdfA, inout SampleGenerator sg
+){
+    float ttarget = tcurr - pathLength;
+    ellipsePdfA = 0.0;
+    directPdfA = 0.0;
+    Ellipsoid E;
+    float tSampled;
+    float pdfT;
+    
+    samplePathLength(ttarget, sampleNext1D(sg), tSampled, pdfT);
+    
+    // build Ellipsoid and check if valid;
+    if(!buildEllipsoidFromFoci(
+        sd.posW, ls.posW(), tSampled,
+        sd.getOrientedFaceNormal(), ls.getOrientedFaceNormal(), E))
+    {
+        return float3(0.0);
+    }
+
+    uint triangleIndex;
+    float trianglePdf;
+
+    if(!emissiveSampler.sampleTriangleEllipsoid(
+        E, sg, triangleIndex, trianglePdf)){
+        return float3(0.0);
+    }
+    const EmissiveTriangle tri = gScene.triCollection.getTriangle(triangleIndex);
+
+    // check if sd or ls is on triangle --> no need to check
+    if(abs(dot(tri.normal, normalize(tri.posW[0] - sd.posW))) < 1e-4 
+    || abs(dot(tri.normal, normalize(tri.posW[0] - ls.posW()))) < 1e-4){
+        return float3(0.0);
+    }
+
+    // ellipsoid-triangle intersection
+    SampleResultArea result = sampleOnTriangleEllipsoid(
+        E,
+        tri.posW[0], tri.posW[1], tri.posW[2],
+        sampleNext1D(sg), sampleNext1D(sg));
+    
+    // valid result
+    if(result.ok && !isinf(result.pdfA) && !isnan(result.pdfA)){
+        // pathLength = pathLength + length(sd.posW - result.p) + length(result.p - ls.posW());
+
+        // shoot ray to sampled point from sd
+        float hitT;
+        HitInfo hit = traceRay(sd.computeRayOrigin(), normalize(result.p - sd.posW), hitT);
+        ShadingData second_sd = loadShadingData(hit, sd.computeRayOrigin(), normalize(result.p - sd.posW));
+
+        // TriangleHit triangleHit = hit.getTriangleHit();
+        // uint actualTriangleIndex = gScene.triCollection.getTriangleIndex(triangleHit.instanceID, triangleHit.primitiveIndex);
+
+        // valid point?
+        if(hitT > 0 && hit.isValid()
+            && abs(dot(second_sd.getOrientedFaceNormal(), tri.normal)) > 0.99 
+            && abs(hitT - length(sd.posW - result.p)) < 1e-2){
+            
+            let mi2 = gScene.materials.getMaterialInstance(second_sd, ExplicitLodTextureSampler(0));
+
+            // float directPdfA = mi.evalPdf(sd, normalize(ellipseP - sd.posW));
+
+            const float3 p1 = sd.posW;
+            const float3 p2 = second_sd.posW;
+            const float3 p3 = ls.posW();
+            
+            const float3 n2 = second_sd.getOrientedFaceNormal();
+            const float3 l12 = p2 - p1;
+            const float3 l23 = p3 - p2;
+
+            const float3 v12 = normalize(l12);
+            const float3 v23 = normalize(l23);
+            const float d12 = length(p2 - p1);
+            const float d23 = length(p3 - p2);
+
+            float3 f1 = mi.eval(sd, v12, sg);
+            float3 f2 = mi2.eval(second_sd, v23, sg);
+            float3 Li = ls.evalLi(p2, sg);
+            
+            float n21 = max(dot(n2, -v12), 0.0);
+            float n23 = max(dot(n2, v23), 0.0);
+            float G12 = max(dot(l12, l12), kMinLightDistSqr);
+
+            float3 f = f1 * f2 * Li * n21 / (G12);
+            
+            // Eval Pdfs
+            ellipsePdfA = trianglePdf * result.pdfA * pdfT;
+            if(ellipsePdfA < 1e-9) return float3(0.0);
+            
+            float directpdf = mi.evalPdf(sd, normalize(second_sd.posW - sd.posW));
+            directPdfA = directpdf * n21 / G12;
+
+            bool V = traceVisibilityRay(second_sd.computeRayOrigin(), v23, d23);
+            f = f / ellipsePdfA;
+            
+            float pathLengthTotal = pathLength + length(sd.posW - second_sd.posW) + length(second_sd.posW - ls.posW());
+
+            return f * V * pathLengthImportance(pathLengthTotal, tcurr);
+        }
+    }
+    return float3(0.0);
+}
 
 [numthreads(16, 16, 1)]
 void main(uint3 dispatchThreadId: SV_DispatchThreadID)

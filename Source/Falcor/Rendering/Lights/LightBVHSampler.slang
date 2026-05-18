@@ -713,7 +713,6 @@ struct LightBVHSampler : IEmissiveLightSampler
 
         float flux = 1.f;
         if (!kDisableNodeFlux) flux = nodeAttribs.flux;
-
         return flux * isAABBValidForEllipoid(E, nodeAttribs.origin, nodeAttribs.extent);
     }
 

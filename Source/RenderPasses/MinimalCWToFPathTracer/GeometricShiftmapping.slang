@@ -77,9 +77,9 @@ HitInfo transient_shift_mapping(
     
     HitInfo new_sample = x2;
     if(result.status == NewtonResultStatus::SUCCESS){   
-        float3 dir = normalize(x_prime - p2);
+        float3 dir = normalize(x_prime - p1);
 
-        Ray ray = Ray(x3.computeRayOrigin(), dir, 0.0f, length(x_prime - x3.posW) + 0.01f);
+        Ray ray = Ray(x1.computeRayOrigin(), dir, 0.0f, length(x_prime - x1.posW) + 0.01f);
         SceneRayQuery<0> sceneRayQuery;
         float hitT;
         HitInfo hit = sceneRayQuery.traceRay(ray, hitT);

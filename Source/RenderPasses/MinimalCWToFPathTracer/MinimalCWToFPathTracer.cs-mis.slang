@@ -264,10 +264,6 @@ float3 evalDirectConnection(
 
 float3 tracePath(const uint2 pixel, const uint2 frameDim)
 {
-    // uint triangleCount = gScene.triCollection.getActiveTriangleCount();
-
-    // return float3(triangleCount);
-
     float3 outColor = float3(0.f);
 
     const float3 primaryRayOrigin = gScene.camera.getPosition();
@@ -344,7 +340,6 @@ float3 tracePath(const uint2 pixel, const uint2 frameDim)
 
                     ShiftMapDebugInfo debugInfo;
                     float2 a_const = float2(1.0, 0.0);
-                    
 
                     HitInfo hit_new = transient_shift_mapping(
                         sd_prev, hit, sd2, dt, a_const, area_jacobian, debugInfo, tol
@@ -379,6 +374,33 @@ float3 tracePath(const uint2 pixel, const uint2 frameDim)
                             float pdf_antithetic_primal = mi_prev.evalPdf(sd_prev, dir_x_y2);
 
                             float pdf_primal_antithetic;
+
+                            if(laserCosAngle == 1.0)
+                            {
+                                float area_jacobian2 = 0.0;
+                                HitInfo hit_new2 = transient_shift_mapping(
+                                    sd_prev, hit, sd2, -dt, a_const, area_jacobian2, debugInfo, tol
+                                );
+                                VertexData v_new = gScene.getVertexData(hit_new2.getTriangleHit());
+                                ShadingData sd_new = loadShadingData(
+                                        hit_new2, sd0.posW,
+                                        normalize(v_new.posW - sd0.posW));
+                                let mi_new = gScene.materials.getMaterialInstance(sd_new, ExplicitLodTextureSampler(0));
+                                
+                                float3 dir_x_y = normalize(sd.posW - sd_prev.posW);
+                                float3 dir_x_y2 = normalize(sd_new.posW - sd_prev.posW);
+
+                                float l_x_y = length(sd.posW - sd_prev.posW);
+                                float l_x_y2 = length(sd_new.posW - sd_prev.posW);
+                                l_x_y = max(l_x_y, 1e-6);
+                                l_x_y2 = max(l_x_y2, 1e-6);
+                                
+                                float G1 = abs(dot(sd.getOrientedFaceNormal(), -dir_x_y)) / (l_x_y * l_x_y);
+                                float G2 = abs(dot(sd_new.getOrientedFaceNormal(), -dir_x_y2)) / (l_x_y2 * l_x_y2);
+                                
+                                float J_T = (G2 > 1e-6 && G1 > 1e-6) ? G2 / G1 * area_jacobian2 : 0.0;
+                                pdf_primal_antithetic = mi_prev.evalPdf(sd_prev, dir_x_y) / J_T;
+                            }
                             
                             pdf_primal_antithetic = pdf_antithetic_primal * J_T;
 
@@ -394,12 +416,16 @@ float3 tracePath(const uint2 pixel, const uint2 frameDim)
                                 evalDirectConnection(sd_new, ls, mi_new, pathLength + length(sd_prev.posW - sd_new.posW) * sd_new.IoR, sg);
                             float mis_antithetic = pdf_antithetic_antithetic / (pdf_antithetic_antithetic + pdf_antithetic_primal);
 
+                            if(laserCosAngle == 2.0){
+                                mis_primal = 0.5;
+                                mis_antithetic = 0.5;
+                            }
+
                             result += mis_primal * f_primal_pdf_primal_primal + mis_antithetic * f_antithetic / pdf_antithetic_antithetic;  
                         }
                     } else {
                         result += throughput * bsdfSample.weight * evalDirectConnection(sd, ls, mi, pathLength + hitT * sd.IoR, sg);
                     }
-
 
                     // final update throughput
                     throughput *= bsdfSample.weight;

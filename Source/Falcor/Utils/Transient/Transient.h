@@ -11,7 +11,8 @@ enum class TimeGateMode
     COS = 3,
     EXP = 4,
     GAUSSIAN = 5,
-    EPANECHNIKOV = 6
+    EPANECHNIKOV = 6,
+    SAWTOOTH = 7
 };
 
 
@@ -22,7 +23,8 @@ static const std::unordered_map<std::string, TimeGateMode> TimeGateModeTable = {
     {"cos", TimeGateMode::COS},
     {"exp", TimeGateMode::EXP},
     {"gaussian", TimeGateMode::GAUSSIAN},
-    {"epanechnikov", TimeGateMode::EPANECHNIKOV}
+    {"epanechnikov", TimeGateMode::EPANECHNIKOV},
+    {"sawtooth", TimeGateMode::SAWTOOTH}
 };
 
 
