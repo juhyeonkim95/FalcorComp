@@ -27,7 +27,7 @@
  **************************************************************************/
 import Utils.Math.MathHelpers;
 import Utils.Color.ColorHelpers;
-import EventSVGFCommon;
+import EventSVGFAreaCommon;
 
 cbuffer PerImageCB
 {
@@ -128,6 +128,8 @@ float4 main(FullScreenPassVsOut vsOut) : SV_TARGET0
 
                     const float w = wCurr;
                     const float wDiff = wCurr * wPrev;
+                    
+                    // * wPrev;
 
                     sumWIllumination += w;
                     sumIllumination += illuminationP.r * w;

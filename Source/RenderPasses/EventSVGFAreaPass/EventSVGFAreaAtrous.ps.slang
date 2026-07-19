@@ -27,7 +27,7 @@
  **************************************************************************/
 import Utils.Math.MathHelpers;
 import Utils.Color.ColorHelpers;
-import EventSVGFCommon;
+import EventSVGFAreaCommon;
 
 cbuffer PerImageCB
 {
@@ -85,11 +85,18 @@ float4 main(FullScreenPassVsOut vsOut) : SV_TARGET0
     // constant samplers to prevent the compiler from generating code which
     // fetches the sampler descriptor from memory for each texture access
     const float4 illuminationCenter = gIllumination.Load(int3(ipos, 0));
+    // return illuminationCenter;
     const float lIlluminationCenter = illuminationCenter.r;
     const float lDiffIlluminationCenter = illuminationCenter.g;
     
+    //luminance(illuminationCenter.rgb);
+
+    //const float4 illuminationCenterPrev = gPrevIllumination.Load(int3(ipos, 0));
+    //const float lIlluminationCenterPrev = luminance(illuminationCenterPrev.rgb);
+
     // variance, filtered using 3x3 gaussin blur
     const float var = computeVarianceCenter(ipos);
+    // const float varPrev = computeVarianceCenterPrev(ipos);
 
     // number of temporally integrated pixels
     const float historyLength = gHistoryLength[ipos].x;
@@ -138,13 +145,16 @@ float4 main(FullScreenPassVsOut vsOut) : SV_TARGET0
                 const float4 illuminationP = gIllumination.Load(int3(p, 0));
                 const float lIlluminationP = illuminationP.r;
                 const float lDiffIlluminationP = illuminationP.g;
+                //luminance(illuminationP.rgb);
                 const float zP = gLinearZAndNormal[p].x;
                 const float3 nP = oct_to_ndir_snorm(gLinearZAndNormal[p].zw);
                 
+                //const float4 illuminationPPrev = gPrevIllumination.Load(int3(p, 0));
+                //const float lIlluminationPPrev = luminance(illuminationPPrev.rgb);
                 const float zPPrev = gPrevLinearZAndNormal[p].x;
                 const float3 nPPrev = oct_to_ndir_snorm(gPrevLinearZAndNormal[p].zw);
 
-                // compute the edge-stopping functions (Curr)
+                // compute the edge-stopping functions
                 const float wCurr = computeWeight(
                     zCenter.x,
                     zP,
@@ -157,7 +167,19 @@ float4 main(FullScreenPassVsOut vsOut) : SV_TARGET0
                     phiLIllumination
                 );
 
-                // compute the edge-stopping functions (Prev)
+                const float wCurr2 = computeWeight(
+                    zCenter.x,
+                    zP,
+                    phiDepth * length(float2(xx, yy)),
+                    nCenter,
+                    nP,
+                    gPhiNormal,
+                    lIlluminationCenter,
+                    lIlluminationP,
+                    phiLIllumination
+                );
+
+                // compute the edge-stopping functions
                 float wPrev = computeWeight(
                     zCenterPrev.x,
                     zPPrev,
@@ -169,14 +191,14 @@ float4 main(FullScreenPassVsOut vsOut) : SV_TARGET0
                     lDiffIlluminationP,
                     phiLIllumination * 0.5
                 );
-                
-                // disable wPrev if required
+
                 if(gUseMotionVectorAlignDifference || !gUseDifferenceAwareFiltering){
                     wPrev = 1.0;
                 }
 
                 const float wIllumination = wCurr * kernel;
-                const float wDiffIllumination = wCurr * wPrev * kernel;
+                const float wDiffIllumination = wCurr * wPrev * kernel;//wCurr * wPrev * kernel;
+                // const float wDiffIllumination = wCurr * kernel;
 
                 // alpha channel contains the variance, therefore the weights need to be squared, see paper for the formula
                 sumWIllumination += wIllumination;
@@ -192,8 +214,6 @@ float4 main(FullScreenPassVsOut vsOut) : SV_TARGET0
     filteredIllumination.r = sumIllumination.r / sumWIllumination;
     filteredIllumination.g = sumIllumination.g / sumWDiffIllumination;
     filteredIllumination.a = sumIllumination.a / (sumWIllumination * sumWIllumination);
-
-    // TODO : do we need to also consider difference-variance?
     // filteredIllumination.b = sumIllumination.b / (sumWDiffIllumination * sumWDiffIllumination);
 
     return filteredIllumination;

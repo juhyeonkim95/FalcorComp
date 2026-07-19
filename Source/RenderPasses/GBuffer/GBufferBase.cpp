@@ -55,6 +55,8 @@ const char kOutputSize[] = "outputSize";
 const char kFixedOutputSize[] = "fixedOutputSize";
 const char kSamplePattern[] = "samplePattern";
 const char kSampleCount[] = "sampleCount";
+const char kSampleOffset[] = "sampleOffset";
+const char kUseCurrentJitter[] = "useCurrentJitter";
 const char kUseAlphaTest[] = "useAlphaTest";
 const char kDisableAlphaTest[] = "disableAlphaTest"; ///< Deprecated for "useAlphaTest".
 const char kAdjustShadingNormals[] = "adjustShadingNormals";
@@ -74,8 +76,12 @@ void GBufferBase::parseProperties(const Properties& props)
             mSamplePattern = value;
         else if (key == kSampleCount)
             mSampleCount = value;
+        else if (key == kSampleOffset)
+            mSampleOffset = value;
         else if (key == kUseAlphaTest)
             mUseAlphaTest = value;
+        else if (key == kUseCurrentJitter)
+            mUseCurrentJitter = value;
         else if (key == kAdjustShadingNormals)
             mAdjustShadingNormals = value;
         else if (key == kForceCullMode)
@@ -203,7 +209,7 @@ void GBufferBase::setScene(RenderContext* pRenderContext, const ref<Scene>& pSce
 }
 
 
-static ref<CPUSampleGenerator> createSamplePattern(GBufferBase::SamplePattern type, uint32_t sampleCount)
+static ref<CPUSampleGenerator> createSamplePattern(GBufferBase::SamplePattern type, uint32_t sampleCount, uint32_t sampleOffset)
 {
     switch (type)
     {
@@ -212,7 +218,7 @@ static ref<CPUSampleGenerator> createSamplePattern(GBufferBase::SamplePattern ty
     case GBufferBase::SamplePattern::DirectX:
         return DxSamplePattern::create(sampleCount);
     case GBufferBase::SamplePattern::Halton:
-        return HaltonSamplePattern::create(sampleCount);
+        return HaltonSamplePattern::create(sampleCount, sampleOffset);
     case GBufferBase::SamplePattern::Stratified:
         return StratifiedSamplePattern::create(sampleCount);
     default:
@@ -228,13 +234,15 @@ void GBufferBase::updateFrameDim(const uint2 frameDim)
     mInvFrameDim = 1.f / float2(frameDim);
 
     // Update sample generator for camera jitter.
-    if (mpScene)
+    if (mpScene){
         mpScene->getCamera()->setPatternGenerator(mpSampleGenerator, mInvFrameDim);
+        // printf("useCurrentJitter: %d\n", mUseCurrentJitter ? 1 : 0);
+    }
 }
 
 void GBufferBase::updateSamplePattern()
 {
-    mpSampleGenerator = createSamplePattern(mSamplePattern, mSampleCount);
+    mpSampleGenerator = createSamplePattern(mSamplePattern, mSampleCount, mSampleOffset);
     if (mpSampleGenerator)
         mSampleCount = mpSampleGenerator->getSampleCount();
 }

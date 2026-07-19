@@ -96,8 +96,12 @@ protected:
     SamplePattern mSamplePattern = SamplePattern::Center;
     /// Sample count for camera jitter.
     uint32_t mSampleCount = 16;
+    /// Offset
+    uint32_t mSampleOffset = 0;
     /// Enable alpha test.
     bool mUseAlphaTest = true;
+    /// use current Jitter ? (for Event SVGF)
+    bool mUseCurrentJitter = true;
     /// Adjust shading normals.
     bool mAdjustShadingNormals = true;
     /// Force cull mode for all geometry, otherwise set it based on the scene.

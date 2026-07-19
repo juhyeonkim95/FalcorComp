@@ -325,6 +325,7 @@ DefineList GBufferRT::getShaderDefines(const RenderData& renderData) const
 {
     DefineList defines;
     defines.add("COMPUTE_DEPTH_OF_FIELD", mComputeDOF ? "1" : "0");
+    // defines.add("USE_CURRENT_JITTER", mUseCurrentJitter ? "1" : "0");
     defines.add("USE_ALPHA_TEST", mUseAlphaTest ? "1" : "0");
     defines.add("LOD_MODE", std::to_string((uint32_t)mLODMode));
     defines.add("ADJUST_SHADING_NORMALS", mAdjustShadingNormals ? "1" : "0");
@@ -351,6 +352,7 @@ void GBufferRT::bindShaderData(const ShaderVar& var, const RenderData& renderDat
     var["gGBufferRT"]["invFrameDim"] = mInvFrameDim;
     var["gGBufferRT"]["frameCount"] = mFrameCount;
     var["gGBufferRT"]["screenSpacePixelSpreadAngle"] = mpScene->getCamera()->computeScreenSpacePixelSpreadAngle(mFrameDim.y);
+    var["gGBufferRT"]["kUseCurrentJitter"] = mUseCurrentJitter;
 
     // Bind output channels as UAV buffers.
     auto bind = [&](const ChannelDesc& channel)

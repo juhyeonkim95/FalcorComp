@@ -69,6 +69,7 @@ RWTexture2D<float> gMask;
 
 struct GBufferRT
 {
+    // static const bool kUseCurrentJitter = USE_CURRENT_JITTER;
     static const bool kComputeDepthOfField = COMPUTE_DEPTH_OF_FIELD;
     static const bool kUseAlphaTest = USE_ALPHA_TEST;
     static const TexLODMode kLODMode = TexLODMode(LOD_MODE);
@@ -80,6 +81,8 @@ struct GBufferRT
     float2 invFrameDim;
     uint frameCount;
     float screenSpacePixelSpreadAngle;
+    bool kUseCurrentJitter; // = USE_CURRENT_JITTER;
+
 
     /**
      * Ray differentials for primary hit. Code from RayTracingGems, Chapter 20.
@@ -179,7 +182,11 @@ struct GBufferRT
         }
         else
         {
-            return gScene.camera.computeRayPinhole(pixel, frameDim);
+            // return gScene.camera.computeRayPinhole(pixel, frameDim);
+            if(kUseCurrentJitter)
+                return gScene.camera.computeRayPinhole(pixel, frameDim);
+            else
+                return gScene.camera.computeRayPinholePrevJitter(pixel, frameDim);
         }
     }
 

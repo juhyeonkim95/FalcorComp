@@ -29,6 +29,7 @@ import RenderPasses.Shared.Denoising.NRDData;
 import ColorType;
 import GuideData;
 import Params;
+import Utils.Color.ColorHelpers;
 
 /** Compute shader implementing a sample resolve pass.
 
@@ -57,6 +58,8 @@ struct ResolvePass
 
     RWTexture2D<float4> outputColor;                        ///< Output resolved color.
     RWTexture2D<float4> outputAlbedo;                       ///< Output resolved albedo. Only valid if kOutputGuideData == true.
+    RWTexture2D<float4> outputIllumination;                 ///< Output demodulated illumination. Only valid if kOutputGuideData == true.
+    
     RWTexture2D<float4> outputSpecularAlbedo;               ///< Output resolved specular albedo. Only valid if kOutputGuideData == true.
     RWTexture2D<float4> outputIndirectAlbedo;               ///< Output resolved indirect albedo. Only valid if kOutputGuideData == true.
     RWTexture2D<float4> outputGuideNormal;                  ///< Output resolved guide normal. Only valid if kOutputGuideData == true.
@@ -126,6 +129,11 @@ struct ResolvePass
             outputIndirectAlbedo[pixel] = float4(invSpp * indirectAlbedo, 0.f);
             outputGuideNormal[pixel] = float4(invSpp * guideNormal, 0.f);
             outputReflectionPosW[pixel] = float4(invSpp * reflectionPosW, 0.f);
+            
+            float l_albedo = luminance(outputAlbedo[pixel].rgb);
+            float l_color = luminance(outputColor[pixel].rgb);
+            float illumination = l_albedo > 0 ? l_color / l_albedo : 0.0;
+            outputIllumination[pixel] = float4(illumination, illumination, illumination, 1.f);
         }
 
         // NRD data is always written per-sample and needs to be resolved.

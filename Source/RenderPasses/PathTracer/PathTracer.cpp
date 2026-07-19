@@ -54,6 +54,7 @@ namespace
 
     const std::string kOutputColor = "color";
     const std::string kOutputAlbedo = "albedo";
+    const std::string kOutputIllumination = "illumination";
     const std::string kOutputSpecularAlbedo = "specularAlbedo";
     const std::string kOutputIndirectAlbedo = "indirectAlbedo";
     const std::string kOutputGuideNormal = "guideNormal";
@@ -83,6 +84,7 @@ namespace
     {
         { kOutputColor,                                     "",     "Output color (linear)", true /* optional */, ResourceFormat::RGBA32Float },
         { kOutputAlbedo,                                    "",     "Output albedo (linear)", true /* optional */, ResourceFormat::RGBA8Unorm },
+        { kOutputIllumination,                              "",     "Output illumination (demodulated)", true /* optional */, ResourceFormat::RGBA32Float },
         { kOutputSpecularAlbedo,                            "",     "Output specular albedo (linear)", true /* optional */, ResourceFormat::RGBA8Unorm },
         { kOutputIndirectAlbedo,                            "",     "Output indirect albedo (linear)", true /* optional */, ResourceFormat::RGBA8Unorm },
         { kOutputGuideNormal,                               "",     "Output guide normal (linear)", true /* optional */, ResourceFormat::RGBA16Float },
@@ -1209,7 +1211,7 @@ bool PathTracer::beginFrame(RenderContext* pRenderContext, const RenderData& ren
     mFixedSampleCount = renderData[kInputSampleCount] == nullptr;
 
     // Check if guide data should be generated.
-    mOutputGuideData = renderData[kOutputAlbedo] != nullptr || renderData[kOutputSpecularAlbedo] != nullptr
+    mOutputGuideData = renderData[kOutputAlbedo] != nullptr || renderData[kOutputIllumination] != nullptr ||renderData[kOutputSpecularAlbedo] != nullptr
         || renderData[kOutputIndirectAlbedo] != nullptr || renderData[kOutputGuideNormal] != nullptr
         || renderData[kOutputReflectionPosW] != nullptr;
 
@@ -1367,6 +1369,7 @@ void PathTracer::resolvePass(RenderContext* pRenderContext, const RenderData& re
     var["sampleCount"] = renderData.getTexture(kInputSampleCount); // Can be nullptr
     var["outputColor"] = renderData.getTexture(kOutputColor);
     var["outputAlbedo"] = renderData.getTexture(kOutputAlbedo);
+    var["outputIllumination"] = renderData.getTexture(kOutputIllumination);
     var["outputSpecularAlbedo"] = renderData.getTexture(kOutputSpecularAlbedo);
     var["outputIndirectAlbedo"] = renderData.getTexture(kOutputIndirectAlbedo);
     var["outputGuideNormal"] = renderData.getTexture(kOutputGuideNormal);

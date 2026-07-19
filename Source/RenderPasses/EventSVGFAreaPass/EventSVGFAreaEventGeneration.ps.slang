@@ -1,6 +1,6 @@
 import Utils.Math.MathHelpers;
 import Utils.Color.ColorHelpers;
-import EventSVGFCommon;
+import EventSVGFAreaCommon;
 
 cbuffer PerImageCB
 {

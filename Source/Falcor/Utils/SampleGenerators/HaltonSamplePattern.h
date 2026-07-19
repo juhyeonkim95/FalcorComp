@@ -40,9 +40,9 @@ public:
      * @param[in] sampleCount The pattern repeats every 'sampleCount' samples. Zero means no repeating.
      * @return New object, or throws an exception on error.
      */
-    static ref<HaltonSamplePattern> create(uint32_t sampleCount = 0) { return make_ref<HaltonSamplePattern>(sampleCount); }
+    static ref<HaltonSamplePattern> create(uint32_t sampleCount = 0, uint32_t sampleOffset = 0) { return make_ref<HaltonSamplePattern>(sampleCount, sampleOffset); }
 
-    HaltonSamplePattern(uint32_t sampleCount);
+    HaltonSamplePattern(uint32_t sampleCount, uint32_t sampleOffset);
     virtual ~HaltonSamplePattern() = default;
 
     virtual uint32_t getSampleCount() const override { return mSampleCount; }
@@ -54,5 +54,6 @@ public:
 protected:
     uint32_t mCurSample = 0;
     uint32_t mSampleCount;
+    uint32_t mSampleOffset;
 };
 } // namespace Falcor

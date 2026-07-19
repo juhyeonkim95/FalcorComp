@@ -27,7 +27,7 @@
  **************************************************************************/
 import Utils.Math.MathHelpers;
 import Utils.Color.ColorHelpers;
-import EventSVGFCommon;
+import EventSVGFAreaCommon;
 
 cbuffer PerImageCB
 {
@@ -191,8 +191,8 @@ float4 main(FullScreenPassVsOut vsOut) : SV_TARGET0
     float3 normalPrevReproj = oct_to_ndir_snorm(gPrevLinearZAndNormal[iposPrev].zw);
     bool isReprojIposValid = isReprjValid(ipos, depthCurr.x, depthPrevReproj.x, depthCurr.y, normalCurr, normalPrevReproj, normalFwidth);
     
-    float A_curr = luminance(gAlbedo[ipos].rgb);
-    float A_prev = luminance(gPrevAlbedo[ipos].rgb);
+    float A_curr = gAlbedo[ipos].r; // luminance(gAlbedo[ipos].rgb);
+    float A_prev = gPrevAlbedo[ipos].r; //luminance(gPrevAlbedo[ipos].rgb);
     float A_prev_reproj = luminance(gPrevAlbedo[iposPrev].rgb);
     float E_curr = luminance(gEmission[ipos].rgb);
     float E_prev = luminance(gPrevEmission[ipos].rgb);

@@ -25,7 +25,7 @@
  # (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
  # OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  **************************************************************************/
-#include "EventSVGFPass.h"
+#include "EventSVGFAreaPass.h"
 
 /*
 TODO:
@@ -38,11 +38,11 @@ TODO:
 namespace
 {
 // Shader source files
-const char kPackLinearZAndNormalShader[] = "RenderPasses/EventSVGFPass/EventSVGFPackLinearZAndNormal.ps.slang";
-const char kReprojectShader[] = "RenderPasses/EventSVGFPass/EventSVGFReproject.ps.slang";
-const char kAtrousShader[] = "RenderPasses/EventSVGFPass/EventSVGFAtrous.ps.slang";
-const char kFilterMomentShader[] = "RenderPasses/EventSVGFPass/EventSVGFFilterMoments.ps.slang";
-const char kFinalModulateShader[] = "RenderPasses/EventSVGFPass/EventSVGFFinalModulate.ps.slang";
+const char kPackLinearZAndNormalShader[] = "RenderPasses/EventSVGFAreaPass/EventSVGFAreaPackLinearZAndNormal.ps.slang";
+const char kReprojectShader[] = "RenderPasses/EventSVGFAreaPass/EventSVGFAreaReproject.ps.slang";
+const char kAtrousShader[] = "RenderPasses/EventSVGFAreaPass/EventSVGFAreaAtrous.ps.slang";
+const char kFilterMomentShader[] = "RenderPasses/EventSVGFAreaPass/EventSVGFAreaFilterMoments.ps.slang";
+const char kFinalModulateShader[] = "RenderPasses/EventSVGFAreaPass/EventSVGFAreaFinalModulate.ps.slang";
 
 // Names of valid entries in the parameter dictionary.
 const char kEnabled[] = "Enabled";
@@ -63,9 +63,11 @@ const char kUseTemporalAccumulation[] = "useTemporalAccumulation";
 
 // Input buffer names
 const char kInputBufferAlbedo[] = "Albedo";
+const char kInputBufferAlbedo2[] = "Albedo2";
 const char kInputBufferColor[] = "Color";
 const char kInputBufferColor2[] = "Color2";
 const char kInputBufferEmission[] = "Emission";
+const char kInputBufferEmission2[] = "Emission2";
 const char kInputBufferWorldPosition[] = "WorldPosition";
 const char kInputBufferWorldNormal[] = "WorldNormal";
 const char kInputBufferPosNormalFwidth[] = "PositionNormalFwidth";
@@ -76,6 +78,7 @@ const char kInputBufferMotionVector[] = "MotionVec";
 const char kInternalBufferPreviousLinearZAndNormal[] = "Previous Linear Z and Packed Normal";
 const char kInternalBufferPreviousPreviousLinearZAndNormal[] = "Previous Previous Linear Z and Packed Normal";
 const char kInternalBufferPreviousAlbedo[] = "Previous Albedo";
+// const char kInternalBufferPreviousAccumulatedAlbedo[] = "Previous Accumulated Albedo";
 const char kInternalBufferPreviousEmission[] = "Previous Emission";
 const char kInternalBufferPreviousLighting[] = "Previous Lighting";
 const char kInternalBufferPreviousMoments[] = "Previous Moments";
@@ -87,10 +90,10 @@ const char kOutputBufferFilteredImage[] = "Filtered image";
 
 extern "C" FALCOR_API_EXPORT void registerPlugin(Falcor::PluginRegistry& registry)
 {
-    registry.registerClass<RenderPass, EventSVGFPass>();
+    registry.registerClass<RenderPass, EventSVGFAreaPass>();
 }
 
-EventSVGFPass::EventSVGFPass(ref<Device> pDevice, const Properties& props) : RenderPass(pDevice)
+EventSVGFAreaPass::EventSVGFAreaPass(ref<Device> pDevice, const Properties& props) : RenderPass(pDevice)
 {
     for (const auto& [key, value] : props)
     {
@@ -125,7 +128,7 @@ EventSVGFPass::EventSVGFPass(ref<Device> pDevice, const Properties& props) : Ren
         else if (key == kUseTemporalAccumulation)
             mUseTemporalAccumulation = value;
         else
-            logWarning("Unknown property '{}' in EventSVGFPass properties.", key);
+            logWarning("Unknown property '{}' in EventSVGFAreaPass properties.", key);
     }
 
     mpPackLinearZAndNormal = FullScreenPass::create(mpDevice, kPackLinearZAndNormalShader);
@@ -136,7 +139,7 @@ EventSVGFPass::EventSVGFPass(ref<Device> pDevice, const Properties& props) : Ren
     FALCOR_ASSERT(mpPackLinearZAndNormal && mpReprojection && mpAtrous && mpFilterMoments && mpFinalModulate);
 }
 
-Properties EventSVGFPass::getProperties() const
+Properties EventSVGFAreaPass::getProperties() const
 {
     Properties props;
     props[kEnabled] = mFilterEnabled;
@@ -162,14 +165,16 @@ a-trous:
   - returns: final color
 */
 
-RenderPassReflection EventSVGFPass::reflect(const CompileData& compileData)
+RenderPassReflection EventSVGFAreaPass::reflect(const CompileData& compileData)
 {
     RenderPassReflection reflector;
 
     reflector.addInput(kInputBufferAlbedo, "Albedo");
+    reflector.addInput(kInputBufferAlbedo2, "Albedo2");
     reflector.addInput(kInputBufferColor, "Color");
     reflector.addInput(kInputBufferColor2, "Color2");
     reflector.addInput(kInputBufferEmission, "Emission");
+    reflector.addInput(kInputBufferEmission2, "Emission2");
     reflector.addInput(kInputBufferWorldPosition, "World Position");
     reflector.addInput(kInputBufferWorldNormal, "World Normal");
     reflector.addInput(kInputBufferPosNormalFwidth, "PositionNormalFwidth");
@@ -191,6 +196,9 @@ RenderPassReflection EventSVGFPass::reflect(const CompileData& compileData)
     reflector.addInternal(kInternalBufferPreviousAlbedo, "Previous Albedo")
         .format(ResourceFormat::RGBA32Float)
         .bindFlags(ResourceBindFlags::RenderTarget | ResourceBindFlags::ShaderResource);
+    // reflector.addInternal(kInternalBufferPreviousAccumulatedAlbedo, "Previous Accumulated Albedo")
+    //     .format(ResourceFormat::RG32Float)
+    //     .bindFlags(ResourceBindFlags::RenderTarget | ResourceBindFlags::ShaderResource);
     reflector.addInternal(kInternalBufferPreviousMotion, "Previous Motion")
         .format(ResourceFormat::RG32Float)
         .bindFlags(ResourceBindFlags::RenderTarget | ResourceBindFlags::ShaderResource);
@@ -203,18 +211,20 @@ RenderPassReflection EventSVGFPass::reflect(const CompileData& compileData)
     return reflector;
 }
 
-void EventSVGFPass::compile(RenderContext* pRenderContext, const CompileData& compileData)
+void EventSVGFAreaPass::compile(RenderContext* pRenderContext, const CompileData& compileData)
 {
     allocateFbos(compileData.defaultTexDims, pRenderContext);
     mBuffersNeedClear = true;
 }
 
-void EventSVGFPass::execute(RenderContext* pRenderContext, const RenderData& renderData)
+void EventSVGFAreaPass::execute(RenderContext* pRenderContext, const RenderData& renderData)
 {
     ref<Texture> pAlbedoTexture = renderData.getTexture(kInputBufferAlbedo);
+    ref<Texture> pAlbedo2Texture = renderData.getTexture(kInputBufferAlbedo2);
     ref<Texture> pColorTexture = renderData.getTexture(kInputBufferColor);
     ref<Texture> pColor2Texture = renderData.getTexture(kInputBufferColor2);
     ref<Texture> pEmissionTexture = renderData.getTexture(kInputBufferEmission);
+    ref<Texture> pEmission2Texture = renderData.getTexture(kInputBufferEmission2);
     ref<Texture> pWorldPositionTexture = renderData.getTexture(kInputBufferWorldPosition);
     ref<Texture> pWorldNormalTexture = renderData.getTexture(kInputBufferWorldNormal);
     ref<Texture> pPosNormalFwidthTexture = renderData.getTexture(kInputBufferPosNormalFwidth);
@@ -245,6 +255,7 @@ void EventSVGFPass::execute(RenderContext* pRenderContext, const RenderData& ren
         // Stores the result as well as initial moments and an updated
         // per-pixel history length in mpCurReprojFbo.
         ref<Texture> pPrevAlbedoTexture = renderData.getTexture(kInternalBufferPreviousAlbedo);
+        // ref<Texture> pPrevAccumulatedAlbedo = renderData.getTexture(kInternalBufferPreviousAccumulatedAlbedo);
         ref<Texture> pPrevMotionTexture = renderData.getTexture(kInternalBufferPreviousMotion);
         ref<Texture> pPrevEmissionTexture = renderData.getTexture(kInternalBufferPreviousEmission);
         ref<Texture> pPrevLinearZAndNormalTexture = renderData.getTexture(kInternalBufferPreviousLinearZAndNormal);
@@ -253,10 +264,12 @@ void EventSVGFPass::execute(RenderContext* pRenderContext, const RenderData& ren
         computeReprojection(
             pRenderContext,
             pAlbedoTexture,
+            pAlbedo2Texture,
             pPrevAlbedoTexture,
             pColorTexture,
             pColor2Texture,
             pEmissionTexture,
+            pEmission2Texture,
             pPrevEmissionTexture,
             pMotionVectorTexture,
             pPrevMotionTexture,
@@ -280,9 +293,12 @@ void EventSVGFPass::execute(RenderContext* pRenderContext, const RenderData& ren
 
         // Compute albedo * filtered illumination and add emission back in.
         auto perImageCB = mpFinalModulate->getRootVar()["PerImageCB"];
-        perImageCB["gAlbedo"] = pAlbedoTexture;
+         perImageCB["gAlbedo"] = mpCurReprojFbo->getColorTexture(4);
+         perImageCB["gPrevAlbedo"] = mpPrevReprojFbo->getColorTexture(4);
+        // perImageCB["gAlbedo"] = pAlbedoTexture;
+        // perImageCB["gPrevAlbedo"] = pPrevAlbedoTexture;
+
         perImageCB["gEmission"] = pEmissionTexture;
-        perImageCB["gPrevAlbedo"] = pPrevAlbedoTexture;
         perImageCB["gPrevEmission"] = pPrevEmissionTexture;
         perImageCB["gIllumination"] = mpPingPongFbo[0]->getColorTexture(0);
         perImageCB["gPrevIllumination"] = pPrevLightingTexture;
@@ -307,8 +323,8 @@ void EventSVGFPass::execute(RenderContext* pRenderContext, const RenderData& ren
         std::swap(mpCurReprojFbo, mpPrevReprojFbo);
         pRenderContext->blit(pPrevLinearZAndNormalTexture->getSRV(), pPrevPrevLinearZAndNormalTexture->getRTV());
         pRenderContext->blit(mpLinearZAndNormalFbo->getColorTexture(0)->getSRV(), pPrevLinearZAndNormalTexture->getRTV());
-        pRenderContext->blit(pAlbedoTexture->getSRV(), pPrevAlbedoTexture->getRTV());
-        pRenderContext->blit(pEmissionTexture->getSRV(), pPrevEmissionTexture->getRTV());
+        pRenderContext->blit(pAlbedo2Texture->getSRV(), pPrevAlbedoTexture->getRTV());
+        pRenderContext->blit(pEmission2Texture->getSRV(), pPrevEmissionTexture->getRTV());
         pRenderContext->blit(pMotionVectorTexture->getSRV(), pPrevMotionTexture->getRTV());
         pRenderContext->blit(mpPingPongFbo[0]->getColorTexture(0)->getSRV(), pPrevLightingTexture->getRTV());
     }
@@ -322,7 +338,7 @@ void EventSVGFPass::execute(RenderContext* pRenderContext, const RenderData& ren
     mFrameCount += 1;
 }
 
-void EventSVGFPass::allocateFbos(uint2 dim, RenderContext* pRenderContext)
+void EventSVGFAreaPass::allocateFbos(uint2 dim, RenderContext* pRenderContext)
 {
     {
         // Screen-size FBOs with 3 MRTs: one that is RGBA32F, one that is
@@ -333,6 +349,7 @@ void EventSVGFPass::allocateFbos(uint2 dim, RenderContext* pRenderContext)
         desc.setColorTarget(1, Falcor::ResourceFormat::RG32Float);   // moments
         desc.setColorTarget(2, Falcor::ResourceFormat::RG16Float);    // history length
         desc.setColorTarget(3, Falcor::ResourceFormat::RGBA32Float); // prev illumination
+        desc.setColorTarget(4, Falcor::ResourceFormat::RG32Float);   // Albedo 
         mpCurReprojFbo = Fbo::create2D(mpDevice, dim.x, dim.y, desc);
         mpPrevReprojFbo = Fbo::create2D(mpDevice, dim.x, dim.y, desc);
     }
@@ -360,7 +377,7 @@ void EventSVGFPass::allocateFbos(uint2 dim, RenderContext* pRenderContext)
     mBuffersNeedClear = true;
 }
 
-void EventSVGFPass::clearBuffers(RenderContext* pRenderContext, const RenderData& renderData)
+void EventSVGFAreaPass::clearBuffers(RenderContext* pRenderContext, const RenderData& renderData)
 {
     pRenderContext->clearFbo(mpPingPongFbo[0].get(), float4(0), 1.0f, 0, FboAttachmentType::All);
     pRenderContext->clearFbo(mpPingPongFbo[1].get(), float4(0), 1.0f, 0, FboAttachmentType::All);
@@ -385,7 +402,7 @@ void EventSVGFPass::clearBuffers(RenderContext* pRenderContext, const RenderData
 // (It's slightly wasteful to copy linear z here, but having this all
 // together in a single buffer is a small simplification, since we make a
 // copy of it to refer to in the next frame.)
-void EventSVGFPass::computeLinearZAndNormal(RenderContext* pRenderContext, ref<Texture> pLinearZTexture, ref<Texture> pWorldNormalTexture)
+void EventSVGFAreaPass::computeLinearZAndNormal(RenderContext* pRenderContext, ref<Texture> pLinearZTexture, ref<Texture> pWorldNormalTexture)
 {
     auto perImageCB = mpPackLinearZAndNormal->getRootVar()["PerImageCB"];
     perImageCB["gLinearZ"] = pLinearZTexture;
@@ -394,13 +411,16 @@ void EventSVGFPass::computeLinearZAndNormal(RenderContext* pRenderContext, ref<T
     mpPackLinearZAndNormal->execute(pRenderContext, mpLinearZAndNormalFbo);
 }
 
-void EventSVGFPass::computeReprojection(
+void EventSVGFAreaPass::computeReprojection(
     RenderContext* pRenderContext,
     ref<Texture> pAlbedoTexture,
+    ref<Texture> pAlbedo2Texture,
+    // ref<Texture> pPrevAccumulatedAlbedo,
     ref<Texture> pPrevAlbedoTexture,
     ref<Texture> pColorTexture,
     ref<Texture> pColor2Texture,
     ref<Texture> pEmissionTexture,
+    ref<Texture> pEmission2Texture,
     ref<Texture> pPrevEmissionTexture,
     ref<Texture> pMotionVectorTexture,
     ref<Texture> pPrevMotionVectorTexture,
@@ -418,10 +438,13 @@ void EventSVGFPass::computeReprojection(
     perImageCB["gColor2"] = pColor2Texture;
     perImageCB["gPrevColor2"] = mpPrevColor2Fbo->getColorTexture(0);
     perImageCB["gEmission"] = pEmissionTexture;
+    perImageCB["gEmission2"] = pEmission2Texture;
     perImageCB["gPrevEmission"] = pPrevEmissionTexture;
     perImageCB["gAlbedo"] = pAlbedoTexture;
+    perImageCB["gAlbedo2"] = pAlbedo2Texture;
     perImageCB["gPrevAlbedo"] = pPrevAlbedoTexture;
     perImageCB["gPositionNormalFwidth"] = pPositionNormalFwidthTexture;
+    perImageCB["gPrevAccumulatedAlbedo"] = mpPrevReprojFbo->getColorTexture(4);
     perImageCB["gPrevIllum"] = mpFilteredPastFbo->getColorTexture(0);
     perImageCB["gPrevReprojIllum"] = mpPrevReprojFbo->getColorTexture(3);
     perImageCB["gPrevPrevIllum"] = mpFilteredPastPastFbo->getColorTexture(0);
@@ -431,7 +454,6 @@ void EventSVGFPass::computeReprojection(
     perImageCB["gPrevPrevLinearZAndNormal"] = pPrevPrevLinearZTexture;
     perImageCB["gPrevHistoryLength"] = mpPrevReprojFbo->getColorTexture(2);
 
-    
     // Setup variables for our reprojection pass
     perImageCB["gAlpha"] = mAlpha;
     perImageCB["gMomentsAlpha"] = mMomentsAlpha;
@@ -443,7 +465,7 @@ void EventSVGFPass::computeReprojection(
     mpReprojection->execute(pRenderContext, mpCurReprojFbo);
 }
 
-void EventSVGFPass::computeFilteredMoments(RenderContext* pRenderContext, ref<Texture> pPrevLinearZAndNormalTexture)
+void EventSVGFAreaPass::computeFilteredMoments(RenderContext* pRenderContext, ref<Texture> pPrevLinearZAndNormalTexture)
 {
     auto perImageCB = mpFilterMoments->getRootVar()["PerImageCB"];
 
@@ -459,7 +481,7 @@ void EventSVGFPass::computeFilteredMoments(RenderContext* pRenderContext, ref<Te
     mpFilterMoments->execute(pRenderContext, mpPingPongFbo[0]);
 }
 
-void EventSVGFPass::computeAtrousDecomposition(RenderContext* pRenderContext,
+void EventSVGFAreaPass::computeAtrousDecomposition(RenderContext* pRenderContext,
      ref<Texture> pAlbedoTexture, ref<Texture> pPrevLinearZAndNormalTexture, 
      ref<Texture> pMotionVectorTexture
     )
@@ -503,10 +525,10 @@ void EventSVGFPass::computeAtrousDecomposition(RenderContext* pRenderContext,
     }
 }
 
-void EventSVGFPass::renderUI(Gui::Widgets& widget)
+void EventSVGFAreaPass::renderUI(Gui::Widgets& widget)
 {
     int dirty = 0;
-    dirty |= (int)widget.checkbox("Enable EventSVGF", mFilterEnabled);
+    dirty |= (int)widget.checkbox("Enable EventSVGFArea", mFilterEnabled);
 
     widget.text("");
     widget.text("Number of filter iterations.  Which");

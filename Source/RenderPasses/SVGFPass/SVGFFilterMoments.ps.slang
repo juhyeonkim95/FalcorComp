@@ -47,7 +47,7 @@ float4 main(FullScreenPassVsOut vsOut) : SV_TARGET0
 
     float h = gHistoryLength[ipos].x;
     int2 screenSize = getTextureDims(gHistoryLength, 0);
-
+    
     if (h < 4.0) // not enough temporal history available
     {
         float sumWIllumination = 0.0;
