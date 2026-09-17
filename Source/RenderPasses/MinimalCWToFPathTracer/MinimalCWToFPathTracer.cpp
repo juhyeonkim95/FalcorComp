@@ -111,6 +111,7 @@ const char kUseAlphaTest[] = "useAlphaTest";
 const char kUseEllipsoidalMIS[] = "useEllipsoidalMIS";
 const char kUseSingleChannel[] = "useSingleChannel";
 const char kIsLightSourceLaser[] = "isLightSourceLaser";
+const char kShiftmapMethod[] = "shiftmapMethod";
 const char kGaugeAxis[] = "gaugeAxis";
 const char kGaugeMode[] = "gaugeMode";
 const char kNewtonMaxIteration[] = "NewtonMaxIteration";
@@ -199,6 +200,8 @@ void MinimalCWToFPathTracer::parseProperties(const Properties& props)
             mUseSingleChannel = value;
         else if (key == kIsLightSourceLaser)
             mIsLightSourceLaser = value;
+        else if (key == kShiftmapMethod)
+            mShiftmapMethod = ShiftmapMethodTable[value];
         else if (key == kGaugeAxis)
             mGaugeAxis = value;
         else if (key == kGaugeMode)
@@ -276,6 +279,7 @@ DefineList MinimalCWToFPathTracer::getShaderDefines(const RenderData& renderData
     defines.add("ELLIPSOIDAL_CONNECTION", std::to_string((uint32_t)TimeGatedSamplingMethod::ELLIPSOIDAL));
     defines.add("USE_ELLIPSOIDAL_DIRECT_MIS", mUseEllipsoidalMIS ? "1" : "0");
     defines.add("TRIANGLE_APPROX", std::to_string((uint32_t)TimeGatedSamplingMethod::TRIANGLE_APPROX));
+    defines.add("SHIFT_MAPPING_METHOD", std::to_string((uint32_t)mShiftmapMethod));
 
     // For optional I/O resources, set 'is_valid_<name>' defines to inform the program of which ones it can access.
     // TODO: This should be moved to a more general mechanism using Slang.
@@ -330,7 +334,7 @@ void MinimalCWToFPathTracer::bindShaderData(const ShaderVar& var, const RenderDa
 
     var["Shiftmap_CB"]["gGaugeAxis"] = mGaugeAxis;
     var["Shiftmap_CB"]["gGaugeMode"] = uint(mGaugeMode);
-    // var["Shiftmap_CB"]["gShiftMappingMethod"] = uint(mShiftmapMethod);
+    var["Shiftmap_CB"]["gShiftMappingMethod"] = uint(mShiftmapMethod);
     var["Shiftmap_CB"]["gNewtonMaxIteration"] = mNewtonMaxIteration;
     var["Shiftmap_CB"]["gNewtonRelativeTolerance"] = mNewtonRelativeTolerance;
 

@@ -350,18 +350,15 @@ float4 tracePath(const uint2 pixel, const uint2 frameDim)
                     float tol = time_gate_window * 0.001;
 
                     ShiftMapDebugInfo debugInfo;
-                    // float2 a_const = float2(1.0, 0.0);
+                    float2 a_const = float2(1.0, 0.0);
                     
 
                     HitInfo hit_new = transient_shift_mapping(
-                        sd_prev, hit, sd2, dt, area_jacobian, debugInfo, tol
+                        sd_prev, hit, sd2, dt, a_const, area_jacobian, debugInfo, tol
                     );
 
-                    
-                    total_count += 1.0;
+
                     if(area_jacobian > 0.0){
-                        valid_count += 1.0;
-                        valid_iter += debugInfo.iters;
                         // load information at new point
                         VertexData v_new = gScene.getVertexData(hit_new.getTriangleHit());
                         ShadingData sd_new = loadShadingData(
@@ -380,7 +377,7 @@ float4 tracePath(const uint2 pixel, const uint2 frameDim)
                         float G1 = abs(dot(sd.getOrientedFaceNormal(), -dir_x_y)) / (l_x_y * l_x_y);
                         float G2 = abs(dot(sd_new.getOrientedFaceNormal(), -dir_x_y2)) / (l_x_y2 * l_x_y2);
                         
-                        float J_T = (G2 > 1e-9 && G1 > 1e-9) ? G2 / G1 * area_jacobian : 0.0;
+                        float J_T = (G2 > 1e-6 && G1 > 1e-6) ? G2 / G1 * area_jacobian : 0.0;
 
                         if(J_T > 0){
 
@@ -413,11 +410,14 @@ float4 tracePath(const uint2 pixel, const uint2 frameDim)
                             if(f1 >0 && f2 > 0){
                                 antithetic_ratio += f2 > f1 ? f1 / f2 : f2 / f1;
                             }
+                            
+                            valid_count += 1.0;
+                            valid_iter += debugInfo.iters;
                         }
-                        
                     } else {
                         result += throughput * bsdfSample.weight * evalDirectConnection(sd, ls, mi, pathLength + hitT * sd.IoR, sg);
                     }
+                    total_count += 1.0;
 
 
                     // final update throughput
@@ -454,7 +454,7 @@ float4 tracePath(const uint2 pixel, const uint2 frameDim)
             outColor += result;
             outAntitheticRatio += antithetic_ratio;
             // debug
-            // outColor = float3(valid_count, total_count, valid_iter);
+            outColor = float3(valid_count, total_count, valid_iter);
         }
         
         outColor /= samplesPerPixel;
@@ -466,11 +466,8 @@ float4 tracePath(const uint2 pixel, const uint2 frameDim)
         // Background pixel.
         outColor = kUseEnvBackground ? gScene.envMap.eval(primaryRayDir) : kDefaultBackgroundColor;
     }
-    
-    // debug
-    // return float4(outColor, outAntitheticRatio);
 
-    return float4(outColor, 1.0);
+    return float4(outColor, outAntitheticRatio);
 }
 
 

@@ -7,8 +7,10 @@ target_sources(MinimalCWToFPathTracer PRIVATE
     SurfaceOps/LocalTangentSurface.slang
     SurfaceOps/SurfaceOpsInterface.slang
     SurfaceOps/BarycentricTriSurface.slang
+    SurfaceOps/RayTraceHemisphere.slang
     NewtonSolver.slang
     GeometricShiftmapping.slang
+    LoadShadingData.slang
 )
 
 target_copy_shaders(MinimalCWToFPathTracer RenderPasses/MinimalCWToFPathTracer)

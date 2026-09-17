@@ -57,6 +57,7 @@ enum class ShiftmapMethod
     BARYCENTRIC = 2,
     RAY_TRACE_HEMISPHERE = 3,
     AREA_ADAPTIVE = 4,
+    RAY_TRACE_CHART = 5,
 };
 
 static const std::unordered_map<std::string, ShiftmapMethod> ShiftmapMethodTable = {
@@ -64,7 +65,8 @@ static const std::unordered_map<std::string, ShiftmapMethod> ShiftmapMethodTable
     {"local_tangent", ShiftmapMethod::LOCAL_TANGENT_SURFACE},
     {"barycentric", ShiftmapMethod::BARYCENTRIC},
     {"ray_trace", ShiftmapMethod::RAY_TRACE_HEMISPHERE},
-    {"area_adaptive", ShiftmapMethod::AREA_ADAPTIVE}
+    {"area_adaptive", ShiftmapMethod::AREA_ADAPTIVE},
+    {"ray_trace_chart", ShiftmapMethod::RAY_TRACE_CHART}
 };
 
 enum class GaugeMode

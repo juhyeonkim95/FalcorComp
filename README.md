@@ -1,7 +1,7 @@
 # FalcorComp
 
 <p align="center">
-  <img src="assets/logo.png" alt="FalcorComp Logo" width="320">
+  <img src="assets/logo.jpg" alt="FalcorComp Logo" width="320">
 </p>
 
 <p align="center">
@@ -23,13 +23,20 @@ FalcorComp currently includes implementations of the following renderers:
 - **"ToF ReSTIR: Time-of-Flight Rendering with Spatio-temporal Reservoir Resampling"**  
   **SIGGRAPH 2026 (ACM TOG)**  
   [[Project Page]](https://juhyeonkim95.github.io/project-pages/tof_restir/) | [[README]](README-ToFReSTIR.md)
+  
+  Efficient transient Time-of-Flight rendering using ReSTIR-based path reuse.
+
 
 - **"Difference-aware Filtering for Event Camera Simulation"**  
   **EGSR 2026 (Computer Graphics Forum)**  
   [[Project Page]](https://juhyeonkim95.github.io/project-pages/event_svgf/) | README (TBD)
 
+    Low-sample event camera rendering using correlated  sampling and difference-aware filtering.
+
 - **"Geometric Antithetic Sampling for Spatiotemporally Modulated Light"**  
   Project Page (TBD) | README (TBD)
+
+  Variance reduction for rendering spatiotemporally modulated light (CW-ToF, structured light) using geometric antithetic sampling.
 
 For implementation details, usage instructions, and examples, please refer to the corresponding project page or README for each renderer.
 
