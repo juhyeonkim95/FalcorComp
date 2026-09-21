@@ -131,22 +131,28 @@ float getMaxpathLength(float target_distance, bool use_rough = false)
  }
 
  
- float evalPdfPathLength(float distance, out float target_distance, bool use_rough = false)
+ // Density of samplePathLength(), including its finite support.
+ float evalPdfPathLength(float distance, float target_distance, bool use_rough = false)
  {
-	float target_time_gate_window = use_rough ? time_gate_window_rough : time_gate_window;
-	float v = (distance - target_distance) / (target_time_gate_window);
-	switch(time_gate_mode){
-		case TIME_GATE_BOX:{
-			return abs(v) < 0.5 ?  1.0 / (target_time_gate_window) : 0.0;
-		}
-	}
-	return 1.0 / (target_time_gate_window);
+    float width = use_rough ? time_gate_window_rough : time_gate_window;
+    if (!(width > 0.f)) return 0.f;
+    switch (time_gate_mode)
+    {
+        case TIME_GATE_BOX:
+            return abs(distance - target_distance) <= 0.5f * width ? 1.f / width : 0.f;
+        case TIME_GATE_TENT:
+            return tentPdfTime(distance, target_distance, 0.5f * width);
+    }
+    return 0.f; // No length sampler is implemented for the other gate modes.
  }
 
  void samplePathLength(float t, float u, out float tau, out float pdf, bool use_rough = false)
  {
 	float target_time_gate_window = use_rough ? time_gate_window_rough : time_gate_window;
 	float a = 0.5 * target_time_gate_window;
+	tau = t;
+	pdf = 0.f;
+	if (!(a > 0.f)) return;
 	switch(time_gate_mode){
 		case TIME_GATE_BOX:{
 			tau = t + (2 * u - 1.0) * a;

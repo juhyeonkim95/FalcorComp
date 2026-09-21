@@ -41,13 +41,13 @@ enum class TimeGatedSamplingMethod
 {
     DIRECT = 0,
     ELLIPSOIDAL = 1,
-    TRIANGLE_APPROX = 2,
+    ELLIPSOIDAL_DIRECT_MIS = 2,
 };
 
 static const std::unordered_map<std::string, TimeGatedSamplingMethod> SamplingMethodTable = {
     {"direct", TimeGatedSamplingMethod::DIRECT},
     {"ellipsoidal", TimeGatedSamplingMethod::ELLIPSOIDAL},
-    {"tri_approx", TimeGatedSamplingMethod::TRIANGLE_APPROX}
+    {"ellipsoidal_direct_mis", TimeGatedSamplingMethod::ELLIPSOIDAL_DIRECT_MIS}
 };
 
 enum class ShiftmapMethod
@@ -57,6 +57,7 @@ enum class ShiftmapMethod
     BARYCENTRIC = 2,
     RAY_TRACE_HEMISPHERE = 3,
     AREA_ADAPTIVE = 4,
+    RAY_TRACE_CHART = 5,
 };
 
 static const std::unordered_map<std::string, ShiftmapMethod> ShiftmapMethodTable = {
@@ -64,7 +65,8 @@ static const std::unordered_map<std::string, ShiftmapMethod> ShiftmapMethodTable
     {"local_tangent", ShiftmapMethod::LOCAL_TANGENT_SURFACE},
     {"barycentric", ShiftmapMethod::BARYCENTRIC},
     {"ray_trace", ShiftmapMethod::RAY_TRACE_HEMISPHERE},
-    {"area_adaptive", ShiftmapMethod::AREA_ADAPTIVE}
+    {"area_adaptive", ShiftmapMethod::AREA_ADAPTIVE},
+    {"ray_trace_chart", ShiftmapMethod::RAY_TRACE_CHART}
 };
 
 enum class GaugeMode
@@ -91,17 +93,17 @@ static const std::unordered_map<std::string, GaugeMode> GaugeModeTable = {
  *
  * Note that transmission and nested dielectrics are not yet supported.
  */
-class MinimalTimeGatedReSTIR : public RenderPass
+class TimeGatedReSTIRInline : public RenderPass
 {
 public:
-    FALCOR_PLUGIN_CLASS(MinimalTimeGatedReSTIR, "MinimalTimeGatedReSTIR", "Minimal path tracer.");
+    FALCOR_PLUGIN_CLASS(TimeGatedReSTIRInline, "TimeGatedReSTIRInline", "Minimal path tracer.");
 
-    static ref<MinimalTimeGatedReSTIR> create(ref<Device> pDevice, const Properties& props)
+    static ref<TimeGatedReSTIRInline> create(ref<Device> pDevice, const Properties& props)
     {
-        return make_ref<MinimalTimeGatedReSTIR>(pDevice, props);
+        return make_ref<TimeGatedReSTIRInline>(pDevice, props);
     }
 
-    MinimalTimeGatedReSTIR(ref<Device> pDevice, const Properties& props);
+    TimeGatedReSTIRInline(ref<Device> pDevice, const Properties& props);
 
     virtual Properties getProperties() const override;
     virtual RenderPassReflection reflect(const CompileData& compileData) override;
@@ -162,6 +164,7 @@ private:
     ShiftmapMethod mShiftmapMethod = ShiftmapMethod::NO;
     float2 mGaugeAxis = float2(1,0);
     GaugeMode mGaugeMode = GaugeMode::CONSTANT;
+    bool mDebugNewtonIterations = false;
     uint mNewtonMaxIteration = 5;
     float mNewtonRelativeTolerance = 0.01;
 
@@ -196,7 +199,6 @@ private:
 
     bool mLaserCollocated = false;
     bool mUseAlphaTest = false;
-    bool mUseEllipsoidalMIS = true;
     bool mUseSingleChannel = false;
     bool mUseTemporalReuse = true;
     

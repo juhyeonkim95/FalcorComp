@@ -72,6 +72,22 @@ inline bool fullCircleInside(float2 tri2[3], float r)
     return (d0 >= r - 1e-6) && (d1 >= r - 1e-6) && (d2 >= r - 1e-6);
 }
 
+// Coarea conversion: p_A / p_length = |grad_plane(length)| * p_arc_world.
+// sphereTangent is a unit tangent in sphere space, not world space.
+float ellipsoidAreaPdfFactor(Ellipsoid E, float3 p, float3 nTri, float3 sphereTangent, float pdfArc)
+{
+    float3 gradient = (p - E.p1) / max(length(p - E.p1), 1e-20)
+                    + (p - E.p2) / max(length(p - E.p2), 1e-20);
+    float gradPlane = length(gradient - nTri * dot(nTri, gradient));
+    float3 tangentW = E.axis0 * (E.extent.x * sphereTangent.x)
+                    + E.axis1 * (E.extent.y * sphereTangent.y)
+                    + E.axis2 * (E.extent.z * sphereTangent.z);
+    float tangentScale = length(tangentW);
+    if (gradPlane < 1e-10 || tangentScale < 1e-10) return 0.f;
+    float pdf = pdfArc * gradPlane / tangentScale;
+    return pdf > 0.f && !isinf(pdf) && !isnan(pdf) ? pdf : 0.f;
+}
+
 // ====== Main: Ellipsoid–Triangle sampling (area domain) ======
 SampleResultArea sampleOnTriangleEllipsoid(
     Ellipsoid E,
@@ -86,7 +102,9 @@ SampleResultArea sampleOnTriangleEllipsoid(
     float3 q3 = toUnitSphereSpace(E, p3);
 
     // Plane in sphere-space: n·q + d = 0
-    float3 n = normalize(cross(q2 - q1, q3 - q1));
+    float3 planeNormal = cross(q2 - q1, q3 - q1);
+    if (dot(planeNormal, planeNormal) <= 1e-20) return R;
+    float3 n = normalize(planeNormal);
     float  d = -dot(n, q1);
 
     // Circle intersection with unit sphere iff |d| <= 1
@@ -131,25 +149,10 @@ SampleResultArea sampleOnTriangleEllipsoid(
         // back to world (ellipsoid surface)
         float3 p  = fromUnitSphereSpace(E, y);
 
-        // area-PDF terms
         float3 nTri = normalize(cross(p2 - p1, p3 - p1));
-
-        float3 u1v = (p - E.p1) / max(length(p - E.p1), 1e-20);
-        float3 u2v = (p - E.p2) / max(length(p - E.p2), 1e-20);
-        float3 s   = u1v + u2v;
-        float3 sPerp = s - nTri * dot(nTri, s);
-        float  gradPlane = length(sPerp);
-        if(gradPlane < 1e-10) return R;
-
-        float3 that = (-sin(theta)) * e1 + (cos(theta)) * e2; // sphere-space tangent
-        float3 Jt =
-            E.axis0 * (E.extent.x * that.x) +
-            E.axis1 * (E.extent.y * that.y) +
-            E.axis2 * (E.extent.z * that.z);
-        float  JtNorm = length(Jt);
-        if(JtNorm < 1e-10) return R;
-
-        float pdfA = (gradPlane) / (rc * ThetaTot * JtNorm);
+        float3 tangent = -sin(theta) * e1 + cos(theta) * e2;
+        float pdfA = ellipsoidAreaPdfFactor(E, p, nTri, tangent, 1.f / (rc * ThetaTot));
+        if (pdfA <= 0.f) return R;
 
         R.ok   = true;
         R.p    = p;
@@ -207,32 +210,11 @@ SampleResultArea sampleOnTriangleEllipsoid(
     // back to world
     float3 p  = fromUnitSphereSpace(E, y);
 
-    // area-PDF terms
     float3 nTri = normalize(cross(p2 - p1, p3 - p1));
+    float3 tangent = -sin(theta) * e1 + cos(theta) * e2;
+    float pdfA = ellipsoidAreaPdfFactor(E, p, nTri, tangent, 1.f / (rc * ThetaTot));
+    if (pdfA <= 0.f) return R;
 
-    float3 u1v = normalize(p - E.p1);
-    float3 u2v = normalize(p - E.p2);
-    float3 s   = u1v + u2v;
-    float3 sPerp = s - nTri * dot(nTri, s);
-    float  gradPlane = length(sPerp);
-    if(gradPlane < 1e-10) return R;
-
-    float3 that = (-sin(theta)) * e1 + (cos(theta)) * e2; // sphere-space tangent
-    float3 Jt =
-        E.axis0 * (E.extent.x * that.x) +
-        E.axis1 * (E.extent.y * that.y) +
-        E.axis2 * (E.extent.z * that.z);
-    float  JtNorm = length(Jt);
-    if(JtNorm < 1e-10) return R;
-
-    float pdfA = (gradPlane) / (rc * ThetaTot * JtNorm);
-    if(pdfA < 1e-10 || pdfA > 1e10) return R;
-    
-    // if(rc * ThetaTot < 1e-3 || pdfA < 1e-5){
-    //     R.ok=false;
-    //     R.pdfA = 0.0;
-    //     return R;
-    // }
     R.ok   = true;
     R.p    = p;
     R.pdfA = pdfA;
@@ -250,7 +232,9 @@ float pdfUniformEllipsoidTriangleArc(
     float3 q3 = toUnitSphereSpace(E, p3);
 
     // Plane in sphere-space: n·q + d = 0
-    float3 n = normalize(cross(q2 - q1, q3 - q1));
+    float3 planeNormal = cross(q2 - q1, q3 - q1);
+    if (dot(planeNormal, planeNormal) <= 1e-20) return 0.f;
+    float3 n = normalize(planeNormal);
     float  d = -dot(n, q1);
 
     float h = abs(d);
@@ -258,6 +242,7 @@ float pdfUniformEllipsoidTriangleArc(
         return 0.0;
 
     float rc = sqrt(max(1.0 - h*h, 0.0));
+    if (rc < 1e-10) return 0.f;
     float3 Cc = -d * n;
 
     // In-plane basis
@@ -323,10 +308,41 @@ float pdfUniformEllipsoidTriangleArc(
             ThetaTot += (a1 - a0);
         }
 
-        if (ThetaTot <= 1e-20)
+        if (ThetaTot < 1e-10)
             return 0.0;
     }
     ThetaTot *= rc;
     // Uniform over θ on valid arcs
     return 1.0 / ThetaTot;
+}
+
+// Evaluate the same area factor as sampleOnTriangleEllipsoid at an existing point.
+// Multiply by the length PDF and triangle-selection PMF to obtain p_A(y).
+float evalTriangleEllipsoidPdf(Ellipsoid E, float3 p1, float3 p2, float3 p3, float3 p)
+{
+    float3 q1 = toUnitSphereSpace(E, p1);
+    float3 q2 = toUnitSphereSpace(E, p2);
+    float3 q3 = toUnitSphereSpace(E, p3);
+    float3 q = toUnitSphereSpace(E, p);
+    float3 planeNormal = cross(q2 - q1, q3 - q1);
+    if (dot(planeNormal, planeNormal) <= 1e-20) return 0.f;
+    float3 n = normalize(planeNormal);
+    float d = -dot(n, q1);
+    if (abs(dot(q, q) - 1.f) > 1e-4 || abs(dot(n, q) + d) > 1e-4) return 0.f;
+
+    float3 helper = abs(n.z) < 0.999f ? float3(0,0,1) : float3(0,1,0);
+    float3 e1 = normalize(cross(helper, n));
+    float3 e2 = cross(n, e1);
+    if (!pointInTri2(float2(dot(e1, q), dot(e2, q)),
+                     float2(dot(e1, q1), dot(e2, q1)),
+                     float2(dot(e1, q2), dot(e2, q2)),
+                     float2(dot(e1, q3), dot(e2, q3)))) return 0.f;
+
+    // q + d*n is the circle radius vector. n cross radius is its tangent.
+    float3 tangent = cross(n, q + d * n);
+    if (length(tangent) < 1e-10) return 0.f;
+    float pdfArc = pdfUniformEllipsoidTriangleArc(E, p1, p2, p3);
+    if (!(pdfArc > 0.f)) return 0.f;
+    float3 nTri = normalize(cross(p2 - p1, p3 - p1));
+    return ellipsoidAreaPdfFactor(E, p, nTri, normalize(tangent), pdfArc);
 }

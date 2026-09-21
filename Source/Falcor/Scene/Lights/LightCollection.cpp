@@ -516,6 +516,8 @@ namespace Falcor
             if(mForce){
                 mMeshLightTriangles[triIdx].flux = mMeshLightTriangles[triIdx].area;
 
+                // Hardcoded NLOS heuristic: exclude the large backwall from triangle sampling.
+                // The cutoff is per-triangle world-space area; the wall remains scene geometry.
                 if(mMeshLightTriangles[triIdx].area > 10000){
                     mMeshLightTriangles[triIdx].flux = 0.0;
                 }
@@ -711,6 +713,7 @@ namespace Falcor
                 if(mForce){
                     meshLightTri.flux = meshLightTri.area;
                     meshLightTri.averageRadiance = float3(1.0f);
+                    // Match the hardcoded NLOS backwall exclusion in updateActiveTriangleList().
                     if(meshLightTri.area > 10000){
                         meshLightTri.flux = 0.0;
                         meshLightTri.averageRadiance = float3(0.0f);

@@ -50,37 +50,47 @@ void buildOrthonormalBasis(float3 n, out float3 u, out float3 v)
 }
 
 // Build ellipsoid from two foci and sum-of-distances t.
-// Returns false if invalid (t <= |p2 - p1|).
+// Coincident foci define a sphere. Reject empty or numerically unrepresentable ellipsoids.
 bool buildEllipsoidFromFoci(float3 p1, float3 p2, float t, float3 n1, float3 n2, out Ellipsoid E)
 {
-    E.p1 = p1;
-    E.p2 = p2;
-    E.t  = t;
-    E.n1 = n1;
-    E.n2 = n2;
+    E = {};
+    if (!(t > 0.f) || isinf(t) || any(isinf(p1) || isnan(p1)) || any(isinf(p2) || isnan(p2))) return false;
 
     float3 delta = p2 - p1;
-    float  d     = length(delta);      // distance between foci = 2c
+    float deltaScale = max(abs(delta.x), max(abs(delta.y), abs(delta.z)));
+    if (isinf(deltaScale)) return false;
 
-    // Invalid (empty) if t <= d
-    if (t <= d)
-        return false;
+    // For coincident foci the shape is a sphere, so its orientation is arbitrary.
+    float3 U0 = float3(1.f, 0.f, 0.f);
+    float d = 0.f;
+    if (deltaScale > 0.f)
+    {
+        // Normalize in scaled coordinates: length(delta) can underflow for close foci.
+        // Keep the actual axis for distinct foci, even for a very small ellipsoid.
+        float3 scaledDelta = delta / deltaScale;
+        float scaledLength = length(scaledDelta);
+        U0 = scaledDelta / scaledLength;
+        d = deltaScale * scaledLength;
+    }
+    if (!(t > d)) return false;
 
-    // Center
-    E.center = 0.5 * (p1 + p2);
-
-    // Semi-axis lengths: major a, minor b
-    float a  = 0.5 * t;                // 2a = t
-    float c  = 0.5 * d;                // 2c = d
+    float a = 0.5f * t;
     float a2 = a * a;
-    float c2 = c * c;
-    float b2 = max(a2 - c2, 0.0);      // guard FP
-    float b  = sqrt(b2);
+    // Equivalent to a^2 - c^2, with less cancellation for nearly collapsed ellipsoids.
+    float b2 = (0.5f * (t - d)) * (0.5f * t + 0.5f * d);
+    if (!(a2 > 0.f) || !(b2 > 0.f) || isinf(a2) || isinf(b2)) return false;
+    float invA2 = 1.f / a2;
+    float invB2 = 1.f / b2;
+    if (isinf(invA2) || isinf(invB2)) return false;
+    float b = sqrt(b2);
 
+    E.p1 = p1;
+    E.p2 = p2;
+    E.t = t;
+    E.n1 = n1;
+    E.n2 = n2;
+    E.center = 0.5f * p1 + 0.5f * p2;
     E.extent = float3(a, b, b);
-
-    // Major axis direction U0 = (p2 - p1)/|p2 - p1|
-    float3 U0 = delta / d;
 
     // Build U1, U2 perpendicular to U0
     float3 U1, U2;
@@ -91,9 +101,6 @@ bool buildEllipsoidFromFoci(float3 p1, float3 p2, float t, float3 n1, float3 n2,
     E.axis2 = U2;
 
     // Quadratic form M = sum_i (1/extent_i^2) * Ui Ui^T
-    float invA2 = 1.0 / a2;
-    float invB2 = (b2 > 0.0) ? (1.0 / b2) : 0.0;
-
     float3x3 M0 = outerProduct(U0, U0) * invA2;
     float3x3 M1 = outerProduct(U1, U1) * invB2;
     float3x3 M2 = outerProduct(U2, U2) * invB2;

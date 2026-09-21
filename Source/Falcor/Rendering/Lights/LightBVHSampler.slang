@@ -135,7 +135,7 @@ struct LightBVHSampler : IEmissiveLightSampler
     float evalTriangleSelectionPdfEllipsoid(
         const Ellipsoid E, const uint triangleIndex)
     {
-        if (triangleIndex == LightCollection::kInvalidIndex) return 0.f;
+        if (triangleIndex >= gScene.triCollection.getTriangleCount()) return 0.f;
 
         float traversalPdf = 1.0f;
         float triangleSelectionPdf = 1.0f;
@@ -145,6 +145,9 @@ struct LightBVHSampler : IEmissiveLightSampler
         // TODO: Change buffer to uint64_t format and remove this workaround when http://nvbugs/2817745 is fixed.
         //uint64_t bitmask = _lightBVH.triangleBitmasks[hit.triangleIndex];
         uint2 tmp = _lightBVH.triangleBitmasks[triangleIndex];
+        // The builder leaves an all-ones mask for triangles excluded from the BVH
+        // (including the NLOS backwall). They cannot be selected by this sampler.
+        if (tmp.x == 0xffffffffu && tmp.y == 0xffffffffu) return 0.f;
         uint64_t bitmask = ((uint64_t)tmp.y << 32) | tmp.x;
 
         uint leafNodeIndex;
@@ -676,7 +679,13 @@ struct LightBVHSampler : IEmissiveLightSampler
 
         if (kUseUniformTriangleSampling)
         {
-            return 1.0f / ((float)node.triangleCount);
+            // Only members of this leaf have nonzero selection probability.
+            for (uint i = 0; i < node.triangleCount; ++i)
+            {
+                if (_lightBVH.getNodeTriangleIndex(node, i) == triangleIndex)
+                    return 1.0f / float(node.triangleCount);
+            }
+            return 0.f;
         }
         else
         {

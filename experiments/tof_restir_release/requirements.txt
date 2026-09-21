@@ -1,0 +1,5 @@
+numpy>=1.23
+Pillow>=9.0
+matplotlib>=3.6
+tqdm>=4.64
+# falcor is supplied by this repository's compiled Python bindings, not PyPI.

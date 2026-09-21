@@ -34,6 +34,7 @@ FalcorComp currently includes implementations of the following renderers:
     Low-sample event camera rendering using correlated  sampling and difference-aware filtering.
 
 - **"Geometric Antithetic Sampling for Spatiotemporally Modulated Light"**  
+  **SIGGRAPH Asia 2026 (Conference)**  
   Project Page (TBD) | README (TBD)
 
   Variance reduction for rendering spatiotemporally modulated light (CW-ToF, structured light) using geometric antithetic sampling.

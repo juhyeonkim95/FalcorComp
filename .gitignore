@@ -37,3 +37,8 @@
 # experiment files
 /experiments*
 /Source/trash*
+
+# Keep release examples in version control while other experiments stay local.
+!/experiments/
+/experiments/*
+!/experiments/tof_restir_release/

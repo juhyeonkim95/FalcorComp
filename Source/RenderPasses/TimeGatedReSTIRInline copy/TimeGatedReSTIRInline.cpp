@@ -25,31 +25,31 @@
  # (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
  # OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  **************************************************************************/
-#include "MinimalTimeGatedReSTIR.h"
+#include "TimeGatedReSTIRInline.h"
 #include "RenderGraph/RenderPassHelpers.h"
 #include "RenderGraph/RenderPassStandardFlags.h"
 
-static void regMinimalTimeGatedReSTIR(pybind11::module& m)
+static void regTimeGatedReSTIRInline(pybind11::module& m)
 {
-    pybind11::class_<MinimalTimeGatedReSTIR, RenderPass, ref<MinimalTimeGatedReSTIR>> pass(m, "MinimalTimeGatedReSTIR");
+    pybind11::class_<TimeGatedReSTIRInline, RenderPass, ref<TimeGatedReSTIRInline>> pass(m, "TimeGatedReSTIRInline");
     // pass.def_property("m", &MinimalTimeGatedPathTracer::isEnabled, &MinimalTimeGatedPathTracer::setEnabled);
-    pass.def("increment_time_gate_frame", &MinimalTimeGatedReSTIR::incrementTimeGateFrame);
-    pass.def("set_time_gate_info", &MinimalTimeGatedReSTIR::setTimeGateInfo);
+    pass.def("increment_time_gate_frame", &TimeGatedReSTIRInline::incrementTimeGateFrame);
+    pass.def("set_time_gate_info", &TimeGatedReSTIRInline::setTimeGateInfo);
 }
 
 
 extern "C" FALCOR_API_EXPORT void registerPlugin(Falcor::PluginRegistry& registry)
 {
-    registry.registerClass<RenderPass, MinimalTimeGatedReSTIR>();
-    ScriptBindings::registerBinding(regMinimalTimeGatedReSTIR);
+    registry.registerClass<RenderPass, TimeGatedReSTIRInline>();
+    ScriptBindings::registerBinding(regTimeGatedReSTIRInline);
 }
 
 namespace
 {
-const char kShaderFile[] = "RenderPasses/MinimalTimeGatedReSTIR/MinimalTimeGatedReSTIR.cs.slang";
-const char kReflectTypesFile[] = "RenderPasses/MinimalTimeGatedReSTIR/ReflectTypes.cs.slang";
-const char kSpatialReuseFile[] = "RenderPasses/MinimalTimeGatedReSTIR/SpatialReuse.cs.slang";
-const char kSEvaluateFinalSamplesFile[] = "RenderPasses/MinimalTimeGatedReSTIR/EvaluateFinalSamples.cs.slang";
+const char kShaderFile[] = "RenderPasses/TimeGatedReSTIRInline/TimeGatedReSTIRInline.cs.slang";
+const char kReflectTypesFile[] = "RenderPasses/TimeGatedReSTIRInline/ReflectTypes.cs.slang";
+const char kSpatialReuseFile[] = "RenderPasses/TimeGatedReSTIRInline/SpatialReuse.cs.slang";
+const char kSEvaluateFinalSamplesFile[] = "RenderPasses/TimeGatedReSTIRInline/EvaluateFinalSamples.cs.slang";
 const char kInputViewDir[] = "viewW";
 const char kInputMotionVectors[] = "mvec";
 
@@ -115,7 +115,7 @@ const uint32_t kNeighborOffsetCount = 8192;
 const char kUseTemporalReuse[] = "useTemporalReuse";
 } // namespace
 
-MinimalTimeGatedReSTIR::MinimalTimeGatedReSTIR(ref<Device> pDevice, const Properties& props) : RenderPass(pDevice)
+TimeGatedReSTIRInline::TimeGatedReSTIRInline(ref<Device> pDevice, const Properties& props) : RenderPass(pDevice)
 {
     parseProperties(props);
 
@@ -124,13 +124,13 @@ MinimalTimeGatedReSTIR::MinimalTimeGatedReSTIR(ref<Device> pDevice, const Proper
     FALCOR_ASSERT(mpSampleGenerator);
 }
 
-void MinimalTimeGatedReSTIR::incrementTimeGateFrame()
+void TimeGatedReSTIRInline::incrementTimeGateFrame()
 {
     mPrevTimeGateFrameCount = mTimeGateFrameCount;
     mTimeGateFrameCount += 1;
 }
 
-void MinimalTimeGatedReSTIR::setTimeGateInfo(float timeMin, float timeMax, uint timeBin)
+void TimeGatedReSTIRInline::setTimeGateInfo(float timeMin, float timeMax, uint timeBin)
 {
     mTimeMin = timeMin;
     mTimeMax = timeMax;
@@ -138,13 +138,13 @@ void MinimalTimeGatedReSTIR::setTimeGateInfo(float timeMin, float timeMax, uint 
 }
 
 
-// void MinimalTimeGatedReSTIR::incrementTimeGateFrame()
+// void TimeGatedReSTIRInline::incrementTimeGateFrame()
 // {
 //     mPrevTimeGateFrameCount = mTimeGateFrameCount;
 //     mTimeGateFrameCount += 1;
 // }
 
-void MinimalTimeGatedReSTIR::parseProperties(const Properties& props)
+void TimeGatedReSTIRInline::parseProperties(const Properties& props)
 {
     for (const auto& [key, value] : props)
     {
@@ -215,11 +215,11 @@ void MinimalTimeGatedReSTIR::parseProperties(const Properties& props)
         else if (key == kIsLightSourceLaser)
             mIsLightSourceLaser = value;
         else
-            logWarning("Unknown property '{}' in MinimalTimeGatedReSTIR properties.", key);
+            logWarning("Unknown property '{}' in TimeGatedReSTIRInline properties.", key);
     }
 }
 
-Properties MinimalTimeGatedReSTIR::getProperties() const
+Properties TimeGatedReSTIRInline::getProperties() const
 {
     Properties props;
     props[kMaxBounces] = mMaxBounces;
@@ -228,7 +228,7 @@ Properties MinimalTimeGatedReSTIR::getProperties() const
     return props;
 }
 
-RenderPassReflection MinimalTimeGatedReSTIR::reflect(const CompileData& compileData)
+RenderPassReflection TimeGatedReSTIRInline::reflect(const CompileData& compileData)
 {
     RenderPassReflection reflector;
 
@@ -241,7 +241,7 @@ RenderPassReflection MinimalTimeGatedReSTIR::reflect(const CompileData& compileD
     return reflector;
 }
 
-DefineList MinimalTimeGatedReSTIR::getShaderDefines(const RenderData& renderData) const{
+DefineList TimeGatedReSTIRInline::getShaderDefines(const RenderData& renderData) const{
     DefineList defines;
 
     defines.add("MAX_BOUNCES", std::to_string(mMaxBounces));
@@ -274,7 +274,7 @@ DefineList MinimalTimeGatedReSTIR::getShaderDefines(const RenderData& renderData
     return defines;
 }
 
-void MinimalTimeGatedReSTIR::bindShaderData(const ShaderVar& var, const RenderData& renderData)
+void TimeGatedReSTIRInline::bindShaderData(const ShaderVar& var, const RenderData& renderData)
 {
     auto& dict = renderData.getDictionary();
 
@@ -360,7 +360,7 @@ void MinimalTimeGatedReSTIR::bindShaderData(const ShaderVar& var, const RenderDa
     }
 }
 
-void MinimalTimeGatedReSTIR::spatialReuse(RenderContext* pRenderContext, const RenderData& renderData)
+void TimeGatedReSTIRInline::spatialReuse(RenderContext* pRenderContext, const RenderData& renderData)
 {
     // Specialize program.
     mpSpatialReusePass->getProgram()->addDefines(getShaderDefines(renderData));
@@ -434,7 +434,7 @@ void MinimalTimeGatedReSTIR::spatialReuse(RenderContext* pRenderContext, const R
     }
 }
 
-void MinimalTimeGatedReSTIR::finalEvaluate(RenderContext* pRenderContext, const RenderData& renderData)
+void TimeGatedReSTIRInline::finalEvaluate(RenderContext* pRenderContext, const RenderData& renderData)
 {
     auto rootvar = mpFinalEvaluatePass->getRootVar();
     auto var = rootvar["CB"]["gEvaluateFinalSamples"];
@@ -463,7 +463,7 @@ void MinimalTimeGatedReSTIR::finalEvaluate(RenderContext* pRenderContext, const 
     mpFinalEvaluatePass->execute(pRenderContext, {targetDim.x, targetDim.y, 1});
 }
 
-void MinimalTimeGatedReSTIR::execute(RenderContext* pRenderContext, const RenderData& renderData)
+void TimeGatedReSTIRInline::execute(RenderContext* pRenderContext, const RenderData& renderData)
 {
     // Update refresh flag if options that affect the output have changed.
     auto& dict = renderData.getDictionary();
@@ -650,7 +650,7 @@ void MinimalTimeGatedReSTIR::execute(RenderContext* pRenderContext, const Render
     mTprev = mTcurr;
 }
 
-void MinimalTimeGatedReSTIR::renderUI(Gui::Widgets& widget)
+void TimeGatedReSTIRInline::renderUI(Gui::Widgets& widget)
 {
     bool dirty = false;
 
@@ -686,7 +686,7 @@ void MinimalTimeGatedReSTIR::renderUI(Gui::Widgets& widget)
     }
 }
 
-void MinimalTimeGatedReSTIR::setScene(RenderContext* pRenderContext, const ref<Scene>& pScene)
+void TimeGatedReSTIRInline::setScene(RenderContext* pRenderContext, const ref<Scene>& pScene)
 {
     // Clear data for previous scene.
     // After changing scene, the raytracing program should to be recreated.
@@ -698,7 +698,7 @@ void MinimalTimeGatedReSTIR::setScene(RenderContext* pRenderContext, const ref<S
     mpScene = pScene;
 }
 
-void MinimalTimeGatedReSTIR::prepareResources(RenderContext* pRenderContext, const RenderData& renderData)
+void TimeGatedReSTIRInline::prepareResources(RenderContext* pRenderContext, const RenderData& renderData)
 {
     DefineList defines = mpScene->getSceneDefines();
     defines.add(mpSampleGenerator->getDefines());
@@ -772,7 +772,7 @@ void MinimalTimeGatedReSTIR::prepareResources(RenderContext* pRenderContext, con
     }
 }
 
-ref<Texture> MinimalTimeGatedReSTIR::createNeighborOffsetTexture(uint32_t sampleCount)
+ref<Texture> TimeGatedReSTIRInline::createNeighborOffsetTexture(uint32_t sampleCount)
 {
     std::unique_ptr<int8_t[]> offsets(new int8_t[sampleCount * 2]);
     const int R = 254;

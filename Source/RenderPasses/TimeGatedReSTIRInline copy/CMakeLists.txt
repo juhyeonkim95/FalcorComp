@@ -1,9 +1,9 @@
-add_plugin(MinimalTimeGatedReSTIR)
+add_plugin(TimeGatedReSTIRInline)
 
-target_sources(MinimalTimeGatedReSTIR PRIVATE
-    MinimalTimeGatedReSTIR.cpp
-    MinimalTimeGatedReSTIR.h
-    MinimalTimeGatedReSTIR.cs.slang
+target_sources(TimeGatedReSTIRInline PRIVATE
+    TimeGatedReSTIRInline.cpp
+    TimeGatedReSTIRInline.h
+    TimeGatedReSTIRInline.cs.slang
     ReflectTypes.cs.slang
     Reservoirs.slang
     TransientShiftmapping.slang
@@ -18,6 +18,6 @@ target_sources(MinimalTimeGatedReSTIR PRIVATE
     LaserLightSampler.slang
 )
 
-target_copy_shaders(MinimalTimeGatedReSTIR RenderPasses/MinimalTimeGatedReSTIR)
+target_copy_shaders(TimeGatedReSTIRInline RenderPasses/TimeGatedReSTIRInline)
 
-target_source_group(MinimalTimeGatedReSTIR "RenderPasses")
+target_source_group(TimeGatedReSTIRInline "RenderPasses")

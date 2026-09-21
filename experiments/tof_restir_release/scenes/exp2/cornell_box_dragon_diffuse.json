@@ -1,0 +1,28 @@
+{
+  "name": "cornell-box-dragon-diffuse",
+  "scene_file": "../../../scene/cornell-box-dragon-diffuse/scene-v4-nolight.pbrt",
+  "resolution": [
+    1024,
+    1024
+  ],
+  "gate_center": 17.337084148727985,
+  "max_bounces": 6,
+  "is_laser": true,
+  "light_position": [
+    0.0,
+    1.7,
+    6.8
+  ],
+  "light_direction": [
+    0.0,
+    0.0,
+    -1.0
+  ],
+  "light_power": [
+    170.0,
+    120.0,
+    40.0
+  ],
+  "light_angle_degrees": 0.0,
+  "shiftmapMethod": "ray_trace"
+}

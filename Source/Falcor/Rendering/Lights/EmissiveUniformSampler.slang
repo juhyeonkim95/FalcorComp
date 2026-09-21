@@ -124,14 +124,20 @@ struct EmissiveUniformSampler : IEmissiveLightSampler
 
     float evalPdfEllipsoid(Ellipsoid E, const TriangleLightHit hit)
     {
-        return 0.f;
+        uint count = gScene.triCollection.getActiveTriangleCount();
+        if (count == 0 || hit.triangleIndex >= gScene.triCollection.getTriangleCount()) return 0.f;
+        if (gScene.triCollection.getActiveTriangleIndex(hit.triangleIndex) == LightCollection::kInvalidIndex) return 0.f;
+        return 1.f / float(count);
     }
     
     bool sampleTriangleEllipsoid<S : ISampleGenerator>(
         const Ellipsoid E, inout S sg, out uint triangleIndex, out float pdf)
     {
+        triangleIndex = LightCollection::kInvalidIndex;
+        pdf = 0.f;
         float uLight = sampleNext1D(sg);
         uint triangleCount = gScene.triCollection.getActiveTriangleCount();
+        if (triangleCount == 0) return false;
         uint idx = min((uint)(uLight * triangleCount), triangleCount - 1);
         triangleIndex = gScene.triCollection.activeTriangles[idx];
         pdf = 1.f / (float)triangleCount;
