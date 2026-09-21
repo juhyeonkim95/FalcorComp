@@ -117,8 +117,8 @@ NewtonResult solve_paired_shift<SurfaceOps : ISurfaceOps>(
     if (!(K > 0.f) || !isfinite(K) || !isfinite(lengthOffset) ||
         !(tol > 0.f) || !isfinite(tol) || !(coordinateTol > 0.f) || !isfinite(coordinateTol) || maxIters < 0 || !all(isfinite(u))) return result;
     float L0; float2 g0; float3 H0;
-    source.initializeSource(u);
-    if (!source.evalSource(u, L0, g0, H0) || !finite_surface_eval(L0, g0, H0))
+    source.update(u);
+    if (!source.eval(u, L0, g0, H0) || !finite_surface_eval(L0, g0, H0))
     {
         result.status = NewtonResultStatus::INVALID_POINT;
         return result;
@@ -129,7 +129,7 @@ NewtonResult solve_paired_shift<SurfaceOps : ISurfaceOps>(
     float2 v = u;
     float L1; float2 g1; float3 H1;
     target.update(v);
-    if (!target.evalTarget(v, L1, g1, H1) || !finite_surface_eval(L1, g1, H1))
+    if (!target.eval(v, L1, g1, H1) || !finite_surface_eval(L1, g1, H1))
     {
         result.status = NewtonResultStatus::INVALID_POINT;
         return result;
@@ -183,7 +183,7 @@ NewtonResult solve_paired_shift<SurfaceOps : ISurfaceOps>(
             float2 candidate = target.project(v - alpha * step);
             float Lt; float2 gt; float3 Ht;
             target.update(candidate);
-            if (all(isfinite(candidate)) && target.evalTarget(candidate, Lt, gt, Ht) && finite_surface_eval(Lt, gt, Ht))
+            if (all(isfinite(candidate)) && target.eval(candidate, Lt, gt, Ht) && finite_surface_eval(Lt, gt, Ht))
             {
                 float2 at, dt, ds;
                 gauge_terms(mode, axis, g0, gt, H0, Ht, candidate - u, at, dt, ds);
@@ -209,96 +209,10 @@ NewtonResult solve_paired_shift<SurfaceOps : ISurfaceOps>(
     return result;
 }
 
-// Previous implementation retained for reference, disabled at user request.
-/*
-// One solver for all charts. F1 = L_target(xiPrime) - L_source(xi) - offset.
-// avg_grad uses Rperp((grad L_source(xi) + grad L_target(xiPrime))/2).
-// The caller handles any shrink factor in the length offset and final determinant.
-// Single trial per iteration, with the original persistent damping factor.
-NewtonResult solve_xi_prime_newton_det<SurfaceOps : ISurfaceOps>(
-    inout SurfaceOps ops, float2 xi, float offset,
-    GaugeMode mode, float2 axis, int maxIters, float tol, float coordinateTol = -1.f)
-{
-    if (coordinateTol < 0.f) coordinateTol = tol;
-    NewtonResult result;
-    result.xi_prime = xi;
-    result.detJ = 0.f;
-    result.iters = 0;
-    result.status = NewtonResultStatus::NO_CONVERGE;
-    if (!isfinite(offset) ||
-        !(tol > 0.f) || !isfinite(tol) || !(coordinateTol > 0.f) || !isfinite(coordinateTol)) return result;
-
-    ops.update(xi); // Initialize the shared hit before either potential is evaluated.
-    float Ls; float2 gs; float3 Hs;
-    if (!ops.evalSource(xi, Ls, gs, Hs) || !finite_surface_eval(Ls, gs, Hs)) return result;
-    float goal = Ls + offset;
-    float2 xiPrime = xi;
-    float Lt; float2 gt; float3 Ht;
-    if (!ops.evalTarget(xiPrime, Lt, gt, Ht) || !finite_surface_eval(Lt, gt, Ht)) return result;
-    float beta = 1.f;
-    for (int iteration = 0; iteration <= maxIters; ++iteration)
-    {
-        float2 a, dPrime, dXi;
-        gauge_terms(mode, axis, gs, gt, Hs, Ht, xiPrime - xi, a, dPrime, dXi);
-        float gaugeLength = length(a);
-        if (!(gaugeLength > 0.f) || !isfinite(gaugeLength)) return result;
-        float2 residual = float2(Lt - goal, dot(a, xiPrime - xi));
-        float2 normalized = float2(residual.x / tol, residual.y / gaugeLength / coordinateTol);
-        if (!all(isfinite(normalized))) return result;
-        float2 rowPrime = a + dPrime;
-        float detPrime = gt.x * rowPrime.y - gt.y * rowPrime.x;
-        if (!regular_jacobian(gt, rowPrime, detPrime)) return result;
-        if (max(abs(normalized.x), abs(normalized.y)) <= 1.f)
-        {
-            // F_xi: [-grad L_s(xi); (partial a/partial xi)^T*Delta - a].
-            // F_xiPrime: [grad L_t(xiPrime); (partial a/partial xiPrime)^T*Delta + a].
-            float2 rowXi = dXi - a;
-            float detXi = -gs.x * rowXi.y + gs.y * rowXi.x;
-            if (!regular_jacobian(-gs, rowXi, detXi)) return result;
-            float J = abs(detXi / detPrime);
-            if (!(J > 0.f) || !isfinite(J)) return result;
-            result.xi_prime = xiPrime;
-            result.detJ = J; // Caller applies any shrink factor afterward.
-            result.status = NewtonResultStatus::SUCCESS;
-            return result;
-        }
-        if (iteration == maxIters) break;
-        float2 step = float2(rowPrime.y * residual.x - gt.y * residual.y,
-                            -rowPrime.x * residual.x + gt.x * residual.y) / detPrime;
-        if (!all(isfinite(step))) return result;
-        float2 candidate = ops.project(xiPrime - beta * step);
-        ops.update(candidate);
-        float Ltrial; float2 gtrial; float3 Htrial;
-        bool accepted = false;
-        if (ops.evalTarget(candidate, Ltrial, gtrial, Htrial) && finite_surface_eval(Ltrial, gtrial, Htrial))
-        {
-            float2 trialA, dp, ds;
-            gauge_terms(mode, axis, gs, gtrial, Hs, Htrial, candidate - xi, trialA, dp, ds);
-            float trialGaugeLength = length(trialA);
-            if (trialGaugeLength > 0.f && isfinite(trialGaugeLength))
-            {
-                float2 trialResidual = float2((Ltrial - goal) / tol,
-                    dot(trialA, candidate - xi) / trialGaugeLength / coordinateTol);
-                accepted = all(isfinite(trialResidual)) && dot(trialResidual, trialResidual) < dot(normalized, normalized);
-            }
-        }
-        if (accepted)
-        {
-            xiPrime = candidate; Lt = Ltrial; gt = gtrial; Ht = Htrial;
-            beta = min(1.f, 2.f * beta);
-        }
-        else beta *= .5f;
-        result.iters = iteration + 1;
-    }
-    return result;
-}
-*/
-
-// Restored from TimeGatedReSTIRInline copy/NewtonSolver.slang.
-// g_source/H_source/L_source are source values; g_target/H_target/L_target are target values. K stays in the caller.
+// Restored constant-offset solver: c is held fixed for the Jacobian.
 NewtonResult solve_xi_prime_newton_det<SurfaceOps : ISurfaceOps>(
     inout SurfaceOps ops,
-    float2 xi, float lengthOffset,
+    float2 xi, float c,
     GaugeMode mode,
     float2 a_const,          // used iff CONSTANT_A
     int maxIters,            // e.g., 15
@@ -315,116 +229,116 @@ NewtonResult solve_xi_prime_newton_det<SurfaceOps : ISurfaceOps>(
     const float epsDir = 1e-12;
     const float ctol   = 1e-9;
 
-    // Source values are fixed at xi. They contain only the two local edges.
-    // Solve L_target(xi_prime) - L_source(xi) - lengthOffset = 0.
-    // At K=1: lengthOffset = sourcePrefix-targetPrefix + targetTime-sourceTime.
-    float  L_source; float2 g_source; float3 H_source;
-    ops.initializeSource(xi); // Freeze source geometry; target trials cannot overwrite it.
-    if(!ops.evalSource(xi, L_source, g_source, H_source) || !finite_surface_eval(L_source, g_source, H_source)){
+    // Start eval (fixed during solve)
+    float  L0; float2 g0; float3 H0;
+    // ops.update(xi);
+    if(!ops.eval(xi, L0, g0, H0)){
         R.status = NewtonResultStatus::INVALID_POINT; return R;
     }
-    
-    float2 xi_prime = xi;
-    // The initial target potential differs from the fixed source potential.
-    float L_target; float2 g_target; float3 H_target;
-    if (!ops.evalTarget(xi_prime, L_target, g_target, H_target) || !finite_surface_eval(L_target, g_target, H_target))
+
+    // no need to search
+    if (abs(c) <= tol)
     {
-        R.status = NewtonResultStatus::INVALID_POINT; R.detJ = 0.f; return R;
+        R.xi_prime = xi;
+        R.detJ = 1.0;
+        return R;
     }
 
     // Predictor: move orthogonal to starting gauge
-    float2 a0 = (mode == GaugeMode::CONSTANT_A) ? a_const : Rperp(g_source);
+    float2 a0 = (mode == GaugeMode::CONSTANT_A) ? a_const : Rperp(g0);
     float2 dir = Rperp(a0);
     float n2 = max(dot(dir, dir), 1e-20);
     dir *= rsqrt(n2); // normalize
-    
-    // float g0dir = dot(g_source, dir);
-    // float s0 = (abs(g0dir) > epsDir) ? (lengthOffset / g0dir) : 0.0;
 
+    // float g0dir = dot(g0, dir);
+    // float s0 = (abs(g0dir) > epsDir) ? (c / g0dir) : 0.0;
+    float2 e = xi; //ops.project(xi + s0 * dir);
 
+    float  L1 = L0; float2 g1 = g0; float3 H1 = H0;
     float2 a, JpDelta, J0Delta;
     float2 Delta;
     float inv00, inv01, inv10, inv11, detJp;
-    // Even zero displacement still needs the source/target determinant below.
-    bool success = abs(L_target - L_source - lengthOffset) <= tol;
+    bool success = false;
     float beta = 1.0f;
 
-    // --- Newton iterations using only Jp = ∂F/∂xi' ---
-    for (int it = 0; it < maxIters && !success; ++it)
+    // --- Newton iterations using only Jp = ∂F/∂η' ---
+    for (int it = 0; it < maxIters; ++it)
     {
         R.iters = it + 1;
-        // ops.update(xi_prime);
-        
-        Delta = xi_prime - xi;
-        gauge_terms(mode, a_const, g_source, g_target, H_source, H_target, Delta, a, JpDelta, J0Delta);
+        // ops.update(e);
+
+        Delta = e - xi;
+        gauge_terms(mode, a_const, g0, g1, H0, H1, Delta, a, JpDelta, J0Delta);
 
         // Current Residuals
-        float F1 = L_target - L_source - lengthOffset;
+        float F1 = L1 - L0 - c;
         float F2 = dot(a, Delta);
 
-        // Jp rows: [ g_target^T ; (a + JpDelta)^T ]
-        float a11 = g_target.x, a12 = g_target.y;
+        // Jp rows: [ g1^T ; (a + JpDelta)^T ]
+        float a11 = g1.x, a12 = g1.y;
         float b11 = a.x + JpDelta.x, b12 = a.y + JpDelta.y;
 
-        detJp = a11 * b12 - a12 * b11;
-        if (!isfinite(detJp) || abs(detJp) < epsDet) { R.status = NewtonResultStatus::SINGULAR; R.detJ = 0.0; return R; }
         inv2(a11, a12, b11, b12, inv00, inv01, inv10, inv11, detJp);
+        if (abs(detJp) < epsDet) { R.status = NewtonResultStatus::SINGULAR; R.detJ = 0.0; return R; }
         // if (abs(F1) < tol && abs(F2) < tol) {success = true; break;}
 
-        // Δxi' = - Jp^{-1} F
+        // Δη' = - Jp^{-1} F
         float rhs1 = -F1, rhs2 = -F2;
         float dx = inv00 * rhs1 + inv01 * rhs2;
         float dy = inv10 * rhs1 + inv11 * rhs2;
 
         // Trial update with current β
         float  L_try; float2 g_try; float3 H_try;
-        const float2 xi_prime_trial = ops.project(float2(xi_prime.x + beta*dx, xi_prime.y + beta*dy) );
-        ops.update(xi_prime_trial);
-        bool valid_target = ops.evalTarget(xi_prime_trial, L_try, g_try, H_try);
-        float F1_try = L_try - L_source - lengthOffset;
+        const float2 e_try = ops.project(float2(e.x + beta*dx, e.y + beta*dy) );
+        ops.update(e_try);
+        bool update_eta = ops.eval(e_try, L_try, g_try, H_try);
+        float F1_try = L_try - L0 - c;
 
-        if(!valid_target || !finite_surface_eval(L_try, g_try, H_try) || (abs(F1_try) > abs(F1))){
+        if(!update_eta || (abs(F1_try) > abs(F1))){
             beta *= 0.5f;
         } else {
-            xi_prime = xi_prime_trial;
-            L_target = L_try;
-            g_target = g_try;
-            H_target = H_try;
+            e = e_try;
+            L1 = L_try;
+            g1 = g_try;
+            H1 = H_try;
             beta = min(1.0, beta * 2.0f);
             if(abs(F1_try) < tol){
                 success = true;
                 break;
             }
         }
+
+
+        // Delta = e - xi;
+        // gauge_terms(mode, a_const, g0, g1, H0, H1, Delta, a, JpDelta, J0Delta);
+        // if(!update_eta || F1_try > F1){
+        //     beta *= 0.5f;
+        // } else {
+        //     e = e_try;
+        // }
+        // e = ops.project(e + float2(dx, dy));
     }
     // Final point
-    R.xi_prime = xi_prime;
-    ops.update(xi_prime); // Restore the accepted ray hit after a rejected trial.
+    R.xi_prime = e;
 
-    Delta = xi_prime - xi;
-    gauge_terms(mode, a_const, g_source, g_target, H_source, H_target, Delta, a, JpDelta, J0Delta);
-    // Jp rows: [ g_target^T ; (a + JpDelta)^T ]
-    float a11 = g_target.x, a12 = g_target.y;
+    Delta = e - xi;
+    gauge_terms(mode, a_const, g0, g1, H0, H1, Delta, a, JpDelta, J0Delta);
+    // Jp rows: [ g1^T ; (a + JpDelta)^T ]
+    float a11 = g1.x, a12 = g1.y;
     float b11 = a.x + JpDelta.x, b12 = a.y + JpDelta.y;
-    detJp = a11 * b12 - a12 * b11;
+    inv2(a11, a12, b11, b12, inv00, inv01, inv10, inv11, detJp);
 
-    // J0: row1 = -g_source^T; row2 = (∂a/∂xi)^T Δ - a
-    float n11 = -g_source.x, n12 = -g_source.y;
+    // J0: row1 = -g0^T; row2 = (∂a/∂η)^T Δ - a
+    float n11 = -g0.x, n12 = -g0.y;
     float n21 =  J0Delta.x - a.x;
     float n22 =  J0Delta.y - a.y;
     float detJ0 = n11 * n22 - n12 * n21;
 
-    if (!isfinite(detJp) || abs(detJp) < 1e-20 || !isfinite(detJ0))
-    {
-        R.status = NewtonResultStatus::SINGULAR; R.detJ = 0.f; return R;
-    }
-    R.detJ = abs(detJ0 / detJp);
-    if (!(R.detJ > 0.f) || !isfinite(R.detJ))
-    {
-        R.status = NewtonResultStatus::SINGULAR; R.detJ = 0.f; return R;
-    }
-    // Preserve the original determinant cutoff and length-only convergence.
-    R.status = success && R.detJ >= .1f && R.detJ < 10.f
-        ? NewtonResultStatus::SUCCESS : NewtonResultStatus::NO_CONVERGE;
+    if (abs(detJp) < 1e-20) { R.status = (R.status != 0 ? R.status : NewtonResultStatus::SINGULAR); R.detJ = 0.0; }
+    else                    { R.detJ = abs(detJ0 / detJp); }
+
+    // reject too large jacobian change
+    if (R.detJ >= 10.0 || R.detJ < 0.1) R.status = (NewtonResultStatus::NO_CONVERGE);
+    if (R.iters >= maxIters) R.status = (success ? NewtonResultStatus::SUCCESS : NewtonResultStatus::NO_CONVERGE);
     return R;
 }

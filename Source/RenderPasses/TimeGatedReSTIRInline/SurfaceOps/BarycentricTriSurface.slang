@@ -4,8 +4,7 @@ import SurfaceOpsInterface;
 // Triangle vertices: v0, v1, v2 (triposW0,1,2).
 export struct BarycentricTriOps : ISurfaceOps
 {
-    float3 p1; // target preceding vertex
-    float3 sourceP1; // source preceding vertex
+    float3 p1; // preceding vertex
     float3 p2;
 
     float3 v0; // triposW0
@@ -14,18 +13,9 @@ export struct BarycentricTriOps : ISurfaceOps
 
     // Do not clamp onto triangle edges: that would collapse the 2D mapping.
     // The caller checks that the solved point belongs to this triangle.
-    // Legacy construction describes a single potential (source = target).
     __init(float3 p1, float3 p2, float3 v0, float3 v1, float3 v2)
     {
-        this.p1 = p1; this.sourceP1 = p1; this.p2 = p2;
-        this.v0 = v0;
-        this.v1 = v1;
-        this.v2 = v2;
-    }
-
-    __init(float3 sourceP1, float3 targetP1, float3 p2, float3 v0, float3 v1, float3 v2)
-    {
-        this.p1 = targetP1; this.sourceP1 = sourceP1; this.p2 = p2;
+        this.p1 = p1; this.p2 = p2;
         this.v0 = v0;
         this.v1 = v1;
         this.v2 = v2;
@@ -48,21 +38,7 @@ export struct BarycentricTriOps : ISurfaceOps
     }
 
     // Evaluate L = |p1 - X| + |p2 - X| and its gradient/Hessian w.r.t. (coordinates.x, coordinates.y).
-    bool evalTarget(float2 xi_prime, out float L, out float2 g, out float3 H)
-    {
-        return evalAtFocus(p1, xi_prime, L, g, H);
-    }
-
-    // Analytic charts have no mutable hit to snapshot.
-    [mutating]
-    void initializeSource(float2 xi) {}
-
-    bool evalSource(float2 xi, out float L, out float2 g, out float3 H)
-    {
-        return evalAtFocus(sourceP1, xi, L, g, H);
-    }
-
-    bool evalAtFocus(float3 precedingPoint, float2 coordinates, out float L, out float2 g, out float3 H)
+    bool eval(float2 coordinates, out float L, out float2 g, out float3 H)
     {
         const float eps = 1e-8f;
         L = 0.f; g = float2(0.f); H = float3(0.f);
@@ -72,7 +48,7 @@ export struct BarycentricTriOps : ISurfaceOps
         float3 Xw = X(coordinates);
 
         // Vectors to the two endpoints
-        float3 r1 = precedingPoint - Xw;
+        float3 r1 = p1 - Xw;
         float3 r2 = p2 - Xw;
 
         float d1 = length(r1);

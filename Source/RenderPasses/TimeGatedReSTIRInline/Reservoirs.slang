@@ -1,5 +1,3 @@
-// Static reuse uses the path-length-aware mapping; legacy code remains available.
-#define USE_LEGACY_SPATIAL_SHIFT 0
 
 import Utils.Color.ColorHelpers;
 import Utils.Transient.TransientUtils;
@@ -361,16 +359,8 @@ void combine_reservoir_with_shiftmapping(
     // (2) curr as other
     // (2-1) reconstruct prefix
     float3 other_prefix_throughput = float3(1.f);
-#if !USE_LEGACY_SPATIAL_SHIFT
-    float3 source_prefix_throughput = float3(1.f);
-    bool sourceValid = reconstructPrefix(curr_reservoir.rcVertexBounce, curr_reservoir.initRandomSeed,
-        source_x1, source_x1_mi, source_d01, source_prefix_throughput, roughnessThreshold);
-#endif
     bool targetValid = reconstructPrefix(curr_reservoir.rcVertexBounce, curr_reservoir.initRandomSeed,
         other_x1, other_x1_mi, other_d01, other_prefix_throughput, roughnessThreshold);
-#if !USE_LEGACY_SPATIAL_SHIFT
-    if (!sourceValid) { dst_reservoir.M += curr_reservoir.M; return; }
-#endif
     if (!targetValid) { dst_reservoir.M += curr_reservoir.M; return; }
 
     ShadingData curr_x3;
@@ -393,20 +383,13 @@ void combine_reservoir_with_shiftmapping(
 
     float jacobian = 0.0;
     
-#if USE_LEGACY_SPATIAL_SHIFT
     float targetLength = other_d01 + length(other_x1.posW - v_curr.posW)
         + length(v_curr.posW - curr_x3.posW) + curr_d34;
     float dt = K * (curr_reservoir.totalPathLength - curr_t) + other_t - targetLength;
     float tol = max(abs(dt) * 0.01f, 1e-6f);
-    HitInfo y_curr_as_other = transient_shift_mapping(
+    HitInfo y_curr_as_other = path_length_aware_shift_mapping(
         other_x1, curr_reservoir.rcVertexHit, curr_x3, dt, jacobian, debugInfo, tol, sg);
     jacobian *= K;
-#else
-    HitInfo y_curr_as_other = path_lentgh_aware_shift_mapping(
-        source_x1, source_d01, other_x1, other_d01, curr_reservoir.rcVertexHit,
-        curr_x3, isRCNextNotPointLight, curr_d34, curr_t, other_t, K,
-        curr_reservoir.initRandomSeed, jacobian, debugInfo, sg);
-#endif
     // A rejected/non-finite shift must have zero support, not NaN weight.
     jacobian = select(isfinite(jacobian), max(jacobian, 0.f), 0.f);
 
@@ -586,7 +569,7 @@ void combine_reservoir_with_shiftmapping_for_dynamic_scene(
     // evaluate path-length aware shift mapping
     float jacobian = 0.0;
     
-    HitInfo y_curr_as_other = transient_shift_mapping(
+    HitInfo y_curr_as_other = path_length_aware_shift_mapping(
             other_x1, curr_reservoir.rcVertexHit, curr_x3,
             dt_curr, jacobian,
             debugInfo, tol_curr, sg);
@@ -688,32 +671,17 @@ float evaluate_canonical_shiftmap_weight(
     if(curr_reservoir.W > 0){
         // (1) Reconstruct prefix
         float3 other_prefix_throughput = float3(1.f);
-#if !USE_LEGACY_SPATIAL_SHIFT
-        float3 source_prefix_throughput = float3(1.f);
-        bool sourceValid = reconstructPrefix(curr_reservoir.rcVertexBounce, curr_reservoir.initRandomSeed,
-            source_x1, source_x1_mi, source_d01, source_prefix_throughput, roughnessThreshold);
-#endif
         bool targetValid = reconstructPrefix(curr_reservoir.rcVertexBounce, curr_reservoir.initRandomSeed,
             other_x1, other_x1_mi, other_d01, other_prefix_throughput, roughnessThreshold);
-#if !USE_LEGACY_SPATIAL_SHIFT
-        if (!sourceValid) { return 1.f; }
-#endif
         if (!targetValid) { return 1.f; }
 
         float jacobian = 0.0;
-#if USE_LEGACY_SPATIAL_SHIFT
         float targetLength = other_d01 + length(other_x1.posW - v_curr.posW)
             + length(v_curr.posW - curr_x3.posW) + curr_reservoir.rcNextVertexPathLength;
         float dt = (curr_reservoir.totalPathLength - curr_t) + other_t - targetLength;
         float tol = max(abs(dt) * 0.01f, 1e-6f);
-        HitInfo y_curr_as_other = transient_shift_mapping(
+        HitInfo y_curr_as_other = path_length_aware_shift_mapping(
             other_x1, curr_reservoir.rcVertexHit, curr_x3, dt, jacobian, debugInfo, tol, sg);
-#else
-        HitInfo y_curr_as_other = path_lentgh_aware_shift_mapping(
-            source_x1, source_d01, other_x1, other_d01, curr_reservoir.rcVertexHit,
-            curr_x3, curr_reservoir.rcNextVertexHit.isValid(), curr_reservoir.rcNextVertexPathLength,
-            curr_t, other_t, 1.f, curr_reservoir.initRandomSeed, jacobian, debugInfo, sg);
-#endif
         jacobian = select(isfinite(jacobian), max(jacobian, 0.f), 0.f);
 
         VertexData v_curr_as_other = gScene.getVertexData(y_curr_as_other.getTriangleHit());

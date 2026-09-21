@@ -11,68 +11,18 @@ import Scene.RaytracingInline;
 export struct RayTraceHemisphereOps:ISurfaceOps
 {
     // Geometry
-    float3 sourceP1;          // source preceding vertex
-    float3 targetP1, p2, p2o;        // endpoints for L
-    float3 t2, b2, n2;    // TBN at p2 (for hemisphere directions)
+    float3 p1, p2, p2o;
+    float3 t2, b2, n2;
     bool useCartesianChart;
-
-    // Target state follows xi_prime; source state stays fixed at xi.
-    HitInfo sourceHit;
-    float sourceHitT;
-    float2 sourceXi;
-    bool sourceInitialized;
-    float2 targetXiPrime;
     HitInfo hit;
     float hitT;
 
-    __init(float3 p1, float3 p2, float3 p2o, float3 t2, float3 b2, float3 n2){
-        this.targetP1 = p1;
-        this.sourceP1 = p1;
-        this.p2 = p2;
-        this.p2o = p2o;
-        this.t2 = t2;
-        this.b2 = b2;
-        this.n2 = n2;
-        this.useCartesianChart = false;
-        this.sourceInitialized = false;
-        this.sourceXi = float2(0.f); this.targetXiPrime = float2(0.f);
-        this.sourceHit = HitInfo(); this.sourceHitT = 0.f;
-        this.hit = HitInfo(); this.hitT = 0.f;
-    }
-
-    __init(float3 sourceP1, float3 targetP1, float3 p2, float3 p2o, float3 t2, float3 b2, float3 n2)
+    __init(float3 p1, float3 p2, float3 p2o, float3 t2, float3 b2, float3 n2)
     {
-        this.sourceP1 = sourceP1; this.targetP1 = targetP1;
-        this.p2 = p2; this.p2o = p2o;
+        this.p1 = p1; this.p2 = p2; this.p2o = p2o;
         this.t2 = t2; this.b2 = b2; this.n2 = n2;
         this.useCartesianChart = false;
-        this.sourceInitialized = false;
-        this.sourceXi = float2(0.f); this.targetXiPrime = float2(0.f);
-        this.sourceHit = HitInfo(); this.sourceHitT = 0.f;
         this.hit = HitInfo(); this.hitT = 0.f;
-    }
-
-    // p1 does NOT define the chart. Both potentials share p2o and the basis at p2.
-    // Reusing a cached source coordinate restores the target's initial state too.
-    [mutating]
-    void initializeSource(float2 xi)
-    {
-        if (sourceInitialized && all(xi == sourceXi))
-        {
-            hit = sourceHit; hitT = sourceHitT; targetXiPrime = xi;
-            return;
-        }
-        update(xi);
-        sourceXi = xi; sourceHit = hit; sourceHitT = hitT;
-        sourceInitialized = true;
-    }
-
-    // Source evaluation uses the fixed source hit, independently of target trials.
-    bool evalSource(float2 xi, out float L, out float2 g, out float3 H)
-    {
-        L = 0.f; g = float2(0.f); H = float3(0.f);
-        if (!sourceInitialized || any(xi != sourceXi)) return false;
-        return evalAtFocus(sourceP1, xi, sourceHit, sourceHitT, L, g, H);
     }
 
     // Keep azimuth unwrapped: the gauge uses coordinates' - coordinates across the 0/1 seam.
@@ -146,7 +96,6 @@ export struct RayTraceHemisphereOps:ISurfaceOps
     [mutating]
     void update(float2 coordinates)
     {
-        targetXiPrime = coordinates;
         hit = HitInfo();
         hitT = 0.f;
         if (!validCoordinates(coordinates)) return;
@@ -160,22 +109,14 @@ export struct RayTraceHemisphereOps:ISurfaceOps
     }
 
     // ---- eval: uses si.t as ρ, with derivatives from frozen plane at (si.p, si.n) ----
-    bool evalTarget(float2 xi_prime, out float L, out float2 g, out float3 H)
-    {
-        L = 0.f; g = float2(0.f); H = float3(0.f);
-        if (any(xi_prime != targetXiPrime)) return false;
-        return evalAtFocus(targetP1, xi_prime, hit, hitT, L, g, H);
-    }
-
-    bool evalAtFocus(float3 precedingPoint, float2 coordinates, HitInfo pointHit, float pointHitT,
-        out float L, out float2 g, out float3 H)
+    bool eval(float2 coordinates, out float L, out float2 g, out float3 H)
     {
         L = 0.f; g = float2(0.f); H = float3(0.f);
         if (!validCoordinates(coordinates)) return false;
-        if(!pointHit.isValid() || !(pointHitT > 1e-8f) || !isfinite(pointHitT)){
+        if(!hit.isValid() || !(hitT > 1e-8f) || !isfinite(hitT)){
             return false;
         }
-        if (pointHit.getType() != HitType::Triangle) return false;
+        if (hit.getType() != HitType::Triangle) return false;
         
         // direction + partials in world
         float2 e = project(coordinates);
@@ -183,14 +124,14 @@ export struct RayTraceHemisphereOps:ISurfaceOps
         directionDerivatives(e, d, d_mu, d_psi, d_mumu, d_mupsi, d_psipsi);
 
         
-        VertexData v = gScene.getVertexData(pointHit.getTriangleHit());
+        VertexData v = gScene.getVertexData(hit.getTriangleHit());
 
         float3 x = v.posW;
         bool frontFacing = dot(d, v.faceNormalW) >= 0.f;
         float3 n = frontFacing ? v.faceNormalW : -v.faceNormalW;
-        // The chart is X(coordinates) = p2o + pointHitT * d(coordinates), while physical path
+        // The chart is X(coordinates) = p2o + hitT * d(coordinates), while physical path
         // length still uses p2. Use the traced ray parameter for derivatives.
-        float r = pointHitT;
+        float r = hitT;
 
         // Plane factors at the selected hit
         float  s0     = dot(n, d);
@@ -220,7 +161,7 @@ export struct RayTraceHemisphereOps:ISurfaceOps
                                               + 2.0 * (s_psi * s_psi) / (s0 * s0) * d );
 
         // Path geometry at the selected hit
-        float3 r1 = precedingPoint - x;
+        float3 r1 = p1 - x;
         float3 r2 = p2 - x;
         float  d1 = length(r1); // max(, 1e-20);
         float  d2 = length(r2); // max(length(r2), 1e-20);
