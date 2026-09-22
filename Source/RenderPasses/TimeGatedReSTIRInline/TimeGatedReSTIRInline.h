@@ -123,7 +123,6 @@ private:
     DefineList getShaderDefines(const RenderData& renderData) const;
     void prepareResources(RenderContext* pRenderContext, const RenderData& renderData);
     void spatialReuse(RenderContext* pRenderContext, const RenderData& renderData);
-    void finalEvaluate(RenderContext* pRenderContext, const RenderData& renderData);
     
     ref<Texture> createNeighborOffsetTexture(uint32_t sampleCount);
 
@@ -155,8 +154,8 @@ private:
     float mTimeMax = 12.0f;
     uint mTimeBin = 512;
 
-    float mTcurr;
-    float mTprev;
+    float mTcurr = 0.f;
+    float mTprev = 0.f;
 
     uint2 mLaserHitVBufferRes = uint2(256, 256);
 
@@ -201,6 +200,11 @@ private:
     bool mUseAlphaTest = false;
     bool mUseSingleChannel = false;
     bool mUseTemporalReuse = true;
+    bool mTemporalHistoryValid = false;
+    uint2 mTemporalHistoryDimensions = uint2(0);
+    float3 mPreviousCameraPosition = float3(0.f);
+    float3 mPreviousLaserPower = float3(0.f);
+    float mPreviousLaserCosAngle = 0.f;
     
     EmissiveLightSamplerType emissiveSampler = EmissiveLightSamplerType::LightBVH;  ///< Emissive light sampler to use for NEE.
     std::unique_ptr<EmissiveLightSampler> mpEmissiveSampler;    ///< Emissive light sampler or nullptr if not used.
@@ -214,7 +218,6 @@ private:
 
     ref<ComputePass>                mpReflectTypes;                         ///< Helper for reflecting structured buffer types.
     ref<ComputePass>                mpSpatialReusePass;
-    ref<ComputePass>                mpFinalEvaluatePass;
     
     // Reservoirs and reconnection data for ReSTIR
     ref<Buffer>                     mpCurrReservoirs;                       ///< The current reservoir stores the canonical sample from the initial candidate generation pass.

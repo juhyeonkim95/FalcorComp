@@ -1,9 +1,11 @@
 import Utils.Sampling.SampleGenerator;
 import Utils.Color.ColorHelpers;
 import Utils.Transient.TransientUtils;
-import Reservoirs;
-import LoadShadingData;
-import TransientShiftmapping;
+import RenderPasses.Shared.ReSTIR.Reservoirs;
+import RenderPasses.Shared.ReSTIR.PathReconstruction;
+import RenderPasses.Shared.ReSTIR.ReservoirReuse;
+import RenderPasses.Shared.Utils.LoadShadingData;
+import RenderPasses.Shared.ReSTIR.PathLengthAwareShiftmapping;
 
 cbuffer Laser_CB
 {
@@ -39,6 +41,10 @@ struct SpatialReuse
     StructuredBuffer<Reservoir> prevReservoirs;
     RWStructuredBuffer<Reservoir> currReservoirs;
     RWTexture2D<float4> gOutputColor;
+#if DEBUG_NEWTON_ITERATIONS
+    RWTexture2D<uint4> gNewtonStatistics;
+    RWTexture2D<float2> gMappingDistance;
+#endif
 
     uint getLinearizedPixel(uint2 pixel)
     {
@@ -76,18 +82,20 @@ struct SpatialReuse
         destination.rcNextVertexBounce = source.rcNextVertexBounce;
 #if IS_SCENE_DYNAMIC
         destination.rcNextVertexRandomSeed = source.rcNextVertexRandomSeed;
+        destination.rcNextVertexRayDirection = source.rcNextVertexRayDirection;
         destination.lightRandomSeed = source.lightRandomSeed;
 #endif
     }
 
     float3 process(uint2 pixel
 #if DEBUG_NEWTON_ITERATIONS
-        , out uint4 newtonStats
+        , out uint4 newtonStats, out float2 mappingDistance
 #endif
     )
     {
 #if DEBUG_NEWTON_ITERATIONS
         newtonStats = uint4(0);
+        mappingDistance = float2(0.f);
 #endif
         uint pixelIndex = getLinearizedPixel(pixel);
         HitInfo primaryHit = HitInfo(gVBuffer[pixel]);
@@ -183,6 +191,7 @@ struct SpatialReuse
 #if DEBUG_NEWTON_ITERATIONS
             // Only the neighbor -> central call contributes; canonical evaluation is excluded.
             newtonStats += debugInfo.newtonStats;
+            mappingDistance += debugInfo.mappingDistance;
 #endif
         }
 
@@ -216,12 +225,12 @@ void main(uint3 dispatchThreadId: SV_DispatchThreadID)
     if (any(pixel >= gSpatialReuse.gFrameDim)) return;
 #if DEBUG_NEWTON_ITERATIONS
     uint4 newtonStats;
-    gSpatialReuse.process(pixel, newtonStats);
-    // Debug RGBA replaces radiance: solver successes, actual successes, attempts,
-    // iteration sum. C++ clears color after initial generation, once per frame.
-    gSpatialReuse.gOutputColor[pixel] += float4(newtonStats);
+    float2 mappingDistance;
+    float3 color = gSpatialReuse.process(pixel, newtonStats, mappingDistance);
+    gSpatialReuse.gNewtonStatistics[pixel] += newtonStats;
+    gSpatialReuse.gMappingDistance[pixel] += mappingDistance;
 #else
     float3 color = gSpatialReuse.process(pixel);
-    gSpatialReuse.gOutputColor[pixel] = float4(color, 1.f);
 #endif
+    gSpatialReuse.gOutputColor[pixel] = float4(color, 1.f);
 }

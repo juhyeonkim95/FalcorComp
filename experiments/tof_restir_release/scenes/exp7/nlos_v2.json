@@ -1,0 +1,46 @@
+{
+  "name": "nlos-v2",
+  "scene_file": "../../../scene/nlos-v2/scene-v4-exp9.pyscene",
+  "resolution": [
+    960,
+    540
+  ],
+  "camera_position": [
+    0.0,
+    1.0,
+    6.8
+  ],
+  "camera_target": [
+    0.0,
+    1.0,
+    0.0
+  ],
+  "gate_min": 15.6,
+  "gate_max": 17.6,
+  "max_bounces": 3,
+  "is_laser": true,
+  "light_collocated": false,
+  "light_position": [
+    0.0,
+    1.0,
+    6.8
+  ],
+  "light_direction": [
+    0.0,
+    0.0,
+    -1.0
+  ],
+  "light_power": [
+    170.0,
+    120.0,
+    40.0
+  ],
+  "light_angle_degrees": 0.0,
+  "shiftmapMethod": "area_adaptive",
+  "laser_velocity": [
+    0.007,
+    0.007,
+    0.0
+  ],
+  "laser_motion_start_frame": 1
+}

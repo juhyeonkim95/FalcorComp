@@ -1,0 +1,29 @@
+{
+  "name": "bedroom",
+  "scene_file": "../../../scene/bedroom/scene-v4.pbrt",
+  "resolution": [
+    1920,
+    1080
+  ],
+  "gate_center": 15,
+  "max_bounces": 6,
+  "is_laser": false,
+  "light_collocated": true,
+  "light_position": [
+    3.4558,
+    1.212433,
+    3.298965
+  ],
+  "light_direction": [
+    -0.7568322752596064,
+    -0.01698317875966672,
+    -0.6533884593138943
+  ],
+  "light_power": [
+    100.0,
+    100.0,
+    100.0
+  ],
+  "light_angle_degrees": 0.0,
+  "shiftmapMethod": "area_adaptive"
+}

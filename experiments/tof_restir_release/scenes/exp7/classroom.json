@@ -1,0 +1,30 @@
+{
+  "name": "classroom",
+  "scene_file": "../../../scene/classroom/scene-v4.pbrt",
+  "resolution": [
+    960,
+    540
+  ],
+  "max_bounces": 6,
+  "is_laser": true,
+  "light_collocated": true,
+  "light_position": [
+    0.0,
+    1.7,
+    6.8
+  ],
+  "light_direction": [
+    0.0,
+    0.0,
+    -1.0
+  ],
+  "light_power": [
+    1000.0,
+    1000.0,
+    1000.0
+  ],
+  "light_angle_degrees": 2.0,
+  "shiftmapMethod": "area_adaptive",
+  "gate_min": 25.0,
+  "gate_max": 30.0
+}

@@ -26,6 +26,8 @@
  # OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  **************************************************************************/
 #include "TimeGatedReSTIRInline.h"
+#include <algorithm>
+#include <cmath>
 #include "RenderGraph/RenderPassHelpers.h"
 #include "RenderGraph/RenderPassStandardFlags.h"
 
@@ -49,7 +51,6 @@ namespace
 const char kShaderFile[] = "RenderPasses/TimeGatedReSTIRInline/InitialSampleGeneration.cs.slang";
 const char kReflectTypesFile[] = "RenderPasses/TimeGatedReSTIRInline/ReflectTypes.cs.slang";
 const char kSpatialReuseFile[] = "RenderPasses/TimeGatedReSTIRInline/SpatialReuse.cs.slang";
-const char kSEvaluateFinalSamplesFile[] = "RenderPasses/TimeGatedReSTIRInline/EvaluateFinalSamples.cs.slang";
 const char kInputViewDir[] = "viewW";
 const char kInputMotionVectors[] = "mvec";
 
@@ -77,6 +78,11 @@ const ChannelList kOutputChannels = {
     // clang-format off
     { "color",          "gOutputColor", "Output color (sum of direct and indirect)", false, ResourceFormat::RGBA32Float },
     // clang-format on
+};
+
+const ChannelList kDebugOutputChannels = {
+    { "newtonStatistics", "gNewtonStatistics", "Mapping successes, actual successes, attempts, iteration sum", false, ResourceFormat::RGBA32Uint },
+    { "mappingDistance", "gMappingDistance", "Sum of coordinate and world displacement for successful solves", false, ResourceFormat::RG32Float },
 };
 
 const char kMaxBounces[] = "maxBounces";
@@ -250,12 +256,26 @@ RenderPassReflection TimeGatedReSTIRInline::reflect(const CompileData& compileDa
     addRenderPassInputs(reflector, kLaserInputChannels, ResourceBindFlags::ShaderResource, uint2(1, 1));
     addRenderPassInputs(reflector, kLaserHitInputChannels, ResourceBindFlags::ShaderResource, mLaserHitVBufferRes);
     addRenderPassOutputs(reflector, kOutputChannels);
+    if (mDebugNewtonIterations) addRenderPassOutputs(reflector, kDebugOutputChannels);
 
     return reflector;
 }
 
 DefineList TimeGatedReSTIRInline::getShaderDefines(const RenderData& renderData) const{
     DefineList defines;
+
+    // Specialize away the entire extra reservoir/shift path when it has no samples.
+    uint32_t wideSampleCount = 0;
+    if (mSamplingMethod == TimeGatedSamplingMethod::DIRECT && mSamplesPerPixel > 0 &&
+        std::isfinite(mTimeGateWindowRough) && mTimeGateWindow > 0.f &&
+        mTimeGateWindowRough > mTimeGateWindow && std::isfinite(mRoughTimeGateSampleRatio) &&
+        (mTimeGateMode == TimeGateMode::BOX || mTimeGateMode == TimeGateMode::TENT))
+    {
+        const float ratio = std::clamp(mRoughTimeGateSampleRatio, 0.f, 1.f);
+        wideSampleCount = std::min(uint32_t(float(mSamplesPerPixel) * ratio), mSamplesPerPixel);
+    }
+    defines.add("USE_SHRINK_MAPPING", wideSampleCount > 0 ? "1" : "0");
+    defines.add("SHRINK_WIDE_SAMPLE_COUNT", std::to_string(wideSampleCount));
 
     defines.add("DEBUG_NEWTON_ITERATIONS", mDebugNewtonIterations ? "1" : "0");
     defines.add("MAX_BOUNCES", std::to_string(mMaxBounces));
@@ -369,8 +389,16 @@ void TimeGatedReSTIRInline::bindShaderData(const ShaderVar& var, const RenderDat
         bind(channel);
     for (auto channel : kOutputChannels)
         bind(channel);
-    if(mIsSceneDynamic){
+    if (mUseTemporalReuse)
+    {
         var["gTemporalVBuffer"] = mpTemporalVBuffer;
+        var["CB"]["gTemporalHistoryValid"] = mTemporalHistoryValid;
+        var["CB"]["gPreviousCameraPosition"] = mPreviousCameraPosition;
+        if (mIsSceneDynamic)
+        {
+            var["Laser_CB"]["laserPrevPower"] = mPreviousLaserPower;
+            var["Laser_CB"]["laserPrevCosAngle"] = mPreviousLaserCosAngle;
+        }
     }
 }
 
@@ -411,6 +439,8 @@ void TimeGatedReSTIRInline::spatialReuse(RenderContext* pRenderContext, const Re
         bind(channel);
     for (auto channel : kOutputChannels)
         bind(channel);
+    if (mDebugNewtonIterations)
+        for (auto channel : kDebugOutputChannels) bind(channel);
 
     rootvar["TimeGate"]["time_gate_window"] = mTimeGateWindow;
     rootvar["TimeGate"]["time_gate_window_rough"] = mTimeGateWindowRough;
@@ -440,10 +470,13 @@ void TimeGatedReSTIRInline::spatialReuse(RenderContext* pRenderContext, const Re
     rootvar["Shiftmap_CB"]["gNewtonMaxIteration"] = mNewtonMaxIteration;
     rootvar["Shiftmap_CB"]["gNewtonRelativeTolerance"] = mNewtonRelativeTolerance;
 
-    // Replace initial radiance with per-frame statistics in debug mode. Clear even
-    // with zero spatial iterations, so the output then contains zero attempts.
+    // Clear diagnostics once per frame; spatial iterations add to these buffers.
+    // Keep initial RGB intact, including when spatial iteration count is zero.
     if (mDebugNewtonIterations)
-        pRenderContext->clearUAV(renderData.getTexture("color")->getUAV().get(), float4(0.f));
+    {
+        pRenderContext->clearUAV(renderData.getTexture("newtonStatistics")->getUAV().get(), uint4(0));
+        pRenderContext->clearUAV(renderData.getTexture("mappingDistance")->getUAV().get(), float4(0.f));
+    }
 
     for(uint iteration=0; iteration < mSpatialReusePassIteration; iteration++){
         std::swap(mpCurrReservoirs, mpPrevReservoirs);
@@ -454,35 +487,6 @@ void TimeGatedReSTIRInline::spatialReuse(RenderContext* pRenderContext, const Re
     }
 }
 
-void TimeGatedReSTIRInline::finalEvaluate(RenderContext* pRenderContext, const RenderData& renderData)
-{
-    auto rootvar = mpFinalEvaluatePass->getRootVar();
-    auto var = rootvar["CB"]["gEvaluateFinalSamples"];
-
-    const uint2 targetDim = renderData.getDefaultTextureDims();
-    var["gFrameDim"] = targetDim;
-    var["currReservoirs"] = mpCurrReservoirs;
-
-    rootvar["TimeGate"]["time_gate_window"] = mTimeGateWindow;
-    rootvar["TimeGate"]["time_gate_window_rough"] = mTimeGateWindowRough;
-    rootvar["TimeGate"]["time_gate_mode"] = uint(mTimeGateMode);
-    rootvar["TimeGate"]["tcurr"] = mTcurr;
-    rootvar["TimeGate"]["tprev"] = mTprev;
-
-    // Bind I/O buffers. These needs to be done per-frame as the buffers may change anytime.
-    auto bind = [&](const ChannelDesc& desc)
-    {
-        if (!desc.texname.empty())
-        {
-            var[desc.texname] = renderData.getTexture(desc.name);
-        }
-    };
-    for (auto channel : kOutputChannels)
-        bind(channel);
-
-    mpFinalEvaluatePass->execute(pRenderContext, {targetDim.x, targetDim.y, 1});
-}
-
 void TimeGatedReSTIRInline::execute(RenderContext* pRenderContext, const RenderData& renderData)
 {
 
@@ -490,6 +494,7 @@ void TimeGatedReSTIRInline::execute(RenderContext* pRenderContext, const RenderD
     auto& dict = renderData.getDictionary();
     if (mOptionsChanged)
     {
+        mTemporalHistoryValid = false;
         auto flags = dict.getValue(kRenderPassRefreshFlags, RenderPassRefreshFlags::None);
         dict[Falcor::kRenderPassRefreshFlags] = flags | Falcor::RenderPassRefreshFlags::RenderOptionsChanged;
         mOptionsChanged = false;
@@ -498,12 +503,16 @@ void TimeGatedReSTIRInline::execute(RenderContext* pRenderContext, const RenderD
     // If we have no scene, just clear the outputs and return.
     if (!mpScene)
     {
+        mTemporalHistoryValid = false;
         for (auto it : kOutputChannels)
         {
             Texture* pDst = renderData.getTexture(it.name).get();
             if (pDst)
                 pRenderContext->clearTexture(pDst);
         }
+        if (mDebugNewtonIterations)
+            for (auto channel : kDebugOutputChannels)
+                if (auto texture = renderData.getTexture(channel.name)) pRenderContext->clearTexture(texture.get());
         return;
     }
 
@@ -517,6 +526,20 @@ void TimeGatedReSTIRInline::execute(RenderContext* pRenderContext, const RenderD
     }
     mLaserPower = dict.keyExists("laserPower") ? dict["laserPower"] : float3(1,1,1);
     mLaserCosAngle = dict.keyExists("laserCosAngle") ? dict["laserCosAngle"] : 0.0f;
+
+    // Dynamic mode supports moving cameras/lights, but not geometry or material changes.
+    const auto updates = mpScene->getUpdates();
+    const auto cameraUpdates = IScene::UpdateFlags::CameraMoved |
+        IScene::UpdateFlags::CameraPropertiesChanged | IScene::UpdateFlags::CameraSwitched;
+    auto allowedUpdates = cameraUpdates;
+    if (mIsSceneDynamic)
+        allowedUpdates |= IScene::UpdateFlags::LightsMoved | IScene::UpdateFlags::LightIntensityChanged |
+            IScene::UpdateFlags::LightPropertiesChanged | IScene::UpdateFlags::SceneGraphChanged;
+    const bool lightChanged = any(mLaserPosition != mLaserPrevPosition) || any(mLaserDirection != mLaserPrevDirection) ||
+        any(mLaserPower != mPreviousLaserPower) || mLaserCosAngle != mPreviousLaserCosAngle;
+    if (mTemporalHistoryValid && ((updates & ~allowedUpdates) != IScene::UpdateFlags::None ||
+        (!mIsSceneDynamic && lightChanged) || mpScene->getCamera()->getApertureRadius() > 0.f))
+        mTemporalHistoryValid = false;
 
     if (!mpEmissiveSampler && (mSamplingMethod != TimeGatedSamplingMethod::DIRECT))
     {
@@ -591,23 +614,6 @@ void TimeGatedReSTIRInline::execute(RenderContext* pRenderContext, const RenderD
         mpSampleGenerator->bindShaderData(var);
     }
 
-    // if(!mpFinalEvaluatePass){
-    //     // Create ray tracing program.
-    //     ProgramDesc desc;
-    //     desc.addShaderModules(mpScene->getShaderModules());
-    //     desc.addShaderLibrary(kSEvaluateFinalSamplesFile).csEntry("main");
-    //     desc.addTypeConformances(mpScene->getTypeConformances());
-
-    //     DefineList defines;
-    //     defines.add(mpScene->getSceneDefines());
-    //     defines.add(mpSampleGenerator->getDefines());
-    //     defines.add(getShaderDefines(renderData));
-
-    //     mpFinalEvaluatePass = ComputePass::create(mpDevice, desc, defines, true);
-
-    //     ShaderVar var = mpFinalEvaluatePass->getRootVar();
-    // }
-
     prepareResources(pRenderContext, renderData);
 
     if (is_set(mpScene->getUpdates(), IScene::UpdateFlags::RecompileNeeded) ||
@@ -653,7 +659,6 @@ void TimeGatedReSTIRInline::execute(RenderContext* pRenderContext, const RenderD
     // swap reservoirs
     // std::swap(mpCurrReservoirs, mpPrevReservoirs);
     spatialReuse(pRenderContext, renderData);
-    // finalEvaluate(pRenderContext, renderData);
 
     mFrameCount++;
 
@@ -661,9 +666,13 @@ void TimeGatedReSTIRInline::execute(RenderContext* pRenderContext, const RenderD
     std::swap(mpCurrReservoirs, mpPrevReservoirs);
 
     // copy v buffer
-    if(mIsSceneDynamic){
+    mTemporalHistoryValid = mUseTemporalReuse &&
+        mpScene->getCamera()->getApertureRadius() == 0.f;
+    if (mTemporalHistoryValid)
         pRenderContext->copyResource(mpTemporalVBuffer.get(), renderData["vbuffer"].get());
-    }
+    mPreviousCameraPosition = mpScene->getCamera()->getPosition();
+    mPreviousLaserPower = mLaserPower;
+    mPreviousLaserCosAngle = mLaserCosAngle;
 
     mLaserPrevDirection = mLaserDirection;
     mLaserPrevPosition = mLaserPosition;
@@ -713,6 +722,7 @@ void TimeGatedReSTIRInline::setScene(RenderContext* pRenderContext, const ref<Sc
     // After changing scene, the raytracing program should to be recreated.
     mpComputePass = nullptr;
     mFrameCount = 0;
+    mTemporalHistoryValid = false;
     mpReflectTypes = nullptr;
 
     // Set new scene.
@@ -726,6 +736,8 @@ void TimeGatedReSTIRInline::prepareResources(RenderContext* pRenderContext, cons
     defines.add("IS_SCENE_DYNAMIC", mIsSceneDynamic ? "1" : "0");
     defines.add("USE_SINGLE_CHANNEL", mUseSingleChannel ? "1" : "0");
     defines.add("USE_IMPORTANCE_SAMPLING", mUseImportanceSampling ? "1" : "0");
+    defines.add("USE_ALPHA_TEST", mUseAlphaTest ? "1" : "0");
+    defines.add("IS_LIGHT_SOURCE_LASER", mIsLightSourceLaser ? "1" : "0");
     
     // create helper program
     if (!mpReflectTypes)
@@ -758,6 +770,8 @@ void TimeGatedReSTIRInline::prepareResources(RenderContext* pRenderContext, cons
     const uint2 targetDim = renderData.getDefaultTextureDims();
     const uint32_t screenPixelCount = targetDim.x * targetDim.y;
 
+    if (any(mTemporalHistoryDimensions != targetDim)) mTemporalHistoryValid = false;
+
     // create reservoirs
     if(!mpPrevReservoirs || (mpPrevReservoirs->getElementCount() != screenPixelCount)){
         mpPrevReservoirs = mpDevice->createStructuredBuffer(
@@ -785,13 +799,16 @@ void TimeGatedReSTIRInline::prepareResources(RenderContext* pRenderContext, cons
         mpNeighborOffsets = createNeighborOffsetTexture(kNeighborOffsetCount);
     }
     
-    // create temporal v buffer
-    if(mIsSceneDynamic && !mpTemporalVBuffer){
-        if(auto scene = dynamic_ref_cast<Scene>(mpScene)){
-            mpTemporalVBuffer = mpDevice->createTexture2D(
-                targetDim.x, targetDim.y, scene->getHitInfo().getFormat(), 1, 1);
-        }
+    if (mUseTemporalReuse &&
+        (!mpTemporalVBuffer || any(mTemporalHistoryDimensions != targetDim) ||
+         mpTemporalVBuffer->getFormat() != renderData.getTexture("vbuffer")->getFormat()))
+    {
+        mpTemporalVBuffer = mpDevice->createTexture2D(
+            targetDim.x, targetDim.y, renderData.getTexture("vbuffer")->getFormat(), 1, 1);
+        mTemporalHistoryDimensions = targetDim;
+        mTemporalHistoryValid = false;
     }
+
 }
 
 ref<Texture> TimeGatedReSTIRInline::createNeighborOffsetTexture(uint32_t sampleCount)

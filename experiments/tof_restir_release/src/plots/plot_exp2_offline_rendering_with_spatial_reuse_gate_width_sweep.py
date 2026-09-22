@@ -45,7 +45,7 @@ def load_errors(directory, domain="npy"):
             rows = list(csv.DictReader(stream))
         if len(rows) != len(METHODS) or {r["method"] for r in rows} != set(METHODS):
             raise ValueError(f"Expected one checkpoint per method: {run}")
-        reference = load_image(run / "reference.npy", domain)
+        reference = load_image(run / manifest.get("reference_file", "reference.npy"), domain)
         for row in rows:
             row.update(measure_error(load_image(run / row["image"], domain), reference))
             budget = float(row["requested_budget"])

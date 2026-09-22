@@ -5,10 +5,12 @@ Only create_testbed() imports Falcor. Configuration and CLI help work without it
 
 from dataclasses import dataclass
 import math
+import numpy as np
 from time import perf_counter
 from tqdm import trange
 
 from .io import save_image
+from .reuse_statistics import summarize_counts, summarize_distances, validate_counts
 
 METHODS = {
     "pt": {"plugin": "TimeGatedPathTracerInline"},
@@ -22,8 +24,10 @@ class SpatialOptions:
     neighbors: int = 5
     iterations: int = 3
     radius_pixels: float = 10.0
-    roughness_threshold: float = .25
+    roughness_threshold: float = .05
     newton_iterations: int = 5
+    gauge_mode: str = "avg_grad"
+    gauge_axis: tuple[float, float] = (1.0, 0.0)
 
     def properties(self):
         return {
@@ -31,7 +35,8 @@ class SpatialOptions:
             "spatialReuseIteration": self.iterations,
             "spatialReuseGatherRadius": self.radius_pixels,
             "specularRoughnessThreshold": self.roughness_threshold,
-            "gaugeMode": "avg_grad", "NewtonMaxIteration": self.newton_iterations,
+            "gaugeMode": self.gauge_mode, "gaugeAxis": list(self.gauge_axis),
+            "NewtonMaxIteration": self.newton_iterations,
             "isSceneDynamic": False, "useTemporalReuse": False,
         }
 
@@ -47,8 +52,8 @@ class Budget:
         if self.mode not in ("spp", "seconds"):
             raise ValueError("Budget mode must be spp or seconds")
         if (type(self.spp_per_frame) is not int or type(self.warmup_frames) is not int
-                or self.spp_per_frame < 1 or self.warmup_frames < 1):
-            raise ValueError("SPP/frame and warm-up frames must be positive")
+                or self.spp_per_frame < 1 or self.warmup_frames < 0):
+            raise ValueError("SPP/frame must be positive and warm-up frames nonnegative")
         if not self.checkpoints or tuple(sorted(set(self.checkpoints))) != self.checkpoints:
             raise ValueError("Budgets must be unique and increasing")
         if any(not math.isfinite(v) or v <= 0 for v in self.checkpoints):
@@ -65,6 +70,9 @@ def create_testbed(scene):
     falcor.Logger.verbosity = falcor.Logger.Level.Error
     testbed = falcor.Testbed(create_window=False)
     testbed.load_scene(scene.scene_file)
+    if scene.camera_position is not None:
+        testbed.scene.camera.position = scene.camera_position
+        testbed.scene.camera.target = scene.camera_target
     testbed.resize_frame_buffer(*scene.resolution)
     testbed.scene.camera.aspectRatio = scene.resolution[0] / scene.resolution[1]
     testbed.scene.camera.apertureRadius = 0.0
@@ -74,38 +82,70 @@ def create_testbed(scene):
     return testbed
 
 
-def create_graph(testbed, method, scene, spp_per_frame, spatial):
-    """All methods use direct initial sampling and the same scene/gate/light."""
+def create_graph(testbed, method, scene, spp_per_frame, spatial, *, statistics=False, sampling_method="direct",
+                 specular_roughness_threshold_ellipsoid=None, triangle_sampler="LightBVH", shrink_options=None,
+                 temporal_reuse=False, temporal_history_length=20.0, scene_dynamic=False, use_motion_vectors=False):
+    """Construct a renderer with the selected initial sampling and scene/gate/light."""
+    if triangle_sampler not in ("LightBVH", "Uniform"):
+        raise ValueError("triangle_sampler must be LightBVH or Uniform")
+    if statistics and method == "pt":
+        raise ValueError("PT has no spatial reuse statistics")
     graph = testbed.create_render_graph(method)
     graph.create_pass("VBuffer", "VBufferRT", {
         "samplePattern": "Center", "sampleCount": 1, "useAlphaTest": True,
     })
+    light_position = scene.light_position
+    light_direction = scene.light_direction
+    if scene.light_collocated:
+        # The laser visibility pass must use the same pose as the tracer.
+        camera = testbed.scene.camera
+        position, target = camera.position, camera.target
+        light_position = [float(position.x), float(position.y), float(position.z)]
+        light_direction = [float(target.x - position.x), float(target.y - position.y), float(target.z - position.z)]
+        norm = math.sqrt(sum(v * v for v in light_direction))
+        if not math.isfinite(norm) or norm <= 0:
+            raise ValueError("Camera direction must be finite and nonzero for a collocated light")
+        light_direction = [v / norm for v in light_direction]
     graph.create_pass("Laser", "LaserVBufferRT", {
         "samplePattern": "Center", "sampleCount": 1, "useAlphaTest": True,
-        "laserPosition": scene.light_position, "laserDirection": scene.light_direction,
+        "laserPosition": light_position, "laserDirection": light_direction,
         "laserPower": scene.light_power, "laserAngle": scene.light_angle_degrees,
     })
     properties = {
-        "samplingMethod": "direct", "samplesPerPixel": spp_per_frame,
+        "samplingMethod": sampling_method, "emissiveSampler": triangle_sampler,
+        "samplesPerPixel": spp_per_frame,
         "maxBounces": scene.max_bounces, "computeDirect": False,
         "useImportanceSampling": True, "useAlphaTest": True,
         "timeGateMode": "box", "timeGateWindow": scene.gate_width,
         "timeMin": scene.gate_center, "timeMax": scene.gate_center, "timeBin": 1,
-        "laserCollocated": False, "isLightSourceLaser": scene.is_laser,
+        "laserCollocated": scene.light_collocated, "isLightSourceLaser": scene.is_laser,
         "useSingleChannel": False,
     }
+    if specular_roughness_threshold_ellipsoid is not None:
+        properties["specularRoughnessThresholdEllipsoid"] = specular_roughness_threshold_ellipsoid
     if method != "pt":
         properties.update(spatial.properties())
+        properties["debugNewtonIterations"] = statistics
+        properties["useTemporalReuse"] = temporal_reuse
+        properties["isSceneDynamic"] = scene_dynamic
+        properties["temporalHistoryLength"] = temporal_history_length
         properties["shiftmapMethod"] = "no" if method == "naive" else scene.shiftmap_method
+    if shrink_options:
+        properties.update(shrink_options)
     graph.create_pass("Tracer", METHODS[method]["plugin"], properties)
     graph.create_pass("Accumulate", "AccumulatePass", {"enabled": True, "precisionMode": "SingleCompensated"})
     for source, target in (
         ("VBuffer.vbuffer", "Tracer.vbuffer"), ("VBuffer.viewW", "Tracer.viewW"),
         ("Laser.vbuffer", "Tracer.laservbuffer"), ("Laser.viewW", "Tracer.laserviewW"),
-        ("Tracer.color", "Accumulate.input"),
     ):
         graph.add_edge(source, target)
+    if (scene_dynamic or use_motion_vectors) and temporal_reuse and method != "pt":
+        graph.add_edge("VBuffer.mvec", "Tracer.mvec")
+    graph.add_edge("Tracer.color", "Accumulate.input")
     graph.mark_output("Accumulate.output")
+    if statistics:
+        graph.mark_output("Tracer.newtonStatistics")
+        graph.mark_output("Tracer.mappingDistance")
     return graph
 
 
@@ -120,7 +160,7 @@ def read_image(graph):
     return graph.get_output("Accumulate.output").to_numpy()[..., :3].copy()
 
 
-def render_method(testbed, graph, method, budget, output):
+def render_method(testbed, graph, method, budget, output, *, statistics=False):
     testbed.render_graph = graph
     warmup = []
     for index in range(budget.warmup_frames):
@@ -130,12 +170,21 @@ def render_method(testbed, graph, method, budget, output):
     print(f"{method}: warm-up complete ({budget.warmup_frames} frames discarded)", flush=True)
 
     rows, timings = [], []
+    counts = np.zeros((1, 1, 4), dtype=np.float64)
+    distances = np.zeros((1, 1, 2), dtype=np.float64)
     elapsed, frames, next_checkpoint = 0.0, 0, 0
     while next_checkpoint < len(budget.checkpoints):
         duration = timed_frame(testbed)
         elapsed += duration
         frames += 1
         spp = frames * budget.spp_per_frame
+        if statistics:
+            # Readback/CPU aggregation are outside timed_frame(), like RGB export.
+            raw_counts = validate_counts(graph.get_output("Tracer.newtonStatistics").to_numpy())
+            raw_distances = graph.get_output("Tracer.mappingDistance").to_numpy()
+            summarize_distances(raw_distances, raw_counts)
+            counts += raw_counts.sum(axis=(0, 1), keepdims=True)
+            distances += raw_distances.sum(axis=(0, 1), keepdims=True, dtype=np.float64)
         timings.append({"method": method, "frame": frames, "seconds": duration, "elapsed_seconds": elapsed})
         achieved = spp if budget.mode == "spp" else elapsed
         if achieved < budget.checkpoints[next_checkpoint]:
@@ -151,6 +200,7 @@ def render_method(testbed, graph, method, budget, output):
                 "elapsed_seconds": elapsed,
                 "overshoot_seconds": elapsed - requested if budget.mode == "seconds" else 0.0,
                 "image": filename,
+                **({**summarize_counts(counts), **summarize_distances(distances, counts)} if statistics else {}),
             })
             next_checkpoint += 1
         print(f"{method}: {spp} spp, {elapsed:.3f}s", flush=True)

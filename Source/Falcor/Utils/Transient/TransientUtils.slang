@@ -8,6 +8,7 @@
 #define TIME_GATE_GAUSSIAN 5
 #define TIME_GATE_EPANECHNIKOV 6
 #define TIME_GATE_SAWTOOTH 6
+#define TIME_GATE_PERLIN 8
 
 cbuffer TimeGate
 {
@@ -111,6 +112,18 @@ float getMaxpathLength(float target_distance, bool use_rough = false)
 			const float invSigma2 = 1.0f / (sigma * sigma);
 			return exp(-0.5f * v * v * invSigma2);
 		}
+        case TIME_GATE_PERLIN:
+        {
+            // Perlin smoothing profile: 1 - 6u^5 + 15u^4 - 10u^3, 0 <= u <= 1.
+            // Hachisuka et al. 2010, Appendix A, Eq. (34).
+            // Here window is full support width, as for box/Epanechnikov.
+            // Factor 2 normalizes the 1D kernel on v in [-0.5, 0.5].
+            float u = 2.f * abs(v);
+            if (u >= 1.f) return 0.f;
+            float s = 1.f - u;
+            // Equivalent factored polynomial avoids cancellation near the boundary.
+            return 2.f * s * s * s * (1.f + 3.f * u + 6.f * u * u);
+        }
 		case TIME_GATE_EPANECHNIKOV:{
 			// Support exactly [-0.5, 0.5], integral = 1
 			float a = abs(v);

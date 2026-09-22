@@ -67,7 +67,7 @@ For transient rendering (H x W x B histogram per frame), we provide two render p
 
 Note that for each method, we scatter the sampled path's contribution into corresponding time bin (so called path reuse in [Jarabo et al. 2014]).
 
-### MinimalTransientPathTracer
+### TransientHistogramPathTracerInline
 
 Naive path tracing with temporal binning. (we skip the overlapping parameters)
 

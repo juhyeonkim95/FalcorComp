@@ -1,4 +1,4 @@
-import RenderPasses.TimeGatedReSTIRInline.SurfaceOps.CartesianRayChart;
+import RenderPasses.Shared.PathLengthNewtonSolver.SurfaceOps.CartesianRayChart;
 
 RWStructuredBuffer<float4> results;
 

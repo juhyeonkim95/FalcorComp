@@ -2,7 +2,8 @@
 set -euo pipefail
 
 release_dir="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)"
-output_dir="${1:-$release_dir/outputs/exp1_offline_rendering_with_spatial_reuse_equal_time}"
+source "$release_dir/output_paths.sh"
+output_dir="${1:-$OUTPUT_PATH/exp1_offline_rendering_with_spatial_reuse_equal_time}"
 
 run_scene() {
     local scene="$1"
@@ -20,6 +21,6 @@ run_scene() {
 }
 
 # Scene, time budget (seconds), gate width (path-length units).
-# run_scene cornell_box 1.5 0.02
+run_scene cornell_box 1.5 0.02
 run_scene cornell_box_glass_bunny 2.7 0.05
 run_scene cornell_box_dragon_specular 4.0 0.01

@@ -1,0 +1,30 @@
+{
+  "name": "veach-ajar",
+  "scene_file": "../../../scene/veach-ajar/scene-v4.pbrt",
+  "resolution": [
+    960,
+    540
+  ],
+  "max_bounces": 6,
+  "is_laser": true,
+  "light_collocated": true,
+  "light_position": [
+    4.054023,
+    1.616475,
+    -2.306524
+  ],
+  "light_direction": [
+    -0.9900148671410038,
+    -0.03229799566564173,
+    -0.13721298158615636
+  ],
+  "light_power": [
+    1000.0,
+    1000.0,
+    1000.0
+  ],
+  "light_angle_degrees": 0.0,
+  "shiftmapMethod": "area_adaptive",
+  "gate_min": 19.0,
+  "gate_max": 21.0
+}

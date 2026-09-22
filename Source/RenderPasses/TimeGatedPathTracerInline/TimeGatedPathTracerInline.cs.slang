@@ -1,3 +1,5 @@
+import RenderPasses.Shared.Utils.LoadShadingData;
+import RenderPasses.Shared.Lights.LaserLightSampler;
 #include "Scene/SceneDefines.slangh"
 #include "Utils/Math/MathConstants.slangh"
 
@@ -72,56 +74,6 @@ HitInfo traceRay(const float3 origin, const float3 dir, out float hitT)
 
 
 /**
- * Setup ShadingData based on loaded vertex/material attributes for a hit point.
- * @param[in] hit Hit information.
- * @param[in] rayOrigin Ray origin.
- * @param[in] rayDir Normalized ray direction.
- * @return ShadingData struct.
- */
-ShadingData loadShadingData(const HitInfo hit, const float3 rayOrigin, const float3 rayDir)
-{
-    VertexData v = {};
-    uint materialID = {};
-
-#if SCENE_HAS_GEOMETRY_TYPE(GEOMETRY_TYPE_TRIANGLE_MESH)
-    if (hit.getType() == HitType::Triangle)
-    {
-        const TriangleHit triangleHit = hit.getTriangleHit();
-        v = gScene.getVertexData(triangleHit);
-        materialID = gScene.getMaterialID(triangleHit.instanceID);
-    }
-#endif
-#if SCENE_HAS_GEOMETRY_TYPE(GEOMETRY_TYPE_DISPLACED_TRIANGLE_MESH)
-    if (hit.getType() == HitType::DisplacedTriangle)
-    {
-        const DisplacedTriangleHit displacedTriangleHit = hit.getDisplacedTriangleHit();
-        v = gScene.getVertexData(displacedTriangleHit, -rayDir);
-        materialID = gScene.getMaterialID(displacedTriangleHit.instanceID);
-    }
-#endif
-#if SCENE_HAS_GEOMETRY_TYPE(GEOMETRY_TYPE_CURVE)
-    if (hit.getType() == HitType::Curve)
-    {
-        const CurveHit curveHit = hit.getCurveHit();
-        v = gScene.getVertexDataFromCurve(curveHit);
-        materialID = gScene.getMaterialID(curveHit.instanceID);
-    }
-#endif
-#if SCENE_HAS_GEOMETRY_TYPE(GEOMETRY_TYPE_SDF_GRID)
-    if (hit.getType() == HitType::SDFGrid)
-    {
-        const SDFGridHit sdfGridHit = hit.getSDFGridHit();
-        v = gScene.getVertexDataFromSDFGrid(sdfGridHit, rayOrigin, rayDir);
-        materialID = gScene.getMaterialID(sdfGridHit.instanceID);
-    }
-#endif
-
-    ShadingData sd = gScene.materials.prepareShadingData(v, materialID, -rayDir);
-
-    return sd;
-}
-
-/**
  * Returns the primary ray's direction.
  */
 float3 getPrimaryRayDir(uint2 launchIndex, uint2 launchDim, const Camera camera)
@@ -137,95 +89,6 @@ float3 getPrimaryRayDir(uint2 launchIndex, uint2 launchDim, const Camera camera)
         // Note that we do not take depth-of-field into account as it would require exactly matching the
         // sample generator between the passes, which is error prone. The host side will issue a warning instead.
         return camera.computeRayPinhole(launchIndex, launchDim).dir;
-    }
-}
-
-/** Describes a light sample.
-*/
-struct LightSample
-{
-    bool valid;
-    float laserT;
-    float3 Li;
-#if IS_LIGHT_SOURCE_LASER
-    ShadingData sd;
-    IMaterialInstance mi;
-    float3 evalLi(float3 posW, inout SampleGenerator sg){
-        float3 toLight = sd.posW - posW;
-        float distSqr = max(dot(toLight, toLight), kMinLightDistSqr);
-        return Li * mi.eval(sd, normalize(posW - sd.posW), sg) / distSqr;
-    }
-    float3 getOrientedFaceNormal(){
-        return sd.getOrientedFaceNormal();
-    }
-    float3 posW(){
-        return sd.posW;
-    }
-#else
-    float3 origin;
-    float3 dir;
-    float3 evalLi(float3 posW, inout SampleGenerator sg){
-        float3 toLight = this.origin - posW;
-        float inspot = float(dot(dir, toLight) < 0.0);
-        float distSqr = max(dot(toLight, toLight), kMinLightDistSqr);
-        return Li / distSqr * inspot;
-    }
-    float3 getOrientedFaceNormal(){
-        return dir;
-    }
-    float3 posW(){
-        return origin;
-    }
-#endif
-}
-
-// Laser Sampling
-struct LaserLightSampler
-{
-    float3 laserOrigin;
-    float3 laserDirection;
-    float laserCosAngle;
-    float3 laserPower;
-
-    // helper axis
-    float3 laserTangent;
-    float3 laserBitangent;
-
-    __init(float3 laserOrigin, float3 laserDirection, float laserCosAngle, float3 laserPower){
-        this.laserOrigin = laserOrigin;
-        this.laserDirection = laserDirection;
-        this.laserCosAngle = laserCosAngle;
-        this.laserBitangent = perp_stark_onb(laserDirection);
-        this.laserTangent = cross(laserBitangent, laserDirection);
-        this.laserPower = laserPower;
-    }
-
-    void generateLightSample(
-        inout SampleGenerator sg,
-        out LightSample ls
-    ) {
-        ls = {};
-        #if IS_LIGHT_SOURCE_LASER
-            // (1) Collimated laser (trace additional ray from laser origin -> laser direction)
-            float3 local = sample_cone(sampleNext2D(sg), this.laserCosAngle);
-            float3 laser_d = normalize(this.laserTangent*local.x + this.laserBitangent*local.y + this.laserDirection*local.z);
-            float laserT;
-            Ray ray = Ray(this.laserOrigin, laser_d, 0.f, FLT_MAX);
-            SceneRayQuery<kUseAlphaTest> sceneRayQuery;
-            HitInfo laserHit = sceneRayQuery.traceRay(ray, laserT);
-            if (!laserHit.isValid()) return;
-            ls.sd = loadShadingData(laserHit, this.laserOrigin, laser_d);
-            ls.mi = gScene.materials.getMaterialInstance(ls.sd, ExplicitLodTextureSampler(0.f));
-            ls.laserT = laserT;
-            ls.Li = laserPower;
-        #else
-            // (2) Point Light
-            ls.dir = this.laserDirection;
-            ls.laserT = 0.0;
-            ls.origin = this.laserOrigin;
-            ls.Li = laserPower;
-        #endif
-        ls.valid = true;
     }
 }
 

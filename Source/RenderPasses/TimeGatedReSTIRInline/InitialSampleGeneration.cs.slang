@@ -12,9 +12,14 @@ import Utils.Transient.EllipsoidIntersection;
 import Rendering.Lights.EmissiveLightSamplerHelpers;
 import Rendering.Lights.EmissiveLightSampler;
 import Scene.RaytracingInline;
-import Reservoirs;
-import LoadShadingData;
-import LaserLightSampler;
+import RenderPasses.Shared.ReSTIR.Reservoirs;
+import RenderPasses.Shared.ReSTIR.PathReconstruction;
+import RenderPasses.Shared.ReSTIR.ReservoirReuse;
+#if USE_SHRINK_MAPPING || USE_TEMPORAL_REUSE
+import RenderPasses.Shared.ReSTIR.PathLengthAwareShiftmapping;
+#endif
+import RenderPasses.Shared.Utils.LoadShadingData;
+import RenderPasses.Shared.Lights.LaserLightSampler;
 
 
 cbuffer CB
@@ -28,8 +33,12 @@ cbuffer CB
     uint2 gLaserHitVBufferRes;
     float specularRoughnessThreshold;
     float specularRoughnessThresholdEllipsoid;
-    // Unused legacy bindings retained until the C++ binding cleanup.
     float gTemporalHistoryLength;
+#if USE_TEMPORAL_REUSE
+    bool gTemporalHistoryValid;
+    float3 gPreviousCameraPosition;
+#endif
+    // Fraction of initial paths assigned to the wider gate (direct sampling only).
     float gRoughTimeGateSampleRatio;
 }
 
@@ -41,6 +50,10 @@ cbuffer Laser_CB
     float laserCosAngle;
     float3 laserPrevOrigin;
     float3 laserPrevDirection;
+#if IS_SCENE_DYNAMIC && USE_TEMPORAL_REUSE
+    float3 laserPrevPower;
+    float laserPrevCosAngle;
+#endif
 }
 
 
@@ -48,7 +61,9 @@ cbuffer Laser_CB
 Texture2D<PackedHitInfo> gVBuffer;
 Texture2D<float4> gViewW; // Optional
 Texture2D<float2> gMotionVector; // Optional
+#if USE_TEMPORAL_REUSE
 Texture2D<PackedHitInfo> gTemporalVBuffer;
+#endif
 
 
 // Laser V Buffer (1 pixel)
@@ -71,24 +86,6 @@ EmissiveLightSampler emissiveSampler;
 
 static const bool kUseImportanceSampling = USE_IMPORTANCE_SAMPLING;
 static const bool kUseEnvBackground = USE_ENV_BACKGROUND;
-
-// Offset each surface endpoint toward the open segment. The point-light endpoint
-// has no surface to offset. BSDFs and path lengths still use unmodified positions.
-bool traceVisibilityRay(ShadingData surface, LightSample light)
-{
-    float3 segment = light.posW() - surface.posW;
-    if (!(dot(segment, segment) > 0.f)) return false;
-    float3 origin = surface.computeRayOrigin(dot(surface.getOrientedFaceNormal(), segment) >= 0.f);
-    float3 endpoint = light.posW();
-#if IS_LIGHT_SOURCE_LASER
-    endpoint = light.sd.computeRayOrigin(dot(light.getOrientedFaceNormal(), -segment) >= 0.f);
-#endif
-    float3 offsetSegment = endpoint - origin;
-    if (!(dot(offsetSegment, segment) > 0.f)) return false;
-    float distance = length(offsetSegment);
-    SceneRayQuery<USE_ALPHA_TEST> query;
-    return query.traceVisibilityRay(Ray(origin, offsetSegment / distance, 0.f, distance));
-}
 
 float3 getPrimaryRayDir(uint2 pixel, uint2 frameDim)
 {
@@ -116,6 +113,9 @@ struct ReconnectionState
     uint postBounce;
     uint prefixSeed;
     uint suffixSeed;
+#if IS_SCENE_DYNAMIC
+    float3 yRayDirection; // Original incoming camera-walk ray at y, preserved through reuse.
+#endif
     float areaPdf;              // p_A(a->x), then p_A(a->x) * p_A(x->y).
     float3 suffixThroughput;    // cosine_y/pdf_y, then sampled weights at z and beyond.
     float suffixLength;        // y->...->current surface; excludes current->light.
@@ -138,6 +138,9 @@ struct ReconnectionState
         else if (postBounce == 1)
         {
             yHit = hit;
+#if IS_SCENE_DYNAMIC
+            yRayDirection = sample.wo;
+#endif
             float cosine = max(dot(surface.getOrientedFaceNormal(), -sample.wo), 0.f);
             areaPdf *= sample.pdf * cosine / max(segmentLength * segmentLength, kMinLightDistSqr);
         }
@@ -167,7 +170,7 @@ struct DirectConnection
 };
 
 DirectConnection evaluateDirectConnection(ShadingData surface, IMaterialInstance material,
-    LightSample light, float pathLength, inout SampleGenerator rng)
+    LightSample light, float pathLength, inout SampleGenerator rng, bool useRoughGate = false)
 {
     DirectConnection connection = {};
     if (!light.valid) return connection;
@@ -176,10 +179,14 @@ DirectConnection evaluateDirectConnection(ShadingData surface, IMaterialInstance
     connection.totalLength = pathLength + connection.distance + light.laserT;
     if (!(connection.distance > 0.f)) return connection;
     connection.direction = segment / connection.distance;
-    bool visible = traceVisibilityRay(surface, light);
+    bool visible = checkLightVisibility(surface, light);
     connection.bsdfCosine = material.eval(surface, connection.direction, rng);
     connection.incidentRadiance = light.evalLi(surface.posW, rng) * float(visible);
+#if USE_SHRINK_MAPPING
+    connection.gate = pathLengthImportance(connection.totalLength, tcurr, useRoughGate);
+#else
     connection.gate = pathLengthImportance(connection.totalLength, tcurr);
+#endif
     return connection;
 }
 
@@ -233,6 +240,7 @@ void submitCandidate(inout Reservoir reservoir, ReconnectionState rc,
         }
     }
 #if IS_SCENE_DYNAMIC
+    reservoir.rcNextVertexRayDirection = rc.yRayDirection;
     reservoir.rcNextVertexRandomSeed = rc.suffixSeed;
     reservoir.lightRandomSeed = lightSeed;
 #endif
@@ -410,6 +418,139 @@ void submitEllipsoidalCandidate(inout Reservoir reservoir, ReconnectionState rc,
 
 #endif
 
+#if USE_SHRINK_MAPPING
+// Each input estimates its gate integral as W*f (before division by gate width).
+// The existing shift helper supplies the mapped target, area Jacobian and
+// complementary target-based MIS weights. Never put the MIS weight into f.
+Reservoir mergeGateReservoirs(Reservoir narrow, Reservoir wide, uint narrowCount, uint wideCount,
+    ShadingData primary, IMaterialInstance primaryMaterial, float primaryLength, inout SampleGenerator rng)
+{
+    float narrowTarget = luminance(narrow.f);
+    float wideTarget = luminance(wide.f);
+    narrow.W = narrowTarget > 0.f ? narrow.wSum / narrowTarget : 0.f;
+    wide.W = wideTarget > 0.f ? wide.wSum / wideTarget : 0.f;
+    // MIS uses actual path counts, not the number of light connections submitted
+    // along those paths, nor the requested (possibly rounded) split ratio.
+    narrow.M = float(narrowCount);
+    wide.M = float(wideCount);
+    const float K = time_gate_window / time_gate_window_rough;
+    Reservoir merged = Reservoir();
+#if DEBUG_NEWTON_ITERATIONS
+    // Initial shrinking must not enter the spatial-neighbor diagnostic buffers.
+    ShiftMapDebugInfo debugInfo = {};
+#endif
+    // K is the narrow/wide gate-width ratio: L' = tcurr + K*(L-tcurr).
+    combine_reservoir_with_shiftmapping(merged, wide, narrow.M,
+        primary, primaryMaterial, primaryLength, specularRoughnessThreshold,
+        primary, primaryMaterial, primaryLength, tcurr, tcurr, K, false,
+        laserOrigin, laserDirection, rng
+#if DEBUG_NEWTON_ITERATIONS
+        , debugInfo
+#endif
+    );
+    // Expand the canonical narrow sample only to evaluate competing wide support.
+    // A failed expansion or no-RC path retains the full narrow contribution.
+    if (narrowCount > 0)
+    {
+        combine_reservoir_with_shiftmapping(merged, narrow, wide.M,
+            primary, primaryMaterial, primaryLength, specularRoughnessThreshold,
+            primary, primaryMaterial, primaryLength, tcurr, tcurr, 1.f / K, true,
+            laserOrigin, laserDirection, rng
+#if DEBUG_NEWTON_ITERATIONS
+            , debugInfo
+#endif
+        );
+    }
+    // The no-RC canonical branch in the shared helper copies only f and its flag.
+    // Preserve the selected narrow path length as well (there is no wide no-RC candidate).
+    if (merged.rcVertexBounce == 0) merged.totalPathLength = narrow.totalPathLength;
+    float target = luminance(merged.f);
+    merged.W = target > 0.f ? merged.wSum / target : 0.f;
+    return merged;
+}
+#endif
+
+#if USE_TEMPORAL_REUSE
+// Static mode keeps the suffix; dynamic mode evaluates each temporal direction
+// with its target frame's light while retaining the source target for MIS.
+Reservoir reuseTemporalHistory(Reservoir fresh, uint2 pixel, ShadingData primary,
+    IMaterialInstance primaryMaterial, float primaryLength, inout SampleGenerator rng)
+{
+    // Use camera-path counts consistently, including paths with no contribution.
+    fresh.M = float(samplesPerPixel);
+    if (!gTemporalHistoryValid || gTemporalHistoryLength == 0.f) return fresh;
+
+    float2 previousPosition = float2(pixel) + 0.5f;
+#if is_valid_gMotionVector
+    previousPosition += gMotionVector[pixel] * float2(gFrameDim);
+#endif
+    if (!all(isfinite(previousPosition)) || any(previousPosition < 0.f) ||
+        any(previousPosition >= float2(gFrameDim))) return fresh;
+    uint2 previousPixel = uint2(floor(previousPosition));
+    HitInfo previousHit = HitInfo(gTemporalVBuffer[previousPixel]);
+    if (!previousHit.isValid()) return fresh;
+    float3 previousPoint = gScene.getVertexData(previousHit.getTriangleHit()).posW;
+    float3 previousDirection = previousPoint - gPreviousCameraPosition;
+    float previousLength = length(previousDirection);
+    if (!(previousLength > 0.f)) return fresh;
+    ShadingData previousPrimary = loadShadingData(previousHit, gPreviousCameraPosition,
+        previousDirection / previousLength);
+    let previousMaterial = gScene.materials.getMaterialInstance(previousPrimary, ExplicitLodTextureSampler(0.f));
+
+#if IS_SCENE_DYNAMIC
+    // Match the old temporal disocclusion test before assigning history any mass.
+    // A valid previous hit can still belong to a different surface/material.
+    if (primary.materialID != previousPrimary.materialID ||
+        dot(primary.getOrientedFaceNormal(), previousPrimary.getOrientedFaceNormal()) <= 0.7f ||
+        abs(primaryLength - previousLength) >= 0.1f * primaryLength)
+        return fresh;
+#endif
+
+    Reservoir history = prevReservoirs[previousPixel.y * gFrameDim.x + previousPixel.x];
+    if (gTemporalHistoryLength > 0.f)
+        history.M = min(history.M, gTemporalHistoryLength * float(samplesPerPixel));
+    if (!(history.M > 0.f)) return fresh;
+
+    Reservoir merged = Reservoir();
+#if DEBUG_NEWTON_ITERATIONS
+    // Temporal mapping is excluded from the spatial-only diagnostic outputs.
+    ShiftMapDebugInfo debugInfo = {};
+#endif
+    // Previous -> current: source gate tprev, target gate tcurr.
+    combine_reservoir_with_shiftmapping(merged, history, fresh.M,
+        previousPrimary, previousMaterial, previousLength, specularRoughnessThreshold,
+        primary, primaryMaterial, primaryLength, tcurr, tprev, 1.f, false,
+        laserOrigin, laserDirection, rng
+#if DEBUG_NEWTON_ITERATIONS
+        , debugInfo
+#endif
+#if IS_SCENE_DYNAMIC
+        , true, laserPower, laserCosAngle
+#endif
+    );
+    // Current -> previous evaluates competing support, retaining the current sample.
+    combine_reservoir_with_shiftmapping(merged, fresh, history.M,
+        primary, primaryMaterial, primaryLength, specularRoughnessThreshold,
+        previousPrimary, previousMaterial, previousLength, tprev, tcurr, 1.f, true,
+#if IS_SCENE_DYNAMIC
+        laserPrevOrigin, laserPrevDirection, rng
+#else
+        laserOrigin, laserDirection, rng
+#endif
+#if DEBUG_NEWTON_ITERATIONS
+        , debugInfo
+#endif
+#if IS_SCENE_DYNAMIC
+        , true, laserPrevPower, laserPrevCosAngle
+#endif
+    );
+    if (merged.rcVertexBounce == 0) merged.totalPathLength = fresh.totalPathLength;
+    float target = luminance(merged.f);
+    merged.W = target > 0.f ? merged.wSum / target : 0.f;
+    return merged;
+}
+#endif
+
 // Generate initial RIS candidates by BSDF walking and connecting each secondary
 // surface to the single point/laser light. Primary direct lighting stays excluded.
 float3 tracePath(uint2 pixel, uint2 frameDim)
@@ -428,7 +569,16 @@ float3 tracePath(uint2 pixel, uint2 frameDim)
     ShadingData primary = loadShadingData(primaryHit, cameraPosition, primaryDirection);
     let primaryMaterial = gScene.materials.getMaterialInstance(primary, ExplicitLodTextureSampler(0.f));
     float primaryLength = length(primary.posW - cameraPosition);
+#if USE_SHRINK_MAPPING
+    // C++ validates the gate and rounds the ratio; ratio 1 uses only wide samples.
+    const uint wideCount = SHRINK_WIDE_SAMPLE_COUNT;
+    const uint narrowCount = samplesPerPixel - wideCount;
+    Reservoir wideReservoir = Reservoir();
+    const float wideSampleWeight = float(samplesPerPixel) / float(wideCount);
+    const float narrowSampleWeight = narrowCount > 0 ? float(samplesPerPixel) / float(narrowCount) : 0.f;
+#else
     float maxPathLength = getMaxpathLength(tcurr);
+#endif
     LaserLightSampler lightSampler = LaserLightSampler(laserOrigin, laserDirection, laserCosAngle, laserPower);
     // Preserve separate streams so prefix replay never consumes reservoir/light RNG draws.
     SampleGenerator rng = SampleGenerator(pixel, gFrameCount);
@@ -437,6 +587,11 @@ float3 tracePath(uint2 pixel, uint2 frameDim)
 
     for (uint sampleIndex = 0; sampleIndex < samplesPerPixel; ++sampleIndex)
     {
+        bool useRoughGate = false;
+#if USE_SHRINK_MAPPING
+        useRoughGate = sampleIndex >= narrowCount;
+        float maxPathLength = getMaxpathLength(tcurr, useRoughGate);
+#endif
         ShadingData surface = primary;
         IMaterialInstance material = primaryMaterial;
         float3 throughput = 1.f;
@@ -509,17 +664,35 @@ float3 tracePath(uint2 pixel, uint2 frameDim)
             LightSample light = {};
             uint lightSeed = lightRng.getCurrentSeed();
             lightSampler.generateLightSample(lightRng, light);
-            DirectConnection connection = evaluateDirectConnection(surface, material, light, pathLength, rng);
+            DirectConnection connection = evaluateDirectConnection(surface, material, light, pathLength, rng, useRoughGate);
             float techniqueWeight = 1.f;
 #if LIGHT_SAMPLING_METHOD != DIRECT_CONNECTION
             techniqueWeight = deferredDirectWeight(previous, surface, hit, light);
 #endif
+#if USE_SHRINK_MAPPING
+            // submitCandidate divides by samplesPerPixel. Correct that to 1/N_i
+            // so each gate reservoir separately estimates its full gate integral.
+            if (useRoughGate)
+                submitCandidate(wideReservoir, rc, surface, material, light, connection, throughput,
+                    wideSampleWeight, lightSeed, rng);
+            else
+                submitCandidate(reservoir, rc, surface, material, light, connection, throughput,
+                    narrowSampleWeight, lightSeed, rng);
+#else
             submitCandidate(reservoir, rc, surface, material, light, connection, throughput, techniqueWeight, lightSeed, rng);
+#endif
             if (rc.bounce > 0) ++rc.postBounce;
         }
     }
+#if USE_SHRINK_MAPPING
+    reservoir = mergeGateReservoirs(reservoir, wideReservoir, narrowCount, wideCount,
+        primary, primaryMaterial, primaryLength, rng);
+#endif
     float target = luminance(reservoir.f);
     reservoir.W = target > 0.f ? reservoir.wSum / target : 0.f;
+#if USE_TEMPORAL_REUSE
+    reservoir = reuseTemporalHistory(reservoir, pixel, primary, primaryMaterial, primaryLength, rng);
+#endif
     currReservoirs[index] = reservoir;
     return reservoir.W * reservoir.f;
 }

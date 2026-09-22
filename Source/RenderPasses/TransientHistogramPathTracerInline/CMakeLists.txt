@@ -1,0 +1,13 @@
+add_plugin(TransientHistogramPathTracerInline)
+
+target_sources(TransientHistogramPathTracerInline PRIVATE
+    TransientHistogramPathTracerInline.cpp
+    TransientHistogramPathTracerInline.h
+    TransientHistogramPathTracerInline.cs.slang
+)
+
+target_copy_shaders(TransientHistogramPathTracerInline RenderPasses/TransientHistogramPathTracerInline)
+
+target_source_group(TransientHistogramPathTracerInline "RenderPasses")
+
+add_dependencies(TransientHistogramPathTracerInline RenderPassLightShaders)

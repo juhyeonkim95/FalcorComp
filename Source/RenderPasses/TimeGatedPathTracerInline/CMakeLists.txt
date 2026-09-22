@@ -9,3 +9,5 @@ target_sources(TimeGatedPathTracerInline PRIVATE
 target_copy_shaders(TimeGatedPathTracerInline RenderPasses/TimeGatedPathTracerInline)
 
 target_source_group(TimeGatedPathTracerInline "RenderPasses")
+
+add_dependencies(TimeGatedPathTracerInline RenderPassLightShaders)

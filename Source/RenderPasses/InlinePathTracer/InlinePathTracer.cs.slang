@@ -57,10 +57,21 @@ static const bool kUseEmissiveLights = USE_EMISSIVE_LIGHTS;
 static const bool kUseEnvLight = USE_ENV_LIGHT;
 static const bool kUseEnvBackground = USE_ENV_BACKGROUND;
 
-bool traceShadowRay(float3 origin, float3 dir, float distance)
+bool traceShadowRay(const ShadingData surface, const AnalyticLightSample light, uint lightType)
 {
+    float3 origin = surface.computeRayOrigin(dot(surface.getOrientedFaceNormal(), light.dir) >= 0.f);
     SceneRayQuery<kUseAlphaTest> query;
-    return query.traceVisibilityRay(Ray(origin, dir, 0.f, max(0.f, distance - 1e-3f)));
+    // Infinite lights have no finite endpoint (their posW is a dummy value).
+    if (lightType == LightType::Directional || lightType == LightType::Distant)
+        return query.traceVisibilityRay(Ray(origin, light.dir, 0.f, light.distance));
+
+    float3 endpoint = light.posW;
+    if (lightType == LightType::Rect || lightType == LightType::Sphere || lightType == LightType::Disc)
+        endpoint = computeRayOrigin(endpoint, dot(light.normalW, -light.dir) >= 0.f ? light.normalW : -light.normalW);
+    float3 segment = endpoint - origin;
+    float distance = length(segment);
+    if (!(distance > 0.f) || !isfinite(distance) || !(dot(segment, light.dir) > 0.f)) return false;
+    return query.traceVisibilityRay(Ray(origin, segment / distance, 0.f, distance));
 }
 
 ShadingData loadShadingData(const HitInfo hit, const float3 rayOrigin, const float3 rayDir)
@@ -148,11 +159,8 @@ float3 evalDirectAnalytic(const ShadingData sd, const IMaterialInstance mi, inou
     if ((NdotL <= kMinCosTheta && !hasTransmission) || (NdotL >= -kMinCosTheta && !hasReflection))
         return float3(0.f);
 
-    // Get origin with offset applied in direction of the geometry normal to avoid self-intersection.
-    const float3 origin = computeRayOrigin(sd.posW, dot(sd.faceN, ls.dir) >= 0.f ? sd.faceN : -sd.faceN);
-
-    // Test visibility by tracing a shadow ray.
-    bool V = traceShadowRay(origin, ls.dir, ls.distance);
+    // Only the visibility ray uses offset positions; shading uses the original light sample.
+    bool V = traceShadowRay(sd, ls, gScene.getLight(lightIndex).type);
     if (!V)
         return float3(0.f);
 

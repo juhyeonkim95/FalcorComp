@@ -55,6 +55,27 @@ class Testbed:
 
 
 class ExampleTests(unittest.TestCase):
+    def test_exp4_gauges_reach_tracer_with_same_reuse_settings(self):
+        from offline_rendering_with_gauge_comparison import VARIANTS
+        scene = load_scene_config(ROOT / "scenes/exp4/cornell_box.json", [3, 2], gate_width=.02)
+        expected = {
+            "horizontal": ("constant", [1., 0.]),
+            "vertical": ("constant", [0., 1.]),
+            "avg_grad": ("avg_grad", [1., 0.]),
+        }
+        self.assertEqual(set(VARIANTS), set(expected))
+        for label, (method, overrides) in VARIANTS.items():
+            graph = create_graph(Testbed(), method, scene, 32, replace(SpatialOptions(), **overrides))
+            plugin, properties = graph.passes["Tracer"]
+            self.assertEqual(plugin, "TimeGatedReSTIRInline")
+            self.assertEqual((properties["gaugeMode"], properties["gaugeAxis"]), expected[label])
+            self.assertEqual(properties["shiftmapMethod"], "local_tangent")
+            self.assertEqual(properties["spatialReuseIteration"], 3)
+            self.assertEqual(properties["spatialReuseNeighborCount"], 5)
+            self.assertFalse(properties["debugNewtonIterations"])
+            self.assertIn("Accumulate", graph.passes)
+
+
     def test_rerun_reuses_gt_and_clears_comparison_outputs(self):
         scene = load_scene_config(ROOT / "scenes/exp1/cornell_box.json", [3, 2], gate_width=.02)
         with tempfile.TemporaryDirectory() as directory:
@@ -153,6 +174,118 @@ class ExampleTests(unittest.TestCase):
         self.assertEqual([row["overshoot_seconds"] for row in rows], [1., .5, .25])
         self.assertEqual(rows[0]["image"], rows[1]["image"])
         self.assertEqual(rows[-1]["elapsed_seconds"], 2.25)
+
+    def test_mapping_statistics_sum_measured_frames_at_each_checkpoint(self):
+        from types import SimpleNamespace
+        from unittest.mock import Mock
+        graph = Graph()
+        graph.get_output = Mock(side_effect=[
+            SimpleNamespace(to_numpy=lambda: np.array([[[2, 1, 3, 4]]], dtype=np.uint32)),
+            SimpleNamespace(to_numpy=lambda: np.array([[[4., 6.]]])),
+            SimpleNamespace(to_numpy=lambda: np.array([[[1, 1, 2, 2]]], dtype=np.uint32)),
+            SimpleNamespace(to_numpy=lambda: np.array([[[5., 6.]]])),
+        ])
+        budget = Budget("seconds", (1., 2.), 1, warmup_frames=2)
+        with patch("common.rendering.timed_frame", side_effect=[90., 100., 1., 1.]), \
+             patch("common.rendering.read_image", return_value=np.ones((1, 1, 3))), \
+             patch("common.rendering.save_image"):
+            rows, _, _, _ = render_method(Testbed(), graph, "horizontal", budget, Path("unused"), statistics=True)
+        self.assertEqual(graph.get_output.call_count, 4)  # No warm-up readback.
+        self.assertEqual(rows[0]["mapping_success_count"], 2)
+        self.assertEqual(rows[0]["mean_xi_distance"], 2.)
+        self.assertEqual(rows[1]["mapping_success_count"], 3)
+        self.assertEqual(rows[1]["xi_distance_sum"], 9.)
+        self.assertEqual(rows[1]["mean_xi_distance"], 3.)
+        self.assertEqual(rows[1]["mean_world_distance"], 4.)
+
+    def test_runner_exports_with_zero_warmup_and_reuses_gt(self):
+        import json
+        from types import SimpleNamespace
+        import offline_rendering_with_spatial_reuse_comparison as runner
+        scene = load_scene_config(ROOT / "scenes/exp4/cornell_box.json", [3, 2], gate_width=.01)
+        testbed = Testbed()
+        testbed.info = SimpleNamespace(adapter_name="mock", api_name="mock")
+        with tempfile.TemporaryDirectory() as directory:
+            output = Path(directory)
+            (output / "reference.npy").write_bytes(b"preserve GT")
+            (output / "warmup_times.csv").write_text("stale warmup")
+            args = SimpleNamespace(output=output, neighbors=5, iterations=3, radius=10.,
+                                   reference=None, reference_dir=output, regenerate_reference=False, reference_spp=32)
+            with patch.object(runner, "parse_args", return_value=(args, scene, Budget("spp", (32,), 32, 0))), \
+                 patch.object(runner, "find_reference", return_value=((np.ones((2, 3, 3)), {"spp": 32}), "cached")), \
+                 patch.object(runner, "create_testbed", return_value=testbed), \
+                 patch("common.rendering.timed_frame", return_value=.1), \
+                 patch("common.rendering.read_image", return_value=np.ones((2, 3, 3))), \
+                 patch("common.rendering.save_image"), patch.object(runner, "save_image"), \
+                 patch.object(runner, "evaluate_run", return_value=[]), \
+                 patch.object(runner, "render_reference") as render_gt:
+                runner.main(variants={label: ("ours", {}) for label in ("horizontal", "vertical", "avg_grad")})
+            render_gt.assert_not_called()
+            self.assertFalse((output / "warmup_times.csv").exists())
+            self.assertEqual((output / "reference.npy").read_bytes(), b"preserve GT")
+            self.assertEqual(len((output / "checkpoints.csv").read_text().splitlines()), 4)
+            self.assertEqual(json.loads((output / "run.json").read_text())["status"], "complete")
+
+    def test_exp5_all_sampling_combinations_and_direct_gt(self):
+        from types import SimpleNamespace
+        import offline_rendering_with_spatial_reuse_comparison as runner
+        from offline_rendering_with_initial_sampling_comparison import VARIANTS, INITIAL_SAMPLING
+        scene = load_scene_config(ROOT / "scenes/exp5/cornell_box.json", [3, 2], gate_width=.02)
+        self.assertEqual(len(VARIANTS), 9)
+        for label, (method, _) in VARIANTS.items():
+            graph = create_graph(Testbed(), method, scene, 32, SpatialOptions(), sampling_method=INITIAL_SAMPLING[label])
+            properties = graph.passes["Tracer"][1]
+            self.assertEqual(properties["samplingMethod"], INITIAL_SAMPLING[label])
+            self.assertEqual(properties["emissiveSampler"], "LightBVH")
+            if method != "pt":
+                self.assertEqual(properties["shiftmapMethod"], "no" if method == "naive" else scene.shiftmap_method)
+                self.assertFalse(properties["debugNewtonIterations"])
+        testbed = Testbed()
+        testbed.info = SimpleNamespace(adapter_name="mock", api_name="mock")
+        with tempfile.TemporaryDirectory() as directory:
+            args = SimpleNamespace(output=Path(directory), neighbors=5, iterations=3, radius=10.,
+                                   reference=None, reference_dir=Path(directory), regenerate_reference=False, reference_spp=32)
+            with patch.object(runner, "parse_args", return_value=(args, scene, Budget("spp", (32,), 32, 0))), \
+                 patch.object(runner, "create_testbed", return_value=testbed), \
+                 patch("common.rendering.timed_frame", return_value=.1), \
+                 patch("common.rendering.read_image", return_value=np.ones((2, 3, 3))), \
+                 patch("common.rendering.save_image"), patch.object(runner, "save_image"), \
+                 patch.object(runner, "evaluate_run", return_value=[]) as evaluate_errors, \
+                 patch.object(runner, "render_reference", return_value=np.ones((2, 3, 3))) as render_gt:
+                runner.main(variants=VARIANTS, sampling_methods=INITIAL_SAMPLING, evaluate_errors=False)
+            evaluate_errors.assert_not_called()
+            gt_graph = render_gt.call_args.args[1]
+            self.assertEqual(gt_graph.passes["Tracer"][0], "TimeGatedPathTracerInline")
+            self.assertEqual(gt_graph.passes["Tracer"][1]["samplingMethod"], "direct")
+
+    def test_bistro_uses_scene_camera(self):
+        from types import SimpleNamespace
+        from common.rendering import create_testbed
+        scene = load_scene_config(ROOT / "scenes/exp5/bistro.json", gate_width=.05)
+        camera = SimpleNamespace(position=[0, 0, 0], target=[0, 0, -1])
+        fake = SimpleNamespace(scene=SimpleNamespace(camera=camera),
+                               load_scene=lambda path: None, resize_frame_buffer=lambda *size: None,
+                               clock=SimpleNamespace(pause=lambda: None), profiler=SimpleNamespace(enabled=True))
+        falcor = SimpleNamespace(Testbed=lambda **kwargs: fake,
+                                 Logger=SimpleNamespace(Level=SimpleNamespace(Error=0)))
+        with patch.dict(sys.modules, falcor=falcor):
+            self.assertIs(create_testbed(scene), fake)
+        self.assertIsNone(scene.camera_position)
+        self.assertIsNone(scene.camera_target)
+        self.assertEqual(camera.position, [0, 0, 0])
+        self.assertEqual(camera.target, [0, 0, -1])
+        self.assertEqual(camera.aspectRatio, 960 / 540)
+        signature = scene.reference_signature()
+        self.assertNotIn("camera_position", signature)
+        self.assertNotIn("camera_target", signature)
+        changed = replace(scene, camera_position=[0., 0., 1.], camera_target=[0., 0., 0.])
+        self.assertNotEqual(changed.reference_signature(), signature)
+        with self.assertRaises(ValueError):
+            replace(changed, camera_target=None).validate()
+        with self.assertRaises(ValueError):
+            replace(changed, camera_target=changed.camera_position).validate()
+        default = load_scene_config(ROOT / "scenes/exp1/cornell_box.json", gate_width=.02)
+        self.assertNotIn("camera_position", default.reference_signature())
 
     def test_spp_checkpoints_are_exact(self):
         budget = Budget("spp", (4, 8, 16), 4, warmup_frames=1)

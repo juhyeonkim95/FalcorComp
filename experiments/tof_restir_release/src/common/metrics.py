@@ -52,8 +52,9 @@ def evaluate_run(directory):
     """Rebuild errors.csv from a run's saved checkpoints and local reference."""
     directory = Path(directory)
     manifest = json.loads((directory / "run.json").read_text())
-    reference = load_rgb(directory / "reference.npy", manifest["scene"]["resolution"])
-    reference_info = json.loads((directory / "reference.json").read_text())
+    reference_path = directory / manifest.get("reference_file", "reference.npy")
+    reference = load_rgb(reference_path, manifest["scene"]["resolution"])
+    reference_info = json.loads(reference_path.with_suffix(".json").read_text())
     # Imported legacy GT may have no recorded frame/RNG history.
     reference_start = reference_info.get("first_frame_seed_index")
     reference_spp_per_frame = reference_info.get("spp_per_frame")
