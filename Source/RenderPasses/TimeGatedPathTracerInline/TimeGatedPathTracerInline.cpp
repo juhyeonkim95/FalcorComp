@@ -469,6 +469,19 @@ void TimeGatedPathTracerInline::renderUI(Gui::Widgets& widget)
     dirty |= widget.var("Time Max", options.timeMax, options.timeMin, 1000.0f);
     widget.tooltip("Maximum time in unit of distance", true);
 
+    static const Gui::DropdownList kSamplingMethodList = {
+        {(uint32_t)TimeGatedSamplingMethod::DIRECT, "Direct"},
+        {(uint32_t)TimeGatedSamplingMethod::ELLIPSOIDAL, "Ellipsoidal"},
+        {(uint32_t)TimeGatedSamplingMethod::ELLIPSOIDAL_DIRECT_MIS, "Ellipsoidal + direct (MIS)"},
+    };
+    uint32_t samplingMethod = (uint32_t)options.samplingMethod;
+    if (widget.dropdown("Sampling method", kSamplingMethodList, samplingMethod))
+    {
+        options.samplingMethod = (TimeGatedSamplingMethod)samplingMethod;
+        dirty = true;
+    }
+    widget.tooltip("Light connection sampling: direct, ellipsoidal, or both combined with MIS.", true);
+
     dirty |= widget.var("Samples per pixel", options.samplesPerPixel, 1u, 1024u);
     widget.tooltip("Samples per pixel", true);
 
@@ -489,6 +502,9 @@ void TimeGatedPathTracerInline::renderUI(Gui::Widgets& widget)
     if (dirty)
     {
         validateOptions(options);
+        // Rebuild the program: its emissive sampler defines are only added when it is created.
+        if (options.samplingMethod != mOptions.samplingMethod)
+            mpComputePass = nullptr;
         mOptions = options;
         mOptionsChanged = true;
     }
