@@ -42,3 +42,4 @@
 !/experiments/
 /experiments/*
 !/experiments/tof_restir_release/
+!/experiments/falcorcomp/
