@@ -9,6 +9,8 @@ extensions = [
     "sphinx.ext.mathjax",
 ]
 
+myst_enable_extensions = ["deflist"]
+
 source_suffix = {".md": "markdown", ".rst": "restructuredtext"}
 root_doc = "index"
 exclude_patterns = ["_build"]

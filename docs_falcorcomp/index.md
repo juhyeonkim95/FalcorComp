@@ -1,5 +1,9 @@
 # falcorcomp
 
+```{image} assets/teaser.png
+:alt: The Cornell box rendered at increasing time-gate centers
+```
+
 ```{toctree}
 :hidden:
 :maxdepth: 1
