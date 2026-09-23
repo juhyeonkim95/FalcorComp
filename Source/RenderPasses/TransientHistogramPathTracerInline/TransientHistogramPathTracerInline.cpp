@@ -440,45 +440,142 @@ bool TransientHistogramPathTracerInline::needsAutoReset(const RenderData& render
 
 void TransientHistogramPathTracerInline::renderUI(Gui::Widgets& widget)
 {
-    const Options previous = mOptions;
+    Options options = mOptions;
     bool dirty = false;
 
-    dirty |= widget.var("Time Min", mOptions.timeMin, 0.0f, 1000.0f);
-    widget.tooltip("Minimum time in unit of distance", true);
-
-    dirty |= widget.var("Time Max", mOptions.timeMax, 6.0f, 1000.0f);
-    widget.tooltip("Maximum time in unit of distance", true);
-
-    if (mOptions.useKernelDensityEstimation)
+    if (auto group = widget.group("Histogram", true))
     {
-        dirty |= widget.var("Initial KDE window ratio", mOptions.initialWindowRatio, 0.0001f, 1.f);
-        widget.tooltip("Initial bandwidth = histogram range times this ratio. Restarted each frame.", true);
-    }
+        dirty |= group.var("Range min", options.timeMin, 0.0f, 1000.0f);
+        group.tooltip("Start of the histogram, in path-length units (total optical length laser -> scene -> camera).", true);
 
-    dirty |= widget.var("Samples per pixel", mOptions.samplesPerPixel, 1u, 1024u);
-    widget.tooltip("Samples per pixel", true);
+        dirty |= group.var("Range max", options.timeMax, 0.0f, 1000.0f);
+        group.tooltip("End of the histogram, in path-length units. Paths outside [min, max) are not recorded.", true);
 
-    dirty |= widget.var("Max bounces", mOptions.maxBounces, 0u, 1u << 16);
-    widget.tooltip("Maximum path length for indirect illumination.\n0 = direct only\n1 = one indirect bounce etc.", true);
+        dirty |= group.var("Bins", options.timeBin, 1u, 4096u);
+        group.tooltip("Number of bins. The histogram texture holds width x height x bins values.", true);
 
-    dirty |= widget.checkbox("Evaluate direct illumination", mOptions.computeDirect);
-    widget.tooltip("Compute direct illumination.\nIf disabled only indirect is computed (when max bounces > 0).", true);
+        group.text(fmt::format("Bin width: {:.4f}", (options.timeMax - options.timeMin) / float(options.timeBin)));
 
-    dirty |= widget.checkbox("Use importance sampling", mOptions.useImportanceSampling);
-    widget.tooltip("Use importance sampling for materials", true);
-
-    // If rendering options that modify the output have changed, set flag to indicate that.
-    // In execute() we will pass the flag to other passes for reset of temporal data etc.
-    if (dirty)
-    {
-        if (mOptions.timeMin >= mOptions.timeMax) mOptions = previous;
-        else
+        if (options.samplingMethod == SamplingMethod::Direct)
         {
-            validateOptions(mOptions);
-            mOptionsChanged = true;
-            resetHistogram();
+            dirty |= group.checkbox("Kernel density estimation", options.useKernelDensityEstimation);
+            group.tooltip("Spread each path over the bins with a kernel instead of adding it to the bin that contains "
+                          "its length. The kernel narrows with each sample of a frame and restarts every frame.", true);
+
+            // Kernels implemented by the histogram filters in TransientUtils.
+            static const Gui::DropdownList kBinFilterList = {
+                {(uint32_t)TimeGateMode::BOX, "Box"},
+                {(uint32_t)TimeGateMode::TENT, "Tent"},
+            };
+            static const Gui::DropdownList kKernelList = {
+                {(uint32_t)TimeGateMode::BOX, "Box"},
+                {(uint32_t)TimeGateMode::TENT, "Tent"},
+                {(uint32_t)TimeGateMode::GAUSSIAN, "Gaussian"},
+                {(uint32_t)TimeGateMode::EPANECHNIKOV, "Epanechnikov"},
+                {(uint32_t)TimeGateMode::PERLIN, "Perlin"},
+            };
+            uint32_t filter = (uint32_t)options.timeGateMode;
+            if (group.dropdown("Filter", options.useKernelDensityEstimation ? kKernelList : kBinFilterList, filter))
+            {
+                options.timeGateMode = (TimeGateMode)filter;
+                dirty = true;
+            }
+            group.tooltip("Without KDE: Box adds a path to its bin; Tent splits it between the two nearest bins.\n"
+                          "With KDE: the kernel shape.", true);
+
+            if (options.useKernelDensityEstimation)
+            {
+                dirty |= group.var("Initial KDE window ratio", options.initialWindowRatio, 0.0001f, 1.f);
+                group.tooltip("Kernel width of a frame's first sample = histogram range x this ratio.", true);
+            }
         }
     }
+
+    if (auto group = widget.group("Sampling", true))
+    {
+        dirty |= group.var("Samples per pixel", options.samplesPerPixel, 1u, 1024u);
+        group.tooltip("Camera paths traced per pixel in each frame.", true);
+
+        dirty |= group.var("Max bounces", options.maxBounces, 0u, 1u << 16);
+        group.tooltip("Maximum number of surface vertices on the camera path, counting the primary hit. Each vertex "
+                      "is connected to the laser spot.", true);
+
+        static const Gui::DropdownList kSamplingMethodList = {
+            {(uint32_t)SamplingMethod::Direct, "Direct"},
+            {(uint32_t)SamplingMethod::TriangleApprox, "Triangle approximation"},
+        };
+        uint32_t samplingMethod = (uint32_t)options.samplingMethod;
+        if (group.dropdown("Sampling method", kSamplingMethodList, samplingMethod))
+        {
+            options.samplingMethod = (SamplingMethod)samplingMethod;
+            dirty = true;
+        }
+        group.tooltip("Direct: trace camera paths and connect each vertex to the laser spot.\n"
+                      "Triangle approximation: integrate paths primary hit -> one scene triangle -> laser spot "
+                      "over every triangle (a single intermediate bounce).", true);
+
+        dirty |= group.checkbox("Primary-hit direct", options.computeDirect);
+        group.tooltip("Include the shortest path, camera -> primary hit -> laser spot.", true);
+
+        dirty |= group.checkbox("Use importance sampling", options.useImportanceSampling);
+        group.tooltip("Importance-sample the BSDF when extending the camera path. Off: the material's reference "
+                      "sampler (cosine-weighted for standard materials).", true);
+    }
+
+    if (auto group = widget.group("Light", true))
+    {
+        dirty |= group.checkbox("Laser source", options.isLightSourceLaser);
+        group.tooltip("On: the light is the spot where the laser beam hits the scene, and the beam length adds to "
+                      "the path length.\nOff: a point light at the laser position.", true);
+
+        dirty |= group.checkbox("Laser collocated", options.laserCollocated);
+        group.tooltip("Place the laser at the camera, aimed at the camera target, instead of using the laser pass "
+                      "position and direction. The laser follows the camera when it moves.", true);
+    }
+
+    if (auto group = widget.group("Output", true))
+    {
+        dirty |= group.checkbox("Auto reset", options.autoReset);
+        group.tooltip("Clear the histogram when the camera moves or an upstream pass changes its options. "
+                      "Otherwise it accumulates until reset.", true);
+
+        dirty |= group.checkbox("Single channel", options.useSingleChannel);
+        group.tooltip("Store only the red channel (one float per bin instead of four).", true);
+
+        dirty |= group.checkbox("Alpha test", options.useAlphaTest);
+        group.tooltip("Honor alpha-tested (cutout) materials when tracing rays.", true);
+
+        if (group.button("Reset histogram"))
+            resetHistogram();
+        group.text(fmt::format("Accumulated frames: {}", mHistogramFrameCount));
+    }
+
+    if (dirty)
+    {
+        // Keep the filter valid when KDE is switched off.
+        if (!options.useKernelDensityEstimation && options.timeGateMode != TimeGateMode::BOX &&
+            options.timeGateMode != TimeGateMode::TENT)
+            options.timeGateMode = TimeGateMode::BOX;
+        try
+        {
+            validateOptions(options);
+        }
+        catch (const std::exception& e)
+        {
+            mUIWarning = e.what();
+            return;
+        }
+        mUIWarning.clear();
+        // The histogram texture depends on the bin count and channel count.
+        const bool resize = options.timeBin != mOptions.timeBin || options.useSingleChannel != mOptions.useSingleChannel;
+        mOptions = options;
+        mOptionsChanged = true;
+        resetHistogram();
+        if (resize)
+            requestRecompile();
+    }
+    if (!mUIWarning.empty())
+        widget.text(mUIWarning);
 }
 
 void TransientHistogramPathTracerInline::setScene(RenderContext* pRenderContext, const ref<Scene>& pScene)

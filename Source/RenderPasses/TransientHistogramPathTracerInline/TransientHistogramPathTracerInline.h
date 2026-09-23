@@ -91,6 +91,7 @@ private:
     uint mFrameCount = 0;
     uint mHistogramFrameCount = 0; ///< Frames accumulated in the histogram since it was cleared.
     bool mOptionsChanged = false;
+    std::string mUIWarning; ///< Why the last UI edit was rejected.
     bool mNeedToClearHistogram = true;
     ref<Scene> mpScene;
     ref<SampleGenerator> mpSampleGenerator;
