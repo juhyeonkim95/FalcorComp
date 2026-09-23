@@ -232,9 +232,11 @@ void TimeGatedReSTIRInline::parseProperties(const Properties& props)
     if (mSamplingMethod != TimeGatedSamplingMethod::DIRECT &&
         mTriSampler != EmissiveLightSamplerType::Uniform && mTriSampler != EmissiveLightSamplerType::LightBVH)
         FALCOR_THROW("Ellipsoidal initial sampling requires the Uniform or LightBVH triangle sampler.");
-    // Dynamic suffix replay currently reconstructs BSDF steps only.
-    if (mIsSceneDynamic && mSamplingMethod != TimeGatedSamplingMethod::DIRECT)
-        FALCOR_THROW("Ellipsoidal initial sampling currently requires isSceneDynamic=false.");
+    // Dynamic suffix replay reconstructs BSDF steps after y only. An ellipsoidal candidate
+    // inserts x or y (both reevaluated exactly); inserting a vertex after y needs a walk
+    // that reaches y and continues, i.e. maxBounces >= 4.
+    if (mIsSceneDynamic && mSamplingMethod != TimeGatedSamplingMethod::DIRECT && mMaxBounces > 3)
+        FALCOR_THROW("Ellipsoidal initial sampling with isSceneDynamic=true requires maxBounces <= 3.");
 }
 
 Properties TimeGatedReSTIRInline::getProperties() const
