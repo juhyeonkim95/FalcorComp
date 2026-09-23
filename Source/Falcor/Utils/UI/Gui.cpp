@@ -1192,8 +1192,8 @@ Gui::Gui(ref<Device> pDevice, uint32_t width, uint32_t height, float scaleFactor
     mpWrapper = std::make_unique<GuiImpl>(pDevice, scaleFactor);
 
     // Add the default font
-    addFont("", getRuntimeDirectory() / "data/framework/fonts/trebucbd.ttf");
-    addFont("monospace", getRuntimeDirectory() / "data/framework/fonts/consolab.ttf");
+    addFont("", getRuntimeDirectory() / "data/framework/fonts/DejaVuSans-Bold.ttf");
+    addFont("monospace", getRuntimeDirectory() / "data/framework/fonts/DejaVuSansMono-Bold.ttf");
     setActiveFont("");
 
     onWindowResize(width, height);
