@@ -487,9 +487,19 @@ void TimeGatedPathTracerInline::renderUI(Gui::Widgets& widget)
         dirty |= group.var("Gate window", options.timeGateWindow, 0.001f, 1000.0f);
         group.tooltip("Gate width in path-length units (scene units). The output is divided by it.", true);
 
-        dirty |= group.checkbox("Shift gate", options.shiftGate);
+        if (group.checkbox("Shift gate", options.shiftGate))
+        {
+            // Start a shifting scan from a fixed gate with a default range and resolution.
+            if (options.shiftGate && options.timeMax <= options.timeMin)
+            {
+                options.timeMax = 1.2f * options.timeMin;
+                options.timeBin = 100;
+            }
+            dirty = true;
+        }
         group.tooltip("Off: a fixed gate at Gate center.\nOn: the gate moves one step per frame from Gate min "
-                      "toward Gate max, then starts again at Gate min.", true);
+                      "toward Gate max, then starts again at Gate min. Turning it on from a fixed gate sets "
+                      "Gate max = 1.2 x Gate min and 100 bins.", true);
 
         if (!options.shiftGate)
         {
