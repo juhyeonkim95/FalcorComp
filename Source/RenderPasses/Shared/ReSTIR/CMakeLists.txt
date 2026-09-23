@@ -1,4 +1,5 @@
-set(restir_shaders Reservoirs.slang PathReconstruction.slang ReservoirReuse.slang PathLengthAwareShiftmapping.slang)
+set(restir_shaders Reservoirs.slang PathReconstruction.slang ReservoirReuse.slang PathLengthAwareShiftmapping.slang
+    InitialCandidates.slang SpatialReuse.slang)
 set(restir_outputs)
 foreach(shader IN LISTS restir_shaders)
     set(output "${FALCOR_SHADER_OUTPUT_DIRECTORY}/RenderPasses/Shared/ReSTIR/${shader}")

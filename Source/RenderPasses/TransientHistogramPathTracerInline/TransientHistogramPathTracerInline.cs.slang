@@ -1,5 +1,6 @@
 import RenderPasses.Shared.Utils.LoadShadingData;
 import RenderPasses.Shared.Lights.LaserLightSampler;
+import RenderPasses.Shared.Lights.LightConnection;
 #include "Scene/SceneDefines.slangh"
 #include "Utils/Math/MathConstants.slangh"
 
@@ -50,16 +51,6 @@ static const bool kUseImportanceSampling = USE_IMPORTANCE_SAMPLING;
 static const bool kUseAlphaTest = USE_ALPHA_TEST;
 
 static const float kRayTMax = FLT_MAX;
-
-// Both endpoints are already offset from their surfaces.
-bool traceVisibilityRay(const float3 origin, const float3 endpoint)
-{
-    float3 delta = endpoint - origin;
-    float distance = length(delta);
-    if (!(distance > 0.f) || !isfinite(distance)) return false;
-    SceneRayQuery<kUseAlphaTest> sceneRayQuery;
-    return sceneRayQuery.traceVisibilityRay(Ray(origin, delta / distance, 0.f, distance));
-}
 
 HitInfo traceRay(const float3 origin, const float3 dir, out float hitT)
 {
@@ -128,29 +119,6 @@ void accumulateToHistogram(uint2 pixel, float pathLength, float3 radiance, float
 #endif
 }
 
-bool lightVisible(const ShadingData surface, const LightSample light)
-{
-    if (!light.valid) return false;
-    float3 direction = light.posW() - surface.posW;
-    if (!(dot(direction, direction) > 0.f)) return false;
-    float3 endpoint = light.posW();
-#if IS_LIGHT_SOURCE_LASER
-    float3 normal = light.getOrientedFaceNormal();
-    endpoint = computeRayOrigin(endpoint, dot(normal, -direction) >= 0.f ? normal : -normal);
-#endif
-    float3 origin = surface.computeRayOrigin(dot(surface.getOrientedFaceNormal(), direction) >= 0.f);
-    if (dot(endpoint - origin, direction) <= 0.f) return false;
-    return traceVisibilityRay(origin, endpoint);
-}
-
-float3 evalDirectConnection(const ShadingData surface, const LightSample light,
-                           const IMaterialInstance material, inout SampleGenerator sg)
-{
-    if (!lightVisible(surface, light)) return float3(0.f);
-    float3 direction = normalize(light.posW() - surface.posW);
-    return material.eval(surface, direction, sg) * light.evalLi(surface.posW, sg);
-}
-
 // Each pixel owns all of its bins, so histogram updates require no atomics.
 float3 tracePath(const uint2 pixel, const uint2 frameDim)
 {
@@ -185,8 +153,9 @@ float3 tracePath(const uint2 pixel, const uint2 frameDim)
                 lightSampler.generateLightSample(sg, light);
                 if (light.valid)
                 {
-                    float totalLength = pathLength + length(light.posW() - surface.posW) + light.laserT;
-                    float3 contribution = throughput * evalDirectConnection(surface, light, material, sg);
+                    LightConnection connection = evaluateLightConnection(surface, material, light, sg);
+                    float totalLength = pathLength + connection.distance + light.laserT;
+                    float3 contribution = throughput * connection.bsdfCosine * connection.incidentRadiance;
                     radiance += contribution;
                     accumulateToHistogram(pixel, totalLength, contribution, window);
                 }
@@ -301,7 +270,7 @@ float3 tracePathTriangleApprox(const uint2 pixel, const uint2 frameDim)
         ShadingData centerSurface = loadShadingData(centerHit, origin, direction);
         if (length(centerSurface.posW - center) >= 1e-2f ||
             abs(dot(centerSurface.faceN, triangle.normal)) <= 0.99f) continue;
-        if (!lightVisible(centerSurface, light)) continue;
+        if (!checkLightVisibility(centerSurface, light)) continue;
 
         float lengths[3];
         float3 values[3];

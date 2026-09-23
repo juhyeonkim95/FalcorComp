@@ -8,6 +8,7 @@ import RenderPasses.Shared.ReSTIR.Reservoirs;
 #include "Utils/Math/MathConstants.slangh"
 import RenderPasses.Shared.Utils.LoadShadingData;
 import RenderPasses.Shared.Lights.LaserLightSampler;
+import RenderPasses.Shared.Lights.LightConnection;
 
 float3 getPHat3(
     const ShadingData sd1,
@@ -81,26 +82,6 @@ bool checkVisibility(const ShadingData source, const ShadingData target)
     Ray visibilityRay = Ray(origin, segment / distance, 0.f, distance);
     SceneRayQuery<USE_ALPHA_TEST> sceneRayQuery;
     return sceneRayQuery.traceVisibilityRay(visibilityRay);
-}
-
-// Offset each surface endpoint toward the open segment. The point-light endpoint
-// has no surface to offset. BSDFs and path lengths still use unmodified positions.
-bool checkLightVisibility(ShadingData surface, LightSample light)
-{
-    if (!light.valid) return false;
-    float3 segment = light.posW() - surface.posW;
-    if (!(dot(segment, segment) > 0.f)) return false;
-    float3 origin = surface.computeRayOrigin(dot(surface.getOrientedFaceNormal(), segment) >= 0.f);
-    float3 endpoint = light.posW();
-#if IS_LIGHT_SOURCE_LASER
-    endpoint = light.sd.computeRayOrigin(dot(light.getOrientedFaceNormal(), -segment) >= 0.f);
-#endif
-    float3 offsetSegment = endpoint - origin;
-    if (!(dot(offsetSegment, segment) > 0.f)) return false;
-    float distance = length(offsetSegment);
-    if (!(distance > 0.f) || !isfinite(distance)) return false;
-    SceneRayQuery<USE_ALPHA_TEST> query;
-    return query.traceVisibilityRay(Ray(origin, offsetSegment / distance, 0.f, distance));
 }
 
 bool reconstructPrefix(

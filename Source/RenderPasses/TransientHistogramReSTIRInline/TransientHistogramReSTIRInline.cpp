@@ -391,9 +391,10 @@ void TransientHistogramReSTIRInline::spatialReuse(RenderContext* pRenderContext,
     for (auto channel : kOutputChannels)
         bind(channel);
     
+    // The histogram is a pass-level global, outside the shared SpatialReuse struct.
     ChannelList kHistogramOutputChannels = mUseSingleChannel ? kHistogramOutputChannelSingle : kHistogramOutputChannelsRGB;
     for (auto channel : kHistogramOutputChannels)
-        bind(channel);
+        rootvar[channel.texname] = renderData.getTexture(channel.name);
 
     rootvar["TimeGate"]["time_gate_window"] = (mTimeMax - mTimeMin) / mTimeBin;
     rootvar["TimeGate"]["time_gate_window_rough"] = (mTimeMax - mTimeMin) / mTimeBin;

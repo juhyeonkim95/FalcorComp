@@ -15,11 +15,14 @@ import Scene.RaytracingInline;
 import RenderPasses.Shared.ReSTIR.Reservoirs;
 import RenderPasses.Shared.ReSTIR.PathReconstruction;
 import RenderPasses.Shared.ReSTIR.ReservoirReuse;
+import RenderPasses.Shared.ReSTIR.InitialCandidates;
 #if USE_SHRINK_MAPPING || USE_TEMPORAL_REUSE
 import RenderPasses.Shared.ReSTIR.PathLengthAwareShiftmapping;
 #endif
 import RenderPasses.Shared.Utils.LoadShadingData;
 import RenderPasses.Shared.Lights.LaserLightSampler;
+import RenderPasses.Shared.Lights.LightConnection;
+import RenderPasses.Shared.Lights.EllipsoidalSampling;
 
 
 cbuffer CB
@@ -96,263 +99,7 @@ float3 getPrimaryRayDir(uint2 pixel, uint2 frameDim)
 #endif
 }
 
-float shadingCosine(ShadingData surface, IMaterialInstance material, float3 direction)
-{
-    return abs(dot(material.getProperties(surface).guideNormal, direction));
-}
-
-// camera -> ... -> a -> x -> y -> z -> ... -> light.
-// During light evaluation, postBounce is 0 at x, 1 at y, 2 at z, etc.
-// At the next iteration's BSDF sample it is already incremented: 2 means y->z.
-struct ReconnectionState
-{
-    HitInfo xHit;
-    HitInfo yHit;
-    float3 incomingDirectionAtY;
-    uint bounce;
-    uint postBounce;
-    uint prefixSeed;
-    uint suffixSeed;
-#if IS_SCENE_DYNAMIC
-    float3 yRayDirection; // Original incoming camera-walk ray at y, preserved through reuse.
-#endif
-    float areaPdf;              // p_A(a->x), then p_A(a->x) * p_A(x->y).
-    float3 suffixThroughput;    // cosine_y/pdf_y, then sampled weights at z and beyond.
-    float suffixLength;        // y->...->current surface; excludes current->light.
-
-    [mutating]
-    void recordHit(HitInfo hit, ShadingData surface, BSDFSample sample, uint depth,
-        bool eligible, float segmentLength, float suffixDirectionWeight, uint sampleSeed)
-    {
-        float opticalLength = segmentLength * surface.IoR;
-        if (bounce == 0)
-        {
-            if (eligible)
-            {
-                bounce = depth;
-                xHit = hit;
-                float cosine = max(dot(surface.getOrientedFaceNormal(), -sample.wo), 0.f);
-                areaPdf = sample.pdf * cosine / max(segmentLength * segmentLength, kMinLightDistSqr);
-            }
-        }
-        else if (postBounce == 1)
-        {
-            yHit = hit;
-#if IS_SCENE_DYNAMIC
-            yRayDirection = sample.wo;
-#endif
-            float cosine = max(dot(surface.getOrientedFaceNormal(), -sample.wo), 0.f);
-            areaPdf *= sample.pdf * cosine / max(segmentLength * segmentLength, kMinLightDistSqr);
-        }
-        else if (postBounce == 2)
-        {
-            incomingDirectionAtY = -sample.wo;
-            suffixSeed = sampleSeed;
-            suffixThroughput *= suffixDirectionWeight;
-            suffixLength += opticalLength;
-        }
-        else
-        {
-            suffixThroughput *= sample.weight;
-            suffixLength += opticalLength;
-        }
-    }
-};
-
-struct DirectConnection
-{
-    float3 direction;
-    float3 bsdfCosine;
-    float3 incidentRadiance;
-    float distance;
-    float totalLength;
-    float gate;
-};
-
-DirectConnection evaluateDirectConnection(ShadingData surface, IMaterialInstance material,
-    LightSample light, float pathLength, inout SampleGenerator rng, bool useRoughGate = false)
-{
-    DirectConnection connection = {};
-    if (!light.valid) return connection;
-    float3 segment = light.posW() - surface.posW;
-    connection.distance = length(segment);
-    connection.totalLength = pathLength + connection.distance + light.laserT;
-    if (!(connection.distance > 0.f)) return connection;
-    connection.direction = segment / connection.distance;
-    bool visible = checkLightVisibility(surface, light);
-    connection.bsdfCosine = material.eval(surface, connection.direction, rng);
-    connection.incidentRadiance = light.evalLi(surface.posW, rng) * float(visible);
-#if USE_SHRINK_MAPPING
-    connection.gate = pathLengthImportance(connection.totalLength, tcurr, useRoughGate);
-#else
-    connection.gate = pathLengthImportance(connection.totalLength, tcurr);
-#endif
-    return connection;
-}
-
-// Submit one completed-path candidate. Keep the Monte Carlo
-// contribution, the area target, and the RIS selection weight distinct.
-void submitCandidate(inout Reservoir reservoir, ReconnectionState rc,
-    ShadingData surface, IMaterialInstance material, LightSample light,
-    DirectConnection connection, float3 throughput, float techniqueWeight, uint lightSeed, inout SampleGenerator rng)
-{
-    float3 contribution = throughput * connection.bsdfCosine * connection.incidentRadiance * connection.gate;
-    float3 target = rc.bounce > 0 ? contribution * rc.areaPdf : contribution;
-    // The target is reconstructed by spatial reuse without a technique label.
-    // MIS changes selection/W, never the stored physical target or suffix payload.
-    float selectionWeight = luminance(contribution) * techniqueWeight / float(samplesPerPixel);
-    if (!reservoir.update(target, selectionWeight, 1, rng)) return;
-
-    reservoir.totalPathLength = connection.totalLength;
-    reservoir.rcVertexBounce = rc.bounce;
-    if (rc.bounce == 0) return; // Reconnection fields are unused for this local-only sample.
-
-    reservoir.rcVertexHit = rc.xHit;
-    reservoir.rcVertexBounce = rc.bounce;
-    reservoir.initRandomSeed = rc.prefixSeed;
-    reservoir.rcNextVertexBounce = rc.postBounce;
-    if (rc.postBounce == 0)
-    {
-        // x->light: y is the light endpoint, not a BSDF-sampled surface.
-        reservoir.rcNextVertexHit = light.hit;
-        reservoir.rcNextVertexWi = light.dir;
-        reservoir.rcNextVertexIrradiance = light.Li;
-        reservoir.rcNextVertexPathLength = light.laserT;
-    }
-    else
-    {
-        reservoir.rcNextVertexHit = rc.yHit;
-        reservoir.rcNextVertexPathLength = rc.suffixLength + connection.distance + light.laserT;
-        if (rc.postBounce == 1)
-        {
-            // y->light: Q = cosine_y * Li, with no BSDF direction PDF.
-            reservoir.rcNextVertexWi = -connection.direction;
-            reservoir.rcNextVertexIrradiance = connection.incidentRadiance *
-                shadingCosine(surface, material, connection.direction);
-        }
-        else
-        {
-            // y->z->...->light: Q = cosine_y/pdf_y * estimated Li(y, omega_yz).
-            // Excludes y's BSDF, camera-prefix throughput, and the time gate.
-            reservoir.rcNextVertexWi = rc.incomingDirectionAtY;
-            reservoir.rcNextVertexIrradiance = rc.suffixThroughput *
-                connection.bsdfCosine * connection.incidentRadiance;
-        }
-    }
-#if IS_SCENE_DYNAMIC
-    reservoir.rcNextVertexRayDirection = rc.yRayDirection;
-    reservoir.rcNextVertexRandomSeed = rc.suffixSeed;
-    reservoir.lightRandomSeed = lightSeed;
-#endif
-}
-
 #if LIGHT_SAMPLING_METHOD != DIRECT_CONNECTION
-// State at x needed when the BSDF walk reaches y one iteration later.
-struct DeferredConnection
-{
-    float3 posW;
-    float3 normalW;
-    float pathLength;
-    float bsdfPdf;
-    bool delta;
-    bool ellipsoidEligible;
-};
-
-float finitePositivePdf(float pdf)
-{
-    return pdf > 0.f && !isinf(pdf) && !isnan(pdf) ? pdf : 0.f;
-}
-
-float balanceWeight(float sampledPdf, float otherPdf)
-{
-    sampledPdf = finitePositivePdf(sampledPdf);
-    otherPdf = finitePositivePdf(otherPdf);
-    float scale = max(sampledPdf, otherPdf);
-    if (scale == 0.f) return 0.f;
-    // Scaling prevents overflow in the denominator for large densities.
-    return (sampledPdf / scale) / (sampledPdf / scale + otherPdf / scale);
-}
-
-// Use the same regularized Jacobian for contribution evaluation and both MIS PDFs.
-float solidAngleToArea(float3 from, float3 to, float3 normalAtTo)
-{
-    float3 segment = to - from;
-    float segmentSquared = dot(segment, segment);
-    if (!(segmentSquared > 0.f)) return 0.f;
-    float3 direction = segment / sqrt(segmentSquared);
-    float distanceSquared = max(segmentSquared, FLT_MIN);
-    float cosine = max(abs(dot(normalAtTo, -direction)), FLT_MIN);
-    return cosine / distanceSquared;
-}
-
-// Convert to solid angle using the reciprocal of the same clamped Jacobian.
-float areaPdfToSolidAngle(float areaPdf, float3 from, float3 to, float3 normalAtTo)
-{
-    // Preserve genuine zero probability (e.g. the excluded NLOS backwall).
-    if (!(areaPdf > 0.f)) return 0.f;
-    float areaJacobian = solidAngleToArea(from, to, normalAtTo);
-    if (!(areaJacobian > 0.f)) return 0.f;
-    return finitePositivePdf(areaPdf / areaJacobian);
-}
-
-uint getCollectionTriangleIndex(HitInfo hit)
-{
-    if (hit.getType() != HitType::Triangle) return LightCollection::kInvalidIndex;
-    TriangleHit triangleHit = hit.getTriangleHit();
-    return gScene.triCollection.getTriangleIndex(triangleHit.instanceID, triangleHit.primitiveIndex);
-}
-
-bool supportsEllipsoidTriangle(Ellipsoid ellipse, EmissiveTriangle triangle)
-{
-    // Share the focus-on-plane rejection between sampling and PDF reconstruction.
-    float3 toFirst = triangle.posW[0] - ellipse.p1;
-    float3 toSecond = triangle.posW[0] - ellipse.p2;
-    if (dot(toFirst, toFirst) == 0.f || dot(toSecond, toSecond) == 0.f) return false;
-    return abs(dot(triangle.normal, normalize(toFirst))) >= 1e-4 &&
-           abs(dot(triangle.normal, normalize(toSecond))) >= 1e-4;
-}
-
-// Reconstruct p_omega(x -> y) for an actual BSDF hit. prefixWithLaser is the camera prefix
-// ending at x plus the laser-to-light-endpoint distance; it excludes x -> y -> light.
-float evalEllipsoidPdf(Ellipsoid ellipse, HitInfo hit, ShadingData target, float prefixWithLaser)
-{
-    uint triangleIndex = getCollectionTriangleIndex(hit);
-    if (triangleIndex >= gScene.triCollection.getTriangleCount()) return 0.f;
-    EmissiveTriangle triangle = gScene.triCollection.getTriangle(triangleIndex);
-    if (!supportsEllipsoidTriangle(ellipse, triangle)) return 0.f;
-
-    TriangleLightHit triangleHit;
-    triangleHit.triangleIndex = triangleIndex;
-    triangleHit.posW = target.posW;
-    triangleHit.normalW = target.getOrientedFaceNormal();
-    float trianglePdf = emissiveSampler.evalPdfEllipsoid(ellipse, triangleHit);
-    if (!(trianglePdf > 0.f)) return 0.f;
-    float lengthPdf = evalPdfPathLength(ellipse.t, tcurr - prefixWithLaser);
-    if (!(lengthPdf > 0.f)) return 0.f;
-    float areaFactor = evalTriangleEllipsoidPdf(
-        ellipse, triangle.posW[0], triangle.posW[1], triangle.posW[2], target.posW);
-    float ellipseAreaPdf = finitePositivePdf(lengthPdf * trianglePdf * areaFactor);
-    return areaPdfToSolidAngle(ellipseAreaPdf, ellipse.p1, target.posW, target.getOrientedFaceNormal());
-}
-
-// Evaluate the competing ellipse density when the BSDF walk arrives one step later.
-float deferredDirectWeight(DeferredConnection previous, ShadingData target, HitInfo hit, LightSample light)
-{
-    if (!light.valid || previous.delta || !previous.ellipsoidEligible) return 1.f;
-    float ellipsePdf = 0.f;
-    float connectionLength = length(target.posW - previous.posW) + length(target.posW - light.posW());
-    Ellipsoid ellipse;
-    if (buildEllipsoidFromFoci(previous.posW, light.posW(), connectionLength,
-        previous.normalW, light.getOrientedFaceNormal(), ellipse))
-        ellipsePdf = evalEllipsoidPdf(ellipse, hit, target, previous.pathLength + light.laserT);
-#if LIGHT_SAMPLING_METHOD == ELLIPSOIDAL_DIRECT_MIS
-    return balanceWeight(previous.bsdfPdf, ellipsePdf);
-#else
-    // Preserve direct paths outside ellipse support (e.g. excluded large triangles).
-    return ellipsePdf > 0.f ? 0.f : 1.f;
-#endif
-}
-
 // A terminal ellipse branch inserts one surface, leaving the replayable BSDF walk
 // and its RNG untouched. recordHit removes the ACTUAL proposal density at a->x
 // or x->y; after y it instead stores cosine_y / ellipsePdf in the suffix payload.
@@ -361,59 +108,31 @@ void submitEllipsoidalCandidate(inout Reservoir reservoir, ReconnectionState rc,
     float3 throughput, uint targetDepth, uint lightSeed, inout SampleGenerator rng)
 {
     if (!light.valid) return;
-    float sampledLength, lengthPdf;
-    samplePathLength(tcurr - prefixLength - light.laserT, sampleNext1D(rng), sampledLength, lengthPdf);
-    if (!(lengthPdf > 0.f)) return;
-    Ellipsoid ellipse;
-    if (!buildEllipsoidFromFoci(origin.posW, light.posW(), sampledLength,
-        origin.getOrientedFaceNormal(), light.getOrientedFaceNormal(), ellipse)) return;
-    uint triangleIndex;
-    float trianglePdf;
-    if (!emissiveSampler.sampleTriangleEllipsoid(ellipse, rng, triangleIndex, trianglePdf)) return;
-    if (triangleIndex >= gScene.triCollection.getTriangleCount()) return;
-    EmissiveTriangle triangle = gScene.triCollection.getTriangle(triangleIndex);
-    if (!supportsEllipsoidTriangle(ellipse, triangle)) return;
-    SampleResultArea ellipseSample = sampleOnTriangleEllipsoid(ellipse,
-        triangle.posW[0], triangle.posW[1], triangle.posW[2], sampleNext1D(rng), sampleNext1D(rng));
-    if (!ellipseSample.ok) return;
-    float areaPdf = finitePositivePdf(lengthPdf * trianglePdf * ellipseSample.pdfA);
-    if (!(areaPdf > 0.f)) return;
-
-    float3 segment = ellipseSample.p - origin.posW;
-    if (!(dot(segment, segment) > 0.f)) return;
-    float3 direction = normalize(segment);
-    float3 rayOrigin = origin.computeRayOrigin(dot(origin.getOrientedFaceNormal(), direction) >= 0.f);
-    float3 visibilitySegment = ellipseSample.p - rayOrigin;
-    if (!(dot(visibilitySegment, segment) > 0.f)) return;
-    SceneRayQuery<USE_ALPHA_TEST> query;
-    float hitDistance;
-    HitInfo hit = query.traceRay(Ray(rayOrigin, normalize(visibilitySegment), 0.f, FLT_MAX), hitDistance);
-    if (!hit.isValid()) return;
-    if (getCollectionTriangleIndex(hit) != triangleIndex) return;
-    ShadingData target = loadShadingData(hit, rayOrigin, direction);
+    EllipsoidalSample ellipsoidal;
+    if (!sampleEllipsoid(origin, prefixLength, light, tcurr, emissiveSampler, rng, ellipsoidal)) return;
+    ShadingData target = ellipsoidal.surface;
     let targetMaterial = gScene.materials.getMaterialInstance(target, ExplicitLodTextureSampler(0.f));
-    float segmentLength = length(target.posW - origin.posW);
-    float targetLength = prefixLength + segmentLength * target.IoR;
+    float targetLength = prefixLength + ellipsoidal.distance * target.IoR;
     if (!(targetLength < getMaxpathLength(tcurr) + 1e-2f)) return;
-    float ellipsePdf = areaPdfToSolidAngle(areaPdf, origin.posW, target.posW, target.getOrientedFaceNormal());
-    if (!(ellipsePdf > 0.f)) return;
     float techniqueWeight = 1.f;
 #if LIGHT_SAMPLING_METHOD == ELLIPSOIDAL_DIRECT_MIS
-    float directPdf = material.evalPdf(origin, direction, kUseImportanceSampling);
-    techniqueWeight = balanceWeight(ellipsePdf, directPdf);
+    float bsdfPdf = material.evalPdf(origin, ellipsoidal.direction, kUseImportanceSampling);
+    techniqueWeight = balanceWeight(ellipsoidal.pdf, bsdfPdf);
 #endif
     BSDFSample proposal = {};
-    proposal.wo = direction;
-    proposal.pdf = ellipsePdf;
-    proposal.weight = material.eval(origin, direction, rng) / ellipsePdf;
+    proposal.wo = ellipsoidal.direction;
+    proposal.pdf = ellipsoidal.pdf;
+    proposal.weight = material.eval(origin, ellipsoidal.direction, rng) / ellipsoidal.pdf;
     bool eligible = material.getProperties(origin).roughness > specularRoughnessThreshold &&
         targetMaterial.getProperties(target).roughness > specularRoughnessThreshold;
     float suffixDirectionWeight = 0.f;
-    if (rc.postBounce == 2) suffixDirectionWeight = shadingCosine(origin, material, direction) / ellipsePdf;
-    rc.recordHit(hit, target, proposal, targetDepth, eligible, segmentLength, suffixDirectionWeight, 0);
-    DirectConnection connection = evaluateDirectConnection(target, targetMaterial, light, targetLength, rng);
-    submitCandidate(reservoir, rc, target, targetMaterial, light, connection,
-        throughput * proposal.weight, techniqueWeight, lightSeed, rng);
+    if (rc.postBounce == 2) suffixDirectionWeight = shadingCosine(origin, material, ellipsoidal.direction) / ellipsoidal.pdf;
+    rc.recordHit(ellipsoidal.hit, target, proposal, targetDepth, eligible, ellipsoidal.distance, suffixDirectionWeight, 0);
+    LightConnection connection = evaluateLightConnection(target, targetMaterial, light, rng);
+    float totalLength = targetLength + connection.distance + light.laserT;
+    float gate = pathLengthImportance(totalLength, tcurr);
+    submitCandidate(reservoir, rc, target, targetMaterial, light, connection, totalLength, gate,
+        throughput * proposal.weight, techniqueWeight, samplesPerPixel, lightSeed, false, rng);
 }
 
 #endif
@@ -608,7 +327,7 @@ float3 tracePath(uint2 pixel, uint2 frameDim)
             if (!any(throughput > 0.f)) break;
             if (!(pathLength < maxPathLength)) break;
 #if LIGHT_SAMPLING_METHOD != DIRECT_CONNECTION
-            DeferredConnection previous = {};
+            ScatterRecord previous = {};
             previous.posW = surface.posW;
             previous.normalW = surface.getOrientedFaceNormal();
             previous.pathLength = pathLength;
@@ -632,7 +351,7 @@ float3 tracePath(uint2 pixel, uint2 frameDim)
             if (!material.sample(surface, bsdfRng, sample, kUseImportanceSampling)) break;
 #if LIGHT_SAMPLING_METHOD != DIRECT_CONNECTION
             previous.bsdfPdf = sample.pdf;
-            previous.delta = sample.isLobe(LobeType::Delta);
+            previous.isDelta = sample.isLobe(LobeType::Delta);
 #endif
             throughput *= sample.weight;
             if (!any(throughput > 0.f)) break;
@@ -664,22 +383,26 @@ float3 tracePath(uint2 pixel, uint2 frameDim)
             LightSample light = {};
             uint lightSeed = lightRng.getCurrentSeed();
             lightSampler.generateLightSample(lightRng, light);
-            DirectConnection connection = evaluateDirectConnection(surface, material, light, pathLength, rng, useRoughGate);
+            LightConnection connection = evaluateLightConnection(surface, material, light, rng);
+            float totalLength = pathLength + connection.distance + light.laserT;
+            float gate = pathLengthImportance(totalLength, tcurr, useRoughGate);
             float techniqueWeight = 1.f;
 #if LIGHT_SAMPLING_METHOD != DIRECT_CONNECTION
-            techniqueWeight = deferredDirectWeight(previous, surface, hit, light);
+            techniqueWeight = evalBsdfTechniqueWeight(previous, surface, hit, light, tcurr, emissiveSampler,
+                LIGHT_SAMPLING_METHOD == ELLIPSOIDAL_DIRECT_MIS);
 #endif
 #if USE_SHRINK_MAPPING
             // submitCandidate divides by samplesPerPixel. Correct that to 1/N_i
             // so each gate reservoir separately estimates its full gate integral.
             if (useRoughGate)
-                submitCandidate(wideReservoir, rc, surface, material, light, connection, throughput,
-                    wideSampleWeight, lightSeed, rng);
+                submitCandidate(wideReservoir, rc, surface, material, light, connection, totalLength, gate,
+                    throughput, wideSampleWeight, samplesPerPixel, lightSeed, false, rng);
             else
-                submitCandidate(reservoir, rc, surface, material, light, connection, throughput,
-                    narrowSampleWeight, lightSeed, rng);
+                submitCandidate(reservoir, rc, surface, material, light, connection, totalLength, gate,
+                    throughput, narrowSampleWeight, samplesPerPixel, lightSeed, false, rng);
 #else
-            submitCandidate(reservoir, rc, surface, material, light, connection, throughput, techniqueWeight, lightSeed, rng);
+            submitCandidate(reservoir, rc, surface, material, light, connection, totalLength, gate,
+                throughput, techniqueWeight, samplesPerPixel, lightSeed, false, rng);
 #endif
             if (rc.bounce > 0) ++rc.postBounce;
         }

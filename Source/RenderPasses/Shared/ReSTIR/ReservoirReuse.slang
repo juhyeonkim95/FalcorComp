@@ -8,6 +8,7 @@ import RenderPasses.Shared.ReSTIR.Reservoirs;
 #include "Utils/Math/MathConstants.slangh"
 import RenderPasses.Shared.Utils.LoadShadingData;
 import RenderPasses.Shared.Lights.LaserLightSampler;
+import RenderPasses.Shared.Lights.LightConnection;
 
 import RenderPasses.Shared.ReSTIR.PathReconstruction;
 import RenderPasses.Shared.ReSTIR.PathLengthAwareShiftmapping;
