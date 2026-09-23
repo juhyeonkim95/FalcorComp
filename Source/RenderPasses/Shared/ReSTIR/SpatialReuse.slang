@@ -1,6 +1,9 @@
 // Spatial reuse shared by the time-gated and histogram ReSTIR passes.
 // Reservoirs are stored as [pixel * binCount + bin]; a time-gated pass is the
 // single-bin case (binCount = 1, bin = 0, gateCenter = tcurr).
+// With useBinReuse, the adjacent bins (bin - 1, bin + 1) of the same pixel are
+// additional candidates in the same pairwise MIS as the spatial neighbors. Their
+// paths are shifted by one bin width with the path-length-aware shift mapping.
 import Utils.Sampling.SampleGenerator;
 import Utils.Transient.TransientUtils;
 import RenderPasses.Shared.ReSTIR.Reservoirs;
@@ -28,6 +31,7 @@ struct SpatialReuse
     uint neighborCount;
     float specularRoughnessThreshold;
     float gatherRadius;
+    bool useBinReuse; // Histogram only: bin centers are tmin + (bin + 0.5) * tunit.
 
     uint gFrameCount;
     uint gRandomSeed;
@@ -70,6 +74,18 @@ struct SpatialReuse
             && abs(centerDepth - neighborDepth) < kDepthThreshold * centerDepth;
     }
 
+    // Adjacent bins that exist: bin - 1 first, then bin + 1.
+    uint getAdjacentBinCount(uint binCount, uint bin)
+    {
+        if (!useBinReuse) return 0;
+        return uint(bin > 0) + uint(bin + 1 < binCount);
+    }
+
+    uint getAdjacentBin(uint bin, uint index)
+    {
+        return (index == 0 && bin > 0) ? bin - 1 : bin + 1;
+    }
+
     // update() already copies f and accumulates wSum/M. Copy only the selected path payload.
     void copySelectedPath(inout Reservoir destination, Reservoir source)
     {
@@ -99,7 +115,9 @@ struct SpatialReuse
         }
 
         Reservoir centralReservoir = prevReservoirs[reservoirIndex];
-        if (neighborCount == 0)
+        // Spatial neighbors first, then adjacent bins; the RNG order of spatial-only reuse is unchanged.
+        uint candidateCount = neighborCount + getAdjacentBinCount(binCount, bin);
+        if (candidateCount == 0)
         {
             currReservoirs[reservoirIndex] = centralReservoir;
             return centralReservoir.W * centralReservoir.f;
@@ -116,9 +134,9 @@ struct SpatialReuse
         float canonicalWeight = 1.f;
         Reservoir destination;
 
-        // Split the central mass across the requested neighbor pairs. Restore it
+        // Split the central mass across the requested candidate pairs. Restore it
         // before the final update; rejected neighbors do not change this split.
-        centralReservoir.M /= neighborCount;
+        centralReservoir.M /= candidateCount;
 
         // Prepare the central path's x and y once for central -> neighbor weights.
         // A no-RC sample has no valid reconnection payload; its pair weight is one.
@@ -142,23 +160,38 @@ struct SpatialReuse
             centralVertex = gScene.getVertexData(centralReservoir.rcVertexHit.getTriangleHit());
         }
 
-        for (uint i = 0; i < neighborCount; ++i)
+        for (uint i = 0; i < candidateCount; ++i)
         {
-            int2 neighborPixel = getNextNeighborPixel(startIndex, pixel, i);
-            if (!isValidScreenRegion(neighborPixel)) continue;
-            // Integer offsets may select this pixel, particularly at radius zero.
-            if (all(neighborPixel == int2(pixel))) continue;
+            // A candidate is a spatial neighbor at the same bin, or this pixel at an adjacent bin.
+            int2 neighborPixel = int2(pixel);
+            uint neighborBin = bin;
+            float neighborGateCenter = gateCenter;
+            ShadingData neighborPrimary = primary;
+            IMaterialInstance neighborMaterial = primaryMaterial;
+            float neighborDepth = primaryDepth;
+            if (i < neighborCount)
+            {
+                neighborPixel = getNextNeighborPixel(startIndex, pixel, i);
+                if (!isValidScreenRegion(neighborPixel)) continue;
+                // Integer offsets may select this pixel, particularly at radius zero.
+                if (all(neighborPixel == int2(pixel))) continue;
 
-            HitInfo neighborHit = HitInfo(gVBuffer[neighborPixel]);
-            if (!neighborHit.isValid()) continue;
-            ShadingData neighborPrimary = loadShadingData(neighborHit, cameraOrigin, -gViewW[neighborPixel].xyz);
-            float neighborDepth = length(neighborPrimary.posW - cameraOrigin);
-            if (!isValidGeometry(primary, neighborPrimary, primaryDepth, neighborDepth)) continue;
+                HitInfo neighborHit = HitInfo(gVBuffer[neighborPixel]);
+                if (!neighborHit.isValid()) continue;
+                neighborPrimary = loadShadingData(neighborHit, cameraOrigin, -gViewW[neighborPixel].xyz);
+                neighborDepth = length(neighborPrimary.posW - cameraOrigin);
+                if (!isValidGeometry(primary, neighborPrimary, primaryDepth, neighborDepth)) continue;
+                neighborMaterial = gScene.materials.getMaterialInstance(neighborPrimary, ExplicitLodTextureSampler(0.f));
+            }
+            else
+            {
+                neighborBin = getAdjacentBin(bin, i - neighborCount);
+                neighborGateCenter = tmin + (float(neighborBin) + 0.5f) * tunit;
+            }
 
             // Count geometric neighbors even if their reservoir or shift has no support.
             validNeighborCount++;
-            Reservoir neighborReservoir = prevReservoirs[getLinearizedPixel(neighborPixel) * binCount + bin];
-            IMaterialInstance neighborMaterial = gScene.materials.getMaterialInstance(neighborPrimary, ExplicitLodTextureSampler(0.f));
+            Reservoir neighborReservoir = prevReservoirs[getLinearizedPixel(neighborPixel) * binCount + neighborBin];
 
             // Central -> neighbor: accumulate the central sample's pairwise weight.
             ShiftMapDebugInfo debugInfo;
@@ -168,14 +201,14 @@ struct SpatialReuse
                 neighborReservoir.M,
                 primary, primaryMaterial, primaryDepth, specularRoughnessThreshold,
                 neighborPrimary, neighborMaterial, neighborDepth,
-                gateCenter, gateCenter, sg, debugInfo);
+                neighborGateCenter, gateCenter, sg, debugInfo);
 
             // Neighbor -> central: shift the neighbor sample and stream it into the reservoir.
             combine_reservoir_with_shiftmapping(
                 destination, neighborReservoir, centralReservoir.M,
                 neighborPrimary, neighborMaterial, neighborDepth, specularRoughnessThreshold,
                 primary, primaryMaterial, primaryDepth,
-                gateCenter, gateCenter, 1.f, false,
+                gateCenter, neighborGateCenter, 1.f, false,
                 laserOrigin, laserDirection, sg
 #if DEBUG_NEWTON_ITERATIONS
                 , debugInfo
@@ -191,7 +224,7 @@ struct SpatialReuse
         // Add the unshifted central sample after all neighbor updates, preserving RNG order.
         float centralTarget = getReservoirWeight(centralReservoir.f);
         float centralWeight = canonicalWeight * centralTarget * centralReservoir.W;
-        centralReservoir.M *= neighborCount;
+        centralReservoir.M *= candidateCount;
         if (destination.update(centralReservoir.f, centralWeight, centralReservoir.M, sg))
             copySelectedPath(destination, centralReservoir);
 

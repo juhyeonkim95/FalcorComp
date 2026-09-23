@@ -166,6 +166,7 @@ private:
     uint mSpatialReusePassIteration = 1;
     uint mSpatialReuseNeighborCount = 5;
     float mSpatialReuseGatherRadius = 10.0f;
+    bool mUseBinReuse = false; ///< Add adjacent bins of the same pixel as spatial reuse candidates.
     float mSpecularRoughnessThreshold = 0.25f;
     bool mNeedToClearHistogram = false;
 

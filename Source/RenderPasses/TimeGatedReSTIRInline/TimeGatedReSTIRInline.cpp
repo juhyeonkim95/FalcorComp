@@ -423,6 +423,7 @@ void TimeGatedReSTIRInline::spatialReuse(RenderContext* pRenderContext, const Re
     var["neighborOffsets"] = mpNeighborOffsets;
     var["neighborCount"] = mSpatialReuseNeighborCount;
     var["gatherRadius"] = mSpatialReuseGatherRadius;
+    var["useBinReuse"] = false; // A time gate has a single bin.
     var["specularRoughnessThreshold"] = mSpecularRoughnessThreshold;
     
     // Bind I/O buffers. These needs to be done per-frame as the buffers may change anytime.

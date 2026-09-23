@@ -107,6 +107,7 @@ const char kGaugeMode[] = "gaugeMode";
 const char kSpatialReusePassIteration[] = "spatialReuseIteration";
 const char kSpatialReuseNeighborCount[] = "spatialReuseNeighborCount";
 const char kSpatialReuseGatherRadius[] = "spatialReuseGatherRadius";
+const char kUseBinReuse[] = "useBinReuse";
 const char kSpecularRoughnessThreshold[] = "specularRoughnessThreshold";
 const char kNewtonMaxIteration[] = "NewtonMaxIteration";
 const char kNewtonRelativeTolerance[] = "NewtonRelativeTolerance";
@@ -181,6 +182,8 @@ void TransientHistogramReSTIRInline::parseProperties(const Properties& props)
             mSpatialReusePassIteration = value;
         else if(key == kSpatialReuseNeighborCount)
             mSpatialReuseNeighborCount = value;
+        else if (key == kUseBinReuse)
+            mUseBinReuse = value;
         else if(key == kSpecularRoughnessThreshold)
             mSpecularRoughnessThreshold = value;
         else if(key == kRandomSeed)
@@ -212,6 +215,7 @@ Properties TransientHistogramReSTIRInline::getProperties() const
     props[kMaxBounces] = mMaxBounces;
     props[kComputeDirect] = mComputeDirect;
     props[kUseImportanceSampling] = mUseImportanceSampling;
+    props[kUseBinReuse] = mUseBinReuse;
     return props;
 }
 
@@ -375,6 +379,7 @@ void TransientHistogramReSTIRInline::spatialReuse(RenderContext* pRenderContext,
     var["neighborOffsets"] = mpNeighborOffsets;
     var["neighborCount"] = mSpatialReuseNeighborCount;
     var["gatherRadius"] = mSpatialReuseGatherRadius;
+    var["useBinReuse"] = mUseBinReuse;
     
     // Bind I/O buffers. These needs to be done per-frame as the buffers may change anytime.
     auto bind = [&](const ChannelDesc& desc)
@@ -681,6 +686,9 @@ void TransientHistogramReSTIRInline::renderUI(Gui::Widgets& widget)
 
     dirty |= widget.checkbox("Use importance sampling", mUseImportanceSampling);
     widget.tooltip("Use importance sampling for materials", true);
+
+    dirty |= widget.checkbox("Reuse adjacent bins", mUseBinReuse);
+    widget.tooltip("Each spatial reuse iteration also resamples bins j-1 and j+1 of the same pixel", true);
 
     // If rendering options that modify the output have changed, set flag to indicate that.
     // In execute() we will pass the flag to other passes for reset of temporal data etc.
