@@ -153,6 +153,7 @@ private:
     float mTimeMin = 9.0f;
     float mTimeMax = 12.0f;
     uint mTimeBin = 512;
+    bool mShiftGate = false; ///< Advance the gate one bin per frame, wrapping from mTimeMax to mTimeMin.
 
     float mTcurr = 0.f;
     float mTprev = 0.f;
@@ -194,6 +195,8 @@ private:
 
     uint mRandomSeed = 0;
     bool mOptionsChanged = false;
+    bool mGateMoved = false; ///< The gate shifted: restart accumulation but keep the ReSTIR history.
+    std::string mUIWarning;  ///< Why the last UI edit was rejected.
     uint mSamplesPerPixel = 128;
 
     bool mLaserCollocated = false;

@@ -119,6 +119,7 @@ const char kIsSceneDynamic[] = "isSceneDynamic";
 const char kIsLightSourceLaser[] = "isLightSourceLaser";
 const uint32_t kNeighborOffsetCount = 8192;
 const char kUseTemporalReuse[] = "useTemporalReuse";
+const char kShiftGate[] = "shiftGate";
 
 template<typename T>
 std::string enumName(const std::unordered_map<std::string, T>& values, T value)
@@ -235,6 +236,8 @@ void TimeGatedReSTIRInline::parseProperties(const Properties& props)
             mUseTemporalReuse = value;
         else if (key == kIsLightSourceLaser)
             mIsLightSourceLaser = value;
+        else if (key == kShiftGate)
+            mShiftGate = value;
         else
             logWarning("Unknown property '{}' in TimeGatedReSTIRInline properties.", key);
     }
@@ -263,6 +266,7 @@ Properties TimeGatedReSTIRInline::getProperties() const
     props[kTimeMin] = mTimeMin;
     props[kTimeMax] = mTimeMax;
     props[kTimeBin] = mTimeBin;
+    props[kShiftGate] = mShiftGate;
     props[kSamplingMethod] = enumName(SamplingMethodTable, mSamplingMethod);
     props[kEmissiveSampler] = mTriSampler;
     props[kLaserHitVBufferRes] = mLaserHitVBufferRes;
@@ -540,6 +544,12 @@ void TimeGatedReSTIRInline::execute(RenderContext* pRenderContext, const RenderD
         dict[Falcor::kRenderPassRefreshFlags] = flags | Falcor::RenderPassRefreshFlags::RenderOptionsChanged;
         mOptionsChanged = false;
     }
+    if (mGateMoved)
+    {
+        auto flags = dict.getValue(kRenderPassRefreshFlags, RenderPassRefreshFlags::None);
+        dict[Falcor::kRenderPassRefreshFlags] = flags | Falcor::RenderPassRefreshFlags::RenderOptionsChanged;
+        mGateMoved = false;
+    }
 
     // If we have no scene, just clear the outputs and return.
     if (!mpScene)
@@ -719,42 +729,279 @@ void TimeGatedReSTIRInline::execute(RenderContext* pRenderContext, const RenderD
     mLaserPrevPosition = mLaserPosition;
     mPrevTimeGateFrameCount = mTimeGateFrameCount;
     mTprev = mTcurr;
+
+    // Temporal reuse maps the history from tprev to the new gate, so it stays valid.
+    if (mShiftGate && mTimeMax > mTimeMin)
+    {
+        incrementTimeGateFrame();
+        mGateMoved = true;
+    }
 }
 
 void TimeGatedReSTIRInline::renderUI(Gui::Widgets& widget)
 {
     bool dirty = false;
+    // Settings validated together; a rejected edit restores them.
+    const auto previousSamplingMethod = mSamplingMethod;
+    const auto previousTriSampler = mTriSampler;
+    const uint previousMaxBounces = mMaxBounces;
+    const bool previousSceneDynamic = mIsSceneDynamic;
 
-    dirty |= widget.var("Time Gate Window", mTimeGateWindow, 0.001f, 100.0f);
-    widget.tooltip("Time gate window for transient rendering", true);
+    if (auto group = widget.group("Time gate", true))
+    {
+        // Only the kernels implemented by pathLengthImportance() are offered.
+        static const Gui::DropdownList kTimeGateModeList = {
+            {(uint32_t)TimeGateMode::BOX, "Box"},
+            {(uint32_t)TimeGateMode::TENT, "Tent"},
+            {(uint32_t)TimeGateMode::COS, "Cos"},
+            {(uint32_t)TimeGateMode::ALL, "All (no gating)"},
+        };
+        uint32_t timeGateMode = (uint32_t)mTimeGateMode;
+        if (group.dropdown("Gate kernel", kTimeGateModeList, timeGateMode))
+        {
+            mTimeGateMode = (TimeGateMode)timeGateMode;
+            dirty = true;
+        }
+        group.tooltip("Weight of a path as a function of its total optical length (laser -> scene -> camera) "
+                      "relative to the gate center.", true);
 
-    dirty |= widget.var("Time Min", mTimeMin, 1.0f, 200.0f);
-    widget.tooltip("Minimum time in unit of distance", true);
-    
-    dirty |= widget.var("Time Max", mTimeMax, 1.0f, 200.0f);
-    widget.tooltip("Maximum time in unit of distance", true);
+        dirty |= group.var("Gate window", mTimeGateWindow, 0.001f, 1000.0f);
+        group.tooltip("Gate width in path-length units (scene units). The output is divided by it.", true);
 
-    dirty |= widget.var("temporalHistoryLength", mTemporalHistoryLength, -1.0f, 100000.0f);
-    widget.tooltip("Temporal History Length", true);
+        if (group.checkbox("Shift gate", mShiftGate))
+        {
+            // Start a shifting scan from a fixed gate with a default range and resolution.
+            if (mShiftGate && mTimeMax <= mTimeMin)
+            {
+                mTimeMax = 1.2f * mTimeMin;
+                mTimeBin = 100;
+            }
+            dirty = true;
+        }
+        group.tooltip("Off: a fixed gate at Gate center.\nOn: the gate moves one step per frame from Gate min "
+                      "toward Gate max, then starts again at Gate min. Temporal reuse maps the history to each "
+                      "new gate. Turning it on from a fixed gate sets Gate max = 1.2 x Gate min and 100 bins.", true);
 
-    dirty |= widget.var("Samples per pixel", mSamplesPerPixel, 1u, 1024u);
-    widget.tooltip("Samples per pixel", true);
+        if (!mShiftGate)
+        {
+            float gateCenter = mTimeMin;
+            if (group.var("Gate center", gateCenter, 0.0f, 1000.0f))
+            {
+                mTimeMin = mTimeMax = gateCenter;
+                dirty = true;
+            }
+            group.tooltip("Gate center in path-length units.", true);
+        }
+        else
+        {
+            dirty |= group.var("Gate min", mTimeMin, 0.0f, mTimeMax);
+            group.tooltip("First gate center, in path-length units.", true);
 
-    dirty |= widget.var("Max bounces", mMaxBounces, 0u, 1u << 16);
-    widget.tooltip("Maximum path length for indirect illumination.\n0 = direct only\n1 = one indirect bounce etc.", true);
+            dirty |= group.var("Gate max", mTimeMax, mTimeMin, 1000.0f);
+            group.tooltip("End of the scan, in path-length units. The last gate center is Gate max - Gate step.", true);
 
-    dirty |= widget.checkbox("Evaluate direct illumination", mComputeDirect);
-    widget.tooltip("Compute direct illumination.\nIf disabled only indirect is computed (when max bounces > 0).", true);
+            dirty |= group.var("Gate bins", mTimeBin, 1u, 1u << 16);
+            group.tooltip("Number of gate centers from Gate min to Gate max.", true);
 
-    dirty |= widget.checkbox("Use importance sampling", mUseImportanceSampling);
-    widget.tooltip("Use importance sampling for materials", true);
+            // The step is derived from the bins; editing it picks the nearest bin count.
+            const float range = mTimeMax - mTimeMin;
+            float gateStep = range / mTimeBin;
+            if (range > 0.f && group.var("Gate step", gateStep, 1e-4f, range))
+            {
+                mTimeBin = std::max(1u, (uint)std::lround(range / gateStep));
+                dirty = true;
+            }
+            group.tooltip("Gate center shift per frame, in path-length units. Sets Gate bins to the nearest count.", true);
+            if (range <= 0.f)
+                group.text("Set Gate max above Gate min to shift the gate.");
+        }
 
-    // If rendering options that modify the output have changed, set flag to indicate that.
-    // In execute() we will pass the flag to other passes for reset of temporal data etc.
+        group.text(fmt::format("Current gate center: {:.4f}", mTcurr));
+    }
+
+    if (auto group = widget.group("Initial sampling", true))
+    {
+        dirty |= group.var("Samples per pixel", mSamplesPerPixel, 1u, 1024u);
+        group.tooltip("Camera paths traced per pixel in each frame. Each one submits candidates to the pixel's "
+                      "reservoir.", true);
+
+        dirty |= group.var("Max bounces", mMaxBounces, 0u, 1u << 16);
+        group.tooltip("Maximum number of surface vertices on the camera path, counting the primary hit and any "
+                      "vertex inserted by an ellipsoidal connection. The primary hit is not connected to the laser "
+                      "spot.", true);
+
+        static const Gui::DropdownList kSamplingMethodList = {
+            {(uint32_t)TimeGatedSamplingMethod::DIRECT, "Direct"},
+            {(uint32_t)TimeGatedSamplingMethod::ELLIPSOIDAL, "Ellipsoidal"},
+            {(uint32_t)TimeGatedSamplingMethod::ELLIPSOIDAL_DIRECT_MIS, "Ellipsoidal + direct (MIS)"},
+        };
+        uint32_t samplingMethod = (uint32_t)mSamplingMethod;
+        if (group.dropdown("Sampling method", kSamplingMethodList, samplingMethod))
+        {
+            mSamplingMethod = (TimeGatedSamplingMethod)samplingMethod;
+            dirty = true;
+        }
+        group.tooltip("How a camera-path vertex x is connected to the laser spot:\n"
+                      "Direct: connect x -> laser spot.\n"
+                      "Ellipsoidal: insert a vertex y on the ellipsoid of paths x -> y -> laser spot whose length "
+                      "matches the gate.\n"
+                      "Ellipsoidal + direct (MIS): both, combined with the balance heuristic.", true);
+
+        if (mSamplingMethod == TimeGatedSamplingMethod::ELLIPSOIDAL)
+        {
+            dirty |= group.var("Ellipsoid roughness threshold", mSpecularRoughnessThresholdEllipsoid, 0.f, 1.f);
+            group.tooltip("Use an ellipsoidal connection at x only if its roughness is above this value; smoother "
+                          "vertices use a direct connection from the next vertex instead.", true);
+        }
+
+        if (mSamplingMethod != TimeGatedSamplingMethod::DIRECT)
+        {
+            static const Gui::DropdownList kTriangleSamplerList = {
+                {(uint32_t)EmissiveLightSamplerType::Uniform, "Uniform"},
+                {(uint32_t)EmissiveLightSamplerType::LightBVH, "LightBVH"},
+            };
+            uint32_t triSampler = (uint32_t)mTriSampler;
+            if (group.dropdown("Ellipsoid triangle sampler", kTriangleSamplerList, triSampler))
+            {
+                mTriSampler = (EmissiveLightSamplerType)triSampler;
+                dirty = true;
+            }
+            group.tooltip("How an ellipsoidal connection selects the scene triangle on which it places y.", true);
+        }
+
+        dirty |= group.checkbox("Use importance sampling", mUseImportanceSampling);
+        group.tooltip("Importance-sample the BSDF when extending the camera path. Off: the material's reference "
+                      "sampler (cosine-weighted for standard materials).", true);
+
+        if (mSamplingMethod == TimeGatedSamplingMethod::DIRECT)
+        {
+            dirty |= group.var("Wide gate window", mTimeGateWindowRough, 0.f, 1000.0f);
+            group.tooltip("Direct sampling with a Box or Tent gate only: when wider than Gate window, a fraction of "
+                          "the paths is traced with this wider gate and shrunk into the gate by the path-length "
+                          "shift. 0 disables it.", true);
+            dirty |= group.var("Wide gate path fraction", mRoughTimeGateSampleRatio, 0.f, 1.f);
+            group.tooltip("Fraction of the paths per pixel traced with the wide gate.", true);
+        }
+    }
+
+    if (auto group = widget.group("Reuse", true))
+    {
+        dirty |= group.var("Spatial iterations", mSpatialReusePassIteration, 0u, 16u);
+        group.tooltip("Spatial reuse passes per frame. 0 disables spatial reuse.", true);
+
+        dirty |= group.var("Spatial neighbors", mSpatialReuseNeighborCount, 1u, 64u);
+        group.tooltip("Neighbor pixels resampled in each spatial pass.", true);
+
+        dirty |= group.var("Spatial radius (px)", mSpatialReuseGatherRadius, 1.f, 128.f);
+        group.tooltip("Radius, in pixels, within which spatial neighbors are chosen.", true);
+
+        dirty |= group.checkbox("Temporal reuse", mUseTemporalReuse);
+        group.tooltip("Resample the previous frame's reservoir (reprojected with motion vectors when the mvec "
+                      "input is connected), shifting its paths from the previous gate to the current one.", true);
+
+        if (mUseTemporalReuse)
+        {
+            dirty |= group.var("History length (frames)", mTemporalHistoryLength, -1.f, 100000.f);
+            group.tooltip("Cap on the history's sample count, in frames of samples per pixel. 0 ignores the "
+                          "history; a negative value leaves it uncapped.", true);
+        }
+
+        dirty |= group.checkbox("Dynamic light", mIsSceneDynamic);
+        group.tooltip("Keep the temporal history when the laser moves or changes, re-evaluating the lighting of "
+                      "reused paths. Off: any laser change discards the history. Geometry changes always discard "
+                      "it.", true);
+    }
+
+    if (auto group = widget.group("Shift mapping", true))
+    {
+        static const Gui::DropdownList kShiftmapMethodList = {
+            {(uint32_t)ShiftmapMethod::NO, "None (naive reuse)"},
+            {(uint32_t)ShiftmapMethod::LOCAL_TANGENT_SURFACE, "Local tangent"},
+            {(uint32_t)ShiftmapMethod::BARYCENTRIC, "Barycentric"},
+            {(uint32_t)ShiftmapMethod::RAY_TRACE_HEMISPHERE, "Ray trace"},
+            {(uint32_t)ShiftmapMethod::AREA_ADAPTIVE, "Area adaptive"},
+            {(uint32_t)ShiftmapMethod::RAY_TRACE_CHART, "Ray trace chart"},
+        };
+        uint32_t shiftmapMethod = (uint32_t)mShiftmapMethod;
+        if (group.dropdown("Method", kShiftmapMethodList, shiftmapMethod))
+        {
+            mShiftmapMethod = (ShiftmapMethod)shiftmapMethod;
+            dirty = true;
+        }
+        group.tooltip("How a reused path is fitted to the target pixel's gate. The reconnection vertex is moved so "
+                      "the path length changes by the gate difference, using a Newton solve on the chosen chart.\n"
+                      "None keeps the vertex fixed (naive reuse).", true);
+
+        dirty |= group.var("Reconnection roughness threshold", mSpecularRoughnessThreshold, 0.f, 1.f);
+        group.tooltip("A path can reconnect at a segment only if both of its vertices are rougher than this.", true);
+
+        if (mShiftmapMethod != ShiftmapMethod::NO)
+        {
+            static const Gui::DropdownList kGaugeModeList = {
+                {(uint32_t)GaugeMode::CONSTANT, "Constant axis"},
+                {(uint32_t)GaugeMode::ORTHO_GRAD_START, "Orthogonal to start gradient"},
+                {(uint32_t)GaugeMode::ORTHO_AVG_GRAD, "Orthogonal to average gradient"},
+            };
+            uint32_t gaugeMode = (uint32_t)mGaugeMode;
+            if (group.dropdown("Gauge", kGaugeModeList, gaugeMode))
+            {
+                mGaugeMode = (GaugeMode)gaugeMode;
+                dirty = true;
+            }
+            group.tooltip("Fixes the direction left free by the one path-length constraint in the 2D Newton solve.", true);
+
+            if (mGaugeMode == GaugeMode::CONSTANT)
+            {
+                dirty |= group.var("Gauge axis", mGaugeAxis, -1.f, 1.f);
+                group.tooltip("Chart-space axis of the constant gauge. (0, 0) picks a random axis per shift.", true);
+            }
+
+            dirty |= group.var("Newton iterations", mNewtonMaxIteration, 1u, 64u);
+            group.tooltip("Maximum Newton iterations per shift.", true);
+        }
+    }
+
+    if (auto group = widget.group("Light", true))
+    {
+        dirty |= group.checkbox("Laser source", mIsLightSourceLaser);
+        group.tooltip("On: the light is the spot where the laser beam hits the scene, and the beam length adds to "
+                      "the path length.\nOff: a point light at the laser position.", true);
+
+        dirty |= group.checkbox("Laser collocated", mLaserCollocated);
+        group.tooltip("Place the laser at the camera, aimed at the camera target, instead of using the laser pass "
+                      "position and direction. The laser follows the camera when it moves.", true);
+    }
+
+    if (auto group = widget.group("Output", true))
+    {
+        dirty |= group.checkbox("Alpha test", mUseAlphaTest);
+        group.tooltip("Honor alpha-tested (cutout) materials when tracing rays.", true);
+    }
+
     if (dirty)
     {
+        mUIWarning.clear();
+        // Same constraint as parseProperties(): see the comment there.
+        if (mIsSceneDynamic && mSamplingMethod != TimeGatedSamplingMethod::DIRECT && mMaxBounces > 3)
+        {
+            mUIWarning = "Ellipsoidal sampling with a dynamic light supports at most 3 bounces.";
+            mSamplingMethod = previousSamplingMethod;
+            mMaxBounces = previousMaxBounces;
+            mIsSceneDynamic = previousSceneDynamic;
+        }
+        // Rebuild the sampler and programs: the emissive sampler's defines are only added when they are created.
+        if (mTriSampler != previousTriSampler)
+            mpEmissiveSampler.reset();
+        if (mSamplingMethod != previousSamplingMethod || mTriSampler != previousTriSampler)
+        {
+            mpComputePass = nullptr;
+            mpSpatialReusePass = nullptr;
+        }
+        // Pass the flag to downstream passes (accumulation reset) and discard the ReSTIR history.
         mOptionsChanged = true;
     }
+    if (!mUIWarning.empty())
+        widget.text(mUIWarning);
 }
 
 void TimeGatedReSTIRInline::setScene(RenderContext* pRenderContext, const ref<Scene>& pScene)
