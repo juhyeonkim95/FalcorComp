@@ -46,9 +46,10 @@ RENDER_PASS_SHADERS = [
     "TimeGatedPathTracerInline", "TimeGatedReSTIRInline", "TransientHistogramPathTracerInline",
     "Shared", "GBuffer", "AccumulatePass", "ToneMapper",
 ]
-# Core shader folders that are only used by tests and samples.
-EXCLUDED_CORE_SHADERS = {"RenderPasses", "Samples", "Tests", "Testing"}
-DATA_FOLDERS = ["framework", "bluenoise"]
+# Shader folders (relative to shaders/) left out of the package: render passes are added selectively,
+# tests and samples are unused, and RTXDI may only be redistributed as compiled code.
+EXCLUDED_SHADERS = {"RenderPasses", "Samples", "Tests", "Testing", "rtxdi", "Rendering/RTXDI"}
+DATA_FOLDERS = ["framework"]
 # Libraries loaded with dlopen() at runtime, which ldd cannot see.
 DLOPEN_LIBRARIES = ["libslang-glslang.so", "libtbbmalloc.so.2"]
 # System libraries that auditwheel must not bundle: the NVIDIA driver, and the user's libpython.
@@ -134,26 +135,26 @@ def stage(bin_dir, stage_dir, strip):
         shutil.copy2(path, package / soname)
     print(f"Bundled {len(closure)} libraries: {' '.join(sorted(closure))}")
 
-    # Shaders: all core shaders plus the shipped render passes.
+    # Shaders: core shaders plus the shipped render passes.
     shaders = bin_dir / "shaders"
-    for entry in shaders.iterdir():
-        if entry.name in EXCLUDED_CORE_SHADERS:
-            continue
-        if entry.is_dir():
-            copy_tree(entry, package / "shaders" / entry.name)
-        else:
-            shutil.copy2(entry, package / "shaders" / entry.name)
+
+    def ignore_excluded(directory, names):
+        relative = Path(directory).relative_to(shaders)
+        return [name for name in names if (relative / name).as_posix() in EXCLUDED_SHADERS]
+
+    copy_tree(shaders, package / "shaders", ignore=ignore_excluded)
     for name in RENDER_PASS_SHADERS:
         copy_tree(shaders / "RenderPasses" / name, package / "shaders" / "RenderPasses" / name)
 
+    # Data comes from the repository: the build's copy keeps files that were deleted from the repository.
     for name in DATA_FOLDERS:
-        copy_tree(bin_dir / "data" / name, package / "data" / name)
+        copy_tree(REPO / "data" / name, package / "data" / name)
     shutil.copy2(bin_dir / "settings.json", package / "settings.json")
 
     # Licenses.
     shutil.copy2(REPO / "LICENSE.md", package / "LICENSE.md")
-    if (bin_dir / "pythondist" / "PACKAGE-LICENSES").is_dir():
-        copy_tree(bin_dir / "pythondist" / "PACKAGE-LICENSES", package / "third_party_licenses" / "python")
+    shutil.copy2(HERE / "THIRD_PARTY_NOTICES.md", package / "THIRD_PARTY_NOTICES.md")
+    copy_tree(HERE / "third_party_licenses", package / "third_party_licenses")
 
     if strip:
         for library in list(package.glob("*.so*")) + list((package / "plugins").glob("*.so")):
@@ -190,7 +191,7 @@ setup(
     description="Falcor with time-of-flight rendering (ToF ReSTIR)",
     long_description=open("README.md").read(),
     long_description_content_type="text/markdown",
-    license="BSD-3-Clause",
+    license="BSD-3-Clause; bundled third-party components are under their own licenses (THIRD_PARTY_NOTICES.md)",
     packages=["{PACKAGE}"],
     package_data={{"{PACKAGE}": {files!r}}},
     python_requires="=={sys.version_info[0]}.{sys.version_info[1]}.*",
@@ -200,6 +201,10 @@ setup(
     zip_safe=False,
 )
 ''')
+    # wheel 0.37 reads license_files only from setup.cfg; it copies them into the .dist-info folder.
+    (stage_dir / "setup.cfg").write_text(
+        f"[metadata]\nlicense_files =\n    {PACKAGE}/LICENSE.md\n    {PACKAGE}/THIRD_PARTY_NOTICES.md\n"
+    )
     shutil.copy2(HERE / "README.md", stage_dir / "README.md")
 
 

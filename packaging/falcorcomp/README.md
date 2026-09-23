@@ -28,4 +28,4 @@ python3 packaging/falcorcomp/build_wheel.py --build-dir build/GCC_11.3.0x86_64-l
 pip install build/GCC_11.3.0x86_64-linux-gnu-nogtk/falcorcomp/dist/falcorcomp-*.whl
 ```
 
-Falcor is licensed under the BSD 3-Clause license by NVIDIA; see `LICENSE.md` in the package.
+Falcor is licensed under the BSD 3-Clause license by NVIDIA; see `LICENSE.md` in the package. The package bundles third-party components under their own licenses, including NVIDIA proprietary ones (NVTT, the CUDA runtime, RTXDI); see `THIRD_PARTY_NOTICES.md` and `third_party_licenses/`.
