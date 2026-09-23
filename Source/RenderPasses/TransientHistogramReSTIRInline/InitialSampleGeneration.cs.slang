@@ -15,6 +15,10 @@ import RenderPasses.Shared.Lights.LaserLightSampler;
 import RenderPasses.Shared.Lights.LightConnection;
 import RenderPasses.Shared.ReSTIR.PathReconstruction;
 import RenderPasses.Shared.ReSTIR.InitialCandidates;
+#if USE_TEMPORAL_REUSE
+import RenderPasses.Shared.ReSTIR.ReservoirReuse;
+import RenderPasses.Shared.ReSTIR.PathLengthAwareShiftmapping;
+#endif
 
 
 cbuffer CB
@@ -28,6 +32,11 @@ cbuffer CB
     uint2 gLaserHitVBufferRes;
     float specularRoughnessThreshold;
     float gRoughTimeGateSampleRatio;
+    float gTemporalHistoryLength;
+#if USE_TEMPORAL_REUSE
+    bool gTemporalHistoryValid;
+    float3 gPreviousCameraPosition;
+#endif
 }
 
 cbuffer Laser_CB
@@ -42,6 +51,10 @@ cbuffer Laser_CB
 // Inputs
 Texture2D<PackedHitInfo> gVBuffer;
 Texture2D<float4> gViewW; // Optional
+Texture2D<float2> gMotionVector; // Optional
+#if USE_TEMPORAL_REUSE
+Texture2D<PackedHitInfo> gTemporalVBuffer;
+#endif
 
 
 // Laser V Buffer (1 pixel)
@@ -54,6 +67,7 @@ Texture2D<float4> gLaserHitViewW;
 Texture2D<float> gLaserHitDepth;
 
 // Reservoir Struct
+StructuredBuffer<Reservoir> prevReservoirs; // Last frame's final reservoirs (temporal reuse).
 RWStructuredBuffer<Reservoir> currReservoirs;
 
 // Outputs
@@ -105,6 +119,70 @@ void submitHistogramCandidate(uint pixelIndex, ReconnectionState rc, ShadingData
         currReservoirs[index] = reservoir;
     }
 }
+
+#if USE_TEMPORAL_REUSE
+// Last frame's primary hit that this pixel reprojects to. Geometry and the light
+// are static, so only the camera (and hence the camera prefix) differs between frames.
+struct TemporalHistory
+{
+    bool valid;
+    uint pixelIndex;      // Linearized previous pixel.
+    ShadingData primary;  // Previous primary hit, seen from the previous camera.
+    float primaryLength;  // Previous camera -> previous primary hit.
+};
+
+TemporalHistory findTemporalHistory(uint2 pixel)
+{
+    TemporalHistory history = {};
+    if (!gTemporalHistoryValid || gTemporalHistoryLength == 0.f) return history;
+    float2 previousPosition = float2(pixel) + 0.5f;
+#if is_valid_gMotionVector
+    previousPosition += gMotionVector[pixel] * float2(gFrameDim);
+#endif
+    if (!all(isfinite(previousPosition)) || any(previousPosition < 0.f) ||
+        any(previousPosition >= float2(gFrameDim))) return history;
+    uint2 previousPixel = uint2(floor(previousPosition));
+    HitInfo previousHit = HitInfo(gTemporalVBuffer[previousPixel]);
+    if (!previousHit.isValid()) return history;
+    float3 previousPoint = gScene.getVertexData(previousHit.getTriangleHit()).posW;
+    float3 previousDirection = previousPoint - gPreviousCameraPosition;
+    history.primaryLength = length(previousDirection);
+    if (!(history.primaryLength > 0.f)) return history;
+    history.primary = loadShadingData(previousHit, gPreviousCameraPosition,
+        previousDirection / history.primaryLength);
+    history.pixelIndex = previousPixel.y * gFrameDim.x + previousPixel.x;
+    history.valid = true;
+    return history;
+}
+
+// Pairwise-MIS merge of one bin with the same bin of the previous frame. The gate
+// center is identical in both frames; the shift absorbs the camera-prefix change.
+Reservoir reuseTemporalBin(Reservoir fresh, Reservoir previous, TemporalHistory history,
+    IMaterialInstance previousMaterial, float gateCenter, ShadingData primary,
+    IMaterialInstance primaryMaterial, float primaryLength, inout SampleGenerator rng)
+{
+    if (gTemporalHistoryLength > 0.f)
+        previous.M = min(previous.M, gTemporalHistoryLength * float(samplesPerPixel));
+    if (!(previous.M > 0.f)) return fresh;
+
+    Reservoir merged = Reservoir();
+    // Previous -> current.
+    combine_reservoir_with_shiftmapping(merged, previous, fresh.M,
+        history.primary, previousMaterial, history.primaryLength, specularRoughnessThreshold,
+        primary, primaryMaterial, primaryLength, gateCenter, gateCenter, 1.f, false,
+        laserOrigin, laserDirection, rng);
+    // Current -> previous evaluates competing support, retaining the current sample.
+    combine_reservoir_with_shiftmapping(merged, fresh, previous.M,
+        primary, primaryMaterial, primaryLength, specularRoughnessThreshold,
+        history.primary, previousMaterial, history.primaryLength, gateCenter, gateCenter, 1.f, true,
+        laserOrigin, laserDirection, rng);
+    // The canonical no-RC branch copies only f and its flag; keep the selected length too.
+    if (merged.rcVertexBounce == 0) merged.totalPathLength = fresh.totalPathLength;
+    float target = getReservoirWeight(merged.f);
+    merged.W = target > 0.f ? merged.wSum / target : 0.f;
+    return merged;
+}
+#endif
 
 float3 tracePath(uint2 pixel, uint2 frameDim)
 {
@@ -186,6 +264,13 @@ float3 tracePath(uint2 pixel, uint2 frameDim)
         }
     }
 
+#if USE_TEMPORAL_REUSE
+    TemporalHistory history = findTemporalHistory(pixel);
+    IMaterialInstance previousMaterial = primaryMaterial;
+    if (history.valid)
+        previousMaterial = gScene.materials.getMaterialInstance(history.primary, ExplicitLodTextureSampler(0.f));
+#endif
+
     float3 integratedRadiance = 0.f;
     for (uint bin = 0; bin < tbin; ++bin)
     {
@@ -195,6 +280,14 @@ float3 tracePath(uint2 pixel, uint2 frameDim)
         reservoir.W = target > 0.f ? reservoir.wSum / target : 0.f;
         // Each bin had samplesPerPixel path trials, including paths contributing zero.
         reservoir.M = samplesPerPixel;
+#if USE_TEMPORAL_REUSE
+        if (history.valid)
+        {
+            float gateCenter = tmin + (float(bin) + 0.5f) * tunit;
+            reservoir = reuseTemporalBin(reservoir, prevReservoirs[history.pixelIndex * tbin + bin], history,
+                previousMaterial, gateCenter, primary, primaryMaterial, primaryLength, rng);
+        }
+#endif
         currReservoirs[index] = reservoir;
         float3 radiance = reservoir.W * reservoir.f;
         integratedRadiance += radiance;

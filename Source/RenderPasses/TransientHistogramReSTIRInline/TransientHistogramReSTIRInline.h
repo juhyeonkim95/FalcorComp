@@ -167,6 +167,18 @@ private:
     uint mSpatialReuseNeighborCount = 5;
     float mSpatialReuseGatherRadius = 10.0f;
     bool mUseBinReuse = false; ///< Add adjacent bins of the same pixel as spatial reuse candidates.
+
+    // Temporal reuse (static geometry and light, moving camera).
+    bool mUseTemporalReuse = false;
+    float mTemporalHistoryLength = 20.0f;  ///< M cap in units of samples per pixel; 0 disables.
+    bool mTemporalHistoryValid = false;
+    uint2 mTemporalHistoryDimensions = uint2(0);
+    float3 mPreviousCameraPosition = float3(0.f);
+    float3 mPreviousLaserPosition = float3(0.f);
+    float3 mPreviousLaserDirection = float3(0.f);
+    float3 mPreviousLaserPower = float3(0.f);
+    float mPreviousLaserCosAngle = 0.f;
+    ref<Texture> mpTemporalVBuffer;
     float mSpecularRoughnessThreshold = 0.25f;
     bool mNeedToClearHistogram = false;
 

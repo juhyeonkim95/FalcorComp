@@ -50,10 +50,12 @@ const char kReflectTypesFile[] = "RenderPasses/TransientHistogramReSTIRInline/Re
 const char kSpatialReuseFile[] = "RenderPasses/TransientHistogramReSTIRInline/SpatialReuse.cs.slang";
 const char kSEvaluateFinalSamplesFile[] = "RenderPasses/TransientHistogramReSTIRInline/EvaluateFinalSamples.cs.slang";
 const char kInputViewDir[] = "viewW";
+const char kInputMotionVectors[] = "mvec";
 
 const ChannelList kInputChannels = {
     // clang-format off
     { "vbuffer",        "gVBuffer",     "Visibility buffer in packed format" },
+    { kInputMotionVectors,  "gMotionVector",   "Motion vector buffer (float format)", true /* optional */ },
     { kInputViewDir,    "gViewW",       "World-space view direction (xyz float format)", true /* optional */ },
 };
 
@@ -108,6 +110,8 @@ const char kSpatialReusePassIteration[] = "spatialReuseIteration";
 const char kSpatialReuseNeighborCount[] = "spatialReuseNeighborCount";
 const char kSpatialReuseGatherRadius[] = "spatialReuseGatherRadius";
 const char kUseBinReuse[] = "useBinReuse";
+const char kUseTemporalReuse[] = "useTemporalReuse";
+const char kTemporalHistoryLength[] = "temporalHistoryLength";
 const char kSpecularRoughnessThreshold[] = "specularRoughnessThreshold";
 const char kNewtonMaxIteration[] = "NewtonMaxIteration";
 const char kNewtonRelativeTolerance[] = "NewtonRelativeTolerance";
@@ -184,6 +188,10 @@ void TransientHistogramReSTIRInline::parseProperties(const Properties& props)
             mSpatialReuseNeighborCount = value;
         else if (key == kUseBinReuse)
             mUseBinReuse = value;
+        else if (key == kUseTemporalReuse)
+            mUseTemporalReuse = value;
+        else if (key == kTemporalHistoryLength)
+            mTemporalHistoryLength = value;
         else if(key == kSpecularRoughnessThreshold)
             mSpecularRoughnessThreshold = value;
         else if(key == kRandomSeed)
@@ -216,6 +224,8 @@ Properties TransientHistogramReSTIRInline::getProperties() const
     props[kComputeDirect] = mComputeDirect;
     props[kUseImportanceSampling] = mUseImportanceSampling;
     props[kUseBinReuse] = mUseBinReuse;
+    props[kUseTemporalReuse] = mUseTemporalReuse;
+    props[kTemporalHistoryLength] = mTemporalHistoryLength;
     return props;
 }
 
@@ -265,6 +275,7 @@ DefineList TransientHistogramReSTIRInline::getShaderDefines(const RenderData& re
     defines.add("TRIANGLE_APPROX", std::to_string((uint32_t)TimeGatedSamplingMethod::TRIANGLE_APPROX));
     defines.add("USE_ELLIPSOIDAL_DIRECT_MIS", mUseEllipsoidalMIS ? "1" : "0");
     defines.add("SHIFT_MAPPING_METHOD", std::to_string((uint32_t)mShiftmapMethod));
+    defines.add("USE_TEMPORAL_REUSE", mUseTemporalReuse ? "1" : "0");
 
     // For optional I/O resources, set 'is_valid_<name>' defines to inform the program of which ones it can access.
     // TODO: This should be moved to a more general mechanism using Slang.
@@ -285,7 +296,7 @@ void TransientHistogramReSTIRInline::bindShaderData(const ShaderVar& var, const 
 
     // Direct initial sampling uses only LaserLightSampler.
 
-    // var["tempReservoirs"] = mpTempReservoirs;
+    var["prevReservoirs"] = mpPrevReservoirs;
     var["currReservoirs"] = mpCurrReservoirs;
 
     // Get dimensions of ray dispatch.
@@ -318,6 +329,21 @@ void TransientHistogramReSTIRInline::bindShaderData(const ShaderVar& var, const 
     
     var["CB"]["samplesPerPixel"] = mSamplesPerPixel;
     var["CB"]["gRoughTimeGateSampleRatio"] = mRoughTimeGateSampleRatio;
+    var["CB"]["gTemporalHistoryLength"] = mTemporalHistoryLength;
+    if (mUseTemporalReuse)
+    {
+        // Temporal reuse shifts last frame's paths in this pass.
+        var["gTemporalVBuffer"] = mpTemporalVBuffer;
+        var["CB"]["gTemporalHistoryValid"] = mTemporalHistoryValid;
+        var["CB"]["gPreviousCameraPosition"] = mPreviousCameraPosition;
+        var["Shiftmap_CB"]["gGaugeAxis"] = mGaugeAxis;
+        var["Shiftmap_CB"]["gGaugeMode"] = uint(mGaugeMode);
+        var["Shiftmap_CB"]["gShiftMappingMethod"] = uint(mShiftmapMethod);
+        var["Shiftmap_CB"]["gNewtonMaxIteration"] = mNewtonMaxIteration;
+        var["Shiftmap_CB"]["gNewtonRelativeTolerance"] = mNewtonRelativeTolerance;
+        if (mpEmissiveSampler)
+            mpEmissiveSampler->bindShaderData(var["Shiftmap_CB"]["emissiveSamplerShiftmap"]);
+    }
 
     var["TimeGate"]["time_gate_window"] = (mTimeMax - mTimeMin) / mTimeBin;
     var["TimeGate"]["time_gate_window_rough"] = (mTimeMax - mTimeMin) / mTimeBin;
@@ -475,6 +501,7 @@ void TransientHistogramReSTIRInline::execute(RenderContext* pRenderContext, cons
     auto& dict = renderData.getDictionary();
     if (mOptionsChanged)
     {
+        mTemporalHistoryValid = false;
         auto flags = dict.getValue(kRenderPassRefreshFlags, RenderPassRefreshFlags::None);
         dict[Falcor::kRenderPassRefreshFlags] = flags | Falcor::RenderPassRefreshFlags::RenderOptionsChanged;
         mOptionsChanged = false;
@@ -483,6 +510,7 @@ void TransientHistogramReSTIRInline::execute(RenderContext* pRenderContext, cons
     // If we have no scene, just clear the outputs and return.
     if (!mpScene)
     {
+        mTemporalHistoryValid = false;
         for (auto it : kOutputChannels)
         {
             Texture* pDst = renderData.getTexture(it.name).get();
@@ -522,6 +550,16 @@ void TransientHistogramReSTIRInline::execute(RenderContext* pRenderContext, cons
     }
     mLaserPower = dict.keyExists("laserPower") ? dict["laserPower"] : float3(1,1,1);
     mLaserCosAngle = dict.keyExists("laserCosAngle") ? dict["laserCosAngle"] : 0.0f;
+
+    // Temporal reuse assumes static geometry and light; only the camera may move.
+    const auto cameraUpdates = IScene::UpdateFlags::CameraMoved |
+        IScene::UpdateFlags::CameraPropertiesChanged | IScene::UpdateFlags::CameraSwitched;
+    const bool lightChanged = any(mLaserPosition != mPreviousLaserPosition) ||
+        any(mLaserDirection != mPreviousLaserDirection) || any(mLaserPower != mPreviousLaserPower) ||
+        mLaserCosAngle != mPreviousLaserCosAngle;
+    if ((mpScene->getUpdates() & ~cameraUpdates) != IScene::UpdateFlags::None || lightChanged ||
+        mpScene->getCamera()->getApertureRadius() > 0.f)
+        mTemporalHistoryValid = false;
 
     if (!mpEmissiveSampler && (mSamplingMethod == TimeGatedSamplingMethod::ELLIPSOIDAL))
     {
@@ -657,6 +695,17 @@ void TransientHistogramReSTIRInline::execute(RenderContext* pRenderContext, cons
 
     mFrameCount++;
 
+    // The final reservoirs become next frame's temporal history.
+    std::swap(mpCurrReservoirs, mpPrevReservoirs);
+    mTemporalHistoryValid = mUseTemporalReuse && mpScene->getCamera()->getApertureRadius() == 0.f;
+    if (mTemporalHistoryValid)
+        pRenderContext->copyResource(mpTemporalVBuffer.get(), renderData["vbuffer"].get());
+    mPreviousCameraPosition = mpScene->getCamera()->getPosition();
+    mPreviousLaserPosition = mLaserPosition;
+    mPreviousLaserDirection = mLaserDirection;
+    mPreviousLaserPower = mLaserPower;
+    mPreviousLaserCosAngle = mLaserCosAngle;
+
 
 
 }
@@ -690,6 +739,14 @@ void TransientHistogramReSTIRInline::renderUI(Gui::Widgets& widget)
     dirty |= widget.checkbox("Reuse adjacent bins", mUseBinReuse);
     widget.tooltip("Each spatial reuse iteration also resamples bins j-1 and j+1 of the same pixel", true);
 
+    dirty |= widget.checkbox("Temporal reuse", mUseTemporalReuse);
+    widget.tooltip("Reuse each bin from the previous frame (static scene and light, moving camera)", true);
+    if (mUseTemporalReuse)
+    {
+        dirty |= widget.var("Temporal history length", mTemporalHistoryLength, 0.0f, 100000.0f);
+        widget.tooltip("M cap in units of samples per pixel; 0 disables the history", true);
+    }
+
     // If rendering options that modify the output have changed, set flag to indicate that.
     // In execute() we will pass the flag to other passes for reset of temporal data etc.
     if (dirty)
@@ -704,6 +761,7 @@ void TransientHistogramReSTIRInline::setScene(RenderContext* pRenderContext, con
     // After changing scene, the raytracing program should to be recreated.
     mpComputePass = nullptr;
     mFrameCount = 0;
+    mTemporalHistoryValid = false;
     mpReflectTypes = nullptr;
 
     // Set new scene.
@@ -750,8 +808,9 @@ void TransientHistogramReSTIRInline::prepareResources(RenderContext* pRenderCont
     const uint2 targetDim = renderData.getDefaultTextureDims();
     const uint32_t screenPixelCount = targetDim.x * targetDim.y * mTimeBin;
 
-    // create reservoirs
+    // create reservoirs (a resize discards the temporal history)
     if(!mpPrevReservoirs || (mpPrevReservoirs->getElementCount() != screenPixelCount)){
+        mTemporalHistoryValid = false;
         mpPrevReservoirs = mpDevice->createStructuredBuffer(
             var["reservoirs"],
             screenPixelCount,
@@ -786,7 +845,16 @@ void TransientHistogramReSTIRInline::prepareResources(RenderContext* pRenderCont
     if(!mpNeighborOffsets){
         mpNeighborOffsets = createNeighborOffsetTexture(kNeighborOffsetCount);
     }
-    
+
+    if (mUseTemporalReuse &&
+        (!mpTemporalVBuffer || any(mTemporalHistoryDimensions != targetDim) ||
+         mpTemporalVBuffer->getFormat() != renderData.getTexture("vbuffer")->getFormat()))
+    {
+        mpTemporalVBuffer = mpDevice->createTexture2D(
+            targetDim.x, targetDim.y, renderData.getTexture("vbuffer")->getFormat(), 1, 1);
+        mTemporalHistoryDimensions = targetDim;
+        mTemporalHistoryValid = false;
+    }
 }
 
 ref<Texture> TransientHistogramReSTIRInline::createNeighborOffsetTexture(uint32_t sampleCount)
