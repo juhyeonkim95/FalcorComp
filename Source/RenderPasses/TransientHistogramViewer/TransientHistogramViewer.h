@@ -37,6 +37,8 @@ using namespace Falcor;
  * Right half: a 4 x 4 grid of 16 bins spread evenly from firstBin to lastBin, in reading order.
  * Both halves are fitted to their area with box filtering. The histogram is divided by the
  * frame count its producer publishes (TransientHistogramPathTracerInline accumulates across frames).
+ * Shift+click (or drag) on either half selects a pixel: it gets a crosshair, and the UI plots its
+ * transient profile.
  */
 class TransientHistogramViewer : public RenderPass
 {
@@ -54,22 +56,44 @@ public:
     RenderPassReflection reflect(const CompileData& compileData) override;
     void execute(RenderContext* pRenderContext, const RenderData& renderData) override;
     void renderUI(Gui::Widgets& widget) override;
+    bool onMouseEvent(const MouseEvent& mouseEvent) override;
 
 private:
     static constexpr uint kTileCount = 16;
 
+    enum class ProfileChannel : uint32_t { Luminance = 0, Red = 1, Green = 2, Blue = 3 };
+
     /// Histogram bin shown in grid tile `tile` for a histogram with `binCount` bins.
     uint tileBin(uint tile, uint binCount) const;
+    /// Histogram pixel under output position `position` (in output pixels), if any.
+    bool outputToHistogram(float2 position, int2& pixel) const;
+    void readProfile(RenderContext* pRenderContext, const ref<Texture>& pHistogram, float frameScale);
+    void renderProfileUI(Gui::Widgets& widget);
 
     uint mFirstBin = 0;
     int mLastBin = -1;         ///< Last bin shown in the grid; negative counts from the end (-1 = last bin).
     float mBinExposure = 0.f;  ///< Extra exposure of the grid tiles, in stops.
 
-    // Last histogram seen, for the UI.
+    // Transient profile of a selected pixel.
+    int2 mSelectedPixel = {-1, -1}; ///< Histogram pixel; negative if none.
+    bool mPicking = false;          ///< Shift+drag in progress.
+    uint mProfileRadius = 1;        ///< The profile averages a (2r + 1)^2 patch.
+    ProfileChannel mProfileChannel = ProfileChannel::Luminance;
+    std::vector<float4> mProfile;   ///< Per bin, radiance per unit path length.
+    std::vector<float> mPlotValues; ///< mProfile in the plotted channel.
+
+    // Last histogram and output seen, for the UI and picking.
+    uint2 mOutputDim = {0, 0};
+    uint2 mHistogramDim = {0, 0};
     uint mBinCount = 0;
     uint mFrameCount = 0;
     float mTimeMin = 0.f;
     float mTimeMax = 0.f;
 
     ref<ComputePass> mpViewPass;
+    ref<ComputePass> mpProfilePass;
+    ref<Buffer> mpProfileBuffer;   ///< GPU profile, one float4 per bin.
+    ref<Buffer> mpProfileReadback; ///< CPU-readable copy of mpProfileBuffer.
+    ref<Fence> mpProfileFence;
+    uint64_t mProfilePendingValue = 0; ///< Fence value of the copy in flight; 0 if none.
 };
