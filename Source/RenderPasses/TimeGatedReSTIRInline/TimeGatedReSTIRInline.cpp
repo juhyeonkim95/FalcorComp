@@ -119,6 +119,15 @@ const char kIsSceneDynamic[] = "isSceneDynamic";
 const char kIsLightSourceLaser[] = "isLightSourceLaser";
 const uint32_t kNeighborOffsetCount = 8192;
 const char kUseTemporalReuse[] = "useTemporalReuse";
+
+template<typename T>
+std::string enumName(const std::unordered_map<std::string, T>& values, T value)
+{
+    for (const auto& [name, candidate] : values)
+        if (candidate == value)
+            return name;
+    FALCOR_THROW("Cannot serialize invalid enum value.");
+}
 } // namespace
 
 TimeGatedReSTIRInline::TimeGatedReSTIRInline(ref<Device> pDevice, const Properties& props) : RenderPass(pDevice)
@@ -246,6 +255,35 @@ Properties TimeGatedReSTIRInline::getProperties() const
     props[kMaxBounces] = mMaxBounces;
     props[kComputeDirect] = mComputeDirect;
     props[kUseImportanceSampling] = mUseImportanceSampling;
+    props[kSamplesPerPixel] = mSamplesPerPixel;
+    props[kTimeGateMode] = enumName(TimeGateModeTable, mTimeGateMode);
+    props[kTimeGateWindow] = mTimeGateWindow;
+    props[kTimeGateWindowRough] = mTimeGateWindowRough;
+    props[kRoughTimeGateSampleRatio] = mRoughTimeGateSampleRatio;
+    props[kTimeMin] = mTimeMin;
+    props[kTimeMax] = mTimeMax;
+    props[kTimeBin] = mTimeBin;
+    props[kSamplingMethod] = enumName(SamplingMethodTable, mSamplingMethod);
+    props[kEmissiveSampler] = mTriSampler;
+    props[kLaserHitVBufferRes] = mLaserHitVBufferRes;
+    props[kShiftmapMethod] = enumName(ShiftmapMethodTable, mShiftmapMethod);
+    props[kGaugeAxis] = mGaugeAxis;
+    props[kGaugeMode] = enumName(GaugeModeTable, mGaugeMode);
+    props[kSpatialReusePassIteration] = mSpatialReusePassIteration;
+    props[kSpatialReuseNeighborCount] = mSpatialReuseNeighborCount;
+    props[kSpatialReuseGatherRadius] = mSpatialReuseGatherRadius;
+    props[kSpecularRoughnessThreshold] = mSpecularRoughnessThreshold;
+    props[kSpecularRoughnessThresholdEllipsoid] = mSpecularRoughnessThresholdEllipsoid;
+    props[kTemporalHistoryLength] = mTemporalHistoryLength;
+    props[kNewtonMaxIteration] = mNewtonMaxIteration;
+    props[kNewtonRelativeTolerance] = mNewtonRelativeTolerance;
+    props[kRandomSeed] = mRandomSeed;
+    props[kLaserCollocated] = mLaserCollocated;
+    props[kUseAlphaTest] = mUseAlphaTest;
+    props[kUseSingleChannel] = mUseSingleChannel;
+    props[kIsSceneDynamic] = mIsSceneDynamic;
+    props[kUseTemporalReuse] = mUseTemporalReuse;
+    props[kIsLightSourceLaser] = mIsLightSourceLaser;
     return props;
 }
 
