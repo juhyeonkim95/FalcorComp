@@ -28,12 +28,15 @@
 #pragma once
 #include "Falcor.h"
 #include "RenderGraph/RenderPass.h"
+#include "RenderGraph/RenderPassHelpers.h"
 #include "Utils/Sampling/SampleGenerator.h"
 #include "Utils/Transient/Transient.h"
 
 using namespace Falcor;
 
-/** Inline transient histogram tracer. Histogram values accumulate until resetHistogram().
+/** Inline transient histogram tracer. Histogram values accumulate until resetHistogram(), or until the
+ * camera moves or an upstream pass changes its options when autoReset is enabled. The number of
+ * accumulated frames is published in the render data dictionary (kHistogramFrameCount).
  * Single-channel output stores the red channel in an H x W x B volume; RGB uses float4 bins.
  * Triangle approximation integrates a single intermediate triangle, not a full path walk.
  */
@@ -73,15 +76,20 @@ private:
         bool isLightSourceLaser = true;
         bool useKernelDensityEstimation = false;
         float initialWindowRatio = 1.f; ///< Initial KDE bandwidth / histogram range, in (0, 1].
+        bool autoReset = false; ///< Clear the histogram when the camera moves or an upstream pass changes options.
+        RenderPassHelpers::IOSize outputSize = RenderPassHelpers::IOSize::Default;
+        uint2 fixedOutputSize = {512, 512}; ///< Output size when outputSize is Fixed.
     };
     static void validateOptions(const Options& options);
     void parseProperties(const Properties& props);
     void prepareProgram(RenderContext* pRenderContext, const RenderData& renderData);
     void bindShaderData(const ShaderVar& var, const RenderData& renderData);
+    bool needsAutoReset(const RenderData& renderData) const;
     DefineList getShaderDefines(const RenderData& renderData) const;
 
     Options mOptions;
     uint mFrameCount = 0;
+    uint mHistogramFrameCount = 0; ///< Frames accumulated in the histogram since it was cleared.
     bool mOptionsChanged = false;
     bool mNeedToClearHistogram = true;
     ref<Scene> mpScene;

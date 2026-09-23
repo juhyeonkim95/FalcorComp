@@ -85,6 +85,14 @@ const char kUseSingleChannel[] = "useSingleChannel";
 const char kIsLightSourceLaser[] = "isLightSourceLaser";
 const char kUseKernelDensityEstimation[] = "useKernelDensityEstimation";
 const char kInitialWindowRatio[] = "initialWindowRatio";
+const char kAutoReset[] = "autoReset";
+const char kOutputSize[] = "outputSize";
+const char kFixedOutputSize[] = "fixedOutputSize";
+
+// Render data dictionary keys read by histogram consumers (e.g. TransientHistogramViewer).
+const char kHistogramFrameCount[] = "transientHistogramFrameCount";
+const char kHistogramTimeMin[] = "transientHistogramTimeMin";
+const char kHistogramTimeMax[] = "transientHistogramTimeMax";
 } // namespace
 
 TransientHistogramPathTracerInline::TransientHistogramPathTracerInline(ref<Device> pDevice, const Properties& props) : RenderPass(pDevice)
@@ -146,6 +154,12 @@ void TransientHistogramPathTracerInline::parseProperties(const Properties& props
             mOptions.initialWindowRatio = value;
         else if (key == kUseKernelDensityEstimation)
             mOptions.useKernelDensityEstimation = value;
+        else if (key == kAutoReset)
+            mOptions.autoReset = value;
+        else if (key == kOutputSize)
+            mOptions.outputSize = value;
+        else if (key == kFixedOutputSize)
+            mOptions.fixedOutputSize = value;
         else
             logWarning("Unknown property '{}' in TransientHistogramPathTracerInline properties.", key);
     }
@@ -182,6 +196,10 @@ Properties TransientHistogramPathTracerInline::getProperties() const
     props[kUseKernelDensityEstimation] = mOptions.useKernelDensityEstimation;
     props[kInitialWindowRatio] = mOptions.initialWindowRatio;
     props[kSamplingMethod] = mOptions.samplingMethod == SamplingMethod::Direct ? "direct" : "tri_approx";
+    props[kAutoReset] = mOptions.autoReset;
+    props[kOutputSize] = mOptions.outputSize;
+    if (mOptions.outputSize == RenderPassHelpers::IOSize::Fixed)
+        props[kFixedOutputSize] = mOptions.fixedOutputSize;
     for (const auto& [name, mode] : TimeGateModeTable)
         if (mode == mOptions.timeGateMode) props[kTimeGateMode] = name;
     return props;
@@ -194,13 +212,14 @@ RenderPassReflection TransientHistogramPathTracerInline::reflect(const CompileDa
     // Define our input/output channels.
     addRenderPassInputs(reflector, kInputChannels);
     addRenderPassInputs(reflector, kLaserInputChannels, ResourceBindFlags::ShaderResource, uint2(1, 1));
-    addRenderPassOutputs(reflector, kOutputChannels);
+    const uint2 sz = RenderPassHelpers::calculateIOSize(mOptions.outputSize, mOptions.fixedOutputSize, compileData.defaultTexDims);
+    addRenderPassOutputs(reflector, kOutputChannels, ResourceBindFlags::UnorderedAccess, sz);
 
     const ChannelList& histogramChannels = mOptions.useSingleChannel ? kHistogramOutputChannelSingle : kHistogramOutputChannelsRGB;
 
     for (const auto& it : histogramChannels)
     {
-        auto& tex = reflector.addOutput(it.name, it.desc).texture3D(0, 0, mOptions.timeBin);
+        auto& tex = reflector.addOutput(it.name, it.desc).texture3D(sz.x, sz.y, mOptions.timeBin);
         tex.bindFlags(ResourceBindFlags::UnorderedAccess | ResourceBindFlags::ShaderResource);
         if (it.format != ResourceFormat::Unknown)
             tex.format(it.format);
@@ -253,9 +272,9 @@ void TransientHistogramPathTracerInline::bindShaderData(const ShaderVar& var, co
 {
     auto& dict = renderData.getDictionary();
 
-    // Get dimensions of ray dispatch.
-    const uint2 targetDim = renderData.getDefaultTextureDims();
-    FALCOR_ASSERT(targetDim.x > 0 && targetDim.y > 0);
+    // Dispatch over the output, which may have a fixed size.
+    const ref<Texture> pColor = renderData.getTexture("color");
+    const uint2 targetDim = {pColor->getWidth(), pColor->getHeight()};
 
     var["CB"]["gFrameCount"] = mFrameCount;
     var["CB"]["gFrameDim"] = targetDim;
@@ -355,10 +374,13 @@ void TransientHistogramPathTracerInline::execute(RenderContext* pRenderContext, 
         return;
     }
 
+    if (mOptions.autoReset && needsAutoReset(renderData))
+        resetHistogram();
     if (mNeedToClearHistogram)
     {
         pRenderContext->clearTexture(renderData.getTexture("histogram").get());
         mNeedToClearHistogram = false;
+        mHistogramFrameCount = 0;
     }
 
     // Triangle approximation enumerates all triangles; no triangle sampling distribution is needed.
@@ -387,12 +409,33 @@ void TransientHistogramPathTracerInline::execute(RenderContext* pRenderContext, 
     bindShaderData(var, renderData);
 
     // Spawn the rays.
-    const uint2 targetDim = renderData.getDefaultTextureDims();
-    FALCOR_ASSERT(targetDim.x > 0 && targetDim.y > 0);
-    mpComputePass->execute(pRenderContext, uint3(targetDim, 1));
+    const ref<Texture> pColor = renderData.getTexture("color");
+    mpComputePass->execute(pRenderContext, uint3(pColor->getWidth(), pColor->getHeight(), 1));
 
     mFrameCount++;
+    mHistogramFrameCount++;
+    dict[kHistogramFrameCount] = mHistogramFrameCount;
+    dict[kHistogramTimeMin] = mOptions.timeMin;
+    dict[kHistogramTimeMax] = mOptions.timeMax;
 
+}
+
+bool TransientHistogramPathTracerInline::needsAutoReset(const RenderData& renderData) const
+{
+    // Same rule as AccumulatePass: any refresh flag or scene change except camera jitter/history.
+    auto& dict = renderData.getDictionary();
+    if (dict.getValue(kRenderPassRefreshFlags, RenderPassRefreshFlags::None) != RenderPassRefreshFlags::None)
+        return true;
+    const auto sceneUpdates = mpScene->getUpdates();
+    if ((sceneUpdates & ~IScene::UpdateFlags::CameraPropertiesChanged) != IScene::UpdateFlags::None)
+        return true;
+    if (is_set(sceneUpdates, IScene::UpdateFlags::CameraPropertiesChanged))
+    {
+        const auto excluded = Camera::Changes::Jitter | Camera::Changes::History;
+        if ((mpScene->getCamera()->getChanges() & ~excluded) != Camera::Changes::None)
+            return true;
+    }
+    return false;
 }
 
 void TransientHistogramPathTracerInline::renderUI(Gui::Widgets& widget)
