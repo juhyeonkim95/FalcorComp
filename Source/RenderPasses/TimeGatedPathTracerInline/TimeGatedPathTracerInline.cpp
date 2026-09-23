@@ -588,9 +588,9 @@ void TimeGatedPathTracerInline::renderUI(Gui::Widgets& widget)
         group.tooltip("On: the light is the spot where the laser beam hits the scene, and the beam length adds to "
                       "the path length.\nOff: a point light at the laser position.", true);
 
-        dirty |= group.checkbox("Laser at camera", options.laserCollocated);
+        dirty |= group.checkbox("Laser collocated", options.laserCollocated);
         group.tooltip("Place the laser at the camera, aimed at the camera target, instead of using the laser pass "
-                      "position and direction.", true);
+                      "position and direction. The laser follows the camera when it moves.", true);
     }
 
     if (auto group = widget.group("Output", true))
