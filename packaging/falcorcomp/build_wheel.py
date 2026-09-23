@@ -5,9 +5,12 @@ The package directory becomes Falcor's runtime directory: Falcor resolves
 plugins/, shaders/, data/ and settings.json relative to libFalcor.so, and the
 built binaries already use $ORIGIN runpaths, so no relinking is needed.
 
-    python3 packaging/falcorcomp/build_wheel.py [--build-dir build/GCC_11.3.0x86_64-linux-gnu]
+    python3 packaging/falcorcomp/build_wheel.py [--build-dir build/GCC_11.3.0x86_64-linux-gnu-nogtk]
 
-The wheel is written to <build-dir>/falcorcomp/dist/.
+The wheel is repaired into a manylinux wheel with auditwheel, which bundles the
+remaining system libraries; this needs `auditwheel` and `patchelf` on PATH and
+a build configured with -DFALCOR_ENABLE_GTK=OFF. It is written to
+<build-dir>/falcorcomp/dist/.
 """
 import argparse
 import json
@@ -48,6 +51,8 @@ EXCLUDED_CORE_SHADERS = {"RenderPasses", "Samples", "Tests", "Testing"}
 DATA_FOLDERS = ["framework", "bluenoise"]
 # Libraries loaded with dlopen() at runtime, which ldd cannot see.
 DLOPEN_LIBRARIES = ["libslang-glslang.so", "libtbbmalloc.so.2"]
+# System libraries that auditwheel must not bundle: the NVIDIA driver, and the user's libpython.
+REPAIR_EXCLUDES = ["libcuda.so.1", f"libpython{sys.version_info[0]}.{sys.version_info[1]}.so.1.0"]
 
 
 def run(command, **kwargs):
@@ -73,6 +78,20 @@ def library_closure(binaries, bin_dir):
         closure[soname] = (bin_dir / soname).resolve()
     # libpython must come from the user's interpreter, never from the build.
     return {s: p for s, p in closure.items() if not s.startswith("libpython")}
+
+
+def needed_libraries(binary):
+    output = subprocess.run(["readelf", "-d", str(binary)], check=True, capture_output=True, text=True).stdout
+    return [line.split("[")[1].rstrip("]") for line in output.splitlines() if "(NEEDED)" in line]
+
+
+def repair(wheel, dist_dir):
+    """Turn the linux_x86_64 wheel into a manylinux wheel and delete the original."""
+    command = ["auditwheel", "repair", str(wheel), "-w", str(dist_dir)]
+    for library in REPAIR_EXCLUDES:
+        command += ["--exclude", library]
+    run(command)
+    wheel.unlink()
 
 
 def copy_tree(source, destination, ignore=None):
@@ -186,24 +205,38 @@ setup(
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    parser.add_argument("--build-dir", type=Path, default=REPO / "build" / "GCC_11.3.0x86_64-linux-gnu")
+    parser.add_argument("--build-dir", type=Path, default=REPO / "build" / "GCC_11.3.0x86_64-linux-gnu-nogtk")
     parser.add_argument("--no-strip", action="store_true", help="keep debug symbols in the bundled libraries")
+    parser.add_argument("--no-repair", action="store_true", help="keep the linux_x86_64 wheel (local use only)")
     args = parser.parse_args()
 
     bin_dir = (args.build_dir / "bin").resolve()
     if not (bin_dir / "libFalcor.so").exists():
         raise SystemExit(f"libFalcor.so not found in {bin_dir}; build Falcor first.")
+    if not args.no_repair:
+        if any(library.startswith("libgtk") for library in needed_libraries(bin_dir / "libFalcor.so")):
+            raise SystemExit("libFalcor.so links GTK; configure the build with -DFALCOR_ENABLE_GTK=OFF.")
+        missing = [tool for tool in ["auditwheel", "patchelf"] if shutil.which(tool) is None]
+        if missing:
+            raise SystemExit(f"{' and '.join(missing)} not found; run: pip install auditwheel patchelf")
     extension_tag = next((bin_dir / "python" / "falcor").glob("falcor_ext.cpython-*.so")).name.split(".")[1]
     running_tag = f"cpython-{sys.version_info[0]}{sys.version_info[1]}-x86_64-linux-gnu"
     if extension_tag != running_tag:
         raise SystemExit(f"Run this script with the Python the build used ({extension_tag}), not {running_tag}.")
 
     work = args.build_dir.resolve() / PACKAGE
-    stage_dir, dist_dir = work / "stage", work / "dist"
+    stage_dir, dist_dir, raw_dir = work / "stage", work / "dist", work / "raw"
     package = stage(bin_dir, stage_dir, strip=not args.no_strip)
     write_setup(stage_dir, package)
-    dist_dir.mkdir(parents=True, exist_ok=True)
-    run([sys.executable, "setup.py", "-q", "bdist_wheel", "-d", str(dist_dir)], cwd=stage_dir)
+    for directory in [dist_dir, raw_dir]:
+        if directory.exists():
+            shutil.rmtree(directory)
+    if args.no_repair:
+        run([sys.executable, "setup.py", "-q", "bdist_wheel", "-d", str(dist_dir)], cwd=stage_dir)
+    else:
+        run([sys.executable, "setup.py", "-q", "bdist_wheel", "-d", str(raw_dir)], cwd=stage_dir)
+        (wheel,) = raw_dir.glob("*.whl")
+        repair(wheel, dist_dir)
     for wheel in sorted(dist_dir.glob(f"{PACKAGE}-{VERSION}-*.whl")):
         print(f"Wheel: {wheel} ({wheel.stat().st_size / 1e6:.1f} MB)")
 
