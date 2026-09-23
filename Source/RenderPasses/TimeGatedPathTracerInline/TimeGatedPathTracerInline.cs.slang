@@ -48,6 +48,7 @@ EmissiveLightSampler emissiveSampler; // Triangle-selection hierarchy for ellips
 #define is_valid(name) (is_valid_##name != 0)
 static const uint kMaxBounces = MAX_BOUNCES;
 static const bool kComputeDirect = COMPUTE_DIRECT;
+static const bool kShowLaserSpot = SHOW_LASER_SPOT;
 static const bool kUseImportanceSampling = USE_IMPORTANCE_SAMPLING;
 static const bool kUseEnvBackground = USE_ENV_BACKGROUND;
 static const bool kUseAlphaTest = USE_ALPHA_TEST;
@@ -100,8 +101,9 @@ float3 tracePath(const uint2 pixel, const uint2 frameDim)
 
         ShadingData sd0 = loadShadingData(hit0, primaryRayOrigin, primaryRayDir);
         IMaterialInstance mi0 = gScene.materials.getMaterialInstance(sd0, ExplicitLodTextureSampler(0.f));
-        // Legacy laser-spot overlay; this is separate from the time-gated estimator.
-        if(kComputeDirect)
+        // Debug overlay: the laser spot seen directly from the primary hit, in red.
+        // It is not time gated and not part of the time-gated estimate.
+        if(kShowLaserSpot)
         {
             float3 toLaserDir = normalize(laserOrigin - sd0.posW);
             float toLaserDist = length(laserOrigin - sd0.posW);
@@ -131,7 +133,7 @@ float3 tracePath(const uint2 pixel, const uint2 frameDim)
             HitInfo hit = hit0;
             float hitT;
 
-            // show direct?
+            // Direct illumination at the primary hit (camera -> primary -> light).
             if(kComputeDirect){
                 // sample light
                 LightSample ls = {};

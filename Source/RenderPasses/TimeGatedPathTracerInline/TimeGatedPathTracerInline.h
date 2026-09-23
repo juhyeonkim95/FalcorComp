@@ -76,6 +76,7 @@ private:
     {
         uint maxBounces = 3;
         bool computeDirect = true;
+        bool showLaserSpot = false; ///< Debug overlay: un-gated laser spot seen from the primary hit.
         bool useImportanceSampling = true;
         float timeGateWindow = 0.05f;
         TimeGateMode timeGateMode = TimeGateMode::BOX;

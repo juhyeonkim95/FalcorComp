@@ -70,6 +70,7 @@ const ChannelList kOutputChannels = {
 
 const char kMaxBounces[] = "maxBounces";
 const char kComputeDirect[] = "computeDirect";
+const char kShowLaserSpot[] = "showLaserSpot";
 const char kUseImportanceSampling[] = "useImportanceSampling";
 const char kSamplesPerPixel[] = "samplesPerPixel";
 const char kTimeGateWindow[] = "timeGateWindow";
@@ -164,6 +165,8 @@ void TimeGatedPathTracerInline::parseProperties(const Properties& props)
             mOptions.maxBounces = value;
         else if (key == kComputeDirect)
             mOptions.computeDirect = value;
+        else if (key == kShowLaserSpot)
+            mOptions.showLaserSpot = value;
         else if (key == kUseImportanceSampling)
             mOptions.useImportanceSampling = value;
         else if (key == kSamplesPerPixel)
@@ -202,6 +205,7 @@ Properties TimeGatedPathTracerInline::getProperties() const
     Properties props;
     props[kMaxBounces] = mOptions.maxBounces;
     props[kComputeDirect] = mOptions.computeDirect;
+    props[kShowLaserSpot] = mOptions.showLaserSpot;
     props[kUseImportanceSampling] = mOptions.useImportanceSampling;
     props[kSamplesPerPixel] = mOptions.samplesPerPixel;
     props[kTimeGateMode] = enumName(TimeGateModeTable, mOptions.timeGateMode);
@@ -237,6 +241,7 @@ DefineList TimeGatedPathTracerInline::getShaderDefines(const RenderData& renderD
 
     defines.add("MAX_BOUNCES", std::to_string(mOptions.maxBounces));
     defines.add("COMPUTE_DIRECT", mOptions.computeDirect ? "1" : "0");
+    defines.add("SHOW_LASER_SPOT", mOptions.showLaserSpot ? "1" : "0");
     defines.add("USE_IMPORTANCE_SAMPLING", mOptions.useImportanceSampling ? "1" : "0");
     defines.add("USE_ANALYTIC_LIGHTS", mpScene->useAnalyticLights() ? "1" : "0");
     defines.add("USE_EMISSIVE_LIGHTS", mpScene->useEmissiveLights() ? "1" : "0");
@@ -472,6 +477,9 @@ void TimeGatedPathTracerInline::renderUI(Gui::Widgets& widget)
 
     dirty |= widget.checkbox("Evaluate direct illumination", options.computeDirect);
     widget.tooltip("Compute direct illumination.\nIf disabled only indirect is computed (when max bounces > 0).", true);
+
+    dirty |= widget.checkbox("Show laser spot", options.showLaserSpot);
+    widget.tooltip("Debug overlay: adds the laser spot seen directly from the primary hit (red channel, not time gated).", true);
 
     dirty |= widget.checkbox("Use importance sampling", options.useImportanceSampling);
     widget.tooltip("Use importance sampling for materials", true);
