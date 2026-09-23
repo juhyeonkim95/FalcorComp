@@ -83,6 +83,7 @@ private:
         float timeMin = 9.0f;
         float timeMax = 12.0f;
         uint timeBin = 512;
+        bool shiftGate = false; ///< Advance the gate one bin per frame, wrapping from timeMax to timeMin.
         float specularRoughnessThreshold = 0.25f;
         TimeGatedSamplingMethod samplingMethod = TimeGatedSamplingMethod::DIRECT;
         EmissiveLightSamplerType triSampler = EmissiveLightSamplerType::Uniform;

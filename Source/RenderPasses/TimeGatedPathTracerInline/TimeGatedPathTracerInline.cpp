@@ -78,6 +78,7 @@ const char kTimeGateMode[] = "timeGateMode";
 const char kTimeMin[] = "timeMin";
 const char kTimeMax[] = "timeMax";
 const char kTimeBin[] = "timeBin";
+const char kShiftGate[] = "shiftGate";
 const char kSamplingMethod[] = "samplingMethod";
 const char kEmissiveSampler[] = "emissiveSampler";
 const char kSpecularRoughnessThreshold[] = "specularRoughnessThresholdEllipsoid";
@@ -181,6 +182,8 @@ void TimeGatedPathTracerInline::parseProperties(const Properties& props)
             mOptions.timeMax = value;
         else if (key == kTimeBin)
             mOptions.timeBin = value;
+        else if (key == kShiftGate)
+            mOptions.shiftGate = value;
         else if (key == kSamplingMethod)
             mOptions.samplingMethod = parseEnum(getSamplingMethods(), std::string(value), kSamplingMethod);
         else if (key == kEmissiveSampler)
@@ -213,6 +216,7 @@ Properties TimeGatedPathTracerInline::getProperties() const
     props[kTimeMin] = mOptions.timeMin;
     props[kTimeMax] = mOptions.timeMax;
     props[kTimeBin] = mOptions.timeBin;
+    props[kShiftGate] = mOptions.shiftGate;
     props[kSamplingMethod] = enumName(getSamplingMethods(), mOptions.samplingMethod);
     props[kEmissiveSampler] = mOptions.triSampler;
     props[kSpecularRoughnessThreshold] = mOptions.specularRoughnessThreshold;
@@ -453,6 +457,8 @@ void TimeGatedPathTracerInline::execute(RenderContext* pRenderContext, const Ren
     mpComputePass->execute(pRenderContext, uint3(targetDim, 1));
 
     mFrameState.frameCount++;
+    if (mOptions.shiftGate && mOptions.timeMax > mOptions.timeMin)
+        incrementTimeGateFrame();
 }
 
 void TimeGatedPathTracerInline::renderUI(Gui::Widgets& widget)
@@ -481,15 +487,43 @@ void TimeGatedPathTracerInline::renderUI(Gui::Widgets& widget)
         dirty |= group.var("Gate window", options.timeGateWindow, 0.001f, 1000.0f);
         group.tooltip("Gate width in path-length units (scene units). The output is divided by it.", true);
 
-        dirty |= group.var("Gate min", options.timeMin, 0.0f, options.timeMax);
-        group.tooltip("Gate center of the first bin, in path-length units.", true);
+        dirty |= group.checkbox("Shift gate", options.shiftGate);
+        group.tooltip("Off: a fixed gate at Gate center.\nOn: the gate moves one step per frame from Gate min "
+                      "toward Gate max, then starts again at Gate min.", true);
 
-        dirty |= group.var("Gate max", options.timeMax, options.timeMin, 1000.0f);
-        group.tooltip("End of the gate scan, in path-length units. Equal to Gate min for a fixed gate.", true);
+        if (!options.shiftGate)
+        {
+            float gateCenter = options.timeMin;
+            if (group.var("Gate center", gateCenter, 0.0f, 1000.0f))
+            {
+                options.timeMin = options.timeMax = gateCenter;
+                dirty = true;
+            }
+            group.tooltip("Gate center in path-length units.", true);
+        }
+        else
+        {
+            dirty |= group.var("Gate min", options.timeMin, 0.0f, options.timeMax);
+            group.tooltip("First gate center, in path-length units.", true);
 
-        dirty |= group.var("Gate bins", options.timeBin, 1u, 1u << 16);
-        group.tooltip("Number of gate centers from Gate min to Gate max. A script steps through them with "
-                      "increment_time_gate_frame().", true);
+            dirty |= group.var("Gate max", options.timeMax, options.timeMin, 1000.0f);
+            group.tooltip("End of the scan, in path-length units. The last gate center is Gate max - Gate step.", true);
+
+            dirty |= group.var("Gate bins", options.timeBin, 1u, 1u << 16);
+            group.tooltip("Number of gate centers from Gate min to Gate max.", true);
+
+            // The step is derived from the bins; editing it picks the nearest bin count.
+            const float range = options.timeMax - options.timeMin;
+            float gateStep = range / options.timeBin;
+            if (range > 0.f && group.var("Gate step", gateStep, 1e-4f, range))
+            {
+                options.timeBin = std::max(1u, (uint)std::lround(range / gateStep));
+                dirty = true;
+            }
+            group.tooltip("Gate center shift per frame, in path-length units. Sets Gate bins to the nearest count.", true);
+            if (range <= 0.f)
+                group.text("Set Gate max above Gate min to shift the gate.");
+        }
 
         group.text(fmt::format("Current gate center: {:.4f}", mFrameState.gatePosition));
     }
