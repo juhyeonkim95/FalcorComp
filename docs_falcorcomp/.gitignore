@@ -1,1 +1,3 @@
 _build/
+# Videos are ignored repository-wide; the docs ship theirs.
+!*.mp4
