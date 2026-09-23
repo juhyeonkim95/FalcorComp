@@ -1,7 +1,9 @@
 # falcorcomp
 
-```{image} assets/teaser.png
-:alt: The Cornell box rendered at increasing time-gate centers
+```{image} ../assets/logo.png
+:alt: FalcorComp logo
+:width: 420px
+:align: center
 ```
 
 ```{toctree}
