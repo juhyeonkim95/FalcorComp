@@ -32,11 +32,13 @@ struct ReconnectionState
     float3 suffixThroughput;    // cosine_y/pdf_y, then sampled weights at z and beyond.
     float suffixLength;        // y->...->current surface; excludes current->light.
 
+    // surface is the hit at the end of the segment; segmentIoR is the IoR of the
+    // surface the segment leaves, which scales its optical length.
     [mutating]
     void recordHit(HitInfo hit, ShadingData surface, BSDFSample sample, uint depth,
-        bool eligible, float segmentLength, float suffixDirectionWeight, uint sampleSeed)
+        bool eligible, float segmentLength, float segmentIoR, float suffixDirectionWeight, uint sampleSeed)
     {
-        float opticalLength = segmentLength * surface.IoR;
+        float opticalLength = segmentLength * segmentIoR;
         if (bounce == 0)
         {
             if (eligible)

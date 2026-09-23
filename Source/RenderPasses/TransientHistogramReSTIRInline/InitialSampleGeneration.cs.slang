@@ -168,6 +168,7 @@ float3 tracePath(uint2 pixel, uint2 frameDim)
                 suffixDirectionWeight = shadingCosine(surface, material, sample.wo) / sample.pdf;
 
             float3 previousPosition = surface.posW;
+            float segmentIoR = surface.IoR;
             float3 origin = surface.computeRayOrigin(!sample.isLobe(LobeType::Transmission));
             SceneRayQuery<USE_ALPHA_TEST> query;
             float hitT;
@@ -177,11 +178,11 @@ float3 tracePath(uint2 pixel, uint2 frameDim)
             material = gScene.materials.getMaterialInstance(surface, ExplicitLodTextureSampler(0.f));
             float segmentLength = length(surface.posW - previousPosition);
             // Match time-gated generation and shared prefix replay.
-            pathLength += segmentLength * surface.IoR;
+            pathLength += segmentLength * segmentIoR;
             bool currentDiffuse = material.getProperties(surface).roughness > specularRoughnessThreshold;
             rc.recordHit(hit, surface, sample, depth + 1,
                 previousDiffuse && currentDiffuse && segmentLength > 0.f,
-                segmentLength, suffixDirectionWeight, sampleSeed);
+                segmentLength, segmentIoR, suffixDirectionWeight, sampleSeed);
         }
     }
 

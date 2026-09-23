@@ -107,10 +107,11 @@ bool reconstructPrefix(
         HitInfo hit = query.traceRay(ray, hitT);
         if (!hit.isValid()) { prefixThroughput = 0.f; return false; }
         float3 previousPosition = x1.posW;
+        float segmentIoR = x1.IoR;
         x1 = loadShadingData(hit, ray.origin, ray.dir);
         x1_mi = gScene.materials.getMaterialInstance(x1, ExplicitLodTextureSampler(0.f));
         float segmentLength = length(x1.posW - previousPosition);
-        d01 += segmentLength * x1.IoR;
+        d01 += segmentLength * segmentIoR;
         if (previousDiffuse)
         {
             if (x1_mi.getProperties(x1).roughness > roughnessThreshold)
@@ -170,6 +171,7 @@ bool reevaluateSuffixLighting(inout Reservoir reservoir, LaserLightSampler light
         }
         else suffixThroughput *= sample.weight;
         float3 previousPosition = surface.posW;
+        float segmentIoR = surface.IoR;
         float3 origin = surface.computeRayOrigin(!sample.isLobe(LobeType::Transmission));
         SceneRayQuery<USE_ALPHA_TEST> query;
         float hitT;
@@ -177,7 +179,7 @@ bool reevaluateSuffixLighting(inout Reservoir reservoir, LaserLightSampler light
         if (!hit.isValid()) return false;
         surface = loadShadingData(hit, origin, sample.wo);
         material = gScene.materials.getMaterialInstance(surface, ExplicitLodTextureSampler(0.f));
-        suffixLength += length(surface.posW - previousPosition) * surface.IoR;
+        suffixLength += length(surface.posW - previousPosition) * segmentIoR;
     }
     float3 segment = light.posW() - surface.posW;
     float distance = length(segment);

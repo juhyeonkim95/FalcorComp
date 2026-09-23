@@ -112,8 +112,8 @@ void submitEllipsoidalCandidate(inout Reservoir reservoir, ReconnectionState rc,
     if (!sampleEllipsoid(origin, prefixLength, light, tcurr, emissiveSampler, rng, ellipsoidal)) return;
     ShadingData target = ellipsoidal.surface;
     let targetMaterial = gScene.materials.getMaterialInstance(target, ExplicitLodTextureSampler(0.f));
-    float targetLength = prefixLength + ellipsoidal.distance * target.IoR;
-    if (!(targetLength < getMaxpathLength(tcurr) + 1e-2f)) return;
+    float targetLength = prefixLength + ellipsoidal.distance * origin.IoR;
+    if (!(targetLength < getMaxpathLength(tcurr))) return;
     float techniqueWeight = 1.f;
 #if LIGHT_SAMPLING_METHOD == ELLIPSOIDAL_DIRECT_MIS
     float bsdfPdf = material.evalPdf(origin, ellipsoidal.direction, kUseImportanceSampling);
@@ -127,7 +127,8 @@ void submitEllipsoidalCandidate(inout Reservoir reservoir, ReconnectionState rc,
         targetMaterial.getProperties(target).roughness > specularRoughnessThreshold;
     float suffixDirectionWeight = 0.f;
     if (rc.postBounce == 2) suffixDirectionWeight = shadingCosine(origin, material, ellipsoidal.direction) / ellipsoidal.pdf;
-    rc.recordHit(ellipsoidal.hit, target, proposal, targetDepth, eligible, ellipsoidal.distance, suffixDirectionWeight, 0);
+    rc.recordHit(ellipsoidal.hit, target, proposal, targetDepth, eligible, ellipsoidal.distance, origin.IoR,
+        suffixDirectionWeight, 0);
     LightConnection connection = evaluateLightConnection(target, targetMaterial, light, rng);
     float totalLength = targetLength + connection.distance + light.laserT;
     float gate = pathLengthImportance(totalLength, tcurr);
@@ -364,6 +365,7 @@ float3 tracePath(uint2 pixel, uint2 frameDim)
                     suffixDirectionWeight = shadingCosine(surface, material, sample.wo) / sample.pdf;
             }
             float3 previousPosition = surface.posW;
+            float segmentIoR = surface.IoR;
             float3 origin = surface.computeRayOrigin(!sample.isLobe(LobeType::Transmission));
             SceneRayQuery<USE_ALPHA_TEST> query;
             float hitT;
@@ -372,13 +374,11 @@ float3 tracePath(uint2 pixel, uint2 frameDim)
             surface = loadShadingData(hit, origin, sample.wo);
             material = gScene.materials.getMaterialInstance(surface, ExplicitLodTextureSampler(0.f));
             float segmentLength = length(surface.posW - previousPosition);
-            pathLength += segmentLength * surface.IoR;
-            // Preserve the existing cutoff margin, but measure the physical path
-            // instead of distance from an offset ray origin. No sentinel length.
-            if (!(pathLength < maxPathLength + 1e-2f)) break;
+            pathLength += segmentLength * segmentIoR;
+            if (!(pathLength < maxPathLength)) break;
             bool currentDiffuse = material.getProperties(surface).roughness > specularRoughnessThreshold;
             rc.recordHit(hit, surface, sample, depth, previousDiffuse && currentDiffuse && segmentLength > 0.f,
-                segmentLength, suffixDirectionWeight, sampleSeed);
+                segmentLength, segmentIoR, suffixDirectionWeight, sampleSeed);
 
             LightSample light = {};
             uint lightSeed = lightRng.getCurrentSeed();

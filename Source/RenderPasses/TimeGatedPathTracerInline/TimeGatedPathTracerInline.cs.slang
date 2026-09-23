@@ -277,7 +277,7 @@ EllipsoidalEstimate estimateEllipsoidalPath(
     // sampleEllipsoid() traced x -> y; this connection traces y -> light and is
     // zero when occluded. Together the two checks cover the full x -> y -> light path.
     LightConnection connection = evaluateLightConnection(y, yMaterial, light, sg);
-    float gate = pathLengthImportance(prefixLength + ellipsoidal.distance + connection.distance + light.laserT, tcurr);
+    float gate = pathLengthImportance(prefixLength + ellipsoidal.distance * x.IoR + connection.distance + light.laserT, tcurr);
     estimate.radiance = (firstScatter / estimate.ellipsePdf) *
         (connection.bsdfCosine * connection.incidentRadiance * gate);
     return estimate;

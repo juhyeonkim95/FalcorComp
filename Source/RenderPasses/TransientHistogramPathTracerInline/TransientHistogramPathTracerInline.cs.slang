@@ -169,7 +169,7 @@ float3 tracePath(const uint2 pixel, const uint2 frameDim)
             HitInfo hit = traceRay(origin, bsdfSample.wo, hitT);
             if (!hit.isValid()) break;
             ShadingData next = loadShadingData(hit, origin, bsdfSample.wo);
-            pathLength += length(next.posW - surface.posW);
+            pathLength += length(next.posW - surface.posW) * surface.IoR;
             surface = next;
         }
         window *= (sample + 0.8f) / (sample + 1.f);
