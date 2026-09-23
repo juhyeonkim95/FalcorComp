@@ -9,7 +9,7 @@ extensions = [
     "sphinx.ext.mathjax",
 ]
 
-myst_enable_extensions = ["deflist"]
+myst_enable_extensions = ["deflist", "dollarmath"]
 
 source_suffix = {".md": "markdown", ".rst": "restructuredtext"}
 root_doc = "index"
