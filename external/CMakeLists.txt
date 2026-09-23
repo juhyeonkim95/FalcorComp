@@ -6,8 +6,8 @@
 add_library(d3d12 INTERFACE)
 target_link_libraries(d3d12 INTERFACE dxgi.lib d3d12.lib)
 
-# On Linux, we need GTK3.
-if(FALCOR_LINUX)
+# On Linux, we need GTK3 unless it is disabled.
+if(FALCOR_HAS_GTK)
     find_package(GTK3 REQUIRED)
     add_library(gtk3 INTERFACE)
     target_include_directories(gtk3 INTERFACE ${GTK3_INCLUDE_DIRS})

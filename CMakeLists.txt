@@ -29,6 +29,10 @@ set(FALCOR_USE_SYSTEM_PYTHON OFF CACHE BOOL "Use system Python distribution")
 # Enable/disable USD.
 set(FALCOR_ENABLE_USD ON CACHE BOOL "Enable USD")
 
+# Enable/disable GTK on Linux (message boxes, file dialogs and the startup progress bar).
+# Disable for headless builds, e.g. Python wheels, to drop the GTK dependency.
+set(FALCOR_ENABLE_GTK ON CACHE BOOL "Enable GTK on Linux")
+
 
 # Enable/disable Address Sanitizer.
 set(FALCOR_ENABLE_ASAN OFF CACHE BOOL "Enable Address Sanitizer")
@@ -59,6 +63,13 @@ message(STATUS "Platform: ${FALCOR_PLATFORM}")
 # Check if D3D12/Vulkan are available.
 set(FALCOR_HAS_D3D12 ${FALCOR_WINDOWS})
 set(FALCOR_HAS_VULKAN ON)
+
+# Check if GTK is used.
+if(FALCOR_LINUX AND FALCOR_ENABLE_GTK)
+    set(FALCOR_HAS_GTK ON)
+else()
+    set(FALCOR_HAS_GTK OFF)
+endif()
 
 # -----------------------------------------------------------------------------
 # git submodules
@@ -206,6 +217,7 @@ add_subdirectory(external)
 message(STATUS "Feature flags:")
 message(STATUS "FALCOR_HAS_D3D12: ${FALCOR_HAS_D3D12}")
 message(STATUS "FALCOR_HAS_VULKAN: ${FALCOR_HAS_VULKAN}")
+message(STATUS "FALCOR_HAS_GTK: ${FALCOR_HAS_GTK}")
 message(STATUS "FALCOR_HAS_AFTERMATH: ${FALCOR_HAS_AFTERMATH}")
 message(STATUS "FALCOR_HAS_NVAPI: ${FALCOR_HAS_NVAPI}")
 message(STATUS "FALCOR_HAS_PIX: ${FALCOR_HAS_PIX}")

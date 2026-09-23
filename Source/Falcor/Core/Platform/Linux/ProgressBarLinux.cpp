@@ -28,13 +28,16 @@
 #include "Core/Platform/ProgressBar.h"
 #include "Core/Error.h"
 
+#if FALCOR_HAS_GTK
 #include <gtk/gtk.h>
 
 #include <chrono>
 #include <thread>
+#endif
 
 namespace Falcor
 {
+#if FALCOR_HAS_GTK
 struct ProgressBar::Window
 {
     bool running;
@@ -96,6 +99,11 @@ struct ProgressBar::Window
         return TRUE;
     }
 };
+#else
+// Without GTK there is no progress bar window.
+struct ProgressBar::Window
+{};
+#endif
 
 ProgressBar::ProgressBar() {}
 
@@ -108,10 +116,12 @@ void ProgressBar::show(const std::string& msg)
 {
     close();
 
+#if FALCOR_HAS_GTK
     if (!gtk_init_check(0, nullptr))
         FALCOR_THROW("Failed to initialize GTK.");
 
     mpWindow = std::make_unique<Window>(msg);
+#endif
 }
 
 void ProgressBar::close()

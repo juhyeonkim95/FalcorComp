@@ -954,6 +954,7 @@ target_compile_definitions(Falcor
         FALCOR_ENABLE_PROFILER=$<BOOL:${FALCOR_ENABLE_PROFILER}>
         FALCOR_HAS_D3D12=$<BOOL:${FALCOR_HAS_D3D12}>
         FALCOR_HAS_VULKAN=$<BOOL:${FALCOR_HAS_VULKAN}>
+        FALCOR_HAS_GTK=$<BOOL:${FALCOR_HAS_GTK}>
         FALCOR_HAS_AFTERMATH=$<BOOL:${FALCOR_HAS_AFTERMATH}>
         FALCOR_HAS_NVAPI=$<BOOL:${FALCOR_HAS_NVAPI}>
         FALCOR_HAS_CUDA=$<BOOL:${FALCOR_HAS_CUDA}>
@@ -1000,7 +1001,7 @@ target_link_libraries(Falcor
         $<$<PLATFORM_ID:Windows>:comctl32.lib>
         $<$<PLATFORM_ID:Windows>:setupapi.lib>  # Used in MonitorInfo
         # Linux system libraries.
-        $<$<PLATFORM_ID:Linux>:gtk3>
+        $<$<BOOL:${FALCOR_HAS_GTK}>:gtk3>
 )
 
 target_include_directories(Falcor

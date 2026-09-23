@@ -31,7 +31,9 @@
 #include "Utils/Logger.h"
 #include "Utils/StringUtils.h"
 
+#if FALCOR_HAS_GTK
 #include <gtk/gtk.h>
+#endif
 
 #include <iostream>
 #include <unistd.h>
@@ -92,6 +94,7 @@ uint32_t msgBox(
     uint32_t defaultButtonId
 )
 {
+#if FALCOR_HAS_GTK
     if (!gtk_init_check(0, nullptr))
         FALCOR_THROW("Failed to initialize GTK.");
 
@@ -120,6 +123,13 @@ uint32_t msgBox(
     }
 
     return result;
+#else
+    // Without GTK there is no dialog. Pick the last button, which is the declining choice (Cancel, No, Abort)
+    // in all message box types, so callers asking whether to retry do not loop forever.
+    FALCOR_CHECK(!buttons.empty(), "Message box has no buttons.");
+    logWarning("{}: {}", title, msg);
+    return buttons.back().id;
+#endif
 }
 
 size_t executeProcess(const std::string& appName, const std::string& commandLineArgs)
@@ -268,6 +278,7 @@ std::optional<std::string> getEnvironmentVariable(const std::string& varName)
 template<bool bOpen>
 bool fileDialogCommon(const FileDialogFilterVec& filters, std::filesystem::path& path)
 {
+#if FALCOR_HAS_GTK
     if (!gtk_init_check(0, nullptr))
         FALCOR_THROW("Failed to initialize GTK.");
 
@@ -333,6 +344,10 @@ bool fileDialogCommon(const FileDialogFilterVec& filters, std::filesystem::path&
         gtk_main_iteration();
     }
     return success;
+#else
+    logWarning("File dialogs are not available because Falcor was built without GTK.");
+    return false;
+#endif
 }
 
 bool openFileDialog(const FileDialogFilterVec& filters, std::filesystem::path& path)
