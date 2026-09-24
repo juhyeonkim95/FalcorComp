@@ -4,6 +4,12 @@ import RenderPasses.Shared.Lights.LightConnection;
 #include "Scene/SceneDefines.slangh"
 #include "Utils/Math/MathConstants.slangh"
 
+// Set by the host: 1 when the histogram sums frames (the host clears it only on reset), 0 for one frame per
+// histogram (the host clears it every frame).
+#ifndef ACCUMULATE_HISTOGRAM
+#define ACCUMULATE_HISTOGRAM 0
+#endif
+
 import Utils.Math.MathHelpers;
 import Utils.Geometry.GeometryHelpers;
 import Utils.Sampling.SampleGenerator;
@@ -320,11 +326,6 @@ void main(uint3 dispatchThreadId: SV_DispatchThreadID)
     uint2 pixel = dispatchThreadId.xy;
     if (any(pixel >= gFrameDim))
         return;
-#if !ACCUMULATE_HISTOGRAM
-    // One frame per histogram: start this pixel's bins from zero (the host clears only when accumulating).
-    for (uint bin = 0; bin < tbin; ++bin)
-        gTransientHistogram[uint3(pixel, bin)] = 0.f;
-#endif
 #if LIGHT_SAMPLING_METHOD == DIRECT_CONNECTION
     float3 color = tracePath(pixel, gFrameDim);
 #elif LIGHT_SAMPLING_METHOD == TRIANGLE_APPROX

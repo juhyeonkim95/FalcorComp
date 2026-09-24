@@ -220,17 +220,14 @@ void TransientHistogramPathTracerInline::execute(RenderContext* pRenderContext, 
         return;
     }
 
-    // Without accumulate, the shader zeroes each pixel's bins itself.
-    if (mOptions.accumulate)
+    // The shader adds this frame's paths to the bins: clear every frame, or only on reset when accumulating.
+    if (mOptions.accumulate && needsReset(renderData))
+        resetHistogram();
+    if (!mOptions.accumulate || mNeedToClearHistogram)
     {
-        if (needsReset(renderData))
-            resetHistogram();
-        if (mNeedToClearHistogram)
-        {
-            InlinePass::clearChannels(pRenderContext, renderData, histogramChannels());
-            mNeedToClearHistogram = false;
-            mSummedFrames = 0;
-        }
+        InlinePass::clearChannels(pRenderContext, renderData, histogramChannels());
+        mNeedToClearHistogram = false;
+        mSummedFrames = 0;
     }
 
     // Triangle approximation enumerates all triangles; no triangle sampling distribution is needed.
