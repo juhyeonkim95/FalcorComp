@@ -36,6 +36,7 @@
 #include "GpuMemoryHeap.h"
 #include "Core/Macros.h"
 #include "Core/Object.h"
+#include "Core/Platform/OS.h"
 
 #if FALCOR_HAS_D3D12
 #include <guiddef.h>
@@ -146,7 +147,9 @@ public:
         uint32_t maxShaderCacheEntryCount = 1000;
 
         /// The full path to the root directory for the shader cache. An empty string will disable the cache.
-        std::string shaderCachePath = (getRuntimeDirectory() / ".shadercache").string();
+        /// Defaults to the FALCOR_SHADER_CACHE_PATH environment variable if set, else .shadercache in the runtime directory.
+        std::string shaderCachePath =
+            getEnvironmentVariable("FALCOR_SHADER_CACHE_PATH").value_or((getRuntimeDirectory() / ".shadercache").string());
 
 #if FALCOR_HAS_D3D12
         /// GUID list for experimental features
