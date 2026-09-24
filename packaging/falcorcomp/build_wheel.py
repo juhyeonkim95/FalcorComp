@@ -33,10 +33,14 @@ PLUGINS = [
     "TimeGatedPathTracerInline",
     "TimeGatedReSTIRInline",
     "TransientHistogramPathTracerInline",
+    "TransientHistogramReSTIRInline",
     # Passes used by ToF render graphs (VBufferRT/LaserVBufferRT, accumulation, tone mapping).
     "GBuffer",
     "AccumulatePass",
     "ToneMapper",
+    # Viewers for transient histograms and the laser spot.
+    "TransientHistogramViewer",
+    "LaserPositionViewer",
     # Scene importers (.pbrt, .pyscene, .xml, and meshes via Assimp).
     "PBRTImporter",
     "PythonImporter",
@@ -46,7 +50,8 @@ PLUGINS = [
 # Shader folders under shaders/RenderPasses for the plugins above (and what they import).
 RENDER_PASS_SHADERS = [
     "TimeGatedPathTracerInline", "TimeGatedReSTIRInline", "TransientHistogramPathTracerInline",
-    "Shared", "GBuffer", "AccumulatePass", "ToneMapper",
+    "TransientHistogramReSTIRInline", "Shared", "GBuffer", "AccumulatePass", "ToneMapper",
+    "TransientHistogramViewer", "LaserPositionViewer",
 ]
 # Shader folders (relative to shaders/) left out of the package: render passes are added selectively,
 # tests and samples are unused, and RTXDI may only be redistributed as compiled code.

@@ -9,7 +9,13 @@ import falcorcomp as falcor
 testbed = falcor.Testbed(create_window=False)
 ```
 
-Included render passes: `TimeGatedPathTracerInline`, `TimeGatedReSTIRInline`, `TransientHistogramPathTracerInline`, plus `VBufferRT`/`LaserVBufferRT`, `AccumulatePass` and `ToneMapper`. Scene importers: pbrt, pyscene, Mitsuba, Assimp.
+Included render passes:
+
+- **Time-gated rendering:** `TimeGatedPathTracerInline`, `TimeGatedReSTIRInline`
+- **Transient rendering:** `TransientHistogramPathTracerInline`, `TransientHistogramReSTIRInline`
+- **Utility:** `VBufferRT`/`LaserVBufferRT`, `AccumulatePass`, `ToneMapper`, `TransientHistogramViewer`, `LaserPositionViewer`
+
+Scene importers: pbrt, pyscene, Mitsuba, Assimp.
 
 ## Requirements
 
@@ -32,10 +38,6 @@ python -c "import falcorcomp as falcor; falcor.Testbed(create_window=False); pri
 ```
 
 Compiled shaders are cached in `~/.cache/falcorcomp/`. Set `FALCOR_SHADER_CACHE_PATH` to use another directory, or to an empty string to disable the cache.
-
-## Documentation
-
-Tutorials, the plugin reference, troubleshooting and instructions for building the wheel from source are in the documentation, in `docs_falcorcomp/` of the [FalcorComp repository](https://github.com/juhyeonkim95/FalcorComp).
 
 ## License
 
