@@ -34,15 +34,14 @@
 
 using namespace Falcor;
 
-/** Shows where the laser is, drawn over an optional input image:
- * - the laser spot: the light the laser puts on the surface seen in each pixel, not time gated (red channel);
- * - a marker at the point the laser's central beam hits, visible even for a collimated beam.
+/** Shows where the laser is: adds the laser spot, the light the laser puts on the surface seen in each pixel
+ * (not time gated), to the red channel of an optional input image. A collimated beam lights no pixel.
  * The laser comes from the laser pass (LaserVBufferRT) or, with laserCollocated, from the camera.
  */
 class LaserPositionViewer : public RenderPass
 {
 public:
-    FALCOR_PLUGIN_CLASS(LaserPositionViewer, "LaserPositionViewer", "Draw the laser spot and the beam's hit point over an image.");
+    FALCOR_PLUGIN_CLASS(LaserPositionViewer, "LaserPositionViewer", "Draw the laser spot over an image.");
 
     static ref<LaserPositionViewer> create(ref<Device> pDevice, const Properties& props)
     {
@@ -60,8 +59,6 @@ public:
 private:
     bool mShowSpot = true;
     float mSpotScale = 1.f;          ///< Multiplies the spot's radiance before it is added to the red channel.
-    bool mShowMarker = true;
-    float mMarkerBrightness = 10.f;  ///< Marker value (before tone mapping).
     bool mLaserCollocated = false;   ///< Place the laser at the camera, as the path tracers' laserCollocated.
 
     bool mOptionsChanged = false;

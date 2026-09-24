@@ -47,13 +47,11 @@ const ChannelList kInputChannels = {
 };
 
 const ChannelList kOutputChannels = {
-    { "output", "gOutput", "The input with the laser spot and the beam's hit point", false, ResourceFormat::RGBA32Float },
+    { "output", "gOutput", "The input with the laser spot", false, ResourceFormat::RGBA32Float },
 };
 
 const char kShowSpot[] = "showSpot";
 const char kSpotScale[] = "spotScale";
-const char kShowMarker[] = "showMarker";
-const char kMarkerBrightness[] = "markerBrightness";
 const char kLaserCollocated[] = "laserCollocated";
 } // namespace
 
@@ -65,10 +63,6 @@ LaserPositionViewer::LaserPositionViewer(ref<Device> pDevice, const Properties& 
             mShowSpot = value;
         else if (key == kSpotScale)
             mSpotScale = value;
-        else if (key == kShowMarker)
-            mShowMarker = value;
-        else if (key == kMarkerBrightness)
-            mMarkerBrightness = value;
         else if (key == kLaserCollocated)
             mLaserCollocated = value;
         else
@@ -82,8 +76,6 @@ Properties LaserPositionViewer::getProperties() const
     Properties props;
     props[kShowSpot] = mShowSpot;
     props[kSpotScale] = mSpotScale;
-    props[kShowMarker] = mShowMarker;
-    props[kMarkerBrightness] = mMarkerBrightness;
     props[kLaserCollocated] = mLaserCollocated;
     return props;
 }
@@ -120,9 +112,7 @@ void LaserPositionViewer::execute(RenderContext* pRenderContext, const RenderDat
     var["CB"]["gFrameDim"] = frameDim;
     var["CB"]["gFrameCount"] = mFrameCount;
     var["CB"]["gSpotScale"] = mSpotScale;
-    var["CB"]["gMarkerBrightness"] = mMarkerBrightness;
     var["CB"]["gShowSpot"] = uint(mShowSpot);
-    var["CB"]["gShowMarker"] = uint(mShowMarker);
     LaserState::resolve(renderData, *mpScene, mLaserCollocated).bindShaderData(var["CB"]);
     InlinePass::bindChannels(var, renderData, kInputChannels);
     InlinePass::bindChannels(var, renderData, kOutputChannels);
@@ -140,14 +130,6 @@ void LaserPositionViewer::renderUI(Gui::Widgets& widget)
     {
         dirty |= widget.var("Spot scale", mSpotScale, 0.f, 1e6f);
         widget.tooltip("Multiplies the spot's radiance.", true);
-    }
-
-    dirty |= widget.checkbox("Show beam hit", mShowMarker);
-    widget.tooltip("Draw a cyan crosshair where the laser's central beam first hits the scene.", true);
-    if (mShowMarker)
-    {
-        dirty |= widget.var("Marker brightness", mMarkerBrightness, 0.f, 1e6f);
-        widget.tooltip("Marker value before tone mapping.", true);
     }
 
     dirty |= widget.checkbox("Laser collocated", mLaserCollocated);
