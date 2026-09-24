@@ -78,14 +78,17 @@ def library_closure(binaries, bin_dir):
             parts = line.split()
             if len(parts) >= 3 and parts[1] == "=>":
                 soname, path = parts[0], Path(parts[2])
+                # libpython must come from the user's interpreter, never from the build. A build against a
+                # conda or venv Python may not find it on the loader path, which is fine.
+                if soname.startswith("libpython"):
+                    continue
                 if path.is_absolute() and bin_dir in path.resolve().parents:
                     closure[soname] = path.resolve()
                 elif parts[2] == "not":
                     raise RuntimeError(f"{binary}: missing dependency {soname}")
     for soname in DLOPEN_LIBRARIES:
         closure[soname] = (bin_dir / soname).resolve()
-    # libpython must come from the user's interpreter, never from the build.
-    return {s: p for s, p in closure.items() if not s.startswith("libpython")}
+    return closure
 
 
 def needed_libraries(binary):
