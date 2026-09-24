@@ -1,4 +1,4 @@
-// Draws the laser spot and the laser's cone over the input image.
+// Draws the laser spot and the laser's cone over the input image, or outputs them as an overlay.
 #include "Scene/SceneDefines.slangh"
 #include "Utils/Math/MathConstants.slangh"
 
@@ -137,16 +137,26 @@ void main(uint3 dispatchThreadId: SV_DispatchThreadID)
     if (any(pixel >= gFrameDim))
         return;
 
-    float4 color = is_valid(gInput) ? gInput[pixel] : float4(0.f, 0.f, 0.f, 1.f);
+    // Overlay with premultiplied alpha: an image under it becomes image * (1 - alpha) + overlay.rgb.
+    float4 overlay = float4(0.f);
     if (gShowSpot != 0)
     {
         float3 spot = laserSpot(pixel);
-        color.rgb += gSpotScale * (spot.r + spot.g + spot.b) / 3.f * gSpotColor;
+        overlay.rgb += gSpotScale * (spot.r + spot.g + spot.b) / 3.f * gSpotColor;
     }
     if (gShowCone != 0)
     {
         float opacity = 1.f - exp(-gConeDensity * lengthInCone(pixel));
-        color.rgb = lerp(color.rgb, gConeColor, opacity);
+        overlay = float4(overlay.rgb * (1.f - opacity) + gConeColor * opacity, opacity);
     }
-    gOutput[pixel] = color;
+
+    if (is_valid(gInput))
+    {
+        float4 color = gInput[pixel];
+        gOutput[pixel] = float4(color.rgb * (1.f - overlay.a) + overlay.rgb, color.a);
+    }
+    else
+    {
+        gOutput[pixel] = overlay;
+    }
 }

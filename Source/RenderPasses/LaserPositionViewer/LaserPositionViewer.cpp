@@ -42,12 +42,12 @@ const ChannelList kInputChannels = {
     // clang-format off
     { "vbuffer",     "gVBuffer", "Visibility buffer in packed format" },
     { kInputViewDir, "gViewW",   "World-space view direction (xyz float format)", true /* optional */ },
-    { "input",       "gInput",   "Image to draw on, e.g. a tracer's color output (black if not connected)", true /* optional */ },
+    { "input",       "gInput",   "Image to draw on, e.g. a tracer's color output; without it the output is the overlay", true /* optional */ },
     // clang-format on
 };
 
 const ChannelList kOutputChannels = {
-    { "output", "gOutput", "The input with the laser spot and cone", false, ResourceFormat::RGBA32Float },
+    { "output", "gOutput", "The input with the laser spot and cone, or the overlay (premultiplied alpha)", false, ResourceFormat::RGBA32Float },
 };
 
 const char kShowSpot[] = "showSpot";
@@ -57,6 +57,8 @@ const char kShowCone[] = "showCone";
 const char kConeColor[] = "coneColor";
 const char kConeDensity[] = "coneDensity";
 const char kBeamRadius[] = "beamRadius";
+const char kOutputSize[] = "outputSize";
+const char kFixedOutputSize[] = "fixedOutputSize";
 } // namespace
 
 LaserPositionViewer::LaserPositionViewer(ref<Device> pDevice, const Properties& props) : RenderPass(pDevice)
@@ -77,6 +79,10 @@ LaserPositionViewer::LaserPositionViewer(ref<Device> pDevice, const Properties& 
             mConeDensity = value;
         else if (key == kBeamRadius)
             mBeamRadius = value;
+        else if (key == kOutputSize)
+            mOutputSize = value;
+        else if (key == kFixedOutputSize)
+            mFixedOutputSize = value;
         else
             logWarning("Unknown property '{}' in LaserPositionViewer properties.", key);
     }
@@ -93,6 +99,9 @@ Properties LaserPositionViewer::getProperties() const
     props[kConeColor] = mConeColor;
     props[kConeDensity] = mConeDensity;
     props[kBeamRadius] = mBeamRadius;
+    props[kOutputSize] = mOutputSize;
+    if (mOutputSize == RenderPassHelpers::IOSize::Fixed)
+        props[kFixedOutputSize] = mFixedOutputSize;
     return props;
 }
 
@@ -100,17 +109,13 @@ RenderPassReflection LaserPositionViewer::reflect(const CompileData& compileData
 {
     RenderPassReflection reflector;
     addRenderPassInputs(reflector, kInputChannels);
-    addRenderPassOutputs(reflector, kOutputChannels);
+    const uint2 sz = RenderPassHelpers::calculateIOSize(mOutputSize, mFixedOutputSize, compileData.defaultTexDims);
+    addRenderPassOutputs(reflector, kOutputChannels, ResourceBindFlags::UnorderedAccess, sz);
     return reflector;
 }
 
 void LaserPositionViewer::execute(RenderContext* pRenderContext, const RenderData& renderData)
 {
-    if (mOptionsChanged)
-    {
-        InlinePass::flagOptionsChanged(renderData);
-        mOptionsChanged = false;
-    }
     if (!mpScene)
     {
         InlinePass::clearChannels(pRenderContext, renderData, kOutputChannels);
@@ -123,7 +128,8 @@ void LaserPositionViewer::execute(RenderContext* pRenderContext, const RenderDat
         mpPass = InlinePass::createScenePass(mpDevice, pRenderContext, mpScene, mpSampleGenerator, kShaderFile, defines);
     mpPass->getProgram()->addDefines(defines);
 
-    const uint2 frameDim = renderData.getDefaultTextureDims();
+    const ref<Texture> pOutput = renderData.getTexture("output");
+    const uint2 frameDim = {pOutput->getWidth(), pOutput->getHeight()};
     auto var = mpPass->getRootVar();
     var["CB"]["gFrameDim"] = frameDim;
     var["CB"]["gFrameCount"] = mFrameCount;
@@ -145,32 +151,30 @@ void LaserPositionViewer::execute(RenderContext* pRenderContext, const RenderDat
 
 void LaserPositionViewer::renderUI(Gui::Widgets& widget)
 {
-    bool dirty = false;
-    dirty |= widget.checkbox("Show laser spot", mShowSpot);
+    // The output is redrawn every frame, so changes need no downstream reset.
+    widget.checkbox("Show laser spot", mShowSpot);
     widget.tooltip("Add the light the laser puts on the surface seen in each pixel, not time gated. A collimated "
                    "beam (laserAngle 0) lights no pixel.", true);
     if (mShowSpot)
     {
-        dirty |= widget.var("Spot scale", mSpotScale, 0.f, 1e6f);
+        widget.var("Spot scale", mSpotScale, 0.f, 1e6f);
         widget.tooltip("Multiplies the spot's radiance (average of RGB).", true);
-        dirty |= widget.rgbColor("Spot color", mSpotColor);
+        widget.rgbColor("Spot color", mSpotColor);
     }
 
-    dirty |= widget.checkbox("Show laser cone", mShowCone);
+    widget.checkbox("Show laser cone", mShowCone);
     widget.tooltip("Draw the laser's cone like light in fog: it starts at the laser with radius Beam radius, widens "
                    "at the cone angle (laserAngle) and ends where the central beam hits the scene. Not drawn for a "
                    "laser collocated with the camera.", true);
     if (mShowCone)
     {
-        dirty |= widget.rgbColor("Cone color", mConeColor);
-        dirty |= widget.var("Cone density", mConeDensity, 0.f, 1e6f);
+        widget.rgbColor("Cone color", mConeColor);
+        widget.var("Cone density", mConeDensity, 0.f, 1e6f);
         widget.tooltip("Opacity per unit length inside the cone: opacity = 1 - exp(-density * length).", true);
-        dirty |= widget.var("Beam radius", mBeamRadius, 0.f, 10.f, 0.001f);
+        widget.var("Beam radius", mBeamRadius, 0.f, 10.f, 0.001f);
         widget.tooltip("Cone radius at the laser, in scene units; keeps a collimated beam visible.", true);
     }
 
-    if (dirty)
-        mOptionsChanged = true;
 }
 
 void LaserPositionViewer::setScene(RenderContext* pRenderContext, const ref<Scene>& pScene)

@@ -40,6 +40,7 @@ namespace
 const char kShaderFile[] = "RenderPasses/TransientHistogramViewer/TransientHistogramViewer.cs.slang";
 
 const char kInput[] = "histogram";
+const char kOverlay[] = "overlay";
 const char kOutput[] = "output";
 
 const char kFirstBin[] = "firstBin";
@@ -88,6 +89,8 @@ RenderPassReflection TransientHistogramViewer::reflect(const CompileData& compil
 {
     RenderPassReflection reflector;
     reflector.addInput(kInput, "Transient histogram (width x height x bins)").texture3D(0, 0, 0);
+    reflector.addInput(kOverlay, "Overlay for the sum image: histogram-sized, premultiplied alpha")
+        .flags(RenderPassReflection::Field::Flags::Optional);
     reflector.addOutput(kOutput, "Sum image (left) and 4x4 grid of bins (right)")
         .format(ResourceFormat::RGBA32Float)
         .bindFlags(ResourceBindFlags::UnorderedAccess | ResourceBindFlags::ShaderResource);
@@ -121,8 +124,15 @@ void TransientHistogramViewer::execute(RenderContext* pRenderContext, const Rend
     mTimeMax = dict.getValue(kHistogramTimeMax, float(mBinCount));
     const float range = mTimeMax - mTimeMin;
 
+    // The overlay is used only when it has the histogram's size.
+    const ref<Texture> pOverlay = renderData.getTexture(kOverlay);
+    const bool hasOverlay = pOverlay && pOverlay->getWidth() == histogramDim.x && pOverlay->getHeight() == histogramDim.y;
+    if (pOverlay && !hasOverlay)
+        logWarning("TransientHistogramViewer: the overlay must be {}x{}; it is ignored.", histogramDim.x, histogramDim.y);
+
     DefineList defines;
     defines.add("SINGLE_CHANNEL", getFormatChannelCount(pHistogram->getFormat()) == 1 ? "1" : "0");
+    defines.add("HAS_OVERLAY", hasOverlay ? "1" : "0");
     if (!mpViewPass)
         mpViewPass = ComputePass::create(mpDevice, kShaderFile, "main", defines);
     mpViewPass->getProgram()->addDefines(defines);
@@ -143,6 +153,8 @@ void TransientHistogramViewer::execute(RenderContext* pRenderContext, const Rend
     }
     var["CB"]["gSelectedPixel"] = mSelectedPixel;
     var["gHistogram"] = pHistogram;
+    if (hasOverlay)
+        var["gOverlay"] = pOverlay;
     var["gOutput"] = pOutput;
     mpViewPass->execute(pRenderContext, uint3(outputDim, 1));
 

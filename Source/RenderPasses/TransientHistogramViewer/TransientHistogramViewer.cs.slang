@@ -14,6 +14,7 @@ cbuffer CB
 }
 
 Texture3D<float4> gHistogram;
+Texture2D<float4> gOverlay; // Optional (HAS_OVERLAY): histogram-sized, premultiplied alpha
 RWTexture2D<float4> gOutput;
 RWStructuredBuffer<float4> gProfile;
 
@@ -82,6 +83,17 @@ float3 sumImage(uint2 first, uint2 last)
     return sum * gSumScale / float(count.x * count.y);
 }
 
+// Average of the overlay over the footprint (same pixel grid as the histogram).
+float4 overlayImage(uint2 first, uint2 last)
+{
+    float4 sum = 0.f;
+    for (uint y = first.y; y <= last.y; ++y)
+        for (uint x = first.x; x <= last.x; ++x)
+            sum += gOverlay[uint2(x, y)];
+    uint2 count = last - first + 1;
+    return sum / float(count.x * count.y);
+}
+
 float3 binImage(uint2 first, uint2 last, uint bin)
 {
     float3 sum = 0.f;
@@ -107,7 +119,13 @@ void main(uint3 dispatchThreadId: SV_DispatchThreadID)
         if (onMarker(pixel, fit, 8.f))
             color = kMarkerColor;
         else if (footprint(pixel, fit, first, last))
+        {
             color = sumImage(first, last);
+#if HAS_OVERLAY
+            float4 overlay = overlayImage(first, last);
+            color = color * (1.f - overlay.a) + overlay.rgb;
+#endif
+        }
     }
     else
     {

@@ -28,6 +28,7 @@
 #pragma once
 #include "Falcor.h"
 #include "RenderGraph/RenderPass.h"
+#include "RenderGraph/RenderPassHelpers.h"
 #include "Utils/Sampling/SampleGenerator.h"
 #include "../Shared/Configs/PathTracingConfig.h"
 #include "../Shared/Lights/LaserState.h"
@@ -41,7 +42,9 @@ using namespace Falcor;
  * - the laser's cone, drawn like light in fog: it starts at the laser with radius beamRadius (so a collimated beam
  *   shows as a thin cylinder), widens at the cone angle and ends where the central beam hits the scene. It is
  *   off by default and never drawn for a laser collocated with the camera, which would cover the image.
- * The laser is the one the laser pass (LaserVBufferRT) publishes this frame.
+ * The laser is the one the laser pass (LaserVBufferRT) publishes this frame. Without an input, the output is the
+ * overlay alone with premultiplied alpha (image * (1 - alpha) + overlay.rgb), for a pass that blends it itself,
+ * e.g. TransientHistogramViewer. The output (and vbuffer) may have a fixed size (outputSize, fixedOutputSize).
  */
 class LaserPositionViewer : public RenderPass
 {
@@ -70,7 +73,8 @@ private:
     float mConeDensity = 5.f;             ///< Opacity per unit length inside the cone: 1 - exp(-density * length).
     float mBeamRadius = 0.01f;            ///< Cone radius at the laser, in scene units.
 
-    bool mOptionsChanged = false;
+    RenderPassHelpers::IOSize mOutputSize = RenderPassHelpers::IOSize::Default;
+    uint2 mFixedOutputSize = {512, 512}; ///< Output size when mOutputSize is Fixed; must match the vbuffer.
     uint mFrameCount = 0;
     ref<Scene> mpScene;
     ref<SampleGenerator> mpSampleGenerator;

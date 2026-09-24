@@ -37,6 +37,8 @@ using namespace Falcor;
  * Right half: a 4 x 4 grid of 16 bins spread evenly from firstBin to lastBin, in reading order.
  * Both halves are fitted to their area with box filtering. The histogram is divided by the
  * frame count its producer publishes (TransientHistogramPathTracerInline accumulates across frames).
+ * An optional overlay (e.g. LaserPositionViewer without an input) of the histogram's size is blended into the
+ * left half only, with premultiplied alpha.
  * Shift+click (or drag) on either half selects a pixel: it gets a crosshair, and the UI plots its
  * transient profile.
  */
