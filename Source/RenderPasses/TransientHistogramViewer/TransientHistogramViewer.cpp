@@ -46,6 +46,8 @@ const char kOutput[] = "output";
 const char kFirstBin[] = "firstBin";
 const char kLastBin[] = "lastBin";
 const char kBinExposure[] = "binExposure";
+const char kLeftView[] = "leftView"; // "sum" or "bin"
+const char kLeftBin[] = "leftBin";
 const char kSelectedPixel[] = "selectedPixel";
 const char kProfileRadius[] = "profileRadius";
 
@@ -65,6 +67,15 @@ TransientHistogramViewer::TransientHistogramViewer(ref<Device> pDevice, const Pr
             mLastBin = value;
         else if (key == kBinExposure)
             mBinExposure = value;
+        else if (key == kLeftView)
+        {
+            const std::string view = value;
+            if (view != "sum" && view != "bin")
+                FALCOR_THROW("leftView must be sum or bin.");
+            mLeftShowsBin = view == "bin";
+        }
+        else if (key == kLeftBin)
+            mLeftBin = value;
         else if (key == kSelectedPixel)
             mSelectedPixel = value;
         else if (key == kProfileRadius)
@@ -80,6 +91,8 @@ Properties TransientHistogramViewer::getProperties() const
     props[kFirstBin] = mFirstBin;
     props[kLastBin] = mLastBin;
     props[kBinExposure] = mBinExposure;
+    props[kLeftView] = mLeftShowsBin ? "bin" : "sum";
+    props[kLeftBin] = mLeftBin;
     props[kSelectedPixel] = mSelectedPixel;
     props[kProfileRadius] = mProfileRadius;
     return props;
@@ -146,6 +159,7 @@ void TransientHistogramViewer::execute(RenderContext* pRenderContext, const Rend
     var["CB"]["gSumScale"] = range / float(mBinCount) / float(mFrameCount);
     // A bin shown at the sum's brightness when all radiance arrives within it spread over the range.
     var["CB"]["gTileScale"] = range / float(mFrameCount) * std::exp2(mBinExposure);
+    var["CB"]["gLeftBin"] = mLeftShowsBin ? std::min(mLeftBin, mBinCount - 1) : ~0u;
     for (uint row = 0; row < 4; ++row)
     {
         var["CB"]["gTileBins"][row] = uint4(tileBin(4 * row, mBinCount), tileBin(4 * row + 1, mBinCount),
@@ -260,6 +274,23 @@ bool TransientHistogramViewer::onMouseEvent(const MouseEvent& mouseEvent)
 void TransientHistogramViewer::renderUI(Gui::Widgets& widget)
 {
     const uint lastIndex = mBinCount > 0 ? mBinCount - 1 : 0;
+    static const Gui::DropdownList kLeftViewList = {{0, "Sum over bins"}, {1, "One bin"}};
+    uint32_t leftView = mLeftShowsBin ? 1 : 0;
+    if (widget.dropdown("Left half", kLeftViewList, leftView))
+        mLeftShowsBin = leftView == 1;
+    widget.tooltip("Sum over bins: the light arriving within the histogram range. One bin: the chosen bin, as bright "
+                   "as a tile.", true);
+    if (mLeftShowsBin)
+    {
+        widget.var("Left bin", mLeftBin, 0u, lastIndex);
+        if (mBinCount > 0)
+        {
+            const float binWidth = (mTimeMax - mTimeMin) / float(mBinCount);
+            const float start = mTimeMin + float(std::min(mLeftBin, lastIndex)) * binWidth;
+            widget.text(fmt::format("Path length [{:.3f}, {:.3f})", start, start + binWidth));
+        }
+    }
+
     widget.var("First bin", mFirstBin, 0u, lastIndex);
     widget.tooltip("Bin shown in the top-left tile.", true);
 

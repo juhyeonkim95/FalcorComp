@@ -33,7 +33,7 @@ using namespace Falcor;
 
 /** Displays a transient histogram (W x H x B volume) in one image.
  *
- * Left half: the histogram summed over all bins (the steady-state image).
+ * Left half: the histogram summed over all bins (the steady-state image), or one chosen bin (leftView).
  * Right half: a 4 x 4 grid of 16 bins spread evenly from firstBin to lastBin, in reading order.
  * Both halves are fitted to their area with box filtering. The histogram is divided by the
  * frame count its producer publishes (TransientHistogramPathTracerInline accumulates across frames).
@@ -74,7 +74,9 @@ private:
 
     uint mFirstBin = 0;
     int mLastBin = -1;         ///< Last bin shown in the grid; negative counts from the end (-1 = last bin).
-    float mBinExposure = 0.f;  ///< Extra exposure of the grid tiles, in stops.
+    float mBinExposure = 0.f;  ///< Extra exposure of the bin images (tiles and a bin on the left), in stops.
+    bool mLeftShowsBin = false; ///< Left half: mLeftBin instead of the sum over all bins.
+    uint mLeftBin = 0;
 
     // Transient profile of a selected pixel.
     int2 mSelectedPixel = {-1, -1}; ///< Histogram pixel; negative if none.

@@ -8,6 +8,7 @@ cbuffer CB
     float gSumScale;     // bin width / frame count
     float gTileScale;    // histogram range / frame count * 2^exposure
     uint4 gTileBins[4];  // bin of each tile, row-major
+    uint gLeftBin;       // bin shown on the left half; ~0u shows the sum over all bins
     int2 gSelectedPixel; // histogram pixel with a crosshair and profile; negative if none
     uint gProfileRadius; // the profile averages a (2r + 1)^2 patch
     float gProfileScale; // 1 / frame count
@@ -120,7 +121,7 @@ void main(uint3 dispatchThreadId: SV_DispatchThreadID)
             color = kMarkerColor;
         else if (footprint(pixel, fit, first, last))
         {
-            color = sumImage(first, last);
+            color = gLeftBin == ~0u ? sumImage(first, last) : binImage(first, last, gLeftBin);
 #if HAS_OVERLAY
             float4 overlay = overlayImage(first, last);
             color = color * (1.f - overlay.a) + overlay.rgb;
