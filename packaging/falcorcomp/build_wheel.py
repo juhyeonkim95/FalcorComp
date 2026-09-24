@@ -15,14 +15,16 @@ a build configured with -DFALCOR_ENABLE_GTK=OFF. It is written to
 import argparse
 import json
 import os
+import re
 import shutil
 import subprocess
 import sys
 from pathlib import Path
 
-VERSION = "0.1.0"
 PACKAGE = "falcorcomp"
 HERE = Path(__file__).resolve().parent
+# The version is defined once, as __version__ in the package's __init__.py.
+VERSION = re.search(r'^__version__ = "(.+)"$', (HERE / PACKAGE / "__init__.py").read_text(), re.M).group(1)
 REPO = HERE.parents[1]
 
 # Render passes and scene importers shipped in the package.

@@ -13,6 +13,8 @@ import os as _os
 import sys as _sys
 import sysconfig as _sysconfig
 
+__version__ = "0.1.0"
+
 
 def _preload_libpython():
     """libFalcor.so links libpython (it embeds an interpreter for scripting).
@@ -40,9 +42,18 @@ def _preload_libpython():
     )
 
 
+def _default_shader_cache_path():
+    """Per-user cache: Falcor's default, next to libFalcor.so, may not be writable after pip install."""
+    cache_home = _os.environ.get("XDG_CACHE_HOME") or _os.path.join(_os.path.expanduser("~"), ".cache")
+    return _os.path.join(cache_home, "falcorcomp", __version__, "shadercache")
+
+
 if _os.environ.get("FALCOR_DEVMODE") == "1":
     # Development mode would read shaders from the original source tree.
     del _os.environ["FALCOR_DEVMODE"]
+
+# Read by Falcor when a device is created; set it yourself to move the cache, or to "" to disable it.
+_os.environ.setdefault("FALCOR_SHADER_CACHE_PATH", _default_shader_cache_path())
 
 _preload_libpython()
 
@@ -52,7 +63,5 @@ from . import falcor_ext as _falcor_ext  # noqa: E402
 # Falcor's C++ runs "from falcor import *" for render-graph scripts and .pyscene
 # files, so this package must also be importable as "falcor".
 _sys.modules.setdefault("falcor", _sys.modules[__name__])
-
-__version__ = "0.1.0"
 
 del _ctypes, _sysconfig
