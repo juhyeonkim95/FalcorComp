@@ -15,17 +15,19 @@ struct LaserState
     static constexpr char kPower[] = "laserPower";
     static constexpr char kCosAngle[] = "laserCosAngle";
     static constexpr char kIsLaser[] = "isLightSourceLaser";
+    static constexpr char kCollocated[] = "laserCollocated";
 
     float3 origin = float3(0.f);
     float3 direction = float3(0.f, 0.f, 1.f);
     float3 power = float3(1.f);
     float cosAngle = 0.f; ///< Cosine of the cone half-angle.
     bool isLaser = true;  ///< The light is the spot the beam hits; otherwise a point light at the origin.
+    bool collocated = false; ///< The laser is at the camera, aimed at its target.
 
     bool operator==(const LaserState& other) const
     {
         return all(origin == other.origin) && all(direction == other.direction) && all(power == other.power) &&
-               cosAngle == other.cosAngle && isLaser == other.isLaser;
+               cosAngle == other.cosAngle && isLaser == other.isLaser && collocated == other.collocated;
     }
     bool operator!=(const LaserState& other) const { return !(*this == other); }
 
@@ -38,6 +40,7 @@ struct LaserState
         dict[kPower] = power;
         dict[kCosAngle] = cosAngle;
         dict[kIsLaser] = isLaser;
+        dict[kCollocated] = collocated;
     }
 
     /// The laser the laser pass published this frame; the defaults where it did not.
@@ -50,6 +53,7 @@ struct LaserState
         laser.power = dict.getValue(kPower, laser.power);
         laser.cosAngle = dict.getValue(kCosAngle, laser.cosAngle);
         laser.isLaser = dict.getValue(kIsLaser, laser.isLaser);
+        laser.collocated = dict.getValue(kCollocated, laser.collocated);
         return laser;
     }
 

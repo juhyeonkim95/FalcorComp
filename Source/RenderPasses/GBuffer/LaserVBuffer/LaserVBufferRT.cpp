@@ -139,6 +139,7 @@ void LaserVBufferRT::execute(RenderContext* pRenderContext, const RenderData& re
         laser.power = mLaserPower;
         laser.cosAngle = mLaserCosAngle;
         laser.isLaser = mIsLightSourceLaser;
+        laser.collocated = mLaserCollocated;
         laser.publish(renderData);
 
         mUseTraceRayInline ? executeCompute(pRenderContext, renderData) : executeRaytrace(pRenderContext, renderData);

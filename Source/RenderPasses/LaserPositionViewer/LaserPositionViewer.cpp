@@ -129,12 +129,14 @@ void LaserPositionViewer::execute(RenderContext* pRenderContext, const RenderDat
     var["CB"]["gFrameCount"] = mFrameCount;
     var["CB"]["gSpotScale"] = mSpotScale;
     var["CB"]["gSpotColor"] = mSpotColor;
-    var["CB"]["gShowCone"] = uint(mShowCone);
+    const LaserState laser = LaserState::resolve(renderData);
+    // A collocated laser starts at the camera, so its cone would cover the whole image.
+    var["CB"]["gShowCone"] = uint(mShowCone && !laser.collocated);
     var["CB"]["gConeColor"] = mConeColor;
     var["CB"]["gConeDensity"] = mConeDensity;
     var["CB"]["gBeamRadius"] = mBeamRadius;
     var["CB"]["gShowSpot"] = uint(mShowSpot);
-    LaserState::resolve(renderData).bindShaderData(var["CB"]);
+    laser.bindShaderData(var["CB"]);
     InlinePass::bindChannels(var, renderData, kInputChannels);
     InlinePass::bindChannels(var, renderData, kOutputChannels);
     mpPass->execute(pRenderContext, uint3(frameDim, 1));
@@ -156,7 +158,8 @@ void LaserPositionViewer::renderUI(Gui::Widgets& widget)
 
     dirty |= widget.checkbox("Show laser cone", mShowCone);
     widget.tooltip("Draw the laser's cone like light in fog: it starts at the laser with radius Beam radius, widens "
-                   "at the cone angle (laserAngle) and ends where the central beam hits the scene.", true);
+                   "at the cone angle (laserAngle) and ends where the central beam hits the scene. Not drawn for a "
+                   "laser collocated with the camera.", true);
     if (mShowCone)
     {
         dirty |= widget.rgbColor("Cone color", mConeColor);

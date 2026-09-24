@@ -39,7 +39,8 @@ using namespace Falcor;
  * - the laser spot: the light the laser puts on the surface seen in each pixel (not time gated), tinted with
  *   spotColor; a collimated beam lights no pixel;
  * - the laser's cone, drawn like light in fog: it starts at the laser with radius beamRadius (so a collimated beam
- *   shows as a thin cylinder), widens at the cone angle and ends where the central beam hits the scene.
+ *   shows as a thin cylinder), widens at the cone angle and ends where the central beam hits the scene. It is
+ *   off by default and never drawn for a laser collocated with the camera, which would cover the image.
  * The laser is the one the laser pass (LaserVBufferRT) publishes this frame.
  */
 class LaserPositionViewer : public RenderPass
@@ -64,9 +65,9 @@ private:
     bool mShowSpot = true;
     float mSpotScale = 20.f;              ///< Multiplies the spot's radiance (average of RGB).
     float3 mSpotColor = float3(1, 0, 0);  ///< Tint of the spot.
-    bool mShowCone = true;
+    bool mShowCone = false;
     float3 mConeColor = float3(1, 0, 0);
-    float mConeDensity = 20.f;            ///< Opacity per unit length inside the cone: 1 - exp(-density * length).
+    float mConeDensity = 5.f;             ///< Opacity per unit length inside the cone: 1 - exp(-density * length).
     float mBeamRadius = 0.01f;            ///< Cone radius at the laser, in scene units.
 
     bool mOptionsChanged = false;
