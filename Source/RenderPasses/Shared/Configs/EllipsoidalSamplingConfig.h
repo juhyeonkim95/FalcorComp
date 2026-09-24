@@ -1,6 +1,11 @@
 #pragma once
 #include "ConfigUtils.h"
 #include "Rendering/Lights/EmissiveLightSamplerType.slangh"
+#include "Rendering/Lights/EmissivePowerSampler.h"
+#include "Rendering/Lights/EmissiveUniformSampler.h"
+#include "Rendering/Lights/LightBVHSampler.h"
+#include "Scene/Scene.h"
+#include <memory>
 
 /// How a camera-path vertex x is connected to the laser spot: directly, through a vertex y placed on the
 /// ellipsoid of paths x -> y -> laser spot that fit the gate, or both combined with MIS.
@@ -91,4 +96,54 @@ struct EllipsoidalSamplingConfig
         }
         return dirty;
     }
+};
+
+/// Runtime part of EllipsoidalSamplingConfig: the sampler that picks the scene triangle of an ellipsoidal
+/// connection. It is kept out of the config so that the config stays copyable.
+class EllipsoidalTriangleSampler
+{
+public:
+    /// Creates the sampler once `config` uses the ellipsoid, and requests the scene's triangle collection each
+    /// frame while it exists. Call reset() after changing the scene or the config's triSampler.
+    void prepare(RenderContext* pRenderContext, const ref<Scene>& pScene, const EllipsoidalSamplingConfig& config)
+    {
+        if (!mpSampler && config.usesEllipsoid())
+        {
+            const auto& pTriangles = pScene->getITriCollection(pRenderContext);
+            FALCOR_ASSERT(pTriangles && pTriangles->getActiveLightCount(pRenderContext) > 0);
+            mLightBVHOptions.buildOptions.maxTriangleCountPerLeaf = 1;
+            switch (config.triSampler)
+            {
+            case EmissiveLightSamplerType::Uniform:
+                mpSampler = std::make_unique<EmissiveUniformSampler>(pRenderContext, pTriangles);
+                break;
+            case EmissiveLightSamplerType::LightBVH:
+                mpSampler = std::make_unique<LightBVHSampler>(pRenderContext, pTriangles, mLightBVHOptions);
+                break;
+            case EmissiveLightSamplerType::Power:
+                mpSampler = std::make_unique<EmissivePowerSampler>(pRenderContext, pTriangles);
+                break;
+            default:
+                FALCOR_THROW("Unknown emissive light sampler type");
+            }
+            mpSampler->update(pRenderContext, pTriangles);
+        }
+        if (mpSampler)
+            pScene->getTriCollection(pRenderContext);
+    }
+
+    void reset() { mpSampler.reset(); }
+
+    /// The sampler's shader type defines; empty without a sampler.
+    DefineList getDefines() const { return mpSampler ? mpSampler->getDefines() : DefineList(); }
+
+    void bindShaderData(const ShaderVar& var) const
+    {
+        if (mpSampler)
+            mpSampler->bindShaderData(var);
+    }
+
+private:
+    std::unique_ptr<EmissiveLightSampler> mpSampler;
+    LightBVHSampler::Options mLightBVHOptions;
 };

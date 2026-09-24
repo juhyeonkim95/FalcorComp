@@ -26,8 +26,6 @@
  # OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  **************************************************************************/
 #include "TimeGatedPathTracerInline.h"
-#include "Rendering/Lights/EmissivePowerSampler.h"
-#include "Rendering/Lights/EmissiveUniformSampler.h"
 #include <cmath>
 #include "RenderGraph/RenderPassHelpers.h"
 #include "RenderGraph/RenderPassStandardFlags.h"
@@ -83,8 +81,7 @@ TimeGatedPathTracerInline::TimeGatedPathTracerInline(ref<Device> pDevice, const 
 
 void TimeGatedPathTracerInline::incrementTimeGateFrame()
 {
-    mFrameState.previousGateIndex = mFrameState.gateIndex;
-    mFrameState.gateIndex += 1;
+    mGate.advance();
     mOptionsChanged = true; // Downstream accumulation must not mix different gates.
 }
 
@@ -147,19 +144,9 @@ RenderPassReflection TimeGatedPathTracerInline::reflect(const CompileData& compi
 
 DefineList TimeGatedPathTracerInline::getShaderDefines(const RenderData& renderData) const
 {
-    DefineList defines;
-
-    defines.add("MAX_BOUNCES", std::to_string(mOptions.pathTracing.maxBounces));
-    defines.add("COMPUTE_DIRECT", mOptions.pathTracing.computeDirect ? "1" : "0");
+    DefineList defines = mOptions.pathTracing.getDefines();
+    defines.add(InlinePass::getSceneLightDefines(*mpScene));
     defines.add("SHOW_LASER_SPOT", mOptions.showLaserSpot ? "1" : "0");
-    defines.add("USE_IMPORTANCE_SAMPLING", mOptions.pathTracing.useImportanceSampling ? "1" : "0");
-    defines.add("USE_ANALYTIC_LIGHTS", mpScene->useAnalyticLights() ? "1" : "0");
-    defines.add("USE_EMISSIVE_LIGHTS", mpScene->useEmissiveLights() ? "1" : "0");
-    defines.add("USE_ENV_LIGHT", mpScene->useEnvLight() ? "1" : "0");
-    defines.add("USE_ENV_BACKGROUND", mpScene->useEnvBackground() ? "1" : "0");
-    defines.add("USE_ALPHA_TEST", mOptions.pathTracing.useAlphaTest ? "1" : "0");
-    defines.add("USE_SINGLE_CHANNEL", mOptions.pathTracing.useSingleChannel ? "1" : "0");
-    defines.add("IS_LIGHT_SOURCE_LASER", mOptions.pathTracing.isLightSourceLaser ? "1" : "0");
 
     defines.add("LIGHT_SAMPLING_METHOD", std::to_string((uint32_t)mOptions.ellipsoidalSampling.samplingMethod));
     defines.add("DIRECT_CONNECTION", std::to_string((uint32_t)EllipsoidalSamplingMethod::DIRECT));
@@ -167,197 +154,61 @@ DefineList TimeGatedPathTracerInline::getShaderDefines(const RenderData& renderD
     defines.add("ELLIPSOIDAL_DIRECT_MIS", std::to_string((uint32_t)EllipsoidalSamplingMethod::ELLIPSOIDAL_DIRECT_MIS));
 
     // For optional I/O resources, set 'is_valid_<name>' defines to inform the program of which ones it can access.
-    // TODO: This should be moved to a more general mechanism using Slang.
     defines.add(getValidResourceDefines(kInputChannels, renderData));
     defines.add(getValidResourceDefines(kLaserInputChannels, renderData));
     defines.add(getValidResourceDefines(kOutputChannels, renderData));
-
     return defines;
 }
 
 void TimeGatedPathTracerInline::bindShaderData(const ShaderVar& var, const RenderData& renderData)
 {
-    auto& dict = renderData.getDictionary();
+    mTriangleSampler.bindShaderData(var["emissiveSampler"]);
 
-    if (mpEmissiveSampler)
-    {
-        mpEmissiveSampler->bindShaderData(var["emissiveSampler"]);
-    }
-
-    // Get dimensions of ray dispatch.
-    const uint2 targetDim = renderData.getDefaultTextureDims();
-    FALCOR_ASSERT(targetDim.x > 0 && targetDim.y > 0);
-
-    var["CB"]["gFrameCount"] = mFrameState.frameCount;
-    var["CB"]["gFrameDim"] = targetDim;
-    var["CB"]["gPRNGDimension"] = dict.keyExists(kRenderPassPRNGDimension) ? dict[kRenderPassPRNGDimension] : 0u;
+    var["CB"]["gFrameCount"] = mFrameCount;
+    var["CB"]["gFrameDim"] = renderData.getDefaultTextureDims();
+    var["CB"]["gPRNGDimension"] = InlinePass::getPRNGDimension(renderData);
     var["CB"]["specularRoughnessThreshold"] = mOptions.ellipsoidalSampling.ellipsoidRoughnessThreshold;
-
-    // Resolve laser settings from the camera or the upstream laser pass.
-    if (mOptions.pathTracing.laserCollocated && mpScene)
-    {
-        var["CB"]["laserOrigin"] = mpScene->getCamera()->getPosition();
-        var["CB"]["laserDirection"] = normalize(mpScene->getCamera()->getTarget() - mpScene->getCamera()->getPosition());
-    }
-    else
-    {
-        var["CB"]["laserOrigin"] = dict.keyExists("laserPosition") ? dict["laserPosition"] : float3(0,0,0);
-        var["CB"]["laserDirection"] = dict.keyExists("laserDirection") ? dict["laserDirection"] : float3(0,0,1);
-    }
-    var["CB"]["laserPower"] = dict.keyExists("laserPower") ? dict["laserPower"] : float3(1,1,1);
-    var["CB"]["laserCosAngle"] = dict.keyExists("laserCosAngle") ? dict["laserCosAngle"] : 0.0f;
-
     var["CB"]["samplesPerPixel"] = mOptions.pathTracing.samplesPerPixel;
+    mOptions.pathTracing.resolveLaser(renderData, *mpScene).bindShaderData(var["CB"]);
+    mOptions.timeGate.bindShaderData(var["TimeGate"], mGate);
 
-    var["TimeGate"]["time_gate_window"] = mOptions.timeGate.timeGateWindow;
-    var["TimeGate"]["time_gate_mode"] = uint(mOptions.timeGate.timeGateMode);
-
-    var["TimeGate"]["tcurr"] = mFrameState.gatePosition;
-    var["TimeGate"]["tprev"] = mFrameState.previousGatePosition;
-
-    // Bind I/O buffers. These needs to be done per-frame as the buffers may change anytime.
-    auto bind = [&](const ChannelDesc& desc)
-    {
-        if (!desc.texname.empty())
-        {
-            var[desc.texname] = renderData.getTexture(desc.name);
-        }
-    };
-    for (const auto& channel : kInputChannels)
-        bind(channel);
-    for (const auto& channel : kLaserInputChannels)
-        bind(channel);
-    for (const auto& channel : kOutputChannels)
-        bind(channel);
-}
-
-void TimeGatedPathTracerInline::updateGatePosition()
-{
-    mFrameState.gatePosition = mOptions.timeGate.gateCenter(mFrameState.gateIndex);
-    mFrameState.previousGatePosition = mOptions.timeGate.gateCenter(mFrameState.previousGateIndex);
-    mFrameState.previousGateIndex = mFrameState.gateIndex;
-}
-
-void TimeGatedPathTracerInline::prepareLightSampler(RenderContext* pRenderContext)
-{
-    const bool useEllipsoidalSampling = mOptions.ellipsoidalSampling.samplingMethod == EllipsoidalSamplingMethod::ELLIPSOIDAL ||
-                                       mOptions.ellipsoidalSampling.samplingMethod == EllipsoidalSamplingMethod::ELLIPSOIDAL_DIRECT_MIS;
-    if (!mpEmissiveSampler && useEllipsoidalSampling)
-    {
-        const auto& pLights = mpScene->getITriCollection(pRenderContext);
-        FALCOR_ASSERT(pLights && pLights->getActiveLightCount(pRenderContext) > 0);
-
-        mLightBVHOptions.buildOptions.maxTriangleCountPerLeaf = 1;
-
-        switch (mOptions.ellipsoidalSampling.triSampler)
-        {
-        case EmissiveLightSamplerType::Uniform:
-            mpEmissiveSampler = std::make_unique<EmissiveUniformSampler>(pRenderContext, pLights);
-            break;
-        case EmissiveLightSamplerType::LightBVH:
-            mpEmissiveSampler = std::make_unique<LightBVHSampler>(pRenderContext, pLights, mLightBVHOptions);
-            break;
-        case EmissiveLightSamplerType::Power:
-            mpEmissiveSampler = std::make_unique<EmissivePowerSampler>(pRenderContext, pLights);
-            break;
-        default:
-            FALCOR_THROW("Unknown emissive light sampler type");
-        }
-        mpEmissiveSampler->update(pRenderContext, pLights);
-    }
-}
-
-void TimeGatedPathTracerInline::prepareProgram(RenderContext* pRenderContext, const RenderData& renderData)
-{
-    if (!mpComputePass)
-    {
-        // Create the inline-raytracing compute program.
-        ProgramDesc desc;
-        desc.addShaderModules(mpScene->getShaderModules());
-        desc.addShaderLibrary(kShaderFile).csEntry("main");
-        desc.addTypeConformances(mpScene->getTypeConformances());
-
-        DefineList defines;
-        defines.add(mpScene->getSceneDefines());
-        defines.add(mpSampleGenerator->getDefines());
-        defines.add(getShaderDefines(renderData));
-
-        if (mpEmissiveSampler)
-            defines.add(mpEmissiveSampler->getDefines());
-
-        mpComputePass = ComputePass::create(mpDevice, desc, defines, true);
-
-        // Bind static resources
-        ShaderVar var = mpComputePass->getRootVar();
-        mpScene->bindShaderDataForRaytracing(pRenderContext, var["gScene"]);
-        mpSampleGenerator->bindShaderData(var);
-    }
+    InlinePass::bindChannels(var, renderData, kInputChannels);
+    InlinePass::bindChannels(var, renderData, kLaserInputChannels);
+    InlinePass::bindChannels(var, renderData, kOutputChannels);
 }
 
 void TimeGatedPathTracerInline::execute(RenderContext* pRenderContext, const RenderData& renderData)
 {
-    // Update refresh flag if options that affect the output have changed.
-    auto& dict = renderData.getDictionary();
     if (mOptionsChanged)
     {
-        auto flags = dict.getValue(kRenderPassRefreshFlags, RenderPassRefreshFlags::None);
-        dict[Falcor::kRenderPassRefreshFlags] = flags | Falcor::RenderPassRefreshFlags::RenderOptionsChanged;
+        InlinePass::flagOptionsChanged(renderData);
         mOptionsChanged = false;
     }
 
-    // If we have no scene, just clear the outputs and return.
     if (!mpScene)
     {
-        for (const auto& it : kOutputChannels)
-        {
-            Texture* pDst = renderData.getTexture(it.name).get();
-            if (pDst)
-                pRenderContext->clearTexture(pDst);
-        }
+        InlinePass::clearChannels(pRenderContext, renderData, kOutputChannels);
         return;
     }
 
-    updateGatePosition();
-    prepareLightSampler(pRenderContext);
-    prepareProgram(pRenderContext, renderData);
-
-    if (is_set(mpScene->getUpdates(), IScene::UpdateFlags::RecompileNeeded) ||
-        is_set(mpScene->getUpdates(), IScene::UpdateFlags::GeometryChanged))
+    mOptions.timeGate.beginFrame(mGate);
+    mTriangleSampler.prepare(pRenderContext, mpScene, mOptions.ellipsoidalSampling);
+    if (!mpComputePass)
     {
-        FALCOR_THROW("This render pass does not support scene changes that require shader recompilation.");
+        DefineList defines = getShaderDefines(renderData);
+        defines.add(mTriangleSampler.getDefines());
+        mpComputePass = InlinePass::createScenePass(mpDevice, pRenderContext, mpScene, mpSampleGenerator, kShaderFile, defines);
     }
-
-    // Request the light collection if emissive lights are enabled.
+    InlinePass::checkScene(*mpScene, renderData, kInputViewDir);
     if (mpScene->getRenderSettings().useEmissiveLights)
-    {
         mpScene->getLightCollection(pRenderContext);
-    }
 
-    if (mpEmissiveSampler)
-    {
-        mpScene->getTriCollection(pRenderContext);
-    }
-
-    // Configure depth-of-field.
-    const bool useDOF = mpScene->getCamera()->getApertureRadius() > 0.f;
-    if (useDOF && renderData[kInputViewDir] == nullptr)
-    {
-        logWarning("Depth-of-field requires the '{}' input. Expect incorrect shading.", kInputViewDir);
-    }
-
-    // Specialize program.
     mpComputePass->getProgram()->addDefines(getShaderDefines(renderData));
+    bindShaderData(mpComputePass->getRootVar(), renderData);
+    mpComputePass->execute(pRenderContext, uint3(renderData.getDefaultTextureDims(), 1));
 
-    // Bind per-frame constants and resources.
-    auto var = mpComputePass->getRootVar();
-    bindShaderData(var, renderData);
-
-    // Spawn the rays.
-    const uint2 targetDim = renderData.getDefaultTextureDims();
-    FALCOR_ASSERT(targetDim.x > 0 && targetDim.y > 0);
-    mpComputePass->execute(pRenderContext, uint3(targetDim, 1));
-
-    mFrameState.frameCount++;
+    mFrameCount++;
+    mGate.endFrame();
     if (mOptions.timeGate.shiftGate && mOptions.timeGate.timeMax > mOptions.timeGate.timeMin)
         incrementTimeGateFrame();
 }
@@ -368,7 +219,7 @@ void TimeGatedPathTracerInline::renderUI(Gui::Widgets& widget)
     auto options = mOptions;
 
     if (auto group = widget.group("Time gate", true))
-        dirty |= options.timeGate.renderUI(group, mFrameState.gatePosition);
+        dirty |= options.timeGate.renderUI(group, mGate.current);
 
     if (auto group = widget.group("Sampling", true))
     {
@@ -394,7 +245,7 @@ void TimeGatedPathTracerInline::renderUI(Gui::Widgets& widget)
         validateOptions(options);
         // Rebuild the sampler and program: the emissive sampler's defines are only added when the program is created.
         if (options.ellipsoidalSampling.triSampler != mOptions.ellipsoidalSampling.triSampler)
-            mpEmissiveSampler.reset();
+            mTriangleSampler.reset();
         if (options.ellipsoidalSampling.samplingMethod != mOptions.ellipsoidalSampling.samplingMethod || options.ellipsoidalSampling.triSampler != mOptions.ellipsoidalSampling.triSampler)
             mpComputePass = nullptr;
         mOptions = options;
@@ -407,8 +258,8 @@ void TimeGatedPathTracerInline::setScene(RenderContext* pRenderContext, const re
     // Clear data for previous scene.
     // After changing scene, the raytracing program should to be recreated.
     mpComputePass = nullptr;
-    mpEmissiveSampler.reset();
-    mFrameState.frameCount = 0;
+    mTriangleSampler.reset();
+    mFrameCount = 0;
     mOptionsChanged = true;
     // Preserve the scripted gate index when replacing the scene.
 

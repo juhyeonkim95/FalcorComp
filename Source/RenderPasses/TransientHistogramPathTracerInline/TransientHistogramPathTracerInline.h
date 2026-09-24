@@ -33,6 +33,7 @@
 #include "Utils/Transient/Transient.h"
 #include "../Shared/Configs/TransientHistogramConfig.h"
 #include "../Shared/Configs/PathTracingConfig.h"
+#include "../Shared/Utils/InlinePassUtils.h"
 
 using namespace Falcor;
 
@@ -73,7 +74,7 @@ private:
     };
     static void validateOptions(const Options& options);
     void parseProperties(const Properties& props);
-    void prepareProgram(RenderContext* pRenderContext, const RenderData& renderData);
+    const ChannelList& histogramChannels() const;
     void bindShaderData(const ShaderVar& var, const RenderData& renderData);
     bool needsAutoReset(const RenderData& renderData) const;
     DefineList getShaderDefines(const RenderData& renderData) const;

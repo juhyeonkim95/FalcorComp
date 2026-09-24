@@ -16,6 +16,16 @@ struct TransientHistogramConfig
 
     float binWidth() const { return (timeMax - timeMin) / float(timeBin); }
 
+    /// Sets the histogram constants (filter, tbin, tmin, tmax, tunit) under `timeGateVar`.
+    void bindShaderData(const ShaderVar& timeGateVar) const
+    {
+        timeGateVar["time_gate_mode"] = uint(filter);
+        timeGateVar["tbin"] = timeBin;
+        timeGateVar["tmin"] = timeMin;
+        timeGateVar["tmax"] = timeMax;
+        timeGateVar["tunit"] = binWidth();
+    }
+
     void validate() const
     {
         if (timeBin == 0)

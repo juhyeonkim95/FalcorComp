@@ -30,12 +30,10 @@
 #include "RenderGraph/RenderPass.h"
 #include "Utils/Sampling/SampleGenerator.h"
 #include "Utils/Transient/Transient.h"
-#include "Rendering/Lights/LightBVHSampler.h"
-#include "Rendering/Lights/EmissivePowerSampler.h"
-#include "Rendering/Lights/EmissiveUniformSampler.h"
 #include "../Shared/Configs/TransientHistogramConfig.h"
 #include "../Shared/Configs/PathTracingConfig.h"
 #include "../Shared/Configs/PathLengthAwareReSTIRConfig.h"
+#include "../Shared/Utils/InlinePassUtils.h"
 
 using namespace Falcor;
 
@@ -74,23 +72,12 @@ public:
     
 private:
     void parseProperties(const Properties& props);
-    void prepareVars();
     void bindShaderData(const ShaderVar& var, const RenderData& renderData);
     DefineList getShaderDefines(const RenderData& renderData) const;
-    void prepareResources(RenderContext* pRenderContext, const RenderData& renderData);
+    DefineList getReservoirDefines() const;
+    const ChannelList& histogramChannels() const;
+    void bindTimeGate(const ShaderVar& timeGateVar) const;
     void spatialReuse(RenderContext* pRenderContext, const RenderData& renderData);
-    void finalEvaluate(RenderContext* pRenderContext, const RenderData& renderData);
-    
-    ref<Texture> createNeighborOffsetTexture(uint32_t sampleCount);
-
-    // Internal state
-
-    /// Current scene.
-    ref<Scene> mpScene;
-    /// GPU sample generator.
-    ref<SampleGenerator> mpSampleGenerator;
-    
-    // Configuration
 
     /// User settings, composed of shared configs (Shared/Configs) plus this pass's own.
     struct Options
@@ -102,63 +89,19 @@ private:
     };
     Options mOptions;
 
+    ref<Scene> mpScene;
+    ref<SampleGenerator> mpSampleGenerator;
 
-    // Runtime data
+    // Runtime state of the composed configs.
+    LaserState mLaser;
+    LaserState mPreviousLaser;
+    PathLengthAwareReSTIRResources mReSTIR;
 
-    // Time Gate Data
-
-
-    float mTcurr;
-
-
-    // Transient Shift Mapping
-
-
-    // Temporal reuse (static geometry and light, moving camera).
-    bool mTemporalHistoryValid = false;
-    uint2 mTemporalHistoryDimensions = uint2(0);
-    float3 mPreviousCameraPosition = float3(0.f);
-    float3 mPreviousLaserPosition = float3(0.f);
-    float3 mPreviousLaserDirection = float3(0.f);
-    float3 mPreviousLaserPower = float3(0.f);
-    float mPreviousLaserCosAngle = 0.f;
-    ref<Texture> mpTemporalVBuffer;
-    bool mNeedToClearHistogram = false;
-
-
-    float3 mLaserPosition = float3(0.0);
-    float3 mLaserDirection = float3(1.0);
-    float3 mLaserPower = float3(1.0);
-    float mLaserCosAngle = 0.0;
-
-    
-
-    /// Frame count since scene was loaded.
-    uint mFrameCount = 0;
-    uint mTimeGateFrameCount = 0;
-
+    uint mFrameCount = 0; ///< Frames since the scene was loaded.
     uint mRandomSeed = 0;
     bool mOptionsChanged = false;
+    bool mNeedToClearHistogram = false;
 
-
-    EmissiveLightSamplerType emissiveSampler = EmissiveLightSamplerType::LightBVH;  ///< Emissive light sampler to use for NEE.
-    std::unique_ptr<EmissiveLightSampler> mpEmissiveSampler;    ///< Emissive light sampler or nullptr if not used.
-    mutable LightBVHSampler::Options mLightBVHOptions;          ///< Current options for the light BVH sampler.
-    
-    
-    ref<Texture>                     mpNeighborOffsets;
-    
-    // Ray tracing program.
-    ref<ComputePass> mpComputePass;
-
-    ref<ComputePass>                mpReflectTypes;                         ///< Helper for reflecting structured buffer types.
-    ref<ComputePass>                mpSpatialReusePass;
-    ref<ComputePass>                mpFinalEvaluatePass;
-    
-    // Reservoirs and reconnection data for ReSTIR
-    ref<Buffer>                     mpCurrReservoirs;                       ///< The current reservoir stores the canonical sample from the initial candidate generation pass.
-    ref<Buffer>                     mpPrevReservoirs;                       ///< Scratch reservoir storage for spatial iterations.
-    ref<Buffer>                     mpTempReservoirs;                       ///< Scratch reservoir storage for spatial iterations.
-    
-    
+    ref<ComputePass> mpComputePass;      ///< Initial candidates (and temporal reuse), written to the histogram.
+    ref<ComputePass> mpSpatialReusePass;
 };

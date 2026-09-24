@@ -30,10 +30,10 @@
 #include "RenderGraph/RenderPass.h"
 #include "Utils/Sampling/SampleGenerator.h"
 #include "Utils/Transient/Transient.h"
-#include "Rendering/Lights/LightBVHSampler.h"
 #include "../Shared/Configs/TimeGateConfig.h"
 #include "../Shared/Configs/EllipsoidalSamplingConfig.h"
 #include "../Shared/Configs/PathTracingConfig.h"
+#include "../Shared/Utils/InlinePassUtils.h"
 
 using namespace Falcor;
 
@@ -75,27 +75,15 @@ private:
         bool showLaserSpot = false; ///< Debug overlay: un-gated laser spot seen from the primary hit.
     };
 
-    struct FrameState
-    {
-        uint frameCount = 0;
-        uint gateIndex = 0;
-        uint previousGateIndex = 0;
-        float gatePosition = 0.f;
-        float previousGatePosition = 0.f;
-    };
-
     static void validateOptions(const Options& options);
-    void updateGatePosition();
-    void prepareLightSampler(RenderContext* pRenderContext);
-    void prepareProgram(RenderContext* pRenderContext, const RenderData& renderData);
 
     Options mOptions;
-    FrameState mFrameState;
+    uint mFrameCount = 0;
+    TimeGateState mGate;
     bool mOptionsChanged = false;
 
     ref<Scene> mpScene;
     ref<SampleGenerator> mpSampleGenerator;
-    std::unique_ptr<EmissiveLightSampler> mpEmissiveSampler;
-    LightBVHSampler::Options mLightBVHOptions;
+    EllipsoidalTriangleSampler mTriangleSampler;
     ref<ComputePass> mpComputePass;
 };

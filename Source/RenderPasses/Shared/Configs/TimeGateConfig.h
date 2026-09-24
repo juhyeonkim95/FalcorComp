@@ -4,6 +4,17 @@
 #include <algorithm>
 #include <cmath>
 
+/// The gate center of the current and previous frame, and the position in the scan.
+struct TimeGateState
+{
+    uint index = 0;       ///< Scan position; advanced by shiftGate or scripts.
+    float current = 0.f;  ///< This frame's gate center (tcurr).
+    float previous = 0.f; ///< Last frame's gate center (tprev).
+
+    void advance() { ++index; }
+    void endFrame() { previous = current; }
+};
+
 /// Time gate: a kernel of width timeGateWindow whose center scans timeBin positions in [timeMin, timeMax).
 struct TimeGateConfig
 {
@@ -16,6 +27,18 @@ struct TimeGateConfig
 
     /// Center of gate `index`. Equal endpoints give a fixed gate.
     float gateCenter(uint index) const { return float(index % timeBin) / timeBin * (timeMax - timeMin) + timeMin; }
+
+    /// Sets this frame's gate center from the scan position.
+    void beginFrame(TimeGateState& state) const { state.current = gateCenter(state.index); }
+
+    /// Sets the TimeGate constants (window, kernel, tcurr, tprev) under `timeGateVar`.
+    void bindShaderData(const ShaderVar& timeGateVar, const TimeGateState& state) const
+    {
+        timeGateVar["time_gate_window"] = timeGateWindow;
+        timeGateVar["time_gate_mode"] = uint(timeGateMode);
+        timeGateVar["tcurr"] = state.current;
+        timeGateVar["tprev"] = state.previous;
+    }
 
     void validate() const
     {

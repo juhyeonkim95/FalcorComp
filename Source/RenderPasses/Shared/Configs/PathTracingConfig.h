@@ -1,5 +1,32 @@
 #pragma once
 #include "ConfigUtils.h"
+#include "RenderGraph/RenderPass.h"
+#include "Scene/Scene.h"
+
+/// The laser for one frame.
+struct LaserState
+{
+    float3 origin = float3(0.f);
+    float3 direction = float3(0.f, 0.f, 1.f);
+    float3 power = float3(1.f);
+    float cosAngle = 0.f; ///< Cosine of the cone half-angle.
+
+    bool operator==(const LaserState& other) const
+    {
+        return all(origin == other.origin) && all(direction == other.direction) && all(power == other.power) &&
+               cosAngle == other.cosAngle;
+    }
+    bool operator!=(const LaserState& other) const { return !(*this == other); }
+
+    /// Sets laserOrigin, laserDirection, laserPower and laserCosAngle under `var`.
+    void bindShaderData(const ShaderVar& var) const
+    {
+        var["laserOrigin"] = origin;
+        var["laserDirection"] = direction;
+        var["laserPower"] = power;
+        var["laserCosAngle"] = cosAngle;
+    }
+};
 
 /// Camera paths, the light and the output.
 struct PathTracingConfig
@@ -17,6 +44,41 @@ struct PathTracingConfig
     {
         if (samplesPerPixel == 0)
             FALCOR_THROW("samplesPerPixel must be greater than zero.");
+    }
+
+    /// MAX_BOUNCES, COMPUTE_DIRECT, USE_IMPORTANCE_SAMPLING, USE_ALPHA_TEST, USE_SINGLE_CHANNEL, IS_LIGHT_SOURCE_LASER.
+    DefineList getDefines() const
+    {
+        DefineList defines;
+        defines.add("MAX_BOUNCES", std::to_string(maxBounces));
+        defines.add("COMPUTE_DIRECT", computeDirect ? "1" : "0");
+        defines.add("USE_IMPORTANCE_SAMPLING", useImportanceSampling ? "1" : "0");
+        defines.add("USE_ALPHA_TEST", useAlphaTest ? "1" : "0");
+        defines.add("USE_SINGLE_CHANNEL", useSingleChannel ? "1" : "0");
+        defines.add("IS_LIGHT_SOURCE_LASER", isLightSourceLaser ? "1" : "0");
+        return defines;
+    }
+
+    /// This frame's laser: at the camera when laserCollocated, otherwise from the laser pass (LaserVBufferRT)
+    /// through the render data dictionary.
+    LaserState resolveLaser(const RenderData& renderData, const Scene& scene) const
+    {
+        auto& dict = renderData.getDictionary();
+        LaserState laser;
+        if (laserCollocated)
+        {
+            const auto& pCamera = scene.getCamera();
+            laser.origin = pCamera->getPosition();
+            laser.direction = normalize(pCamera->getTarget() - pCamera->getPosition());
+        }
+        else
+        {
+            laser.origin = dict.keyExists("laserPosition") ? dict["laserPosition"] : float3(0.f);
+            laser.direction = dict.keyExists("laserDirection") ? dict["laserDirection"] : float3(0.f, 0.f, 1.f);
+        }
+        laser.power = dict.keyExists("laserPower") ? dict["laserPower"] : float3(1.f);
+        laser.cosAngle = dict.keyExists("laserCosAngle") ? dict["laserCosAngle"] : 0.f;
+        return laser;
     }
 
     bool parse(const std::string& key, const Properties::ConstValue& value)

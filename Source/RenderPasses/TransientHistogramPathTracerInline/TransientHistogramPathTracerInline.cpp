@@ -175,14 +175,7 @@ void TransientHistogramPathTracerInline::compile(RenderContext* pRenderContext, 
 
 DefineList TransientHistogramPathTracerInline::getShaderDefines(const RenderData& renderData) const
 {
-    DefineList defines;
-
-    defines.add("MAX_BOUNCES", std::to_string(mOptions.pathTracing.maxBounces));
-    defines.add("COMPUTE_DIRECT", mOptions.pathTracing.computeDirect ? "1" : "0");
-    defines.add("USE_IMPORTANCE_SAMPLING", mOptions.pathTracing.useImportanceSampling ? "1" : "0");
-    defines.add("USE_ALPHA_TEST", mOptions.pathTracing.useAlphaTest ? "1" : "0");
-    defines.add("USE_SINGLE_CHANNEL", mOptions.pathTracing.useSingleChannel ? "1" : "0");
-    defines.add("IS_LIGHT_SOURCE_LASER", mOptions.pathTracing.isLightSourceLaser ? "1" : "0");
+    DefineList defines = mOptions.pathTracing.getDefines();
     defines.add("USE_KERNEL_DENSITY_ESTIMATION", mOptions.histogram.useKernelDensityEstimation ? "1" : "0");
 
     defines.add("LIGHT_SAMPLING_METHOD", std::to_string((uint32_t)mOptions.samplingMethod));
@@ -194,120 +187,49 @@ DefineList TransientHistogramPathTracerInline::getShaderDefines(const RenderData
     defines.add("HISTOGRAM_FILTER_TENT", std::to_string((uint32_t)TimeGateMode::TENT));
 
     // For optional I/O resources, set 'is_valid_<name>' defines to inform the program of which ones it can access.
-    // TODO: This should be moved to a more general mechanism using Slang.
     defines.add(getValidResourceDefines(kInputChannels, renderData));
     defines.add(getValidResourceDefines(kLaserInputChannels, renderData));
     defines.add(getValidResourceDefines(kOutputChannels, renderData));
-
-    const ChannelList& histogramChannels = mOptions.pathTracing.useSingleChannel ? kHistogramOutputChannelSingle : kHistogramOutputChannelsRGB;
-    defines.add(getValidResourceDefines(histogramChannels, renderData));
-
+    defines.add(getValidResourceDefines(histogramChannels(), renderData));
     return defines;
+}
+
+const ChannelList& TransientHistogramPathTracerInline::histogramChannels() const
+{
+    return mOptions.pathTracing.useSingleChannel ? kHistogramOutputChannelSingle : kHistogramOutputChannelsRGB;
 }
 
 void TransientHistogramPathTracerInline::bindShaderData(const ShaderVar& var, const RenderData& renderData)
 {
-    auto& dict = renderData.getDictionary();
-
     // Dispatch over the output, which may have a fixed size.
     const ref<Texture> pColor = renderData.getTexture("color");
-    const uint2 targetDim = {pColor->getWidth(), pColor->getHeight()};
-
     var["CB"]["gFrameCount"] = mFrameCount;
-    var["CB"]["gFrameDim"] = targetDim;
-    var["CB"]["gPRNGDimension"] = dict.keyExists(kRenderPassPRNGDimension) ? dict[kRenderPassPRNGDimension] : 0u;
-
-    // transients
-    if (mOptions.pathTracing.laserCollocated)
-    {
-        var["CB"]["laserOrigin"] = mpScene->getCamera()->getPosition();
-        var["CB"]["laserDirection"] = normalize(mpScene->getCamera()->getTarget() - mpScene->getCamera()->getPosition());
-    }
-    else
-    {
-        var["CB"]["laserOrigin"] = dict.keyExists("laserPosition") ? dict["laserPosition"] : float3(0,0,0);
-        var["CB"]["laserDirection"] = dict.keyExists("laserDirection") ? dict["laserDirection"] : float3(0,0,1);
-    }
-    var["CB"]["laserPower"] = dict.keyExists("laserPower") ? dict["laserPower"] : float3(1,1,1);
-    var["CB"]["laserCosAngle"] = dict.keyExists("laserCosAngle") ? dict["laserCosAngle"] : 0.0f;
-
+    var["CB"]["gFrameDim"] = uint2(pColor->getWidth(), pColor->getHeight());
+    var["CB"]["gPRNGDimension"] = InlinePass::getPRNGDimension(renderData);
     var["CB"]["samplesPerPixel"] = mOptions.pathTracing.samplesPerPixel;
     var["CB"]["initialWindowRatio"] = mOptions.histogram.initialWindowRatio;
+    mOptions.pathTracing.resolveLaser(renderData, *mpScene).bindShaderData(var["CB"]);
+    mOptions.histogram.bindShaderData(var["TimeGate"]);
 
-    var["TimeGate"]["time_gate_mode"] = uint(mOptions.histogram.filter);
-
-    var["TimeGate"]["tbin"] = mOptions.histogram.timeBin;
-    var["TimeGate"]["tmax"] = mOptions.histogram.timeMax;
-    var["TimeGate"]["tmin"] = mOptions.histogram.timeMin;
-    var["TimeGate"]["tunit"] = (mOptions.histogram.timeMax - mOptions.histogram.timeMin) / mOptions.histogram.timeBin;
-
-    // Bind I/O buffers. These needs to be done per-frame as the buffers may change anytime.
-    auto bind = [&](const ChannelDesc& desc)
-    {
-        if (!desc.texname.empty())
-        {
-            var[desc.texname] = renderData.getTexture(desc.name);
-        }
-    };
-    for (auto channel : kInputChannels)
-        bind(channel);
-    for (auto channel : kLaserInputChannels)
-        bind(channel);
-    for (auto channel : kOutputChannels)
-        bind(channel);
-
-    const ChannelList& histogramChannels = mOptions.pathTracing.useSingleChannel ? kHistogramOutputChannelSingle : kHistogramOutputChannelsRGB;
-    for (auto channel : histogramChannels)
-        bind(channel);
-}
-
-void TransientHistogramPathTracerInline::prepareProgram(RenderContext* pRenderContext, const RenderData& renderData)
-{
-    if (!mpComputePass)
-    {
-        // Create ray tracing program.
-        ProgramDesc desc;
-        desc.addShaderModules(mpScene->getShaderModules());
-        desc.addShaderLibrary(kShaderFile).csEntry("main");
-        desc.addTypeConformances(mpScene->getTypeConformances());
-
-        DefineList defines;
-        defines.add(mpScene->getSceneDefines());
-        defines.add(mpSampleGenerator->getDefines());
-        defines.add(getShaderDefines(renderData));
-
-        mpComputePass = ComputePass::create(mpDevice, desc, defines, true);
-
-        // Bind static resources
-        ShaderVar var = mpComputePass->getRootVar();
-        mpScene->bindShaderDataForRaytracing(pRenderContext, var["gScene"]);
-        mpSampleGenerator->bindShaderData(var);
-    }
-
+    InlinePass::bindChannels(var, renderData, kInputChannels);
+    InlinePass::bindChannels(var, renderData, kLaserInputChannels);
+    InlinePass::bindChannels(var, renderData, kOutputChannels);
+    InlinePass::bindChannels(var, renderData, histogramChannels());
 }
 
 void TransientHistogramPathTracerInline::execute(RenderContext* pRenderContext, const RenderData& renderData)
 {
-    // Update refresh flag if options that affect the output have changed.
     auto& dict = renderData.getDictionary();
     if (mOptionsChanged)
     {
-        auto flags = dict.getValue(kRenderPassRefreshFlags, RenderPassRefreshFlags::None);
-        dict[Falcor::kRenderPassRefreshFlags] = flags | Falcor::RenderPassRefreshFlags::RenderOptionsChanged;
+        InlinePass::flagOptionsChanged(renderData);
         mOptionsChanged = false;
     }
 
-    // If we have no scene, just clear the outputs and return.
     if (!mpScene)
     {
-        for (auto it : kOutputChannels)
-        {
-            Texture* pDst = renderData.getTexture(it.name).get();
-            if (pDst)
-                pRenderContext->clearTexture(pDst);
-        }
-        if (auto histogram = renderData.getTexture("histogram"))
-            pRenderContext->clearTexture(histogram.get());
+        InlinePass::clearChannels(pRenderContext, renderData, kOutputChannels);
+        InlinePass::clearChannels(pRenderContext, renderData, histogramChannels());
         return;
     }
 
@@ -323,29 +245,12 @@ void TransientHistogramPathTracerInline::execute(RenderContext* pRenderContext, 
     // Triangle approximation enumerates all triangles; no triangle sampling distribution is needed.
     if (mOptions.samplingMethod == SamplingMethod::TriangleApprox)
         mpScene->getTriCollection(pRenderContext)->update(pRenderContext);
-    prepareProgram(pRenderContext, renderData);
+    if (!mpComputePass)
+        mpComputePass = InlinePass::createScenePass(mpDevice, pRenderContext, mpScene, mpSampleGenerator, kShaderFile, getShaderDefines(renderData));
+    InlinePass::checkScene(*mpScene, renderData, kInputViewDir);
 
-    if (is_set(mpScene->getUpdates(), IScene::UpdateFlags::RecompileNeeded) ||
-        is_set(mpScene->getUpdates(), IScene::UpdateFlags::GeometryChanged))
-    {
-        FALCOR_THROW("This render pass does not support scene changes that require shader recompilation.");
-    }
-
-    // Configure depth-of-field.
-    const bool useDOF = mpScene->getCamera()->getApertureRadius() > 0.f;
-    if (useDOF && renderData[kInputViewDir] == nullptr)
-    {
-        logWarning("Depth-of-field requires the '{}' input. Expect incorrect shading.", kInputViewDir);
-    }
-
-    // Specialize program.
     mpComputePass->getProgram()->addDefines(getShaderDefines(renderData));
-
-    // bind variables
-    auto var = mpComputePass->getRootVar();
-    bindShaderData(var, renderData);
-
-    // Spawn the rays.
+    bindShaderData(mpComputePass->getRootVar(), renderData);
     const ref<Texture> pColor = renderData.getTexture("color");
     mpComputePass->execute(pRenderContext, uint3(pColor->getWidth(), pColor->getHeight(), 1));
 
