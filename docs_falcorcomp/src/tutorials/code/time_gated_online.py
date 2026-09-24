@@ -18,8 +18,7 @@ graph.create_pass("Laser", "LaserVBufferRT", {
 })
 graph.create_pass("Tracer", "TimeGatedPathTracerInline", {
     "samplesPerPixel": 16, "maxBounces": 6, "computeDirect": False,
-    "timeGateMode": "box", "timeGateWindow": 0.1,
-    "shiftGate": True, "timeMin": 16.6, "timeMax": 18.6, "timeBin": 100,
+    "timeGateMode": "box", "timeGateWindow": 0.1, "timeMin": 17.337, "timeMax": 17.337,
 })
 graph.create_pass("Accumulate", "AccumulatePass", {"precisionMode": "SingleCompensated"})
 graph.create_pass("ToneMapper", "ToneMapper", {"autoExposure": False})

@@ -36,7 +36,7 @@ graph.mark_output("Accumulate.output")
 testbed.render_graph = graph
 
 # 3. Render
-FRAMES = 64  # 64 frames x 16 spp = 1024 spp
+FRAMES = 256  # 256 frames x 16 spp = 4096 spp
 for _ in range(FRAMES):
     testbed.frame()
 

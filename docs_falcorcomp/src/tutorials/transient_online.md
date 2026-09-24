@@ -22,8 +22,10 @@ The window is twice as wide as the render: one half for the sum, one for the gri
 ## 2. Build the render graph
 
 `VBufferRT` and the tracer render at a fixed `SIZE` x `SIZE` (`outputSize: Fixed`) instead of
-the window size. `TransientHistogramAccumulatePass` averages the tracer's per-frame histograms and
-restarts when the camera moves or a setting changes, and the viewer draws the average.
+the window size. With `accumulate`, the tracer adds every frame to its histogram and restarts when
+the camera moves or a setting changes; the viewer divides by the number of frames, so the picture
+stays equally bright while it converges. (`TransientHistogramAccumulatePass` can average the
+frames instead, as in the offline tutorial, at the cost of one more histogram in memory.)
 
 ```{literalinclude} code/transient_online.py
 :language: python
