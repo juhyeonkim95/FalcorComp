@@ -66,7 +66,6 @@ const ChannelList kOutputChannels = {
     // clang-format on
 };
 
-const char kShowLaserSpot[] = "showLaserSpot";
 } // namespace
 
 TimeGatedPathTracerInline::TimeGatedPathTracerInline(ref<Device> pDevice, const Properties& props) : RenderPass(pDevice)
@@ -112,10 +111,7 @@ void TimeGatedPathTracerInline::parseProperties(const Properties& props)
     {
         if (mOptions.timeGate.parse(key, value) || mOptions.ellipsoidalSampling.parse(key, value) || mOptions.pathTracing.parse(key, value))
             continue;
-        if (key == kShowLaserSpot)
-            mOptions.showLaserSpot = value;
-        else
-            logWarning("Unknown property '{}' in TimeGatedPathTracerInline properties.", key);
+        logWarning("Unknown property '{}' in TimeGatedPathTracerInline properties.", key);
     }
     mOptions.timeGate.applyTimeCenter(props);
 }
@@ -126,7 +122,6 @@ Properties TimeGatedPathTracerInline::getProperties() const
     mOptions.timeGate.serialize(props);
     mOptions.ellipsoidalSampling.serialize(props);
     mOptions.pathTracing.serialize(props);
-    props[kShowLaserSpot] = mOptions.showLaserSpot;
     return props;
 }
 
@@ -146,7 +141,6 @@ DefineList TimeGatedPathTracerInline::getShaderDefines(const RenderData& renderD
 {
     DefineList defines = mOptions.pathTracing.getDefines();
     defines.add(InlinePass::getSceneLightDefines(*mpScene));
-    defines.add("SHOW_LASER_SPOT", mOptions.showLaserSpot ? "1" : "0");
 
     defines.add("LIGHT_SAMPLING_METHOD", std::to_string((uint32_t)mOptions.ellipsoidalSampling.samplingMethod));
     defines.add("DIRECT_CONNECTION", std::to_string((uint32_t)EllipsoidalSamplingMethod::DIRECT));
@@ -231,12 +225,7 @@ void TimeGatedPathTracerInline::renderUI(Gui::Widgets& widget)
         dirty |= options.pathTracing.renderLightUI(group);
 
     if (auto group = widget.group("Output", true))
-    {
         dirty |= options.pathTracing.renderOutputUI(group, true);
-        dirty |= group.checkbox("Show laser spot", options.showLaserSpot);
-        group.tooltip("Debug overlay: adds the laser spot seen directly from the primary hit (red channel, not time "
-                      "gated).", true);
-    }
 
     // If rendering options that modify the output have changed, set flag to indicate that.
     // In execute() we will pass the flag to other passes for reset of temporal data etc.

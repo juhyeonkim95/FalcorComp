@@ -58,10 +58,6 @@
   - boolean
   - Place the laser at the camera, aimed at its target, instead of using the laser pass's
     position and direction. (Default: `false`)
-* - `showLaserSpot`
-  - boolean
-  - Debug overlay: add the laser spot seen directly from the primary hit to the red channel. It
-    is not time gated. (Default: `false`)
 * - `useSingleChannel`
   - boolean
   - Copy the red channel to green and blue. (Default: `false`)

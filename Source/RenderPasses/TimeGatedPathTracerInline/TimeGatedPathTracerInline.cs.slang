@@ -48,7 +48,6 @@ EmissiveLightSampler emissiveSampler; // Triangle-selection hierarchy for ellips
 #define is_valid(name) (is_valid_##name != 0)
 static const uint kMaxBounces = MAX_BOUNCES;
 static const bool kComputeDirect = COMPUTE_DIRECT;
-static const bool kShowLaserSpot = SHOW_LASER_SPOT;
 static const bool kUseImportanceSampling = USE_IMPORTANCE_SAMPLING;
 static const bool kUseEnvBackground = USE_ENV_BACKGROUND;
 static const bool kUseAlphaTest = USE_ALPHA_TEST;
@@ -101,19 +100,6 @@ float3 tracePath(const uint2 pixel, const uint2 frameDim)
 
         ShadingData sd0 = loadShadingData(hit0, primaryRayOrigin, primaryRayDir);
         IMaterialInstance mi0 = gScene.materials.getMaterialInstance(sd0, ExplicitLodTextureSampler(0.f));
-        // Debug overlay: the laser spot seen directly from the primary hit, in red.
-        // It is not time gated and not part of the time-gated estimate.
-        if(kShowLaserSpot)
-        {
-            float3 toLaserDir = normalize(laserOrigin - sd0.posW);
-            float toLaserDist = length(laserOrigin - sd0.posW);
-            float minCosAngle = min(laserCosAngle, 1.0-(1e-5));
-            bool inspot = (dot(-toLaserDir, laserDirection) > minCosAngle);
-            float3 L = mi0.eval(sd0, toLaserDir, sg) * laserPower / (toLaserDist * toLaserDist) * float(inspot);
-            L = float3(L.x, 0.0, 0.0);
-            outColor += samplesPerPixel * L;
-        }
-
         float maxPathLength = getMaxpathLength(tcurr);
         LaserLightSampler lls = LaserLightSampler(laserOrigin, laserDirection, laserCosAngle, laserPower);
 

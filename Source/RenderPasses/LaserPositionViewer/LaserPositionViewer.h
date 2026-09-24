@@ -29,60 +29,44 @@
 #include "Falcor.h"
 #include "RenderGraph/RenderPass.h"
 #include "Utils/Sampling/SampleGenerator.h"
-#include "Utils/Transient/Transient.h"
-#include "../Shared/Configs/TimeGateConfig.h"
-#include "../Shared/Configs/EllipsoidalSamplingConfig.h"
 #include "../Shared/Configs/PathTracingConfig.h"
 #include "../Shared/Utils/InlinePassUtils.h"
 
 using namespace Falcor;
 
-/** Time-gated path tracing with direct or ellipsoidal connection sampling. */
-class TimeGatedPathTracerInline : public RenderPass
+/** Shows where the laser is, drawn over an optional input image:
+ * - the laser spot: the light the laser puts on the surface seen in each pixel, not time gated (red channel);
+ * - a marker at the point the laser's central beam hits, visible even for a collimated beam.
+ * The laser comes from the laser pass (LaserVBufferRT) or, with laserCollocated, from the camera.
+ */
+class LaserPositionViewer : public RenderPass
 {
 public:
-    FALCOR_PLUGIN_CLASS(TimeGatedPathTracerInline, "TimeGatedPathTracerInline", "Time-gated path tracer.");
+    FALCOR_PLUGIN_CLASS(LaserPositionViewer, "LaserPositionViewer", "Draw the laser spot and the beam's hit point over an image.");
 
-    static ref<TimeGatedPathTracerInline> create(ref<Device> pDevice, const Properties& props)
+    static ref<LaserPositionViewer> create(ref<Device> pDevice, const Properties& props)
     {
-        return make_ref<TimeGatedPathTracerInline>(pDevice, props);
+        return make_ref<LaserPositionViewer>(pDevice, props);
     }
 
-    TimeGatedPathTracerInline(ref<Device> pDevice, const Properties& props);
+    LaserPositionViewer(ref<Device> pDevice, const Properties& props);
 
     Properties getProperties() const override;
     RenderPassReflection reflect(const CompileData& compileData) override;
     void execute(RenderContext* pRenderContext, const RenderData& renderData) override;
     void renderUI(Gui::Widgets& widget) override;
     void setScene(RenderContext* pRenderContext, const ref<Scene>& pScene) override;
-    bool onMouseEvent(const MouseEvent& mouseEvent) override { return false; }
-    bool onKeyEvent(const KeyboardEvent& keyEvent) override { return false; }
-    // Scripting functions
-    void incrementTimeGateFrame();
-    void setTimeGateInfo(float timeMin, float timeMax, uint timeBin);
 
 private:
-    void parseProperties(const Properties& props);
-    void bindShaderData(const ShaderVar& var, const RenderData& renderData);
-    DefineList getShaderDefines(const RenderData& renderData) const;
+    bool mShowSpot = true;
+    float mSpotScale = 1.f;          ///< Multiplies the spot's radiance before it is added to the red channel.
+    bool mShowMarker = true;
+    float mMarkerBrightness = 10.f;  ///< Marker value (before tone mapping).
+    bool mLaserCollocated = false;   ///< Place the laser at the camera, as the path tracers' laserCollocated.
 
-    /// User settings, composed of shared configs (Shared/Configs).
-    struct Options
-    {
-        TimeGateConfig timeGate;
-        EllipsoidalSamplingConfig ellipsoidalSampling;
-        PathTracingConfig pathTracing;
-    };
-
-    static void validateOptions(const Options& options);
-
-    Options mOptions;
-    uint mFrameCount = 0;
-    TimeGateState mGate;
     bool mOptionsChanged = false;
-
+    uint mFrameCount = 0;
     ref<Scene> mpScene;
     ref<SampleGenerator> mpSampleGenerator;
-    EllipsoidalTriangleSampler mTriangleSampler;
-    ref<ComputePass> mpComputePass;
+    ref<ComputePass> mpPass;
 };

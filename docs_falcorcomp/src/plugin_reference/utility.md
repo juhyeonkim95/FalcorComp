@@ -5,4 +5,5 @@
 
 utility/LaserVBufferRT
 utility/TransientHistogramViewer
+utility/LaserPositionViewer
 ```

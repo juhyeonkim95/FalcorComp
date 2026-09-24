@@ -18,6 +18,28 @@ struct LaserState
     }
     bool operator!=(const LaserState& other) const { return !(*this == other); }
 
+    /// The laser for this frame: at the camera, aimed at its target, when `collocated`; otherwise from the laser
+    /// pass (LaserVBufferRT) through the render data dictionary.
+    static LaserState resolve(const RenderData& renderData, const Scene& scene, bool collocated)
+    {
+        auto& dict = renderData.getDictionary();
+        LaserState laser;
+        if (collocated)
+        {
+            const auto& pCamera = scene.getCamera();
+            laser.origin = pCamera->getPosition();
+            laser.direction = normalize(pCamera->getTarget() - pCamera->getPosition());
+        }
+        else
+        {
+            laser.origin = dict.keyExists("laserPosition") ? dict["laserPosition"] : float3(0.f);
+            laser.direction = dict.keyExists("laserDirection") ? dict["laserDirection"] : float3(0.f, 0.f, 1.f);
+        }
+        laser.power = dict.keyExists("laserPower") ? dict["laserPower"] : float3(1.f);
+        laser.cosAngle = dict.keyExists("laserCosAngle") ? dict["laserCosAngle"] : 0.f;
+        return laser;
+    }
+
     /// Sets laserOrigin, laserDirection, laserPower and laserCosAngle under `var`.
     void bindShaderData(const ShaderVar& var) const
     {
@@ -59,26 +81,10 @@ struct PathTracingConfig
         return defines;
     }
 
-    /// This frame's laser: at the camera when laserCollocated, otherwise from the laser pass (LaserVBufferRT)
-    /// through the render data dictionary.
+    /// This frame's laser (see LaserState::resolve()).
     LaserState resolveLaser(const RenderData& renderData, const Scene& scene) const
     {
-        auto& dict = renderData.getDictionary();
-        LaserState laser;
-        if (laserCollocated)
-        {
-            const auto& pCamera = scene.getCamera();
-            laser.origin = pCamera->getPosition();
-            laser.direction = normalize(pCamera->getTarget() - pCamera->getPosition());
-        }
-        else
-        {
-            laser.origin = dict.keyExists("laserPosition") ? dict["laserPosition"] : float3(0.f);
-            laser.direction = dict.keyExists("laserDirection") ? dict["laserDirection"] : float3(0.f, 0.f, 1.f);
-        }
-        laser.power = dict.keyExists("laserPower") ? dict["laserPower"] : float3(1.f);
-        laser.cosAngle = dict.keyExists("laserCosAngle") ? dict["laserCosAngle"] : 0.f;
-        return laser;
+        return LaserState::resolve(renderData, scene, laserCollocated);
     }
 
     bool parse(const std::string& key, const Properties::ConstValue& value)
