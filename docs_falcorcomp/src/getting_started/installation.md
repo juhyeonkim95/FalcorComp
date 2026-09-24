@@ -9,9 +9,10 @@ their shaders, so no separate Falcor build is needed.
   later). Windows and macOS are not supported.
 - **GPU:** an NVIDIA GPU with hardware ray tracing (RTX), and a recent NVIDIA driver with Vulkan
   support.
-- **Python:** 3.10, including its shared library `libpython3.10.so.1.0`. Conda environments and
-  most system Pythons include it; on Debian or Ubuntu, install it with
-  `sudo apt install libpython3.10`.
+- **Python:** 3.9 or 3.10, including its shared library (`libpython3.10.so.1.0` for Python 3.10).
+  Conda environments and most system Pythons include it; on Debian or Ubuntu, install it with
+  `sudo apt install libpython3.10` (or `libpython3.9`). Python 3.11 and newer are not supported
+  yet, because Falcor uses pybind11 2.9.
 
 ## Installing with pip
 
@@ -65,16 +66,19 @@ python3 packaging/falcorcomp/build_wheel.py --build-dir build/GCC_11.3.0x86_64-l
 pip install build/GCC_11.3.0x86_64-linux-gnu-nogtk/falcorcomp/dist/falcorcomp-*.whl
 ```
 
-Run `build_wheel.py` with the same Python the build used: the wheel only works with that version.
+The default build uses Falcor's bundled Python 3.10. To build for Python 3.9, add
+`-DFALCOR_USE_SYSTEM_PYTHON=ON -DPython_EXECUTABLE=/path/to/python3.9` to the `cmake -S` command,
+use a separate build directory, and run `build_wheel.py` with that interpreter. In general, run
+`build_wheel.py` with the same Python the build used: the wheel only works with that version.
 
 ## Troubleshooting
 
 `ImportError: falcorcomp needs libpython3.10.so.1.0`
-: The shared Python library is missing. Install it (`sudo apt install libpython3.10`) or use a
-  conda environment.
+: The shared Python library is missing. Install it (`sudo apt install libpython3.10`, or
+  `libpython3.9` for Python 3.9) or use a conda environment.
 
 `ERROR: No matching distribution found for falcorcomp`
-: The wheel is built for Python 3.10 on Linux x86_64 only. Check `python --version`.
+: Wheels are built for Python 3.9 and 3.10 on Linux x86_64 only. Check `python --version`.
 
 The `Testbed` fails to create a device
 : Update the NVIDIA driver, and check that Vulkan works (for example, with `vulkaninfo`).
