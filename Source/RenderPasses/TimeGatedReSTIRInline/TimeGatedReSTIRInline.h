@@ -33,22 +33,10 @@
 #include "Rendering/Lights/LightBVHSampler.h"
 #include "Rendering/Lights/EmissivePowerSampler.h"
 #include "Rendering/Lights/EmissiveUniformSampler.h"
+#include "../Shared/TimeGated/TimeGatedOptions.h"
 
 using namespace Falcor;
 
-
-enum class TimeGatedSamplingMethod
-{
-    DIRECT = 0,
-    ELLIPSOIDAL = 1,
-    ELLIPSOIDAL_DIRECT_MIS = 2,
-};
-
-static const std::unordered_map<std::string, TimeGatedSamplingMethod> SamplingMethodTable = {
-    {"direct", TimeGatedSamplingMethod::DIRECT},
-    {"ellipsoidal", TimeGatedSamplingMethod::ELLIPSOIDAL},
-    {"ellipsoidal_direct_mis", TimeGatedSamplingMethod::ELLIPSOIDAL_DIRECT_MIS}
-};
 
 enum class ShiftmapMethod
 {
@@ -80,6 +68,88 @@ static const std::unordered_map<std::string, GaugeMode> GaugeModeTable = {
     {"constant", GaugeMode::CONSTANT},
     {"grad", GaugeMode::ORTHO_GRAD_START},
     {"avg_grad", GaugeMode::ORTHO_AVG_GRAD}
+};
+
+/// ReSTIR settings: reuse, path-length-aware shift mapping and the wide (shrink-mapped) gate.
+struct ReSTIRConfig
+{
+    uint spatialReuseIteration = 1;
+    uint spatialReuseNeighborCount = 5;
+    float spatialReuseGatherRadius = 10.0f;   ///< Pixels.
+    bool useTemporalReuse = true;
+    float temporalHistoryLength = 20.0f;      ///< History cap in frames of samples; 0 ignores it, negative is uncapped.
+    bool isSceneDynamic = false;              ///< Keep the history when the light moves, re-evaluating reused paths.
+
+    ShiftmapMethod shiftmapMethod = ShiftmapMethod::NO;
+    GaugeMode gaugeMode = GaugeMode::CONSTANT;
+    float2 gaugeAxis = float2(1, 0);
+    uint newtonMaxIteration = 5;
+    float newtonRelativeTolerance = 0.01f;
+    float reconnectionRoughnessThreshold = 0.25f; ///< Both vertices of a reconnection segment must be rougher.
+    bool debugNewtonIterations = false;       ///< Adds the newtonStatistics and mappingDistance outputs.
+
+    float timeGateWindowRough = 0.0f;         ///< Direct sampling: wide gate traced by some paths and shrunk into the gate.
+    float roughTimeGateSampleRatio = 0.5f;    ///< Fraction of paths traced with the wide gate.
+    uint2 laserHitVBufferRes = uint2(256, 256);
+
+    bool parse(const std::string& key, const Properties::ConstValue& value)
+    {
+        if (key == "spatialReuseIteration")
+            spatialReuseIteration = value;
+        else if (key == "spatialReuseNeighborCount")
+            spatialReuseNeighborCount = value;
+        else if (key == "spatialReuseGatherRadius")
+            spatialReuseGatherRadius = value;
+        else if (key == "useTemporalReuse")
+            useTemporalReuse = value;
+        else if (key == "temporalHistoryLength")
+            temporalHistoryLength = value;
+        else if (key == "isSceneDynamic")
+            isSceneDynamic = value;
+        else if (key == "shiftmapMethod")
+            shiftmapMethod = parseEnumProperty(ShiftmapMethodTable, std::string(value), key);
+        else if (key == "gaugeMode")
+            gaugeMode = parseEnumProperty(GaugeModeTable, std::string(value), key);
+        else if (key == "gaugeAxis")
+            gaugeAxis = value;
+        else if (key == "NewtonMaxIteration")
+            newtonMaxIteration = value;
+        else if (key == "NewtonRelativeTolerance")
+            newtonRelativeTolerance = value;
+        else if (key == "specularRoughnessThreshold")
+            reconnectionRoughnessThreshold = value;
+        else if (key == "debugNewtonIterations")
+            debugNewtonIterations = value;
+        else if (key == "timeGateWindowRough")
+            timeGateWindowRough = value;
+        else if (key == "roughTimeGateSampleRatio")
+            roughTimeGateSampleRatio = value;
+        else if (key == "laserHitVBufferRes")
+            laserHitVBufferRes = value;
+        else
+            return false;
+        return true;
+    }
+
+    void serialize(Properties& props) const
+    {
+        props["spatialReuseIteration"] = spatialReuseIteration;
+        props["spatialReuseNeighborCount"] = spatialReuseNeighborCount;
+        props["spatialReuseGatherRadius"] = spatialReuseGatherRadius;
+        props["useTemporalReuse"] = useTemporalReuse;
+        props["temporalHistoryLength"] = temporalHistoryLength;
+        props["isSceneDynamic"] = isSceneDynamic;
+        props["shiftmapMethod"] = enumPropertyName(ShiftmapMethodTable, shiftmapMethod);
+        props["gaugeMode"] = enumPropertyName(GaugeModeTable, gaugeMode);
+        props["gaugeAxis"] = gaugeAxis;
+        props["NewtonMaxIteration"] = newtonMaxIteration;
+        props["NewtonRelativeTolerance"] = newtonRelativeTolerance;
+        props["specularRoughnessThreshold"] = reconnectionRoughnessThreshold;
+        props["debugNewtonIterations"] = debugNewtonIterations;
+        props["timeGateWindowRough"] = timeGateWindowRough;
+        props["roughTimeGateSampleRatio"] = roughTimeGateSampleRatio;
+        props["laserHitVBufferRes"] = laserHitVBufferRes;
+    }
 };
 
 
@@ -135,48 +205,20 @@ private:
     
     // Configuration
 
-    /// Max number of indirect bounces (0 = none).
-    uint mMaxBounces = 3;
-    /// Compute direct illumination (otherwise indirect only).
-    bool mComputeDirect = false;
-    /// Use importance sampling for materials.
-    bool mUseImportanceSampling = true;
+    /// User settings, grouped as in TimeGatedOptions.h plus the ReSTIR ones.
+    struct Options
+    {
+        TimeGateConfig timeGate;
+        SamplingConfig sampling;
+        PathTracingConfig pathTracing;
+        ReSTIRConfig restir;
+    };
+    Options mOptions;
 
     // Runtime data
 
-    // Time Gate Data
-    float mTimeGateWindow = 0.05f;
-    float mTimeGateWindowRough = 0.0f;
-    float mRoughTimeGateSampleRatio = 0.5f;
-
-    TimeGateMode mTimeGateMode = TimeGateMode::BOX;
-    float mTimeMin = 9.0f;
-    float mTimeMax = 12.0f;
-    uint mTimeBin = 512;
-    bool mShiftGate = false; ///< Advance the gate one bin per frame, wrapping from mTimeMax to mTimeMin.
-
-    float mTcurr = 0.f;
-    float mTprev = 0.f;
-
-    uint2 mLaserHitVBufferRes = uint2(256, 256);
-
-    // Transient Shift Mapping
-    ShiftmapMethod mShiftmapMethod = ShiftmapMethod::NO;
-    float2 mGaugeAxis = float2(1,0);
-    GaugeMode mGaugeMode = GaugeMode::CONSTANT;
-    bool mDebugNewtonIterations = false;
-    uint mNewtonMaxIteration = 5;
-    float mNewtonRelativeTolerance = 0.01;
-
-    uint mSpatialReusePassIteration = 1;
-    uint mSpatialReuseNeighborCount = 5;
-    float mSpatialReuseGatherRadius = 10.0f;
-    float mSpecularRoughnessThreshold = 0.25f;
-    float mSpecularRoughnessThresholdEllipsoid = 0.25f;
-    float mTemporalHistoryLength = 20.0f;
-
-    TimeGatedSamplingMethod mSamplingMethod = TimeGatedSamplingMethod::DIRECT;
-    EmissiveLightSamplerType mTriSampler = EmissiveLightSamplerType::LightBVH;
+    float mTcurr = 0.f; ///< Current gate center.
+    float mTprev = 0.f; ///< Previous frame's gate center.
 
     float3 mLaserPosition = float3(0.0);
     float3 mLaserDirection = float3(1.0);
@@ -185,8 +227,6 @@ private:
 
     float3 mLaserPrevPosition;
     float3 mLaserPrevDirection;
-    
-    bool mIsLightSourceLaser = true;
 
     /// Frame count since scene was loaded.
     uint mFrameCount = 0;
@@ -197,12 +237,7 @@ private:
     bool mOptionsChanged = false;
     bool mGateMoved = false; ///< The gate shifted: restart accumulation but keep the ReSTIR history.
     std::string mUIWarning;  ///< Why the last UI edit was rejected.
-    uint mSamplesPerPixel = 128;
 
-    bool mLaserCollocated = false;
-    bool mUseAlphaTest = false;
-    bool mUseSingleChannel = false;
-    bool mUseTemporalReuse = true;
     bool mTemporalHistoryValid = false;
     uint2 mTemporalHistoryDimensions = uint2(0);
     float3 mPreviousCameraPosition = float3(0.f);
@@ -226,6 +261,5 @@ private:
     ref<Buffer>                     mpCurrReservoirs;                       ///< The current reservoir stores the canonical sample from the initial candidate generation pass.
     ref<Buffer>                     mpPrevReservoirs;                       ///< The previous reservoir stores all the samples from the previous frame.
     
-    bool mIsSceneDynamic = false;
     ref<Texture> mpTemporalVBuffer;
 };

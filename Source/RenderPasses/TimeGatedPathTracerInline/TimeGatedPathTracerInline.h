@@ -31,6 +31,7 @@
 #include "Utils/Sampling/SampleGenerator.h"
 #include "Utils/Transient/Transient.h"
 #include "Rendering/Lights/LightBVHSampler.h"
+#include "../Shared/TimeGated/TimeGatedOptions.h"
 
 using namespace Falcor;
 
@@ -59,39 +60,17 @@ public:
     void setTimeGateInfo(float timeMin, float timeMax, uint timeBin);
 
 private:
-    enum class TimeGatedSamplingMethod
-    {
-        DIRECT = 0,
-        ELLIPSOIDAL = 1,
-        ELLIPSOIDAL_DIRECT_MIS = 2,
-    };
-
-    static const std::unordered_map<std::string, TimeGatedSamplingMethod>& getSamplingMethods();
     void parseProperties(const Properties& props);
     void bindShaderData(const ShaderVar& var, const RenderData& renderData);
     DefineList getShaderDefines(const RenderData& renderData) const;
 
-    /// User settings. The sampling method selects whether to use direct/ellipsoidal MIS.
+    /// User settings, grouped as in TimeGatedOptions.h plus the path tracer's own.
     struct Options
     {
-        uint maxBounces = 3;
-        bool computeDirect = false;
+        TimeGateConfig timeGate;
+        SamplingConfig sampling;
+        PathTracingConfig pathTracing;
         bool showLaserSpot = false; ///< Debug overlay: un-gated laser spot seen from the primary hit.
-        bool useImportanceSampling = true;
-        float timeGateWindow = 0.05f;
-        TimeGateMode timeGateMode = TimeGateMode::BOX;
-        float timeMin = 9.0f;
-        float timeMax = 12.0f;
-        uint timeBin = 512;
-        bool shiftGate = false; ///< Advance the gate one bin per frame, wrapping from timeMax to timeMin.
-        float specularRoughnessThreshold = 0.25f;
-        TimeGatedSamplingMethod samplingMethod = TimeGatedSamplingMethod::DIRECT;
-        EmissiveLightSamplerType triSampler = EmissiveLightSamplerType::LightBVH;
-        bool laserCollocated = false;
-        bool useAlphaTest = false;
-        bool useSingleChannel = false;
-        bool isLightSourceLaser = true;
-        uint samplesPerPixel = 128;
     };
 
     struct FrameState

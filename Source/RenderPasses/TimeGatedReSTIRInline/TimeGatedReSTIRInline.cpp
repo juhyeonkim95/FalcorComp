@@ -85,50 +85,8 @@ const ChannelList kDebugOutputChannels = {
     { "mappingDistance", "gMappingDistance", "Sum of coordinate and world displacement for successful solves", false, ResourceFormat::RG32Float },
 };
 
-const char kMaxBounces[] = "maxBounces";
-const char kComputeDirect[] = "computeDirect";
-const char kUseImportanceSampling[] = "useImportanceSampling";
-const char kSamplesPerPixel[] = "samplesPerPixel";
-const char kTimeGateWindow[] = "timeGateWindow";
-const char kTimeGateWindowRough[] = "timeGateWindowRough";
-const char kTimeGateMode[] = "timeGateMode";
-const char kTimeMin[] = "timeMin";
-const char kTimeMax[] = "timeMax";
-const char kTimeBin[] = "timeBin";
-const char kSamplingMethod[] = "samplingMethod";
-const char kEmissiveSampler[] = "emissiveSampler";
-const char kLaserHitVBufferRes[] = "laserHitVBufferRes";
-const char kShiftmapMethod[] = "shiftmapMethod";
-const char kGaugeAxis[] = "gaugeAxis";
-const char kGaugeMode[] = "gaugeMode";
-const char kSpatialReusePassIteration[] = "spatialReuseIteration";
-const char kSpatialReuseNeighborCount[] = "spatialReuseNeighborCount";
-const char kSpatialReuseGatherRadius[] = "spatialReuseGatherRadius";
-const char kSpecularRoughnessThreshold[] = "specularRoughnessThreshold";
-const char kSpecularRoughnessThresholdEllipsoid[] = "specularRoughnessThresholdEllipsoid";
-const char kTemporalHistoryLength[] = "temporalHistoryLength";
-const char kDebugNewtonIterations[] = "debugNewtonIterations";
-const char kNewtonMaxIteration[] = "NewtonMaxIteration";
-const char kNewtonRelativeTolerance[] = "NewtonRelativeTolerance";
 const char kRandomSeed[] = "randomSeed";
-const char kLaserCollocated[] = "laserCollocated";
-const char kUseAlphaTest[] = "useAlphaTest";
-const char kUseSingleChannel[] = "useSingleChannel";
-const char kRoughTimeGateSampleRatio[] = "roughTimeGateSampleRatio";
-const char kIsSceneDynamic[] = "isSceneDynamic";
-const char kIsLightSourceLaser[] = "isLightSourceLaser";
 const uint32_t kNeighborOffsetCount = 8192;
-const char kUseTemporalReuse[] = "useTemporalReuse";
-const char kShiftGate[] = "shiftGate";
-
-template<typename T>
-std::string enumName(const std::unordered_map<std::string, T>& values, T value)
-{
-    for (const auto& [name, candidate] : values)
-        if (candidate == value)
-            return name;
-    FALCOR_THROW("Cannot serialize invalid enum value.");
-}
 } // namespace
 
 TimeGatedReSTIRInline::TimeGatedReSTIRInline(ref<Device> pDevice, const Properties& props) : RenderPass(pDevice)
@@ -148,9 +106,9 @@ void TimeGatedReSTIRInline::incrementTimeGateFrame()
 
 void TimeGatedReSTIRInline::setTimeGateInfo(float timeMin, float timeMax, uint timeBin)
 {
-    mTimeMin = timeMin;
-    mTimeMax = timeMax;
-    mTimeBin = timeBin;
+    mOptions.timeGate.timeMin = timeMin;
+    mOptions.timeGate.timeMax = timeMax;
+    mOptions.timeGate.timeBin = timeBin;
 }
 
 
@@ -164,130 +122,32 @@ void TimeGatedReSTIRInline::parseProperties(const Properties& props)
 {
     for (const auto& [key, value] : props)
     {
-        if (key == kMaxBounces)
-            mMaxBounces = value;
-        else if (key == kComputeDirect)
-            mComputeDirect = value;
-        else if (key == kUseImportanceSampling)
-            mUseImportanceSampling = value;
-        else if (key == kSamplesPerPixel)
-            mSamplesPerPixel = value;
-        else if (key == kTimeGateMode)
-            mTimeGateMode = TimeGateModeTable[value];
-        else if (key == kTimeGateWindow)
-            mTimeGateWindow = value;
-        else if (key == kTimeGateWindowRough)
-            mTimeGateWindowRough = value;
-        else if (key == kTimeMin)
-            mTimeMin = value;
-        else if (key == kTimeMax)
-            mTimeMax = value;
-        else if (key == kTimeBin)
-            mTimeBin = value;
-        else if (key == kSamplingMethod)
-        {
-            const std::string method = value;
-            const auto it = SamplingMethodTable.find(method);
-            if (it == SamplingMethodTable.end())
-                FALCOR_THROW("Unknown samplingMethod '{}'. Expected direct, ellipsoidal, or ellipsoidal_direct_mis.", method);
-            mSamplingMethod = it->second;
-        }
-        else if (key == kEmissiveSampler)
-            mTriSampler = value;
-        else if (key == kLaserHitVBufferRes)
-            mLaserHitVBufferRes = value;
-        else if (key == kShiftmapMethod)
-            mShiftmapMethod = ShiftmapMethodTable[value];
-        else if (key == kGaugeAxis)
-            mGaugeAxis = value;
-        else if (key == kGaugeMode)
-            mGaugeMode = GaugeModeTable[value];
-        else if (key == kSpatialReuseGatherRadius)
-            mSpatialReuseGatherRadius = value;
-        else if(key == kSpatialReusePassIteration)
-            mSpatialReusePassIteration = value;
-        else if(key == kSpatialReuseNeighborCount)
-            mSpatialReuseNeighborCount = value;
-        else if(key == kSpecularRoughnessThreshold)
-            mSpecularRoughnessThreshold = value;
-        else if(key == kSpecularRoughnessThresholdEllipsoid)
-            mSpecularRoughnessThresholdEllipsoid = value;
-        else if(key == kTemporalHistoryLength)
-            mTemporalHistoryLength = value;
-        else if(key == kRandomSeed)
+        if (mOptions.timeGate.parse(key, value) || mOptions.sampling.parse(key, value) ||
+            mOptions.pathTracing.parse(key, value) || mOptions.restir.parse(key, value))
+            continue;
+        if (key == kRandomSeed)
             mRandomSeed = value;
-        else if(key == kDebugNewtonIterations)
-            mDebugNewtonIterations = value;
-        else if(key == kNewtonMaxIteration)
-            mNewtonMaxIteration = value;
-        else if(key == kNewtonRelativeTolerance)
-            mNewtonRelativeTolerance = value;
-        else if(key == kLaserCollocated)
-            mLaserCollocated = value;
-        else if (key == kUseAlphaTest)
-            mUseAlphaTest = value;
-        else if (key == kRoughTimeGateSampleRatio)
-            mRoughTimeGateSampleRatio = value;
-        else if (key == kUseSingleChannel)
-            mUseSingleChannel = value;
-        else if (key == kIsSceneDynamic)
-            mIsSceneDynamic = value;
-        else if (key == kUseTemporalReuse)
-            mUseTemporalReuse = value;
-        else if (key == kIsLightSourceLaser)
-            mIsLightSourceLaser = value;
-        else if (key == kShiftGate)
-            mShiftGate = value;
         else
             logWarning("Unknown property '{}' in TimeGatedReSTIRInline properties.", key);
     }
-    if (mSamplingMethod != TimeGatedSamplingMethod::DIRECT &&
-        mTriSampler != EmissiveLightSamplerType::Uniform && mTriSampler != EmissiveLightSamplerType::LightBVH)
+    if (mOptions.sampling.samplingMethod != TimeGatedSamplingMethod::DIRECT &&
+        mOptions.sampling.triSampler != EmissiveLightSamplerType::Uniform && mOptions.sampling.triSampler != EmissiveLightSamplerType::LightBVH)
         FALCOR_THROW("Ellipsoidal initial sampling requires the Uniform or LightBVH triangle sampler.");
     // Dynamic suffix replay reconstructs BSDF steps after y only. An ellipsoidal candidate
     // inserts x or y (both reevaluated exactly); inserting a vertex after y needs a walk
     // that reaches y and continues, i.e. maxBounces >= 4.
-    if (mIsSceneDynamic && mSamplingMethod != TimeGatedSamplingMethod::DIRECT && mMaxBounces > 3)
+    if (mOptions.restir.isSceneDynamic && mOptions.sampling.samplingMethod != TimeGatedSamplingMethod::DIRECT && mOptions.pathTracing.maxBounces > 3)
         FALCOR_THROW("Ellipsoidal initial sampling with isSceneDynamic=true requires maxBounces <= 3.");
 }
 
 Properties TimeGatedReSTIRInline::getProperties() const
 {
     Properties props;
-    props[kDebugNewtonIterations] = mDebugNewtonIterations;
-    props[kMaxBounces] = mMaxBounces;
-    props[kComputeDirect] = mComputeDirect;
-    props[kUseImportanceSampling] = mUseImportanceSampling;
-    props[kSamplesPerPixel] = mSamplesPerPixel;
-    props[kTimeGateMode] = enumName(TimeGateModeTable, mTimeGateMode);
-    props[kTimeGateWindow] = mTimeGateWindow;
-    props[kTimeGateWindowRough] = mTimeGateWindowRough;
-    props[kRoughTimeGateSampleRatio] = mRoughTimeGateSampleRatio;
-    props[kTimeMin] = mTimeMin;
-    props[kTimeMax] = mTimeMax;
-    props[kTimeBin] = mTimeBin;
-    props[kShiftGate] = mShiftGate;
-    props[kSamplingMethod] = enumName(SamplingMethodTable, mSamplingMethod);
-    props[kEmissiveSampler] = mTriSampler;
-    props[kLaserHitVBufferRes] = mLaserHitVBufferRes;
-    props[kShiftmapMethod] = enumName(ShiftmapMethodTable, mShiftmapMethod);
-    props[kGaugeAxis] = mGaugeAxis;
-    props[kGaugeMode] = enumName(GaugeModeTable, mGaugeMode);
-    props[kSpatialReusePassIteration] = mSpatialReusePassIteration;
-    props[kSpatialReuseNeighborCount] = mSpatialReuseNeighborCount;
-    props[kSpatialReuseGatherRadius] = mSpatialReuseGatherRadius;
-    props[kSpecularRoughnessThreshold] = mSpecularRoughnessThreshold;
-    props[kSpecularRoughnessThresholdEllipsoid] = mSpecularRoughnessThresholdEllipsoid;
-    props[kTemporalHistoryLength] = mTemporalHistoryLength;
-    props[kNewtonMaxIteration] = mNewtonMaxIteration;
-    props[kNewtonRelativeTolerance] = mNewtonRelativeTolerance;
+    mOptions.timeGate.serialize(props);
+    mOptions.sampling.serialize(props);
+    mOptions.pathTracing.serialize(props);
+    mOptions.restir.serialize(props);
     props[kRandomSeed] = mRandomSeed;
-    props[kLaserCollocated] = mLaserCollocated;
-    props[kUseAlphaTest] = mUseAlphaTest;
-    props[kUseSingleChannel] = mUseSingleChannel;
-    props[kIsSceneDynamic] = mIsSceneDynamic;
-    props[kUseTemporalReuse] = mUseTemporalReuse;
-    props[kIsLightSourceLaser] = mIsLightSourceLaser;
     return props;
 }
 
@@ -298,9 +158,9 @@ RenderPassReflection TimeGatedReSTIRInline::reflect(const CompileData& compileDa
     // Define our input/output channels.
     addRenderPassInputs(reflector, kInputChannels);
     addRenderPassInputs(reflector, kLaserInputChannels, ResourceBindFlags::ShaderResource, uint2(1, 1));
-    addRenderPassInputs(reflector, kLaserHitInputChannels, ResourceBindFlags::ShaderResource, mLaserHitVBufferRes);
+    addRenderPassInputs(reflector, kLaserHitInputChannels, ResourceBindFlags::ShaderResource, mOptions.restir.laserHitVBufferRes);
     addRenderPassOutputs(reflector, kOutputChannels);
-    if (mDebugNewtonIterations) addRenderPassOutputs(reflector, kDebugOutputChannels);
+    if (mOptions.restir.debugNewtonIterations) addRenderPassOutputs(reflector, kDebugOutputChannels);
 
     return reflector;
 }
@@ -310,37 +170,37 @@ DefineList TimeGatedReSTIRInline::getShaderDefines(const RenderData& renderData)
 
     // Specialize away the entire extra reservoir/shift path when it has no samples.
     uint32_t wideSampleCount = 0;
-    if (mSamplingMethod == TimeGatedSamplingMethod::DIRECT && mSamplesPerPixel > 0 &&
-        std::isfinite(mTimeGateWindowRough) && mTimeGateWindow > 0.f &&
-        mTimeGateWindowRough > mTimeGateWindow && std::isfinite(mRoughTimeGateSampleRatio) &&
-        (mTimeGateMode == TimeGateMode::BOX || mTimeGateMode == TimeGateMode::TENT))
+    if (mOptions.sampling.samplingMethod == TimeGatedSamplingMethod::DIRECT && mOptions.pathTracing.samplesPerPixel > 0 &&
+        std::isfinite(mOptions.restir.timeGateWindowRough) && mOptions.timeGate.timeGateWindow > 0.f &&
+        mOptions.restir.timeGateWindowRough > mOptions.timeGate.timeGateWindow && std::isfinite(mOptions.restir.roughTimeGateSampleRatio) &&
+        (mOptions.timeGate.timeGateMode == TimeGateMode::BOX || mOptions.timeGate.timeGateMode == TimeGateMode::TENT))
     {
-        const float ratio = std::clamp(mRoughTimeGateSampleRatio, 0.f, 1.f);
-        wideSampleCount = std::min(uint32_t(float(mSamplesPerPixel) * ratio), mSamplesPerPixel);
+        const float ratio = std::clamp(mOptions.restir.roughTimeGateSampleRatio, 0.f, 1.f);
+        wideSampleCount = std::min(uint32_t(float(mOptions.pathTracing.samplesPerPixel) * ratio), mOptions.pathTracing.samplesPerPixel);
     }
     defines.add("USE_SHRINK_MAPPING", wideSampleCount > 0 ? "1" : "0");
     defines.add("SHRINK_WIDE_SAMPLE_COUNT", std::to_string(wideSampleCount));
 
-    defines.add("DEBUG_NEWTON_ITERATIONS", mDebugNewtonIterations ? "1" : "0");
-    defines.add("MAX_BOUNCES", std::to_string(mMaxBounces));
-    defines.add("COMPUTE_DIRECT", mComputeDirect ? "1" : "0");
-    defines.add("USE_IMPORTANCE_SAMPLING", mUseImportanceSampling ? "1" : "0");
+    defines.add("DEBUG_NEWTON_ITERATIONS", mOptions.restir.debugNewtonIterations ? "1" : "0");
+    defines.add("MAX_BOUNCES", std::to_string(mOptions.pathTracing.maxBounces));
+    defines.add("COMPUTE_DIRECT", mOptions.pathTracing.computeDirect ? "1" : "0");
+    defines.add("USE_IMPORTANCE_SAMPLING", mOptions.pathTracing.useImportanceSampling ? "1" : "0");
     defines.add("USE_ANALYTIC_LIGHTS", mpScene->useAnalyticLights() ? "1" : "0");
     defines.add("USE_EMISSIVE_LIGHTS", mpScene->useEmissiveLights() ? "1" : "0");
     defines.add("USE_ENV_LIGHT", mpScene->useEnvLight() ? "1" : "0");
     defines.add("USE_ENV_BACKGROUND", mpScene->useEnvBackground() ? "1" : "0");
-    defines.add("USE_ALPHA_TEST", mUseAlphaTest ? "1" : "0");
-    defines.add("USE_SINGLE_CHANNEL", mUseSingleChannel ? "1" : "0");
-    defines.add("IS_SCENE_DYNAMIC", mIsSceneDynamic ? "1" : "0");
-    defines.add("IS_LIGHT_SOURCE_LASER", mIsLightSourceLaser ? "1" : "0");
-    defines.add("USE_TEMPORAL_REUSE", mUseTemporalReuse ? "1" : "0");
+    defines.add("USE_ALPHA_TEST", mOptions.pathTracing.useAlphaTest ? "1" : "0");
+    defines.add("USE_SINGLE_CHANNEL", mOptions.pathTracing.useSingleChannel ? "1" : "0");
+    defines.add("IS_SCENE_DYNAMIC", mOptions.restir.isSceneDynamic ? "1" : "0");
+    defines.add("IS_LIGHT_SOURCE_LASER", mOptions.pathTracing.isLightSourceLaser ? "1" : "0");
+    defines.add("USE_TEMPORAL_REUSE", mOptions.restir.useTemporalReuse ? "1" : "0");
     
-    defines.add("LIGHT_SAMPLING_METHOD", std::to_string((uint32_t)mSamplingMethod));
+    defines.add("LIGHT_SAMPLING_METHOD", std::to_string((uint32_t)mOptions.sampling.samplingMethod));
     defines.add("DIRECT_CONNECTION", std::to_string((uint32_t)TimeGatedSamplingMethod::DIRECT));
     defines.add("ELLIPSOIDAL_CONNECTION", std::to_string((uint32_t)TimeGatedSamplingMethod::ELLIPSOIDAL));
     defines.add("ELLIPSOIDAL_DIRECT_MIS", std::to_string((uint32_t)TimeGatedSamplingMethod::ELLIPSOIDAL_DIRECT_MIS));
-    defines.add("SHIFT_MAPPING_METHOD", std::to_string((uint32_t)mShiftmapMethod));
-    defines.add("SHIFT_MAPPING_GAUGE_MODE", std::to_string((uint32_t)mGaugeMode));
+    defines.add("SHIFT_MAPPING_METHOD", std::to_string((uint32_t)mOptions.restir.shiftmapMethod));
+    defines.add("SHIFT_MAPPING_GAUGE_MODE", std::to_string((uint32_t)mOptions.restir.gaugeMode));
 
     // For optional I/O resources, set 'is_valid_<name>' defines to inform the program of which ones it can access.
     // TODO: This should be moved to a more general mechanism using Slang.
@@ -372,12 +232,12 @@ void TimeGatedReSTIRInline::bindShaderData(const ShaderVar& var, const RenderDat
     
     var["CB"]["gFrameDim"] = targetDim;
     var["CB"]["gPRNGDimension"] = dict.keyExists(kRenderPassPRNGDimension) ? dict[kRenderPassPRNGDimension] : 0u;
-    var["CB"]["gLaserHitVBufferRes" ] = mLaserHitVBufferRes;
-    var["CB"]["specularRoughnessThreshold" ] = mSpecularRoughnessThreshold;
-    var["CB"]["specularRoughnessThresholdEllipsoid" ] = mSpecularRoughnessThresholdEllipsoid;
+    var["CB"]["gLaserHitVBufferRes" ] = mOptions.restir.laserHitVBufferRes;
+    var["CB"]["specularRoughnessThreshold" ] = mOptions.restir.reconnectionRoughnessThreshold;
+    var["CB"]["specularRoughnessThresholdEllipsoid" ] = mOptions.sampling.ellipsoidRoughnessThreshold;
     
     // transients
-    // if(mLaserCollocated && mpScene){
+    // if(mOptions.pathTracing.laserCollocated && mpScene){
     //     var["Laser_CB"]["laserOrigin"] = mpScene->getCamera()->getPosition();
     //     var["Laser_CB"]["laserDirection"] = normalize(mpScene->getCamera()->getTarget() - mpScene->getCamera()->getPosition());
     // } else {
@@ -395,15 +255,15 @@ void TimeGatedReSTIRInline::bindShaderData(const ShaderVar& var, const RenderDat
     var["Laser_CB"]["laserPower"] = mLaserPower;
     var["Laser_CB"]["laserCosAngle"] = mLaserCosAngle;
     
-    var["CB"]["samplesPerPixel"] = mSamplesPerPixel;
-    var["CB"]["gTemporalHistoryLength"] = mTemporalHistoryLength;
-    var["CB"]["gRoughTimeGateSampleRatio"] = mRoughTimeGateSampleRatio;
+    var["CB"]["samplesPerPixel"] = mOptions.pathTracing.samplesPerPixel;
+    var["CB"]["gTemporalHistoryLength"] = mOptions.restir.temporalHistoryLength;
+    var["CB"]["gRoughTimeGateSampleRatio"] = mOptions.restir.roughTimeGateSampleRatio;
 
-    var["TimeGate"]["time_gate_window"] = mTimeGateWindow;
-    var["TimeGate"]["time_gate_window_rough"] = mTimeGateWindowRough;
-    var["TimeGate"]["time_gate_mode"] = uint(mTimeGateMode);
+    var["TimeGate"]["time_gate_window"] = mOptions.timeGate.timeGateWindow;
+    var["TimeGate"]["time_gate_window_rough"] = mOptions.restir.timeGateWindowRough;
+    var["TimeGate"]["time_gate_mode"] = uint(mOptions.timeGate.timeGateMode);
 
-    // if(mFrameCount == mTimeBin){
+    // if(mFrameCount == mOptions.timeGate.timeBin){
     //     mFrameCount = 0;
     // }
     // printf("Time Difference: %.5f \n", (mTcurr - mTprev));
@@ -411,11 +271,11 @@ void TimeGatedReSTIRInline::bindShaderData(const ShaderVar& var, const RenderDat
     var["TimeGate"]["tcurr"] = mTcurr;
     var["TimeGate"]["tprev"] = mTprev;
 
-    var["Shiftmap_CB"]["gGaugeAxis"] = mGaugeAxis;
-    var["Shiftmap_CB"]["gGaugeMode"] = uint(mGaugeMode);
-    var["Shiftmap_CB"]["gShiftMappingMethod"] = uint(mShiftmapMethod);
-    var["Shiftmap_CB"]["gNewtonMaxIteration"] = mNewtonMaxIteration;
-    var["Shiftmap_CB"]["gNewtonRelativeTolerance"] = mNewtonRelativeTolerance;
+    var["Shiftmap_CB"]["gGaugeAxis"] = mOptions.restir.gaugeAxis;
+    var["Shiftmap_CB"]["gGaugeMode"] = uint(mOptions.restir.gaugeMode);
+    var["Shiftmap_CB"]["gShiftMappingMethod"] = uint(mOptions.restir.shiftmapMethod);
+    var["Shiftmap_CB"]["gNewtonMaxIteration"] = mOptions.restir.newtonMaxIteration;
+    var["Shiftmap_CB"]["gNewtonRelativeTolerance"] = mOptions.restir.newtonRelativeTolerance;
 
     // Bind I/O buffers. These needs to be done per-frame as the buffers may change anytime.
     auto bind = [&](const ChannelDesc& desc)
@@ -433,12 +293,12 @@ void TimeGatedReSTIRInline::bindShaderData(const ShaderVar& var, const RenderDat
         bind(channel);
     for (auto channel : kOutputChannels)
         bind(channel);
-    if (mUseTemporalReuse)
+    if (mOptions.restir.useTemporalReuse)
     {
         var["gTemporalVBuffer"] = mpTemporalVBuffer;
         var["CB"]["gTemporalHistoryValid"] = mTemporalHistoryValid;
         var["CB"]["gPreviousCameraPosition"] = mPreviousCameraPosition;
-        if (mIsSceneDynamic)
+        if (mOptions.restir.isSceneDynamic)
         {
             var["Laser_CB"]["laserPrevPower"] = mPreviousLaserPower;
             var["Laser_CB"]["laserPrevCosAngle"] = mPreviousLaserCosAngle;
@@ -465,10 +325,10 @@ void TimeGatedReSTIRInline::spatialReuse(RenderContext* pRenderContext, const Re
     var["gFrameCount"] = mFrameCount;
     var["gFrameDim"] = targetDim;
     var["neighborOffsets"] = mpNeighborOffsets;
-    var["neighborCount"] = mSpatialReuseNeighborCount;
-    var["gatherRadius"] = mSpatialReuseGatherRadius;
+    var["neighborCount"] = mOptions.restir.spatialReuseNeighborCount;
+    var["gatherRadius"] = mOptions.restir.spatialReuseGatherRadius;
     var["useBinReuse"] = false; // A time gate has a single bin.
-    var["specularRoughnessThreshold"] = mSpecularRoughnessThreshold;
+    var["specularRoughnessThreshold"] = mOptions.restir.reconnectionRoughnessThreshold;
     
     // Bind I/O buffers. These needs to be done per-frame as the buffers may change anytime.
     auto bind = [&](const ChannelDesc& desc)
@@ -484,12 +344,12 @@ void TimeGatedReSTIRInline::spatialReuse(RenderContext* pRenderContext, const Re
         bind(channel);
     for (auto channel : kOutputChannels)
         bind(channel);
-    if (mDebugNewtonIterations)
+    if (mOptions.restir.debugNewtonIterations)
         for (auto channel : kDebugOutputChannels) bind(channel);
 
-    rootvar["TimeGate"]["time_gate_window"] = mTimeGateWindow;
-    rootvar["TimeGate"]["time_gate_window_rough"] = mTimeGateWindowRough;
-    rootvar["TimeGate"]["time_gate_mode"] = uint(mTimeGateMode);
+    rootvar["TimeGate"]["time_gate_window"] = mOptions.timeGate.timeGateWindow;
+    rootvar["TimeGate"]["time_gate_window_rough"] = mOptions.restir.timeGateWindowRough;
+    rootvar["TimeGate"]["time_gate_mode"] = uint(mOptions.timeGate.timeGateMode);
     rootvar["TimeGate"]["tcurr"] = mTcurr;
     rootvar["TimeGate"]["tprev"] = mTprev;
 
@@ -499,7 +359,7 @@ void TimeGatedReSTIRInline::spatialReuse(RenderContext* pRenderContext, const Re
     rootvar["Laser_CB"]["laserPower"] = mLaserPower;
     rootvar["Laser_CB"]["laserCosAngle"] = mLaserCosAngle;
     
-    // if(mLaserCollocated && mpScene){
+    // if(mOptions.pathTracing.laserCollocated && mpScene){
     //     rootvar["Laser_CB"]["laserOrigin"] = mpScene->getCamera()->getPosition();
     //     rootvar["Laser_CB"]["laserDirection"] = normalize(mpScene->getCamera()->getTarget() - mpScene->getCamera()->getPosition());
     // } else {
@@ -509,21 +369,21 @@ void TimeGatedReSTIRInline::spatialReuse(RenderContext* pRenderContext, const Re
     // rootvar["Laser_CB"]["laserPower"] = dict.keyExists("laserPower") ? dict["laserPower"] : float3(1,1,1);
     // rootvar["Laser_CB"]["laserCosAngle"] = dict.keyExists("laserCosAngle") ? dict["laserCosAngle"] : 0.0f;
     
-    rootvar["Shiftmap_CB"]["gGaugeAxis"] = mGaugeAxis;
-    rootvar["Shiftmap_CB"]["gGaugeMode"] = uint(mGaugeMode);
-    rootvar["Shiftmap_CB"]["gShiftMappingMethod"] = uint(mShiftmapMethod);
-    rootvar["Shiftmap_CB"]["gNewtonMaxIteration"] = mNewtonMaxIteration;
-    rootvar["Shiftmap_CB"]["gNewtonRelativeTolerance"] = mNewtonRelativeTolerance;
+    rootvar["Shiftmap_CB"]["gGaugeAxis"] = mOptions.restir.gaugeAxis;
+    rootvar["Shiftmap_CB"]["gGaugeMode"] = uint(mOptions.restir.gaugeMode);
+    rootvar["Shiftmap_CB"]["gShiftMappingMethod"] = uint(mOptions.restir.shiftmapMethod);
+    rootvar["Shiftmap_CB"]["gNewtonMaxIteration"] = mOptions.restir.newtonMaxIteration;
+    rootvar["Shiftmap_CB"]["gNewtonRelativeTolerance"] = mOptions.restir.newtonRelativeTolerance;
 
     // Clear diagnostics once per frame; spatial iterations add to these buffers.
     // Keep initial RGB intact, including when spatial iteration count is zero.
-    if (mDebugNewtonIterations)
+    if (mOptions.restir.debugNewtonIterations)
     {
         pRenderContext->clearUAV(renderData.getTexture("newtonStatistics")->getUAV().get(), uint4(0));
         pRenderContext->clearUAV(renderData.getTexture("mappingDistance")->getUAV().get(), float4(0.f));
     }
 
-    for(uint iteration=0; iteration < mSpatialReusePassIteration; iteration++){
+    for(uint iteration=0; iteration < mOptions.restir.spatialReuseIteration; iteration++){
         std::swap(mpCurrReservoirs, mpPrevReservoirs);
         var["gRandomSeed"] = mRandomSeed++;
         var["prevReservoirs"] = mpPrevReservoirs;
@@ -561,14 +421,14 @@ void TimeGatedReSTIRInline::execute(RenderContext* pRenderContext, const RenderD
             if (pDst)
                 pRenderContext->clearTexture(pDst);
         }
-        if (mDebugNewtonIterations)
+        if (mOptions.restir.debugNewtonIterations)
             for (auto channel : kDebugOutputChannels)
                 if (auto texture = renderData.getTexture(channel.name)) pRenderContext->clearTexture(texture.get());
         return;
     }
 
     // set laser position
-    if(mLaserCollocated){
+    if(mOptions.pathTracing.laserCollocated){
         mLaserPosition = mpScene->getCamera()->getPosition();
         mLaserDirection = normalize(mpScene->getCamera()->getTarget() - mpScene->getCamera()->getPosition());
     } else {
@@ -583,16 +443,16 @@ void TimeGatedReSTIRInline::execute(RenderContext* pRenderContext, const RenderD
     const auto cameraUpdates = IScene::UpdateFlags::CameraMoved |
         IScene::UpdateFlags::CameraPropertiesChanged | IScene::UpdateFlags::CameraSwitched;
     auto allowedUpdates = cameraUpdates;
-    if (mIsSceneDynamic)
+    if (mOptions.restir.isSceneDynamic)
         allowedUpdates |= IScene::UpdateFlags::LightsMoved | IScene::UpdateFlags::LightIntensityChanged |
             IScene::UpdateFlags::LightPropertiesChanged | IScene::UpdateFlags::SceneGraphChanged;
     const bool lightChanged = any(mLaserPosition != mLaserPrevPosition) || any(mLaserDirection != mLaserPrevDirection) ||
         any(mLaserPower != mPreviousLaserPower) || mLaserCosAngle != mPreviousLaserCosAngle;
     if (mTemporalHistoryValid && ((updates & ~allowedUpdates) != IScene::UpdateFlags::None ||
-        (!mIsSceneDynamic && lightChanged) || mpScene->getCamera()->getApertureRadius() > 0.f))
+        (!mOptions.restir.isSceneDynamic && lightChanged) || mpScene->getCamera()->getApertureRadius() > 0.f))
         mTemporalHistoryValid = false;
 
-    if (!mpEmissiveSampler && (mSamplingMethod != TimeGatedSamplingMethod::DIRECT))
+    if (!mpEmissiveSampler && (mOptions.sampling.samplingMethod != TimeGatedSamplingMethod::DIRECT))
     {
         const auto& pLights = mpScene->getITriCollection(pRenderContext);
         FALCOR_ASSERT(pLights && pLights->getActiveLightCount(pRenderContext) > 0);
@@ -600,7 +460,7 @@ void TimeGatedReSTIRInline::execute(RenderContext* pRenderContext, const RenderD
 
         mLightBVHOptions.buildOptions.maxTriangleCountPerLeaf = 1;
         
-        switch (mTriSampler)
+        switch (mOptions.sampling.triSampler)
         {
         case EmissiveLightSamplerType::Uniform:
             mpEmissiveSampler = std::make_unique<EmissiveUniformSampler>(pRenderContext, mpScene->getITriCollection(pRenderContext));
@@ -695,8 +555,8 @@ void TimeGatedReSTIRInline::execute(RenderContext* pRenderContext, const RenderD
     mpComputePass->getProgram()->addDefines(getShaderDefines(renderData));
     
     // update time
-    mTcurr = float((float(mTimeGateFrameCount % mTimeBin) / mTimeBin) * (mTimeMax - mTimeMin) + mTimeMin);
-    // mTprev = float((float(mPrevTimeGateFrameCount % mTimeBin) / mTimeBin) * (mTimeMax - mTimeMin) + mTimeMin);
+    mTcurr = float((float(mTimeGateFrameCount % mOptions.timeGate.timeBin) / mOptions.timeGate.timeBin) * (mOptions.timeGate.timeMax - mOptions.timeGate.timeMin) + mOptions.timeGate.timeMin);
+    // mTprev = float((float(mPrevTimeGateFrameCount % mOptions.timeGate.timeBin) / mOptions.timeGate.timeBin) * (mOptions.timeGate.timeMax - mOptions.timeGate.timeMin) + mOptions.timeGate.timeMin);
     
     // bind variables
     auto var = mpComputePass->getRootVar();
@@ -717,7 +577,7 @@ void TimeGatedReSTIRInline::execute(RenderContext* pRenderContext, const RenderD
     std::swap(mpCurrReservoirs, mpPrevReservoirs);
 
     // copy v buffer
-    mTemporalHistoryValid = mUseTemporalReuse &&
+    mTemporalHistoryValid = mOptions.restir.useTemporalReuse &&
         mpScene->getCamera()->getApertureRadius() == 0.f;
     if (mTemporalHistoryValid)
         pRenderContext->copyResource(mpTemporalVBuffer.get(), renderData["vbuffer"].get());
@@ -731,7 +591,7 @@ void TimeGatedReSTIRInline::execute(RenderContext* pRenderContext, const RenderD
     mTprev = mTcurr;
 
     // Temporal reuse maps the history from tprev to the new gate, so it stays valid.
-    if (mShiftGate && mTimeMax > mTimeMin)
+    if (mOptions.timeGate.shiftGate && mOptions.timeGate.timeMax > mOptions.timeGate.timeMin)
     {
         incrementTimeGateFrame();
         mGateMoved = true;
@@ -742,10 +602,10 @@ void TimeGatedReSTIRInline::renderUI(Gui::Widgets& widget)
 {
     bool dirty = false;
     // Settings validated together; a rejected edit restores them.
-    const auto previousSamplingMethod = mSamplingMethod;
-    const auto previousTriSampler = mTriSampler;
-    const uint previousMaxBounces = mMaxBounces;
-    const bool previousSceneDynamic = mIsSceneDynamic;
+    const auto previousSamplingMethod = mOptions.sampling.samplingMethod;
+    const auto previousTriSampler = mOptions.sampling.triSampler;
+    const uint previousMaxBounces = mOptions.pathTracing.maxBounces;
+    const bool previousSceneDynamic = mOptions.restir.isSceneDynamic;
 
     if (auto group = widget.group("Time gate", true))
     {
@@ -756,25 +616,25 @@ void TimeGatedReSTIRInline::renderUI(Gui::Widgets& widget)
             {(uint32_t)TimeGateMode::COS, "Cos"},
             {(uint32_t)TimeGateMode::ALL, "All (no gating)"},
         };
-        uint32_t timeGateMode = (uint32_t)mTimeGateMode;
+        uint32_t timeGateMode = (uint32_t)mOptions.timeGate.timeGateMode;
         if (group.dropdown("Gate kernel", kTimeGateModeList, timeGateMode))
         {
-            mTimeGateMode = (TimeGateMode)timeGateMode;
+            mOptions.timeGate.timeGateMode = (TimeGateMode)timeGateMode;
             dirty = true;
         }
         group.tooltip("Weight of a path as a function of its total optical length (laser -> scene -> camera) "
                       "relative to the gate center.", true);
 
-        dirty |= group.var("Gate window", mTimeGateWindow, 0.001f, 1000.0f);
+        dirty |= group.var("Gate window", mOptions.timeGate.timeGateWindow, 0.001f, 1000.0f);
         group.tooltip("Gate width in path-length units (scene units). The output is divided by it.", true);
 
-        if (group.checkbox("Shift gate", mShiftGate))
+        if (group.checkbox("Shift gate", mOptions.timeGate.shiftGate))
         {
             // Start a shifting scan from a fixed gate with a default range and resolution.
-            if (mShiftGate && mTimeMax <= mTimeMin)
+            if (mOptions.timeGate.shiftGate && mOptions.timeGate.timeMax <= mOptions.timeGate.timeMin)
             {
-                mTimeMax = 1.2f * mTimeMin;
-                mTimeBin = 100;
+                mOptions.timeGate.timeMax = 1.2f * mOptions.timeGate.timeMin;
+                mOptions.timeGate.timeBin = 100;
             }
             dirty = true;
         }
@@ -782,33 +642,33 @@ void TimeGatedReSTIRInline::renderUI(Gui::Widgets& widget)
                       "toward Gate max, then starts again at Gate min. Temporal reuse maps the history to each "
                       "new gate. Turning it on from a fixed gate sets Gate max = 1.2 x Gate min and 100 bins.", true);
 
-        if (!mShiftGate)
+        if (!mOptions.timeGate.shiftGate)
         {
-            float gateCenter = mTimeMin;
+            float gateCenter = mOptions.timeGate.timeMin;
             if (group.var("Gate center", gateCenter, 0.0f, 1000.0f))
             {
-                mTimeMin = mTimeMax = gateCenter;
+                mOptions.timeGate.timeMin = mOptions.timeGate.timeMax = gateCenter;
                 dirty = true;
             }
             group.tooltip("Gate center in path-length units.", true);
         }
         else
         {
-            dirty |= group.var("Gate min", mTimeMin, 0.0f, mTimeMax);
+            dirty |= group.var("Gate min", mOptions.timeGate.timeMin, 0.0f, mOptions.timeGate.timeMax);
             group.tooltip("First gate center, in path-length units.", true);
 
-            dirty |= group.var("Gate max", mTimeMax, mTimeMin, 1000.0f);
+            dirty |= group.var("Gate max", mOptions.timeGate.timeMax, mOptions.timeGate.timeMin, 1000.0f);
             group.tooltip("End of the scan, in path-length units. The last gate center is Gate max - Gate step.", true);
 
-            dirty |= group.var("Gate bins", mTimeBin, 1u, 1u << 16);
+            dirty |= group.var("Gate bins", mOptions.timeGate.timeBin, 1u, 1u << 16);
             group.tooltip("Number of gate centers from Gate min to Gate max.", true);
 
             // The step is derived from the bins; editing it picks the nearest bin count.
-            const float range = mTimeMax - mTimeMin;
-            float gateStep = range / mTimeBin;
+            const float range = mOptions.timeGate.timeMax - mOptions.timeGate.timeMin;
+            float gateStep = range / mOptions.timeGate.timeBin;
             if (range > 0.f && group.var("Gate step", gateStep, 1e-4f, range))
             {
-                mTimeBin = std::max(1u, (uint)std::lround(range / gateStep));
+                mOptions.timeGate.timeBin = std::max(1u, (uint)std::lround(range / gateStep));
                 dirty = true;
             }
             group.tooltip("Gate center shift per frame, in path-length units. Sets Gate bins to the nearest count.", true);
@@ -821,11 +681,11 @@ void TimeGatedReSTIRInline::renderUI(Gui::Widgets& widget)
 
     if (auto group = widget.group("Initial sampling", true))
     {
-        dirty |= group.var("Samples per pixel", mSamplesPerPixel, 1u, 1024u);
+        dirty |= group.var("Samples per pixel", mOptions.pathTracing.samplesPerPixel, 1u, 1024u);
         group.tooltip("Camera paths traced per pixel in each frame. Each one submits candidates to the pixel's "
                       "reservoir.", true);
 
-        dirty |= group.var("Max bounces", mMaxBounces, 0u, 1u << 16);
+        dirty |= group.var("Max bounces", mOptions.pathTracing.maxBounces, 0u, 1u << 16);
         group.tooltip("Maximum number of surface vertices on the camera path, counting the primary hit and any "
                       "vertex inserted by an ellipsoidal connection. The primary hit is not connected to the laser "
                       "spot.", true);
@@ -835,10 +695,10 @@ void TimeGatedReSTIRInline::renderUI(Gui::Widgets& widget)
             {(uint32_t)TimeGatedSamplingMethod::ELLIPSOIDAL, "Ellipsoidal"},
             {(uint32_t)TimeGatedSamplingMethod::ELLIPSOIDAL_DIRECT_MIS, "Ellipsoidal + direct (MIS)"},
         };
-        uint32_t samplingMethod = (uint32_t)mSamplingMethod;
+        uint32_t samplingMethod = (uint32_t)mOptions.sampling.samplingMethod;
         if (group.dropdown("Sampling method", kSamplingMethodList, samplingMethod))
         {
-            mSamplingMethod = (TimeGatedSamplingMethod)samplingMethod;
+            mOptions.sampling.samplingMethod = (TimeGatedSamplingMethod)samplingMethod;
             dirty = true;
         }
         group.tooltip("How a camera-path vertex x is connected to the laser spot:\n"
@@ -847,66 +707,66 @@ void TimeGatedReSTIRInline::renderUI(Gui::Widgets& widget)
                       "matches the gate.\n"
                       "Ellipsoidal + direct (MIS): both, combined with the balance heuristic.", true);
 
-        if (mSamplingMethod == TimeGatedSamplingMethod::ELLIPSOIDAL)
+        if (mOptions.sampling.samplingMethod == TimeGatedSamplingMethod::ELLIPSOIDAL)
         {
-            dirty |= group.var("Ellipsoid roughness threshold", mSpecularRoughnessThresholdEllipsoid, 0.f, 1.f);
+            dirty |= group.var("Ellipsoid roughness threshold", mOptions.sampling.ellipsoidRoughnessThreshold, 0.f, 1.f);
             group.tooltip("Use an ellipsoidal connection at x only if its roughness is above this value; smoother "
                           "vertices use a direct connection from the next vertex instead.", true);
         }
 
-        if (mSamplingMethod != TimeGatedSamplingMethod::DIRECT)
+        if (mOptions.sampling.samplingMethod != TimeGatedSamplingMethod::DIRECT)
         {
             static const Gui::DropdownList kTriangleSamplerList = {
                 {(uint32_t)EmissiveLightSamplerType::Uniform, "Uniform"},
                 {(uint32_t)EmissiveLightSamplerType::LightBVH, "LightBVH"},
             };
-            uint32_t triSampler = (uint32_t)mTriSampler;
+            uint32_t triSampler = (uint32_t)mOptions.sampling.triSampler;
             if (group.dropdown("Ellipsoid triangle sampler", kTriangleSamplerList, triSampler))
             {
-                mTriSampler = (EmissiveLightSamplerType)triSampler;
+                mOptions.sampling.triSampler = (EmissiveLightSamplerType)triSampler;
                 dirty = true;
             }
             group.tooltip("How an ellipsoidal connection selects the scene triangle on which it places y.", true);
         }
 
-        dirty |= group.checkbox("Use importance sampling", mUseImportanceSampling);
+        dirty |= group.checkbox("Use importance sampling", mOptions.pathTracing.useImportanceSampling);
         group.tooltip("Importance-sample the BSDF when extending the camera path. Off: the material's reference "
                       "sampler (cosine-weighted for standard materials).", true);
 
-        if (mSamplingMethod == TimeGatedSamplingMethod::DIRECT)
+        if (mOptions.sampling.samplingMethod == TimeGatedSamplingMethod::DIRECT)
         {
-            dirty |= group.var("Wide gate window", mTimeGateWindowRough, 0.f, 1000.0f);
+            dirty |= group.var("Wide gate window", mOptions.restir.timeGateWindowRough, 0.f, 1000.0f);
             group.tooltip("Direct sampling with a Box or Tent gate only: when wider than Gate window, a fraction of "
                           "the paths is traced with this wider gate and shrunk into the gate by the path-length "
                           "shift. 0 disables it.", true);
-            dirty |= group.var("Wide gate path fraction", mRoughTimeGateSampleRatio, 0.f, 1.f);
+            dirty |= group.var("Wide gate path fraction", mOptions.restir.roughTimeGateSampleRatio, 0.f, 1.f);
             group.tooltip("Fraction of the paths per pixel traced with the wide gate.", true);
         }
     }
 
     if (auto group = widget.group("Reuse", true))
     {
-        dirty |= group.var("Spatial iterations", mSpatialReusePassIteration, 0u, 16u);
+        dirty |= group.var("Spatial iterations", mOptions.restir.spatialReuseIteration, 0u, 16u);
         group.tooltip("Spatial reuse passes per frame. 0 disables spatial reuse.", true);
 
-        dirty |= group.var("Spatial neighbors", mSpatialReuseNeighborCount, 1u, 64u);
+        dirty |= group.var("Spatial neighbors", mOptions.restir.spatialReuseNeighborCount, 1u, 64u);
         group.tooltip("Neighbor pixels resampled in each spatial pass.", true);
 
-        dirty |= group.var("Spatial radius (px)", mSpatialReuseGatherRadius, 1.f, 128.f);
+        dirty |= group.var("Spatial radius (px)", mOptions.restir.spatialReuseGatherRadius, 1.f, 128.f);
         group.tooltip("Radius, in pixels, within which spatial neighbors are chosen.", true);
 
-        dirty |= group.checkbox("Temporal reuse", mUseTemporalReuse);
+        dirty |= group.checkbox("Temporal reuse", mOptions.restir.useTemporalReuse);
         group.tooltip("Resample the previous frame's reservoir (reprojected with motion vectors when the mvec "
                       "input is connected), shifting its paths from the previous gate to the current one.", true);
 
-        if (mUseTemporalReuse)
+        if (mOptions.restir.useTemporalReuse)
         {
-            dirty |= group.var("History length (frames)", mTemporalHistoryLength, -1.f, 100000.f);
+            dirty |= group.var("History length (frames)", mOptions.restir.temporalHistoryLength, -1.f, 100000.f);
             group.tooltip("Cap on the history's sample count, in frames of samples per pixel. 0 ignores the "
                           "history; a negative value leaves it uncapped.", true);
         }
 
-        dirty |= group.checkbox("Dynamic light", mIsSceneDynamic);
+        dirty |= group.checkbox("Dynamic light", mOptions.restir.isSceneDynamic);
         group.tooltip("Keep the temporal history when the laser moves or changes, re-evaluating the lighting of "
                       "reused paths. Off: any laser change discards the history. Geometry changes always discard "
                       "it.", true);
@@ -922,59 +782,59 @@ void TimeGatedReSTIRInline::renderUI(Gui::Widgets& widget)
             {(uint32_t)ShiftmapMethod::AREA_ADAPTIVE, "Area adaptive"},
             {(uint32_t)ShiftmapMethod::RAY_TRACE_CHART, "Ray trace chart"},
         };
-        uint32_t shiftmapMethod = (uint32_t)mShiftmapMethod;
+        uint32_t shiftmapMethod = (uint32_t)mOptions.restir.shiftmapMethod;
         if (group.dropdown("Method", kShiftmapMethodList, shiftmapMethod))
         {
-            mShiftmapMethod = (ShiftmapMethod)shiftmapMethod;
+            mOptions.restir.shiftmapMethod = (ShiftmapMethod)shiftmapMethod;
             dirty = true;
         }
         group.tooltip("How a reused path is fitted to the target pixel's gate. The reconnection vertex is moved so "
                       "the path length changes by the gate difference, using a Newton solve on the chosen chart.\n"
                       "None keeps the vertex fixed (naive reuse).", true);
 
-        dirty |= group.var("Reconnection roughness threshold", mSpecularRoughnessThreshold, 0.f, 1.f);
+        dirty |= group.var("Reconnection roughness threshold", mOptions.restir.reconnectionRoughnessThreshold, 0.f, 1.f);
         group.tooltip("A path can reconnect at a segment only if both of its vertices are rougher than this.", true);
 
-        if (mShiftmapMethod != ShiftmapMethod::NO)
+        if (mOptions.restir.shiftmapMethod != ShiftmapMethod::NO)
         {
             static const Gui::DropdownList kGaugeModeList = {
                 {(uint32_t)GaugeMode::CONSTANT, "Constant axis"},
                 {(uint32_t)GaugeMode::ORTHO_GRAD_START, "Orthogonal to start gradient"},
                 {(uint32_t)GaugeMode::ORTHO_AVG_GRAD, "Orthogonal to average gradient"},
             };
-            uint32_t gaugeMode = (uint32_t)mGaugeMode;
+            uint32_t gaugeMode = (uint32_t)mOptions.restir.gaugeMode;
             if (group.dropdown("Gauge", kGaugeModeList, gaugeMode))
             {
-                mGaugeMode = (GaugeMode)gaugeMode;
+                mOptions.restir.gaugeMode = (GaugeMode)gaugeMode;
                 dirty = true;
             }
             group.tooltip("Fixes the direction left free by the one path-length constraint in the 2D Newton solve.", true);
 
-            if (mGaugeMode == GaugeMode::CONSTANT)
+            if (mOptions.restir.gaugeMode == GaugeMode::CONSTANT)
             {
-                dirty |= group.var("Gauge axis", mGaugeAxis, -1.f, 1.f);
+                dirty |= group.var("Gauge axis", mOptions.restir.gaugeAxis, -1.f, 1.f);
                 group.tooltip("Chart-space axis of the constant gauge. (0, 0) picks a random axis per shift.", true);
             }
 
-            dirty |= group.var("Newton iterations", mNewtonMaxIteration, 1u, 64u);
+            dirty |= group.var("Newton iterations", mOptions.restir.newtonMaxIteration, 1u, 64u);
             group.tooltip("Maximum Newton iterations per shift.", true);
         }
     }
 
     if (auto group = widget.group("Light", true))
     {
-        dirty |= group.checkbox("Laser source", mIsLightSourceLaser);
+        dirty |= group.checkbox("Laser source", mOptions.pathTracing.isLightSourceLaser);
         group.tooltip("On: the light is the spot where the laser beam hits the scene, and the beam length adds to "
                       "the path length.\nOff: a point light at the laser position.", true);
 
-        dirty |= group.checkbox("Laser collocated", mLaserCollocated);
+        dirty |= group.checkbox("Laser collocated", mOptions.pathTracing.laserCollocated);
         group.tooltip("Place the laser at the camera, aimed at the camera target, instead of using the laser pass "
                       "position and direction. The laser follows the camera when it moves.", true);
     }
 
     if (auto group = widget.group("Output", true))
     {
-        dirty |= group.checkbox("Alpha test", mUseAlphaTest);
+        dirty |= group.checkbox("Alpha test", mOptions.pathTracing.useAlphaTest);
         group.tooltip("Honor alpha-tested (cutout) materials when tracing rays.", true);
     }
 
@@ -982,17 +842,17 @@ void TimeGatedReSTIRInline::renderUI(Gui::Widgets& widget)
     {
         mUIWarning.clear();
         // Same constraint as parseProperties(): see the comment there.
-        if (mIsSceneDynamic && mSamplingMethod != TimeGatedSamplingMethod::DIRECT && mMaxBounces > 3)
+        if (mOptions.restir.isSceneDynamic && mOptions.sampling.samplingMethod != TimeGatedSamplingMethod::DIRECT && mOptions.pathTracing.maxBounces > 3)
         {
             mUIWarning = "Ellipsoidal sampling with a dynamic light supports at most 3 bounces.";
-            mSamplingMethod = previousSamplingMethod;
-            mMaxBounces = previousMaxBounces;
-            mIsSceneDynamic = previousSceneDynamic;
+            mOptions.sampling.samplingMethod = previousSamplingMethod;
+            mOptions.pathTracing.maxBounces = previousMaxBounces;
+            mOptions.restir.isSceneDynamic = previousSceneDynamic;
         }
         // Rebuild the sampler and programs: the emissive sampler's defines are only added when they are created.
-        if (mTriSampler != previousTriSampler)
+        if (mOptions.sampling.triSampler != previousTriSampler)
             mpEmissiveSampler.reset();
-        if (mSamplingMethod != previousSamplingMethod || mTriSampler != previousTriSampler)
+        if (mOptions.sampling.samplingMethod != previousSamplingMethod || mOptions.sampling.triSampler != previousTriSampler)
         {
             mpComputePass = nullptr;
             mpSpatialReusePass = nullptr;
@@ -1021,11 +881,11 @@ void TimeGatedReSTIRInline::prepareResources(RenderContext* pRenderContext, cons
 {
     DefineList defines = mpScene->getSceneDefines();
     defines.add(mpSampleGenerator->getDefines());
-    defines.add("IS_SCENE_DYNAMIC", mIsSceneDynamic ? "1" : "0");
-    defines.add("USE_SINGLE_CHANNEL", mUseSingleChannel ? "1" : "0");
-    defines.add("USE_IMPORTANCE_SAMPLING", mUseImportanceSampling ? "1" : "0");
-    defines.add("USE_ALPHA_TEST", mUseAlphaTest ? "1" : "0");
-    defines.add("IS_LIGHT_SOURCE_LASER", mIsLightSourceLaser ? "1" : "0");
+    defines.add("IS_SCENE_DYNAMIC", mOptions.restir.isSceneDynamic ? "1" : "0");
+    defines.add("USE_SINGLE_CHANNEL", mOptions.pathTracing.useSingleChannel ? "1" : "0");
+    defines.add("USE_IMPORTANCE_SAMPLING", mOptions.pathTracing.useImportanceSampling ? "1" : "0");
+    defines.add("USE_ALPHA_TEST", mOptions.pathTracing.useAlphaTest ? "1" : "0");
+    defines.add("IS_LIGHT_SOURCE_LASER", mOptions.pathTracing.isLightSourceLaser ? "1" : "0");
     
     // create helper program
     if (!mpReflectTypes)
@@ -1087,7 +947,7 @@ void TimeGatedReSTIRInline::prepareResources(RenderContext* pRenderContext, cons
         mpNeighborOffsets = createNeighborOffsetTexture(kNeighborOffsetCount);
     }
     
-    if (mUseTemporalReuse &&
+    if (mOptions.restir.useTemporalReuse &&
         (!mpTemporalVBuffer || any(mTemporalHistoryDimensions != targetDim) ||
          mpTemporalVBuffer->getFormat() != renderData.getTexture("vbuffer")->getFormat()))
     {
