@@ -138,7 +138,7 @@ private:
     /// Max number of indirect bounces (0 = none).
     uint mMaxBounces = 3;
     /// Compute direct illumination (otherwise indirect only).
-    bool mComputeDirect = true;
+    bool mComputeDirect = false;
     /// Use importance sampling for materials.
     bool mUseImportanceSampling = true;
 
@@ -176,7 +176,7 @@ private:
     float mTemporalHistoryLength = 20.0f;
 
     TimeGatedSamplingMethod mSamplingMethod = TimeGatedSamplingMethod::DIRECT;
-    EmissiveLightSamplerType mTriSampler = EmissiveLightSamplerType::Uniform;
+    EmissiveLightSamplerType mTriSampler = EmissiveLightSamplerType::LightBVH;
 
     float3 mLaserPosition = float3(0.0);
     float3 mLaserDirection = float3(1.0);
