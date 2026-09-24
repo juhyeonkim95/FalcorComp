@@ -35,7 +35,7 @@
 #include "Rendering/Lights/EmissiveUniformSampler.h"
 #include "../Shared/Configs/TransientHistogramConfig.h"
 #include "../Shared/Configs/PathTracingConfig.h"
-#include "../Shared/Configs/ReSTIRConfig.h"
+#include "../Shared/Configs/PathLengthAwareReSTIRConfig.h"
 
 using namespace Falcor;
 
@@ -97,7 +97,7 @@ private:
     {
         TransientHistogramConfig histogram;
         PathTracingConfig pathTracing;
-        ReSTIRConfig restir;
+        PathLengthAwareReSTIRConfig restir;
         bool useBinReuse = false; ///< Add adjacent bins of the same pixel as spatial reuse candidates.
     };
     Options mOptions;

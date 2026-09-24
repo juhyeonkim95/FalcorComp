@@ -35,7 +35,7 @@ static const std::unordered_map<std::string, GaugeMode> GaugeModeTable = {
 };
 
 /// Spatial and temporal reuse with path-length-aware shift mapping.
-struct ReSTIRConfig
+struct PathLengthAwareReSTIRConfig
 {
     uint spatialReuseIteration = 1;
     uint spatialReuseNeighborCount = 5;

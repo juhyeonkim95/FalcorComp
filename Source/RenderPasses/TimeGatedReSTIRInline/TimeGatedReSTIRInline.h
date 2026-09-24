@@ -36,7 +36,7 @@
 #include "../Shared/Configs/TimeGateConfig.h"
 #include "../Shared/Configs/EllipsoidalSamplingConfig.h"
 #include "../Shared/Configs/PathTracingConfig.h"
-#include "../Shared/Configs/ReSTIRConfig.h"
+#include "../Shared/Configs/PathLengthAwareReSTIRConfig.h"
 
 using namespace Falcor;
 
@@ -99,7 +99,7 @@ private:
         TimeGateConfig timeGate;
         EllipsoidalSamplingConfig ellipsoidalSampling;
         PathTracingConfig pathTracing;
-        ReSTIRConfig restir;
+        PathLengthAwareReSTIRConfig restir;
         bool isSceneDynamic = false;          ///< Keep the history when the light moves, re-evaluating reused paths.
         bool debugNewtonIterations = false;   ///< Adds the newtonStatistics and mappingDistance outputs.
         float timeGateWindowRough = 0.0f;     ///< Direct sampling: wide gate traced by some paths and shrunk into the gate.

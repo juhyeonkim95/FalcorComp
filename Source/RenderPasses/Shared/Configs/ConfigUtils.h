@@ -9,9 +9,9 @@ using namespace Falcor;
  * parses and serializes its own properties and draws its own UI controls (renderUI functions return
  * true when a value changed). Render passes compose the configs they need:
  *   TimeGatedPathTracerInline:          TimeGateConfig + EllipsoidalSamplingConfig + PathTracingConfig
- *   TimeGatedReSTIRInline:              TimeGateConfig + EllipsoidalSamplingConfig + PathTracingConfig + ReSTIRConfig
+ *   TimeGatedReSTIRInline:              TimeGateConfig + EllipsoidalSamplingConfig + PathTracingConfig + PathLengthAwareReSTIRConfig
  *   TransientHistogramPathTracerInline: TransientHistogramConfig + PathTracingConfig
- *   TransientHistogramReSTIRInline:     TransientHistogramConfig + PathTracingConfig + ReSTIRConfig
+ *   TransientHistogramReSTIRInline:     TransientHistogramConfig + PathTracingConfig + PathLengthAwareReSTIRConfig
  */
 
 template<typename T>
