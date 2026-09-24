@@ -59,6 +59,8 @@ EXCLUDED_SHADERS = {"RenderPasses", "Samples", "Tests", "Testing", "rtxdi", "Ren
 DATA_FOLDERS = ["framework"]
 # Libraries loaded with dlopen() at runtime, which ldd cannot see.
 DLOPEN_LIBRARIES = ["libslang-glslang.so", "libtbbmalloc.so.2"]
+# Python versions that falcorcomp wheels are built for (pybind11 v2.13.6 supports up to 3.13).
+PYTHON_REQUIRES = ">=3.9,<3.14"
 # System libraries that auditwheel must not bundle: the NVIDIA driver, and the user's libpython.
 REPAIR_EXCLUDES = ["libcuda.so.1", f"libpython{sys.version_info[0]}.{sys.version_info[1]}.so.1.0"]
 
@@ -204,7 +206,9 @@ setup(
     license="BSD-3-Clause; bundled third-party components are under their own licenses (THIRD_PARTY_NOTICES.md)",
     packages=["{PACKAGE}"],
     package_data={{"{PACKAGE}": {files!r}}},
-    python_requires="=={sys.version_info[0]}.{sys.version_info[1]}.*",
+    # The same range in every wheel: PyPI keeps one Requires-Python per release, taken from the first
+    # uploaded file. The cpXY wheel tags already select the wheel for each Python version.
+    python_requires="{PYTHON_REQUIRES}",
     install_requires=["numpy"],
     distclass=BinaryDistribution,
     cmdclass={{"install": PlatlibInstall}},
