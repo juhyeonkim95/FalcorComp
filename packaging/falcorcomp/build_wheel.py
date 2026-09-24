@@ -198,7 +198,7 @@ class PlatlibInstall(install):
 setup(
     name="{PACKAGE}",
     version="{VERSION}",
-    description="Falcor with time-of-flight rendering (ToF ReSTIR)",
+    description="GPU rendering for computational imaging, built on NVIDIA Falcor",
     long_description=open("README.md").read(),
     long_description_content_type="text/markdown",
     license="BSD-3-Clause; bundled third-party components are under their own licenses (THIRD_PARTY_NOTICES.md)",

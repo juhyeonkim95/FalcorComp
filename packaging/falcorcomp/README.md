@@ -1,19 +1,23 @@
-# falcorcomp
+# FalcorComp
 
-Falcor with time-of-flight render passes from *ToF ReSTIR: Time-of-Flight Rendering with Spatio-temporal Reservoir Resampling* (SIGGRAPH 2026).
+FalcorComp is a GPU renderer for computational imaging, built on NVIDIA's [Falcor](https://github.com/NVIDIAGameWorks/Falcor) rendering framework. It adds render passes that simulate imaging systems beyond conventional cameras, and it is installed and used as the Python package `falcorcomp`.
 
-falcorcomp is distributed as a binary wheel for Linux. It contains Falcor, its render passes and their shaders, so no separate Falcor build is needed.
+The current release covers time-of-flight imaging: time-gated and transient rendering, including the methods from *ToF ReSTIR: Time-of-Flight Rendering with Spatio-temporal Reservoir Resampling* (SIGGRAPH 2026). More computational imaging applications will be added in future releases.
+
+The package is a binary wheel for Linux. It contains Falcor, the render passes and their shaders, so no separate Falcor build is needed.
 
 ```python
 import falcorcomp as falcor
 testbed = falcor.Testbed(create_window=False)
 ```
 
-Included render passes:
+## Render passes
 
-- **Time-gated rendering:** `TimeGatedPathTracerInline`, `TimeGatedReSTIRInline`
-- **Transient rendering:** `TransientHistogramPathTracerInline`, `TransientHistogramReSTIRInline`
-- **Utility:** `VBufferRT`/`LaserVBufferRT`, `AccumulatePass`, `ToneMapper`, `TransientHistogramViewer`, `LaserPositionViewer`
+| Application | Render passes |
+|---|---|
+| Time-gated rendering | `TimeGatedPathTracerInline`, `TimeGatedReSTIRInline` |
+| Transient rendering | `TransientHistogramPathTracerInline`, `TransientHistogramReSTIRInline` |
+| Utilities | `VBufferRT`/`LaserVBufferRT`, `AccumulatePass`, `ToneMapper`, `TransientHistogramViewer`, `LaserPositionViewer` |
 
 Scene importers: pbrt, pyscene, Mitsuba, Assimp.
 
@@ -41,4 +45,4 @@ Compiled shaders are cached in `~/.cache/falcorcomp/`. Set `FALCOR_SHADER_CACHE_
 
 ## License
 
-Falcor is licensed under the BSD 3-Clause license by NVIDIA (`LICENSE.md`). The wheel also bundles third-party components under their own licenses, including NVIDIA proprietary ones (NVTT, the CUDA runtime, RTXDI); see `THIRD_PARTY_NOTICES.md` and `third_party_licenses/` in the installed package.
+FalcorComp is based on Falcor, which is licensed under the BSD 3-Clause license by NVIDIA (`LICENSE.md`). The wheel also bundles third-party components under their own licenses, including NVIDIA proprietary ones (NVTT, the CUDA runtime, RTXDI); see `THIRD_PARTY_NOTICES.md` and `third_party_licenses/` in the installed package.
