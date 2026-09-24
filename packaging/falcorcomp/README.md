@@ -21,7 +21,7 @@ Scene importers: pbrt, pyscene, Mitsuba, Assimp.
 
 - **Operating system:** Linux x86_64 with glibc 2.35 or newer (for example, Ubuntu 22.04 or later). Windows and macOS are not supported.
 - **GPU:** an NVIDIA GPU with hardware ray tracing (RTX), and a recent NVIDIA driver with Vulkan support.
-- **Python:** 3.9 or 3.10, including its shared library (`libpython3.10.so.1.0` for Python 3.10). Conda environments and most system Pythons include it; on Debian or Ubuntu, install it with `sudo apt install libpython3.10` (or `libpython3.9`). Python 3.11 and newer are not supported yet, because Falcor uses pybind11 2.9.
+- **Python:** 3.9 to 3.13, including its shared library (for example, `libpython3.10.so.1.0` for Python 3.10). Conda environments and most system Pythons include it; on Debian or Ubuntu, install it with `sudo apt install libpython3.X` for your version `3.X`.
 
 ## Installation
 
