@@ -130,6 +130,7 @@ void TimeGatedReSTIRInline::parseProperties(const Properties& props)
         else
             logWarning("Unknown property '{}' in TimeGatedReSTIRInline properties.", key);
     }
+    mOptions.timeGate.applyTimeCenter(props);
     if (mOptions.sampling.samplingMethod != TimeGatedSamplingMethod::DIRECT &&
         mOptions.sampling.triSampler != EmissiveLightSamplerType::Uniform && mOptions.sampling.triSampler != EmissiveLightSamplerType::LightBVH)
         FALCOR_THROW("Ellipsoidal initial sampling requires the Uniform or LightBVH triangle sampler.");

@@ -120,6 +120,7 @@ void TimeGatedPathTracerInline::parseProperties(const Properties& props)
         else
             logWarning("Unknown property '{}' in TimeGatedPathTracerInline properties.", key);
     }
+    mOptions.timeGate.applyTimeCenter(props);
 }
 
 Properties TimeGatedPathTracerInline::getProperties() const

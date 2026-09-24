@@ -66,13 +66,15 @@ struct TimeGateConfig
             FALCOR_THROW("The gate range must be finite with timeMin <= timeMax.");
     }
 
-    /// Returns false if `key` is not a time gate property.
+    /// Returns false if `key` is not a time gate property. "timeCenter" is applied by applyTimeCenter().
     bool parse(const std::string& key, const Properties::ConstValue& value)
     {
         if (key == "timeMin")
             timeMin = value;
         else if (key == "timeMax")
             timeMax = value;
+        else if (key == "timeCenter")
+            ; // Applied after all properties, so it overrides timeMin and timeMax in any order.
         else if (key == "timeBin")
             timeBin = value;
         else if (key == "timeGateWindow")
@@ -84,6 +86,13 @@ struct TimeGateConfig
         else
             return false;
         return true;
+    }
+
+    /// Optional "timeCenter": a fixed gate, timeMin = timeMax = timeCenter. Call after parsing.
+    void applyTimeCenter(const Properties& props)
+    {
+        if (props.has("timeCenter"))
+            timeMin = timeMax = props.get<float>("timeCenter");
     }
 
     void serialize(Properties& props) const
