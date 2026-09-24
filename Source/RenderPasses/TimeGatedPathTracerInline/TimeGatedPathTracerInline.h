@@ -75,7 +75,7 @@ private:
     struct Options
     {
         uint maxBounces = 3;
-        bool computeDirect = true;
+        bool computeDirect = false;
         bool showLaserSpot = false; ///< Debug overlay: un-gated laser spot seen from the primary hit.
         bool useImportanceSampling = true;
         float timeGateWindow = 0.05f;
@@ -86,7 +86,7 @@ private:
         bool shiftGate = false; ///< Advance the gate one bin per frame, wrapping from timeMax to timeMin.
         float specularRoughnessThreshold = 0.25f;
         TimeGatedSamplingMethod samplingMethod = TimeGatedSamplingMethod::DIRECT;
-        EmissiveLightSamplerType triSampler = EmissiveLightSamplerType::Uniform;
+        EmissiveLightSamplerType triSampler = EmissiveLightSamplerType::LightBVH;
         bool laserCollocated = false;
         bool useAlphaTest = false;
         bool useSingleChannel = false;
