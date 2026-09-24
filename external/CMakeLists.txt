@@ -41,8 +41,10 @@ add_subdirectory(glfw)
 add_library(imgui INTERFACE)
 target_include_directories(imgui INTERFACE imgui)
 
-# pybind11
+# pybind11 (copied into the repository, see pybind11/FALCOR.md)
 message(STATUS "Configure pybind11")
+# Use the Python found above instead of pybind11's legacy search, which may pick another interpreter.
+set(PYBIND11_FINDPYTHON ON)
 add_subdirectory(pybind11)
 
 # vulkan-headers

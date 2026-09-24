@@ -64,7 +64,7 @@ set(FALCOR_HAS_VULKAN ON)
 # git submodules
 # -----------------------------------------------------------------------------
 
-if(NOT EXISTS ${CMAKE_SOURCE_DIR}/external/pybind11/CMakeLists.txt)
+if(NOT EXISTS ${CMAKE_SOURCE_DIR}/external/glfw/CMakeLists.txt)
     message(STATUS "Updating git submodules ...")
     find_package(Git REQUIRED)
     execute_process(
