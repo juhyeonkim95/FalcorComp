@@ -47,11 +47,16 @@ const ChannelList kInputChannels = {
 };
 
 const ChannelList kOutputChannels = {
-    { "output", "gOutput", "The input with the laser spot", false, ResourceFormat::RGBA32Float },
+    { "output", "gOutput", "The input with the laser spot and cone", false, ResourceFormat::RGBA32Float },
 };
 
 const char kShowSpot[] = "showSpot";
 const char kSpotScale[] = "spotScale";
+const char kSpotColor[] = "spotColor";
+const char kShowCone[] = "showCone";
+const char kConeColor[] = "coneColor";
+const char kConeDensity[] = "coneDensity";
+const char kBeamRadius[] = "beamRadius";
 } // namespace
 
 LaserPositionViewer::LaserPositionViewer(ref<Device> pDevice, const Properties& props) : RenderPass(pDevice)
@@ -62,6 +67,16 @@ LaserPositionViewer::LaserPositionViewer(ref<Device> pDevice, const Properties& 
             mShowSpot = value;
         else if (key == kSpotScale)
             mSpotScale = value;
+        else if (key == kSpotColor)
+            mSpotColor = value;
+        else if (key == kShowCone)
+            mShowCone = value;
+        else if (key == kConeColor)
+            mConeColor = value;
+        else if (key == kConeDensity)
+            mConeDensity = value;
+        else if (key == kBeamRadius)
+            mBeamRadius = value;
         else
             logWarning("Unknown property '{}' in LaserPositionViewer properties.", key);
     }
@@ -73,6 +88,11 @@ Properties LaserPositionViewer::getProperties() const
     Properties props;
     props[kShowSpot] = mShowSpot;
     props[kSpotScale] = mSpotScale;
+    props[kSpotColor] = mSpotColor;
+    props[kShowCone] = mShowCone;
+    props[kConeColor] = mConeColor;
+    props[kConeDensity] = mConeDensity;
+    props[kBeamRadius] = mBeamRadius;
     return props;
 }
 
@@ -108,6 +128,11 @@ void LaserPositionViewer::execute(RenderContext* pRenderContext, const RenderDat
     var["CB"]["gFrameDim"] = frameDim;
     var["CB"]["gFrameCount"] = mFrameCount;
     var["CB"]["gSpotScale"] = mSpotScale;
+    var["CB"]["gSpotColor"] = mSpotColor;
+    var["CB"]["gShowCone"] = uint(mShowCone);
+    var["CB"]["gConeColor"] = mConeColor;
+    var["CB"]["gConeDensity"] = mConeDensity;
+    var["CB"]["gBeamRadius"] = mBeamRadius;
     var["CB"]["gShowSpot"] = uint(mShowSpot);
     LaserState::resolve(renderData).bindShaderData(var["CB"]);
     InlinePass::bindChannels(var, renderData, kInputChannels);
@@ -120,12 +145,25 @@ void LaserPositionViewer::renderUI(Gui::Widgets& widget)
 {
     bool dirty = false;
     dirty |= widget.checkbox("Show laser spot", mShowSpot);
-    widget.tooltip("Add the light the laser puts on the surface seen in each pixel to the red channel. It is not "
-                   "time gated. A collimated beam (laserAngle 0) lights no pixel.", true);
+    widget.tooltip("Add the light the laser puts on the surface seen in each pixel, not time gated. A collimated "
+                   "beam (laserAngle 0) lights no pixel.", true);
     if (mShowSpot)
     {
         dirty |= widget.var("Spot scale", mSpotScale, 0.f, 1e6f);
-        widget.tooltip("Multiplies the spot's radiance.", true);
+        widget.tooltip("Multiplies the spot's radiance (average of RGB).", true);
+        dirty |= widget.rgbColor("Spot color", mSpotColor);
+    }
+
+    dirty |= widget.checkbox("Show laser cone", mShowCone);
+    widget.tooltip("Draw the laser's cone like light in fog: it starts at the laser with radius Beam radius, widens "
+                   "at the cone angle (laserAngle) and ends where the central beam hits the scene.", true);
+    if (mShowCone)
+    {
+        dirty |= widget.rgbColor("Cone color", mConeColor);
+        dirty |= widget.var("Cone density", mConeDensity, 0.f, 1e6f);
+        widget.tooltip("Opacity per unit length inside the cone: opacity = 1 - exp(-density * length).", true);
+        dirty |= widget.var("Beam radius", mBeamRadius, 0.f, 10.f, 0.001f);
+        widget.tooltip("Cone radius at the laser, in scene units; keeps a collimated beam visible.", true);
     }
 
     if (dirty)

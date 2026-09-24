@@ -1,4 +1,4 @@
-// Adds the laser spot (red channel) to the input image.
+// Draws the laser spot and the laser's cone over the input image.
 #include "Scene/SceneDefines.slangh"
 #include "Utils/Math/MathConstants.slangh"
 
@@ -14,8 +14,13 @@ cbuffer CB
     float3 laserDirection;
     float3 laserPower;
     float laserCosAngle;
+    float3 gSpotColor;
     float gSpotScale;
+    float3 gConeColor;
+    float gConeDensity;
+    float gBeamRadius;
     uint gShowSpot;
+    uint gShowCone;
 }
 
 Texture2D<PackedHitInfo> gVBuffer;
@@ -48,6 +53,83 @@ float3 laserSpot(uint2 pixel)
     return inCone ? material.eval(sd, wi, sg) * laserPower / distanceSq : float3(0.f);
 }
 
+// Length of the part of [lo, hi] where the quadratic a t^2 + b t + c is <= 0.
+float lengthWhereNonPositive(float a, float b, float c, float lo, float hi)
+{
+    if (!(hi > lo))
+        return 0.f;
+    // Split [lo, hi] at the real roots and test the middle of each piece.
+    float roots[2] = { lo, lo };
+    if (abs(a) > 1e-12f)
+    {
+        float discriminant = b * b - 4.f * a * c;
+        if (discriminant >= 0.f)
+        {
+            float s = sqrt(discriminant);
+            roots[0] = (-b - s) / (2.f * a);
+            roots[1] = (-b + s) / (2.f * a);
+        }
+    }
+    else if (abs(b) > 1e-12f)
+    {
+        roots[0] = roots[1] = -c / b;
+    }
+    float points[4] = { lo, clamp(min(roots[0], roots[1]), lo, hi), clamp(max(roots[0], roots[1]), lo, hi), hi };
+    float inside = 0.f;
+    for (uint i = 0; i < 3; ++i)
+    {
+        float t = 0.5f * (points[i] + points[i + 1]);
+        if ((a * t + b) * t + c <= 0.f)
+            inside += points[i + 1] - points[i];
+    }
+    return inside;
+}
+
+// Distance the camera ray of `pixel` travels inside the laser's cone before it hits the scene. The cone starts at
+// the laser with radius gBeamRadius, widens at the cone angle, and ends where the central beam hits the scene.
+float lengthInCone(uint2 pixel)
+{
+    float3 origin = gScene.camera.getPosition();
+    float3 dir = normalize(getPrimaryRayDir(pixel));
+    HitInfo hit = HitInfo(gVBuffer[pixel]);
+    float tSurface = hit.isValid() ? length(loadShadingData(hit, origin, dir).posW - origin) : FLT_MAX;
+
+    SceneRayQuery<0> query;
+    float beamLength;
+    if (!query.traceRay(Ray(laserOrigin, laserDirection, 0.f, FLT_MAX), beamLength).isValid())
+        return 0.f;
+
+    // Points p with |p - apex - z d|^2 <= (r0 + k z)^2 and 0 <= z <= beamLength, z = dot(p - apex, d).
+    float cosAngle = clamp(laserCosAngle, 0.f, 1.f);
+    float k = sqrt(max(1.f - cosAngle * cosAngle, 0.f)) / max(cosAngle, 1e-6f); // tan of the half-angle
+    float3 w = origin - laserOrigin;
+    float z0 = dot(w, laserDirection);
+    float dz = dot(dir, laserDirection);
+    float3 wPerp = w - z0 * laserDirection;
+    float3 dirPerp = dir - dz * laserDirection;
+    float c0 = gBeamRadius + k * z0;
+    float c1 = k * dz;
+    float a = dot(dirPerp, dirPerp) - c1 * c1;
+    float b = 2.f * (dot(wPerp, dirPerp) - c0 * c1);
+    float c = dot(wPerp, wPerp) - c0 * c0;
+
+    // Ray parameters where 0 <= z <= beamLength.
+    float lo = 0.f;
+    float hi = tSurface;
+    if (abs(dz) > 1e-8f)
+    {
+        float t0 = -z0 / dz;
+        float t1 = (beamLength - z0) / dz;
+        lo = max(lo, min(t0, t1));
+        hi = min(hi, max(t0, t1));
+    }
+    else if (z0 < 0.f || z0 > beamLength)
+    {
+        return 0.f;
+    }
+    return lengthWhereNonPositive(a, b, c, lo, hi);
+}
+
 [numthreads(16, 16, 1)]
 void main(uint3 dispatchThreadId: SV_DispatchThreadID)
 {
@@ -57,6 +139,14 @@ void main(uint3 dispatchThreadId: SV_DispatchThreadID)
 
     float4 color = is_valid(gInput) ? gInput[pixel] : float4(0.f, 0.f, 0.f, 1.f);
     if (gShowSpot != 0)
-        color.r += gSpotScale * laserSpot(pixel).r;
+    {
+        float3 spot = laserSpot(pixel);
+        color.rgb += gSpotScale * (spot.r + spot.g + spot.b) / 3.f * gSpotColor;
+    }
+    if (gShowCone != 0)
+    {
+        float opacity = 1.f - exp(-gConeDensity * lengthInCone(pixel));
+        color.rgb = lerp(color.rgb, gConeColor, opacity);
+    }
     gOutput[pixel] = color;
 }

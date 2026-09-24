@@ -35,14 +35,17 @@
 
 using namespace Falcor;
 
-/** Shows where the laser is: adds the laser spot, the light the laser puts on the surface seen in each pixel
- * (not time gated), to the red channel of an optional input image. A collimated beam lights no pixel.
+/** Shows where the laser is, drawn over an optional input image:
+ * - the laser spot: the light the laser puts on the surface seen in each pixel (not time gated), tinted with
+ *   spotColor; a collimated beam lights no pixel;
+ * - the laser's cone, drawn like light in fog: it starts at the laser with radius beamRadius (so a collimated beam
+ *   shows as a thin cylinder), widens at the cone angle and ends where the central beam hits the scene.
  * The laser is the one the laser pass (LaserVBufferRT) publishes this frame.
  */
 class LaserPositionViewer : public RenderPass
 {
 public:
-    FALCOR_PLUGIN_CLASS(LaserPositionViewer, "LaserPositionViewer", "Draw the laser spot over an image.");
+    FALCOR_PLUGIN_CLASS(LaserPositionViewer, "LaserPositionViewer", "Draw the laser spot and cone over an image.");
 
     static ref<LaserPositionViewer> create(ref<Device> pDevice, const Properties& props)
     {
@@ -59,7 +62,12 @@ public:
 
 private:
     bool mShowSpot = true;
-    float mSpotScale = 1.f;          ///< Multiplies the spot's radiance before it is added to the red channel.
+    float mSpotScale = 20.f;              ///< Multiplies the spot's radiance (average of RGB).
+    float3 mSpotColor = float3(1, 0, 0);  ///< Tint of the spot.
+    bool mShowCone = true;
+    float3 mConeColor = float3(1, 0, 0);
+    float mConeDensity = 20.f;            ///< Opacity per unit length inside the cone: 1 - exp(-density * length).
+    float mBeamRadius = 0.01f;            ///< Cone radius at the laser, in scene units.
 
     bool mOptionsChanged = false;
     uint mFrameCount = 0;
