@@ -2,6 +2,22 @@
 #include "ConfigUtils.h"
 #include "RenderGraph/RenderPass.h"
 
+/// Channel kept by single-channel rendering (SINGLE_CHANNEL in Shared/Utils/SingleChannel.slang).
+enum class SingleChannel : uint32_t
+{
+    Luminance = 0,
+    Red = 1,
+    Green = 2,
+    Blue = 3,
+};
+
+inline const std::unordered_map<std::string, SingleChannel> kSingleChannels = {
+    {"luminance", SingleChannel::Luminance},
+    {"red", SingleChannel::Red},
+    {"green", SingleChannel::Green},
+    {"blue", SingleChannel::Blue},
+};
+
 /// Camera paths and the output. The light is set on the laser pass (LaserVBufferRT, see LaserState).
 struct PathTracingConfig
 {
@@ -11,6 +27,7 @@ struct PathTracingConfig
     bool useImportanceSampling = true;
     bool useAlphaTest = false;
     bool useSingleChannel = false;
+    SingleChannel singleChannel = SingleChannel::Red; ///< Channel kept by useSingleChannel.
 
     void validate() const
     {
@@ -27,6 +44,7 @@ struct PathTracingConfig
         defines.add("USE_IMPORTANCE_SAMPLING", useImportanceSampling ? "1" : "0");
         defines.add("USE_ALPHA_TEST", useAlphaTest ? "1" : "0");
         defines.add("USE_SINGLE_CHANNEL", useSingleChannel ? "1" : "0");
+        defines.add("SINGLE_CHANNEL", std::to_string((uint32_t)singleChannel));
         return defines;
     }
 
@@ -44,6 +62,8 @@ struct PathTracingConfig
             useAlphaTest = value;
         else if (key == "useSingleChannel")
             useSingleChannel = value;
+        else if (key == "singleChannel")
+            singleChannel = parseEnumProperty(kSingleChannels, std::string(value), key);
         else
             return false;
         return true;
@@ -57,6 +77,7 @@ struct PathTracingConfig
         props["useImportanceSampling"] = useImportanceSampling;
         props["useAlphaTest"] = useAlphaTest;
         props["useSingleChannel"] = useSingleChannel;
+        props["singleChannel"] = enumPropertyName(kSingleChannels, singleChannel);
     }
 
     /// Samples per pixel, max bounces and BSDF importance sampling. `maxBouncesNote` is appended to its tooltip.
@@ -87,7 +108,23 @@ struct PathTracingConfig
             widget.tooltip("Include the shortest path, camera -> primary hit -> laser spot (time gated).", true);
 
             dirty |= widget.checkbox("Single channel", useSingleChannel);
-            widget.tooltip("Copy the red channel to green and blue.", true);
+            widget.tooltip("Keep one channel. The time-gated path tracer writes it to all three; the histogram passes "
+                           "store one float per bin.", true);
+            if (useSingleChannel)
+            {
+                static const Gui::DropdownList kChannelList = {
+                    {(uint32_t)SingleChannel::Luminance, "Luminance"},
+                    {(uint32_t)SingleChannel::Red, "Red"},
+                    {(uint32_t)SingleChannel::Green, "Green"},
+                    {(uint32_t)SingleChannel::Blue, "Blue"},
+                };
+                uint32_t channel = (uint32_t)singleChannel;
+                if (widget.dropdown("Channel", kChannelList, channel))
+                {
+                    singleChannel = (SingleChannel)channel;
+                    dirty = true;
+                }
+            }
         }
         dirty |= widget.checkbox("Alpha test", useAlphaTest);
         widget.tooltip("Honor alpha-tested (cutout) materials when tracing rays.", true);

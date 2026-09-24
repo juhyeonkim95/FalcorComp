@@ -1,4 +1,5 @@
 import RenderPasses.Shared.Utils.LoadShadingData;
+import RenderPasses.Shared.Utils.SingleChannel;
 import RenderPasses.Shared.Lights.LaserLightSampler;
 import RenderPasses.Shared.Lights.LightConnection;
 #include "Scene/SceneDefines.slangh"
@@ -91,7 +92,7 @@ float3 getPrimaryRayDir(uint2 launchIndex, uint2 launchDim, const Camera camera)
 void addHistogramBin(uint2 pixel, uint bin, float3 radiance, float weight = 1.f)
 {
 #if USE_SINGLE_CHANNEL
-    gTransientHistogram[uint3(pixel, bin)] += radiance.x * weight;
+    gTransientHistogram[uint3(pixel, bin)] += selectChannel(radiance) * weight;
 #else
     gTransientHistogram[uint3(pixel, bin)] += float4(radiance, 1.f) * weight;
 #endif

@@ -1,3 +1,4 @@
+import RenderPasses.Shared.Utils.SingleChannel;
 import Utils.Transient.TransientUtils;
 import RenderPasses.Shared.ReSTIR.SpatialReuse;
 
@@ -24,7 +25,7 @@ void main(uint3 dispatchThreadId: SV_DispatchThreadID)
         float gateCenter = tmin + (float(bin) + 0.5f) * tunit;
         float3 density = gSpatialReuse.resampleGate(pixel, tbin, bin, gateCenter) / tunit;
 #if USE_SINGLE_CHANNEL
-        gTransientHistogram[uint3(pixel, bin)] = density.x;
+        gTransientHistogram[uint3(pixel, bin)] = selectChannel(density);
 #else
         gTransientHistogram[uint3(pixel, bin)] = float4(density, 1.f);
 #endif

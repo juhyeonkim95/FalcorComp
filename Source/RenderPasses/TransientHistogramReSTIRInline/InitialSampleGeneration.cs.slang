@@ -1,6 +1,7 @@
 #include "Scene/SceneDefines.slangh"
 #include "Utils/Math/MathConstants.slangh"
 
+import RenderPasses.Shared.Utils.SingleChannel;
 import Utils.Math.MathHelpers;
 import Utils.Geometry.GeometryHelpers;
 import Utils.Sampling.SampleGenerator;
@@ -292,7 +293,7 @@ float3 tracePath(uint2 pixel, uint2 frameDim)
         float3 radiance = reservoir.W * reservoir.f;
         integratedRadiance += radiance;
 #if USE_SINGLE_CHANNEL
-        gTransientHistogram[uint3(pixel, bin)] = radiance.x / tunit;
+        gTransientHistogram[uint3(pixel, bin)] = selectChannel(radiance) / tunit;
 #else
         gTransientHistogram[uint3(pixel, bin)] = float4(radiance / tunit, 1.f);
 #endif
