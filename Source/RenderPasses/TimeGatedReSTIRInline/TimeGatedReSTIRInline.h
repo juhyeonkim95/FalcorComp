@@ -33,6 +33,7 @@
 #include "../Shared/Configs/TimeGateConfig.h"
 #include "../Shared/Configs/EllipsoidalSamplingConfig.h"
 #include "../Shared/Configs/PathTracingConfig.h"
+#include "../Shared/Lights/LaserState.h"
 #include "../Shared/Configs/PathLengthAwareReSTIRConfig.h"
 #include "../Shared/Utils/InlinePassUtils.h"
 

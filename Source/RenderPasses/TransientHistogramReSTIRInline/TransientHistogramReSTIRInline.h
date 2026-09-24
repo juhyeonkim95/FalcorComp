@@ -32,6 +32,7 @@
 #include "Utils/Transient/Transient.h"
 #include "../Shared/Configs/TransientHistogramConfig.h"
 #include "../Shared/Configs/PathTracingConfig.h"
+#include "../Shared/Lights/LaserState.h"
 #include "../Shared/Configs/PathLengthAwareReSTIRConfig.h"
 #include "../Shared/Utils/InlinePassUtils.h"
 

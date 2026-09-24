@@ -12,6 +12,7 @@ def create_histogram_graph(testbed, scene, method, spp, bins, initial_window_rat
         "samplePattern": "Center", "sampleCount": 1, "useAlphaTest": True,
         "laserPosition": scene.light_position, "laserDirection": scene.light_direction,
         "laserPower": scene.light_power, "laserAngle": scene.light_angle_degrees,
+        "laserCollocated": False, "isLightSourceLaser": scene.is_laser,
     })
     graph.create_pass("Tracer", "TransientHistogramPathTracerInline", {
         "samplingMethod": "tri_approx" if method == "tri_approx" else "direct",
@@ -20,8 +21,7 @@ def create_histogram_graph(testbed, scene, method, spp, bins, initial_window_rat
         "initialWindowRatio": initial_window_ratio,
         "samplesPerPixel": spp, "maxBounces": scene.max_bounces,
         "computeDirect": False, "useImportanceSampling": True, "useAlphaTest": True,
-        "useSingleChannel": True, "isLightSourceLaser": scene.is_laser,
-        "laserCollocated": False,
+        "useSingleChannel": True,
         "timeMin": scene.gate_min, "timeMax": scene.gate_max, "timeBin": bins,
     })
     for source, target in (("VBuffer.vbuffer", "Tracer.vbuffer"), ("VBuffer.viewW", "Tracer.viewW"),

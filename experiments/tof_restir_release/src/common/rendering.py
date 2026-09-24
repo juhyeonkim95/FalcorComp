@@ -94,22 +94,12 @@ def create_graph(testbed, method, scene, spp_per_frame, spatial, *, statistics=F
     graph.create_pass("VBuffer", "VBufferRT", {
         "samplePattern": "Center", "sampleCount": 1, "useAlphaTest": True,
     })
-    light_position = scene.light_position
-    light_direction = scene.light_direction
-    if scene.light_collocated:
-        # The laser visibility pass must use the same pose as the tracer.
-        camera = testbed.scene.camera
-        position, target = camera.position, camera.target
-        light_position = [float(position.x), float(position.y), float(position.z)]
-        light_direction = [float(target.x - position.x), float(target.y - position.y), float(target.z - position.z)]
-        norm = math.sqrt(sum(v * v for v in light_direction))
-        if not math.isfinite(norm) or norm <= 0:
-            raise ValueError("Camera direction must be finite and nonzero for a collocated light")
-        light_direction = [v / norm for v in light_direction]
+    # A collocated laser follows the camera; the laser pass publishes it for the tracer.
     graph.create_pass("Laser", "LaserVBufferRT", {
         "samplePattern": "Center", "sampleCount": 1, "useAlphaTest": True,
-        "laserPosition": light_position, "laserDirection": light_direction,
+        "laserPosition": scene.light_position, "laserDirection": scene.light_direction,
         "laserPower": scene.light_power, "laserAngle": scene.light_angle_degrees,
+        "laserCollocated": scene.light_collocated, "isLightSourceLaser": scene.is_laser,
     })
     properties = {
         "samplingMethod": sampling_method, "emissiveSampler": triangle_sampler,
@@ -118,7 +108,6 @@ def create_graph(testbed, method, scene, spp_per_frame, spatial, *, statistics=F
         "useImportanceSampling": True, "useAlphaTest": True,
         "timeGateMode": "box", "timeGateWindow": scene.gate_width,
         "timeMin": scene.gate_center, "timeMax": scene.gate_center, "timeBin": 1,
-        "laserCollocated": scene.light_collocated, "isLightSourceLaser": scene.is_laser,
         "useSingleChannel": False,
     }
     if specular_roughness_threshold_ellipsoid is not None:

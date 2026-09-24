@@ -140,6 +140,7 @@ RenderPassReflection TimeGatedPathTracerInline::reflect(const CompileData& compi
 DefineList TimeGatedPathTracerInline::getShaderDefines(const RenderData& renderData) const
 {
     DefineList defines = mOptions.pathTracing.getDefines();
+    defines.add(LaserState::resolve(renderData).getDefines());
     defines.add(InlinePass::getSceneLightDefines(*mpScene));
 
     defines.add("LIGHT_SAMPLING_METHOD", std::to_string((uint32_t)mOptions.ellipsoidalSampling.samplingMethod));
@@ -163,7 +164,7 @@ void TimeGatedPathTracerInline::bindShaderData(const ShaderVar& var, const Rende
     var["CB"]["gPRNGDimension"] = InlinePass::getPRNGDimension(renderData);
     var["CB"]["specularRoughnessThreshold"] = mOptions.ellipsoidalSampling.ellipsoidRoughnessThreshold;
     var["CB"]["samplesPerPixel"] = mOptions.pathTracing.samplesPerPixel;
-    mOptions.pathTracing.resolveLaser(renderData, *mpScene).bindShaderData(var["CB"]);
+    LaserState::resolve(renderData).bindShaderData(var["CB"]);
     mOptions.timeGate.bindShaderData(var["TimeGate"], mGate);
 
     InlinePass::bindChannels(var, renderData, kInputChannels);
@@ -220,9 +221,6 @@ void TimeGatedPathTracerInline::renderUI(Gui::Widgets& widget)
         dirty |= options.pathTracing.renderSamplingUI(group, " Each vertex is connected to the laser spot.");
         dirty |= options.ellipsoidalSampling.renderUI(group, true);
     }
-
-    if (auto group = widget.group("Light", true))
-        dirty |= options.pathTracing.renderLightUI(group);
 
     if (auto group = widget.group("Output", true))
         dirty |= options.pathTracing.renderOutputUI(group, true);

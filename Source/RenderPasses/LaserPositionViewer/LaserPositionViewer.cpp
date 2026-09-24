@@ -52,7 +52,6 @@ const ChannelList kOutputChannels = {
 
 const char kShowSpot[] = "showSpot";
 const char kSpotScale[] = "spotScale";
-const char kLaserCollocated[] = "laserCollocated";
 } // namespace
 
 LaserPositionViewer::LaserPositionViewer(ref<Device> pDevice, const Properties& props) : RenderPass(pDevice)
@@ -63,8 +62,6 @@ LaserPositionViewer::LaserPositionViewer(ref<Device> pDevice, const Properties& 
             mShowSpot = value;
         else if (key == kSpotScale)
             mSpotScale = value;
-        else if (key == kLaserCollocated)
-            mLaserCollocated = value;
         else
             logWarning("Unknown property '{}' in LaserPositionViewer properties.", key);
     }
@@ -76,7 +73,6 @@ Properties LaserPositionViewer::getProperties() const
     Properties props;
     props[kShowSpot] = mShowSpot;
     props[kSpotScale] = mSpotScale;
-    props[kLaserCollocated] = mLaserCollocated;
     return props;
 }
 
@@ -113,7 +109,7 @@ void LaserPositionViewer::execute(RenderContext* pRenderContext, const RenderDat
     var["CB"]["gFrameCount"] = mFrameCount;
     var["CB"]["gSpotScale"] = mSpotScale;
     var["CB"]["gShowSpot"] = uint(mShowSpot);
-    LaserState::resolve(renderData, *mpScene, mLaserCollocated).bindShaderData(var["CB"]);
+    LaserState::resolve(renderData).bindShaderData(var["CB"]);
     InlinePass::bindChannels(var, renderData, kInputChannels);
     InlinePass::bindChannels(var, renderData, kOutputChannels);
     mpPass->execute(pRenderContext, uint3(frameDim, 1));
@@ -131,10 +127,6 @@ void LaserPositionViewer::renderUI(Gui::Widgets& widget)
         dirty |= widget.var("Spot scale", mSpotScale, 0.f, 1e6f);
         widget.tooltip("Multiplies the spot's radiance.", true);
     }
-
-    dirty |= widget.checkbox("Laser collocated", mLaserCollocated);
-    widget.tooltip("Use a laser at the camera, aimed at the camera target, as the tracers' laserCollocated does, "
-                   "instead of the laser pass's position and direction.", true);
 
     if (dirty)
         mOptionsChanged = true;

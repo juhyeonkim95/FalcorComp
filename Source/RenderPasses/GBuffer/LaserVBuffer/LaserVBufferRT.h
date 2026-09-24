@@ -28,6 +28,7 @@
 #pragma once
 #include "../GBufferBase.h"
 #include "Utils/Sampling/SampleGenerator.h"
+#include "../../Shared/Lights/LaserState.h"
 
 using namespace Falcor;
 
@@ -88,6 +89,8 @@ private:
     float3 mLaserPower = float3(1,1,1);
     float mLaserCosAngle = 0.0;
     float3 mLaserVelocity = float3(0.0);
+    bool mLaserCollocated = false;   ///< Place the laser at the camera, aimed at the camera target.
+    bool mIsLightSourceLaser = true; ///< The light is the spot the beam hits; otherwise a point light at the laser.
     
     struct
     {

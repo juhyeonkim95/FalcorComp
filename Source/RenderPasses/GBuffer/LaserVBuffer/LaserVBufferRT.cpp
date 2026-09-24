@@ -43,6 +43,8 @@ const char kLaserDirection[] = "laserDirection";
 const char kLaserPower[] = "laserPower";
 const char kLaserAngle[] = "laserAngle";
 const char kLaserVelocity[] = "laserVelocity";
+const char kLaserCollocated[] = "laserCollocated";
+const char kIsLightSourceLaser[] = "isLightSourceLaser";
 
 
 // Ray tracing settings that affect the traversal stack size. Set as small as possible.
@@ -124,10 +126,20 @@ void LaserVBufferRT::execute(RenderContext* pRenderContext, const RenderData& re
             renderData.getDictionary()[Falcor::kRenderPassPRNGDimension] = mComputeDOF ? 2u : 0u;
         }
         
-        renderData.getDictionary()["laserPosition"] = mLaserPosition;
-        renderData.getDictionary()["laserDirection"] = mLaserDirection;
-        renderData.getDictionary()["laserPower"] = mLaserPower;
-        renderData.getDictionary()["laserCosAngle"] = mLaserCosAngle;
+        if (mLaserCollocated)
+        {
+            const auto& pCamera = mpScene->getCamera();
+            mLaserPosition = pCamera->getPosition();
+            mLaserDirection = normalize(pCamera->getTarget() - pCamera->getPosition());
+        }
+        // The passes that use the laser read it back with LaserState::resolve().
+        LaserState laser;
+        laser.origin = mLaserPosition;
+        laser.direction = mLaserDirection;
+        laser.power = mLaserPower;
+        laser.cosAngle = mLaserCosAngle;
+        laser.isLaser = mIsLightSourceLaser;
+        laser.publish(renderData);
 
         mUseTraceRayInline ? executeCompute(pRenderContext, renderData) : executeRaytrace(pRenderContext, renderData);
         mUpdateFlags = IScene::UpdateFlags::None;
@@ -193,6 +205,14 @@ void LaserVBufferRT::renderUI(Gui::Widgets& widget)
     }
     widget.tooltip("Half-angle of the laser cone in degrees. 0 = collimated beam.", true);
 
+    dirty |= widget.checkbox("Laser source", mIsLightSourceLaser);
+    widget.tooltip("On: the light is the spot where the laser beam hits the scene, and the beam length adds to the "
+                   "path length.\nOff: a point light at the laser position.", true);
+
+    dirty |= widget.checkbox("Laser collocated", mLaserCollocated);
+    widget.tooltip("Place the laser at the camera, aimed at the camera target, instead of at laserPosition and "
+                   "laserDirection. The laser follows the camera when it moves.", true);
+
     // If rendering options that modify the output have changed, set flag to indicate that.
     // In execute() we will pass the flag to other passes for reset of temporal data etc.
     if (dirty)
@@ -208,6 +228,8 @@ Properties LaserVBufferRT::getProperties() const
     props[kUseDOF] = mUseDOF;
     props[kLaserPosition] = mLaserPosition;
     props[kLaserDirection] = mLaserDirection;
+    props[kLaserCollocated] = mLaserCollocated;
+    props[kIsLightSourceLaser] = mIsLightSourceLaser;
     return props;
 }
 
@@ -244,6 +266,10 @@ void LaserVBufferRT::parseProperties(const Properties& props)
             mLaserPower = value;
         else if (key == kLaserVelocity)
             mLaserVelocity = value;
+        else if (key == kLaserCollocated)
+            mLaserCollocated = value;
+        else if (key == kIsLightSourceLaser)
+            mIsLightSourceLaser = value;
         // TODO: Check for unparsed fields, including those parsed in base classes.
     }
 }

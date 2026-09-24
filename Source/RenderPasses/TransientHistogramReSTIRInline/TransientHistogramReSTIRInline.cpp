@@ -163,6 +163,7 @@ RenderPassReflection TransientHistogramReSTIRInline::reflect(const CompileData& 
 DefineList TransientHistogramReSTIRInline::getShaderDefines(const RenderData& renderData) const
 {
     DefineList defines = mOptions.pathTracing.getDefines();
+    defines.add(LaserState::resolve(renderData).getDefines());
     defines.add(InlinePass::getSceneLightDefines(*mpScene));
     defines.add(mOptions.restir.getDefines());
     defines.add("RESERVOIR_SCALAR_TARGET", mOptions.pathTracing.useSingleChannel ? "1" : "0");
@@ -283,7 +284,7 @@ void TransientHistogramReSTIRInline::execute(RenderContext* pRenderContext, cons
     }
 
     // Temporal reuse assumes static geometry and light; only the camera may move.
-    mLaser = mOptions.pathTracing.resolveLaser(renderData, *mpScene);
+    mLaser = LaserState::resolve(renderData);
     mReSTIR.invalidateHistory(*mpScene, mLaser != mPreviousLaser, false);
 
     if (!mpComputePass)
@@ -336,9 +337,6 @@ void TransientHistogramReSTIRInline::renderUI(Gui::Widgets& widget)
 
     if (auto group = widget.group("Shift mapping", true))
         dirty |= mOptions.restir.renderShiftMappingUI(group);
-
-    if (auto group = widget.group("Light", true))
-        dirty |= mOptions.pathTracing.renderLightUI(group);
 
     if (auto group = widget.group("Output", true))
         dirty |= mOptions.pathTracing.renderOutputUI(group, true);

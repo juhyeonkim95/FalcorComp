@@ -30,13 +30,14 @@
 #include "RenderGraph/RenderPass.h"
 #include "Utils/Sampling/SampleGenerator.h"
 #include "../Shared/Configs/PathTracingConfig.h"
+#include "../Shared/Lights/LaserState.h"
 #include "../Shared/Utils/InlinePassUtils.h"
 
 using namespace Falcor;
 
 /** Shows where the laser is: adds the laser spot, the light the laser puts on the surface seen in each pixel
  * (not time gated), to the red channel of an optional input image. A collimated beam lights no pixel.
- * The laser comes from the laser pass (LaserVBufferRT) or, with laserCollocated, from the camera.
+ * The laser is the one the laser pass (LaserVBufferRT) publishes this frame.
  */
 class LaserPositionViewer : public RenderPass
 {
@@ -59,7 +60,6 @@ public:
 private:
     bool mShowSpot = true;
     float mSpotScale = 1.f;          ///< Multiplies the spot's radiance before it is added to the red channel.
-    bool mLaserCollocated = false;   ///< Place the laser at the camera, as the path tracers' laserCollocated.
 
     bool mOptionsChanged = false;
     uint mFrameCount = 0;

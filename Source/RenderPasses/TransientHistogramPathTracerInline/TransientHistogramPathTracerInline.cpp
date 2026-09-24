@@ -176,6 +176,7 @@ void TransientHistogramPathTracerInline::compile(RenderContext* pRenderContext, 
 DefineList TransientHistogramPathTracerInline::getShaderDefines(const RenderData& renderData) const
 {
     DefineList defines = mOptions.pathTracing.getDefines();
+    defines.add(LaserState::resolve(renderData).getDefines());
     defines.add("USE_KERNEL_DENSITY_ESTIMATION", mOptions.histogram.useKernelDensityEstimation ? "1" : "0");
 
     defines.add("LIGHT_SAMPLING_METHOD", std::to_string((uint32_t)mOptions.samplingMethod));
@@ -208,7 +209,7 @@ void TransientHistogramPathTracerInline::bindShaderData(const ShaderVar& var, co
     var["CB"]["gPRNGDimension"] = InlinePass::getPRNGDimension(renderData);
     var["CB"]["samplesPerPixel"] = mOptions.pathTracing.samplesPerPixel;
     var["CB"]["initialWindowRatio"] = mOptions.histogram.initialWindowRatio;
-    mOptions.pathTracing.resolveLaser(renderData, *mpScene).bindShaderData(var["CB"]);
+    LaserState::resolve(renderData).bindShaderData(var["CB"]);
     mOptions.histogram.bindShaderData(var["TimeGate"]);
 
     InlinePass::bindChannels(var, renderData, kInputChannels);
@@ -306,9 +307,6 @@ void TransientHistogramPathTracerInline::renderUI(Gui::Widgets& widget)
                       "Triangle approximation: integrate paths primary hit -> one scene triangle -> laser spot "
                       "over every triangle (a single intermediate bounce).", true);
     }
-
-    if (auto group = widget.group("Light", true))
-        dirty |= options.pathTracing.renderLightUI(group);
 
     if (auto group = widget.group("Output", true))
     {
