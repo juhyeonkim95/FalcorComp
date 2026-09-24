@@ -5,12 +5,13 @@ cbuffer CB
 {
     uint2 gOutputDim;
     uint3 gHistogramDim; // width, height, bins
-    float gSumScale;     // bin width
-    float gTileScale;    // histogram range * 2^exposure
+    float gSumScale;     // bin width / summed frames
+    float gTileScale;    // histogram range / summed frames * 2^exposure
     uint4 gTileBins[4];  // bin of each tile, row-major
     uint gLeftBin;       // bin shown on the left half; ~0u shows the sum over all bins
     int2 gSelectedPixel; // histogram pixel with a crosshair and profile; negative if none
     uint gProfileRadius; // the profile averages a (2r + 1)^2 patch
+    float gProfileScale; // 1 / summed frames
 }
 
 Texture3D<float4> gHistogram;
@@ -157,5 +158,5 @@ void readProfile(uint3 dispatchThreadId: SV_DispatchThreadID)
         for (int x = lo.x; x <= hi.x; ++x)
             sum += loadBin(uint2(x, y), bin);
     int2 count = hi - lo + 1;
-    gProfile[bin] = float4(sum / float(count.x * count.y), 0.f);
+    gProfile[bin] = float4(sum * gProfileScale / float(count.x * count.y), 0.f);
 }

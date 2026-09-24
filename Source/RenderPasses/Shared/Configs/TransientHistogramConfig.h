@@ -11,7 +11,10 @@ struct TransientHistogramConfig
     // Render data dictionary keys shared by the histogram passes (tracers, accumulation, viewer).
     static constexpr char kTimeMinKey[] = "transientHistogramTimeMin";
     static constexpr char kTimeMaxKey[] = "transientHistogramTimeMax";
-    static constexpr char kFrameCountKey[] = "transientHistogramFrameCount"; ///< Frames averaged by the accumulation.
+    /// Frames summed into the histogram: the histogram divided by it is the mean (1 for a mean or a single frame).
+    static constexpr char kSummedFramesKey[] = "transientHistogramSummedFrames";
+    /// Frames in the mean, for display.
+    static constexpr char kAveragedFramesKey[] = "transientHistogramAveragedFrames";
 
     float timeMin = 9.f;
     float timeMax = 12.f;

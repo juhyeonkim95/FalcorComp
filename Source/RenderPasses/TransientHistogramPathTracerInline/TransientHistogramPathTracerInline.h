@@ -38,8 +38,10 @@
 
 using namespace Falcor;
 
-/** Inline transient histogram tracer. Each frame writes that frame's histogram; average frames with
- * TransientHistogramAccumulatePass. The histogram range is published in the render data dictionary.
+/** Inline transient histogram tracer. By default each frame writes that frame's histogram (average frames with
+ * TransientHistogramAccumulatePass). With accumulate, the histogram instead sums the frames in place, which is
+ * much cheaper for large histograms; it restarts on camera or option changes and on resetHistogram().
+ * The histogram range and the number of summed frames are published in the render data dictionary.
  * Single-channel output stores the red channel in an H x W x B volume; RGB uses float4 bins.
  * Triangle approximation integrates a single intermediate triangle, not a full path walk.
  */
@@ -57,6 +59,8 @@ public:
     void execute(RenderContext* pRenderContext, const RenderData& renderData) override;
     void renderUI(Gui::Widgets& widget) override;
     void setScene(RenderContext* pRenderContext, const ref<Scene>& pScene) override;
+    /// With accumulate, restarts the sum.
+    void resetHistogram() { mNeedToClearHistogram = true; }
 
 private:
     enum class SamplingMethod { Direct = 0, TriangleApprox = 2 };
@@ -66,17 +70,21 @@ private:
         TransientHistogramConfig histogram;
         PathTracingConfig pathTracing;
         SamplingMethod samplingMethod = SamplingMethod::Direct;
+        bool accumulate = false; ///< Sum frames in the histogram instead of writing one frame per histogram.
         RenderPassHelpers::IOSize outputSize = RenderPassHelpers::IOSize::Default;
         uint2 fixedOutputSize = {512, 512}; ///< Output size when outputSize is Fixed.
     };
     static void validateOptions(const Options& options);
     void parseProperties(const Properties& props);
     const ChannelList& histogramChannels() const;
+    bool needsReset(const RenderData& renderData) const;
     void bindShaderData(const ShaderVar& var, const RenderData& renderData);
     DefineList getShaderDefines(const RenderData& renderData) const;
 
     Options mOptions;
     uint mFrameCount = 0;
+    uint mSummedFrames = 0;             ///< Frames in the histogram (accumulate).
+    bool mNeedToClearHistogram = true;
     bool mOptionsChanged = false;
     std::string mUIWarning; ///< Why the last UI edit was rejected.
     ref<Scene> mpScene;

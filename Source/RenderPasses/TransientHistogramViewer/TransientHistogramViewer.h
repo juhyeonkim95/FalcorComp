@@ -35,8 +35,9 @@ using namespace Falcor;
  *
  * Left half: the histogram summed over all bins (the steady-state image), or one chosen bin (leftView).
  * Right half: a 4 x 4 grid of 16 bins spread evenly from firstBin to lastBin, in reading order.
- * Both halves are fitted to their area with box filtering. The input is a mean histogram (radiance per
- * unit path length), e.g. from TransientHistogramAccumulatePass.
+ * Both halves are fitted to their area with box filtering. The input is a histogram in radiance per unit path
+ * length, divided by the frames summed into it (TransientHistogramConfig::kSummedFramesKey; 1 for a mean, e.g.
+ * from TransientHistogramAccumulatePass, or a single frame).
  * An optional overlay (e.g. LaserPositionViewer without an input) of the histogram's size is blended into the
  * left half only, with premultiplied alpha.
  * Shift+click (or drag) on either half selects a pixel: it gets a crosshair, and the UI plots its
@@ -69,7 +70,7 @@ private:
     uint tileBin(uint tile, uint binCount) const;
     /// Histogram pixel under output position `position` (in output pixels), if any.
     bool outputToHistogram(float2 position, int2& pixel) const;
-    void readProfile(RenderContext* pRenderContext, const ref<Texture>& pHistogram);
+    void readProfile(RenderContext* pRenderContext, const ref<Texture>& pHistogram, float frameScale);
     void renderProfileUI(Gui::Widgets& widget);
 
     uint mFirstBin = 0;

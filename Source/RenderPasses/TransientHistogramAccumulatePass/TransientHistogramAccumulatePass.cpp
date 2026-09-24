@@ -191,7 +191,8 @@ void TransientHistogramAccumulatePass::execute(RenderContext* pRenderContext, co
     {
         pRenderContext->copyResource(pOutput.get(), pInput.get());
         mFrameCount = 0;
-        dict[TransientHistogramConfig::kFrameCountKey] = 1u;
+        dict[TransientHistogramConfig::kSummedFramesKey] = 1u;
+        dict[TransientHistogramConfig::kAveragedFramesKey] = 1u;
         return;
     }
 
@@ -203,7 +204,8 @@ void TransientHistogramAccumulatePass::execute(RenderContext* pRenderContext, co
     if (mMaxFrameCount > 0 && mFrameCount >= mMaxFrameCount)
     {
         pRenderContext->copyResource(pOutput.get(), mpMean.get());
-        dict[TransientHistogramConfig::kFrameCountKey] = mFrameCount;
+        dict[TransientHistogramConfig::kSummedFramesKey] = 1u; // the output is a mean
+    dict[TransientHistogramConfig::kAveragedFramesKey] = mFrameCount;
         return;
     }
     mFrameCount++;
@@ -226,7 +228,8 @@ void TransientHistogramAccumulatePass::execute(RenderContext* pRenderContext, co
     var["gOutput"] = pOutput;
     mpPass->execute(pRenderContext, dims);
 
-    dict[TransientHistogramConfig::kFrameCountKey] = mFrameCount;
+    dict[TransientHistogramConfig::kSummedFramesKey] = 1u; // the output is a mean
+    dict[TransientHistogramConfig::kAveragedFramesKey] = mFrameCount;
 }
 
 void TransientHistogramAccumulatePass::renderUI(Gui::Widgets& widget)

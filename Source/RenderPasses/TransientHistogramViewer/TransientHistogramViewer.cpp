@@ -127,10 +127,12 @@ void TransientHistogramViewer::execute(RenderContext* pRenderContext, const Rend
     if (any(mSelectedPixel >= int2(mHistogramDim)))
         mSelectedPixel = {-1, -1};
 
-    // The histogram range comes from the tracer (unit bins without it); the frame count is for display.
+    // The histogram range comes from the tracer (unit bins without it).
     auto& dict = renderData.getDictionary();
     mBinCount = histogramDim.z;
-    mFrameCount = dict.getValue(TransientHistogramConfig::kFrameCountKey, 0u);
+    // A tracer that accumulates publishes a sum over frames; a mean or a single frame counts as 1.
+    const uint summedFrames = std::max(1u, dict.getValue(TransientHistogramConfig::kSummedFramesKey, 1u));
+    mFrameCount = dict.getValue(TransientHistogramConfig::kAveragedFramesKey, 0u);
     mTimeMin = dict.getValue(TransientHistogramConfig::kTimeMinKey, 0.f);
     mTimeMax = dict.getValue(TransientHistogramConfig::kTimeMaxKey, float(mBinCount));
     const float range = mTimeMax - mTimeMin;
@@ -154,9 +156,9 @@ void TransientHistogramViewer::execute(RenderContext* pRenderContext, const Rend
     auto var = mpViewPass->getRootVar();
     var["CB"]["gOutputDim"] = outputDim;
     var["CB"]["gHistogramDim"] = histogramDim;
-    var["CB"]["gSumScale"] = range / float(mBinCount);
+    var["CB"]["gSumScale"] = range / float(mBinCount) / float(summedFrames);
     // A bin shown at the sum's brightness when all radiance arrives within it spread over the range.
-    var["CB"]["gTileScale"] = range * std::exp2(mBinExposure);
+    var["CB"]["gTileScale"] = range / float(summedFrames) * std::exp2(mBinExposure);
     var["CB"]["gLeftBin"] = mLeftShowsBin ? std::min(mLeftBin, mBinCount - 1) : ~0u;
     for (uint row = 0; row < 4; ++row)
     {
@@ -171,12 +173,12 @@ void TransientHistogramViewer::execute(RenderContext* pRenderContext, const Rend
     mpViewPass->execute(pRenderContext, uint3(outputDim, 1));
 
     if (all(mSelectedPixel >= 0))
-        readProfile(pRenderContext, pHistogram);
+        readProfile(pRenderContext, pHistogram, 1.f / float(summedFrames));
     else
         mProfile.clear();
 }
 
-void TransientHistogramViewer::readProfile(RenderContext* pRenderContext, const ref<Texture>& pHistogram)
+void TransientHistogramViewer::readProfile(RenderContext* pRenderContext, const ref<Texture>& pHistogram, float frameScale)
 {
     // The profile is read back asynchronously, so the plot lags the image by a frame or two
     // instead of stalling on the GPU every frame.
@@ -204,6 +206,7 @@ void TransientHistogramViewer::readProfile(RenderContext* pRenderContext, const 
     var["CB"]["gHistogramDim"] = uint3(mHistogramDim, mBinCount);
     var["CB"]["gSelectedPixel"] = mSelectedPixel;
     var["CB"]["gProfileRadius"] = mProfileRadius;
+    var["CB"]["gProfileScale"] = frameScale;
     var["gHistogram"] = pHistogram;
     var["gProfile"] = mpProfileBuffer;
     mpProfilePass->execute(pRenderContext, uint3(mBinCount, 1, 1));

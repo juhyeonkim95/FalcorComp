@@ -35,7 +35,7 @@ using namespace Falcor;
  * counterpart of AccumulatePass. The output has the input's shape and holds the running mean. With autoReset,
  * the average restarts when the camera moves, the scene changes or an upstream pass changes its options.
  * The number of averaged frames is published in the render data dictionary
- * (TransientHistogramConfig::kFrameCountKey).
+ * (TransientHistogramConfig::kAveragedFramesKey).
  */
 class TransientHistogramAccumulatePass : public RenderPass
 {

@@ -33,6 +33,7 @@
 static void regTransientHistogramPathTracerInline(pybind11::module& m)
 {
     pybind11::class_<TransientHistogramPathTracerInline, RenderPass, ref<TransientHistogramPathTracerInline>> pass(m, "TransientHistogramPathTracerInline");
+    pass.def("reset_histogram", &TransientHistogramPathTracerInline::resetHistogram);
 }
 
 extern "C" FALCOR_API_EXPORT void registerPlugin(Falcor::PluginRegistry& registry)
@@ -70,6 +71,7 @@ const ChannelList kHistogramOutputChannelsRGB = {
 };
 
 const char kSamplingMethod[] = "samplingMethod";
+const char kAccumulate[] = "accumulate";
 const char kOutputSize[] = "outputSize";
 const char kFixedOutputSize[] = "fixedOutputSize";
 
@@ -99,6 +101,8 @@ void TransientHistogramPathTracerInline::parseProperties(const Properties& props
             else if (method == "tri_approx") mOptions.samplingMethod = SamplingMethod::TriangleApprox;
             else FALCOR_THROW("samplingMethod must be direct or tri_approx.");
         }
+        else if (key == kAccumulate)
+            mOptions.accumulate = value;
         else if (key == kOutputSize)
             mOptions.outputSize = value;
         else if (key == kFixedOutputSize)
@@ -123,6 +127,7 @@ Properties TransientHistogramPathTracerInline::getProperties() const
     mOptions.histogram.serialize(props);
     mOptions.pathTracing.serialize(props);
     props[kSamplingMethod] = mOptions.samplingMethod == SamplingMethod::Direct ? "direct" : "tri_approx";
+    props[kAccumulate] = mOptions.accumulate;
     props[kOutputSize] = mOptions.outputSize;
     if (mOptions.outputSize == RenderPassHelpers::IOSize::Fixed)
         props[kFixedOutputSize] = mOptions.fixedOutputSize;
@@ -159,6 +164,7 @@ DefineList TransientHistogramPathTracerInline::getShaderDefines(const RenderData
     DefineList defines = mOptions.pathTracing.getDefines();
     defines.add(LaserState::resolve(renderData).getDefines());
     defines.add("USE_KERNEL_DENSITY_ESTIMATION", mOptions.histogram.useKernelDensityEstimation ? "1" : "0");
+    defines.add("ACCUMULATE_HISTOGRAM", mOptions.accumulate ? "1" : "0");
 
     defines.add("LIGHT_SAMPLING_METHOD", std::to_string((uint32_t)mOptions.samplingMethod));
     defines.add("DIRECT_CONNECTION", std::to_string((uint32_t)SamplingMethod::Direct));
@@ -214,8 +220,18 @@ void TransientHistogramPathTracerInline::execute(RenderContext* pRenderContext, 
         return;
     }
 
-    // The shader adds this frame's paths to the bins.
-    InlinePass::clearChannels(pRenderContext, renderData, histogramChannels());
+    // Without accumulate, the shader zeroes each pixel's bins itself.
+    if (mOptions.accumulate)
+    {
+        if (needsReset(renderData))
+            resetHistogram();
+        if (mNeedToClearHistogram)
+        {
+            InlinePass::clearChannels(pRenderContext, renderData, histogramChannels());
+            mNeedToClearHistogram = false;
+            mSummedFrames = 0;
+        }
+    }
 
     // Triangle approximation enumerates all triangles; no triangle sampling distribution is needed.
     if (mOptions.samplingMethod == SamplingMethod::TriangleApprox)
@@ -230,7 +246,29 @@ void TransientHistogramPathTracerInline::execute(RenderContext* pRenderContext, 
     mpComputePass->execute(pRenderContext, uint3(pColor->getWidth(), pColor->getHeight(), 1));
 
     mFrameCount++;
+    mSummedFrames = mOptions.accumulate ? mSummedFrames + 1 : 1;
     mOptions.histogram.publishRange(renderData);
+    auto& dict = renderData.getDictionary();
+    dict[TransientHistogramConfig::kSummedFramesKey] = mSummedFrames;
+    dict[TransientHistogramConfig::kAveragedFramesKey] = mOptions.accumulate ? mSummedFrames : 0u;
+}
+
+bool TransientHistogramPathTracerInline::needsReset(const RenderData& renderData) const
+{
+    // Same rule as AccumulatePass: any refresh flag, or a scene change other than camera jitter/history.
+    auto& dict = renderData.getDictionary();
+    if (dict.getValue(kRenderPassRefreshFlags, RenderPassRefreshFlags::None) != RenderPassRefreshFlags::None)
+        return true;
+    const auto sceneUpdates = mpScene->getUpdates();
+    if ((sceneUpdates & ~IScene::UpdateFlags::CameraPropertiesChanged) != IScene::UpdateFlags::None)
+        return true;
+    if (is_set(sceneUpdates, IScene::UpdateFlags::CameraPropertiesChanged))
+    {
+        const auto excluded = Camera::Changes::Jitter | Camera::Changes::History;
+        if ((mpScene->getCamera()->getChanges() & ~excluded) != Camera::Changes::None)
+            return true;
+    }
+    return false;
 }
 
 void TransientHistogramPathTracerInline::renderUI(Gui::Widgets& widget)
@@ -261,7 +299,20 @@ void TransientHistogramPathTracerInline::renderUI(Gui::Widgets& widget)
     }
 
     if (auto group = widget.group("Output", true))
+    {
         dirty |= options.pathTracing.renderOutputUI(group, true);
+
+        dirty |= group.checkbox("Accumulate", options.accumulate);
+        group.tooltip("Sum frames in the histogram in place, restarting when the camera moves or a setting changes. "
+                      "Much cheaper than TransientHistogramAccumulatePass for large histograms. Off: one frame per "
+                      "histogram.", true);
+        if (options.accumulate)
+        {
+            if (group.button("Reset histogram"))
+                resetHistogram();
+            group.text(fmt::format("Summed frames: {}", mSummedFrames));
+        }
+    }
 
     if (dirty)
     {
@@ -279,6 +330,7 @@ void TransientHistogramPathTracerInline::renderUI(Gui::Widgets& widget)
         const bool resize = options.histogram.timeBin != mOptions.histogram.timeBin || options.pathTracing.useSingleChannel != mOptions.pathTracing.useSingleChannel;
         mOptions = options;
         mOptionsChanged = true;
+        resetHistogram();
         if (resize)
             requestRecompile();
     }
@@ -292,6 +344,7 @@ void TransientHistogramPathTracerInline::setScene(RenderContext* pRenderContext,
     // After changing scene, the raytracing program should to be recreated.
     mpComputePass = nullptr;
     mFrameCount = 0;
+    resetHistogram();
 
     // Set new scene.
     mpScene = pScene;
