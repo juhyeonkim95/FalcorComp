@@ -113,7 +113,7 @@ void TimeGatedPathTracerInline::parseProperties(const Properties& props)
 {
     for (const auto& [key, value] : props)
     {
-        if (mOptions.timeGate.parse(key, value) || mOptions.sampling.parse(key, value) || mOptions.pathTracing.parse(key, value))
+        if (mOptions.timeGate.parse(key, value) || mOptions.ellipsoidalSampling.parse(key, value) || mOptions.pathTracing.parse(key, value))
             continue;
         if (key == kShowLaserSpot)
             mOptions.showLaserSpot = value;
@@ -127,7 +127,7 @@ Properties TimeGatedPathTracerInline::getProperties() const
 {
     Properties props;
     mOptions.timeGate.serialize(props);
-    mOptions.sampling.serialize(props);
+    mOptions.ellipsoidalSampling.serialize(props);
     mOptions.pathTracing.serialize(props);
     props[kShowLaserSpot] = mOptions.showLaserSpot;
     return props;
@@ -161,10 +161,10 @@ DefineList TimeGatedPathTracerInline::getShaderDefines(const RenderData& renderD
     defines.add("USE_SINGLE_CHANNEL", mOptions.pathTracing.useSingleChannel ? "1" : "0");
     defines.add("IS_LIGHT_SOURCE_LASER", mOptions.pathTracing.isLightSourceLaser ? "1" : "0");
 
-    defines.add("LIGHT_SAMPLING_METHOD", std::to_string((uint32_t)mOptions.sampling.samplingMethod));
-    defines.add("DIRECT_CONNECTION", std::to_string((uint32_t)TimeGatedSamplingMethod::DIRECT));
-    defines.add("ELLIPSOIDAL_CONNECTION", std::to_string((uint32_t)TimeGatedSamplingMethod::ELLIPSOIDAL));
-    defines.add("ELLIPSOIDAL_DIRECT_MIS", std::to_string((uint32_t)TimeGatedSamplingMethod::ELLIPSOIDAL_DIRECT_MIS));
+    defines.add("LIGHT_SAMPLING_METHOD", std::to_string((uint32_t)mOptions.ellipsoidalSampling.samplingMethod));
+    defines.add("DIRECT_CONNECTION", std::to_string((uint32_t)EllipsoidalSamplingMethod::DIRECT));
+    defines.add("ELLIPSOIDAL_CONNECTION", std::to_string((uint32_t)EllipsoidalSamplingMethod::ELLIPSOIDAL));
+    defines.add("ELLIPSOIDAL_DIRECT_MIS", std::to_string((uint32_t)EllipsoidalSamplingMethod::ELLIPSOIDAL_DIRECT_MIS));
 
     // For optional I/O resources, set 'is_valid_<name>' defines to inform the program of which ones it can access.
     // TODO: This should be moved to a more general mechanism using Slang.
@@ -191,7 +191,7 @@ void TimeGatedPathTracerInline::bindShaderData(const ShaderVar& var, const Rende
     var["CB"]["gFrameCount"] = mFrameState.frameCount;
     var["CB"]["gFrameDim"] = targetDim;
     var["CB"]["gPRNGDimension"] = dict.keyExists(kRenderPassPRNGDimension) ? dict[kRenderPassPRNGDimension] : 0u;
-    var["CB"]["specularRoughnessThreshold"] = mOptions.sampling.ellipsoidRoughnessThreshold;
+    var["CB"]["specularRoughnessThreshold"] = mOptions.ellipsoidalSampling.ellipsoidRoughnessThreshold;
 
     // Resolve laser settings from the camera or the upstream laser pass.
     if (mOptions.pathTracing.laserCollocated && mpScene)
@@ -240,8 +240,8 @@ void TimeGatedPathTracerInline::updateGatePosition()
 
 void TimeGatedPathTracerInline::prepareLightSampler(RenderContext* pRenderContext)
 {
-    const bool useEllipsoidalSampling = mOptions.sampling.samplingMethod == TimeGatedSamplingMethod::ELLIPSOIDAL ||
-                                       mOptions.sampling.samplingMethod == TimeGatedSamplingMethod::ELLIPSOIDAL_DIRECT_MIS;
+    const bool useEllipsoidalSampling = mOptions.ellipsoidalSampling.samplingMethod == EllipsoidalSamplingMethod::ELLIPSOIDAL ||
+                                       mOptions.ellipsoidalSampling.samplingMethod == EllipsoidalSamplingMethod::ELLIPSOIDAL_DIRECT_MIS;
     if (!mpEmissiveSampler && useEllipsoidalSampling)
     {
         const auto& pLights = mpScene->getITriCollection(pRenderContext);
@@ -249,7 +249,7 @@ void TimeGatedPathTracerInline::prepareLightSampler(RenderContext* pRenderContex
 
         mLightBVHOptions.buildOptions.maxTriangleCountPerLeaf = 1;
 
-        switch (mOptions.sampling.triSampler)
+        switch (mOptions.ellipsoidalSampling.triSampler)
         {
         case EmissiveLightSamplerType::Uniform:
             mpEmissiveSampler = std::make_unique<EmissiveUniformSampler>(pRenderContext, pLights);
@@ -373,7 +373,7 @@ void TimeGatedPathTracerInline::renderUI(Gui::Widgets& widget)
     if (auto group = widget.group("Sampling", true))
     {
         dirty |= options.pathTracing.renderSamplingUI(group, " Each vertex is connected to the laser spot.");
-        dirty |= options.sampling.renderUI(group, true);
+        dirty |= options.ellipsoidalSampling.renderUI(group, true);
     }
 
     if (auto group = widget.group("Light", true))
@@ -393,9 +393,9 @@ void TimeGatedPathTracerInline::renderUI(Gui::Widgets& widget)
     {
         validateOptions(options);
         // Rebuild the sampler and program: the emissive sampler's defines are only added when the program is created.
-        if (options.sampling.triSampler != mOptions.sampling.triSampler)
+        if (options.ellipsoidalSampling.triSampler != mOptions.ellipsoidalSampling.triSampler)
             mpEmissiveSampler.reset();
-        if (options.sampling.samplingMethod != mOptions.sampling.samplingMethod || options.sampling.triSampler != mOptions.sampling.triSampler)
+        if (options.ellipsoidalSampling.samplingMethod != mOptions.ellipsoidalSampling.samplingMethod || options.ellipsoidalSampling.triSampler != mOptions.ellipsoidalSampling.triSampler)
             mpComputePass = nullptr;
         mOptions = options;
         mOptionsChanged = true;

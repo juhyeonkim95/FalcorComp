@@ -31,6 +31,8 @@
 #include "RenderGraph/RenderPassHelpers.h"
 #include "Utils/Sampling/SampleGenerator.h"
 #include "Utils/Transient/Transient.h"
+#include "../Shared/Configs/TransientHistogramConfig.h"
+#include "../Shared/Configs/PathTracingConfig.h"
 
 using namespace Falcor;
 
@@ -59,23 +61,12 @@ public:
 
 private:
     enum class SamplingMethod { Direct = 0, TriangleApprox = 2 };
+    /// User settings, composed of shared configs (Shared/Configs) plus this pass's own.
     struct Options
     {
-        uint maxBounces = 3;
-        uint samplesPerPixel = 128;
-        bool computeDirect = true;
-        bool useImportanceSampling = true;
-        float timeMin = 9.f;
-        float timeMax = 12.f;
-        uint timeBin = 512;
-        TimeGateMode timeGateMode = TimeGateMode::BOX;
+        TransientHistogramConfig histogram;
+        PathTracingConfig pathTracing;
         SamplingMethod samplingMethod = SamplingMethod::Direct;
-        bool laserCollocated = false;
-        bool useAlphaTest = false;
-        bool useSingleChannel = false;
-        bool isLightSourceLaser = true;
-        bool useKernelDensityEstimation = false;
-        float initialWindowRatio = 1.f; ///< Initial KDE bandwidth / histogram range, in (0, 1].
         bool autoReset = false; ///< Clear the histogram when the camera moves or an upstream pass changes options.
         RenderPassHelpers::IOSize outputSize = RenderPassHelpers::IOSize::Default;
         uint2 fixedOutputSize = {512, 512}; ///< Output size when outputSize is Fixed.

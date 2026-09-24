@@ -31,7 +31,9 @@
 #include "Utils/Sampling/SampleGenerator.h"
 #include "Utils/Transient/Transient.h"
 #include "Rendering/Lights/LightBVHSampler.h"
-#include "../Shared/TimeGated/TimeGatedOptions.h"
+#include "../Shared/Configs/TimeGateConfig.h"
+#include "../Shared/Configs/EllipsoidalSamplingConfig.h"
+#include "../Shared/Configs/PathTracingConfig.h"
 
 using namespace Falcor;
 
@@ -64,11 +66,11 @@ private:
     void bindShaderData(const ShaderVar& var, const RenderData& renderData);
     DefineList getShaderDefines(const RenderData& renderData) const;
 
-    /// User settings, grouped as in TimeGatedOptions.h plus the path tracer's own.
+    /// User settings, composed of shared configs (Shared/Configs) plus the path tracer's own.
     struct Options
     {
         TimeGateConfig timeGate;
-        SamplingConfig sampling;
+        EllipsoidalSamplingConfig ellipsoidalSampling;
         PathTracingConfig pathTracing;
         bool showLaserSpot = false; ///< Debug overlay: un-gated laser spot seen from the primary hit.
     };

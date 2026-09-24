@@ -90,38 +90,8 @@ const ChannelList kHistogramOutputChannelSingle = {
     // clang-format on
 };
 
-const char kMaxBounces[] = "maxBounces";
-const char kComputeDirect[] = "computeDirect";
-const char kUseImportanceSampling[] = "useImportanceSampling";
-const char kSamplesPerPixel[] = "samplesPerPixel";
-const char kTimeGateWindow[] = "timeGateWindow";
-const char kTimeGateWindowRough[] = "timeGateWindowRough";
-const char kTimeGateMode[] = "timeGateMode";
-const char kTimeMin[] = "timeMin";
-const char kTimeMax[] = "timeMax";
-const char kTimeBin[] = "timeBin";
-const char kSamplingMethod[] = "samplingMethod";
-const char kEmissiveSampler[] = "emissiveSampler";
-const char kLaserHitVBufferRes[] = "laserHitVBufferRes";
-const char kShiftmapMethod[] = "shiftmapMethod";
-const char kGaugeAxis[] = "gaugeAxis";
-const char kGaugeMode[] = "gaugeMode";
-const char kSpatialReusePassIteration[] = "spatialReuseIteration";
-const char kSpatialReuseNeighborCount[] = "spatialReuseNeighborCount";
-const char kSpatialReuseGatherRadius[] = "spatialReuseGatherRadius";
 const char kUseBinReuse[] = "useBinReuse";
-const char kUseTemporalReuse[] = "useTemporalReuse";
-const char kTemporalHistoryLength[] = "temporalHistoryLength";
-const char kSpecularRoughnessThreshold[] = "specularRoughnessThreshold";
-const char kNewtonMaxIteration[] = "NewtonMaxIteration";
-const char kNewtonRelativeTolerance[] = "NewtonRelativeTolerance";
 const char kRandomSeed[] = "randomSeed";
-const char kLaserCollocated[] = "laserCollocated";
-const char kUseAlphaTest[] = "useAlphaTest";
-const char kUseEllipsoidalMIS[] = "useEllipsoidalMIS";
-const char kUseSingleChannel[] = "useSingleChannel";
-const char kRoughTimeGateSampleRatio[] = "roughTimeGateSampleRatio";
-const char kIsLightSourceLaser[] = "isLightSourceLaser";
 const uint32_t kNeighborOffsetCount = 8192;
 } // namespace
 
@@ -148,70 +118,13 @@ void TransientHistogramReSTIRInline::parseProperties(const Properties& props)
 {
     for (const auto& [key, value] : props)
     {
-        if (key == kMaxBounces)
-            mMaxBounces = value;
-        else if (key == kComputeDirect)
-            mComputeDirect = value;
-        else if (key == kUseImportanceSampling)
-            mUseImportanceSampling = value;
-        else if (key == kSamplesPerPixel)
-            mSamplesPerPixel = value;
-        else if (key == kTimeGateMode)
-            mTimeGateMode = TimeGateModeTable[value];
-        else if (key == kTimeGateWindow)
-            mTimeGateWindow = value;
-        else if (key == kTimeGateWindowRough)
-            mTimeGateWindowRough = value;
-        else if (key == kTimeMin)
-            mTimeMin = value;
-        else if (key == kTimeMax)
-            mTimeMax = value;
-        else if (key == kTimeBin)
-            mTimeBin = value;
-        else if (key == kSamplingMethod)
-            mSamplingMethod = SamplingMethodTable[value];
-        else if (key == kEmissiveSampler)
-            mTriSampler = value;
-        else if (key == kLaserHitVBufferRes)
-            mLaserHitVBufferRes = value;
-        else if (key == kShiftmapMethod)
-            mShiftmapMethod = ShiftmapMethodTable[value];
-        else if (key == kGaugeAxis)
-            mGaugeAxis = value;
-        else if (key == kGaugeMode)
-            mGaugeMode = GaugeModeTable[value];
-        else if (key == kSpatialReuseGatherRadius)
-            mSpatialReuseGatherRadius = value;
-        else if(key == kSpatialReusePassIteration)
-            mSpatialReusePassIteration = value;
-        else if(key == kSpatialReuseNeighborCount)
-            mSpatialReuseNeighborCount = value;
-        else if (key == kUseBinReuse)
-            mUseBinReuse = value;
-        else if (key == kUseTemporalReuse)
-            mUseTemporalReuse = value;
-        else if (key == kTemporalHistoryLength)
-            mTemporalHistoryLength = value;
-        else if(key == kSpecularRoughnessThreshold)
-            mSpecularRoughnessThreshold = value;
-        else if(key == kRandomSeed)
+        if (mOptions.histogram.parse(key, value) || mOptions.pathTracing.parse(key, value) ||
+            mOptions.restir.parse(key, value))
+            continue;
+        if (key == kUseBinReuse)
+            mOptions.useBinReuse = value;
+        else if (key == kRandomSeed)
             mRandomSeed = value;
-        else if(key == kNewtonMaxIteration)
-            mNewtonMaxIteration = value;
-        else if(key == kNewtonRelativeTolerance)
-            mNewtonRelativeTolerance = value;
-        else if(key == kLaserCollocated)
-            mLaserCollocated = value;
-        else if (key == kUseAlphaTest)
-            mUseAlphaTest = value;
-        else if (key == kRoughTimeGateSampleRatio)
-            mRoughTimeGateSampleRatio = value;
-        else if (key == kUseEllipsoidalMIS)
-            mUseEllipsoidalMIS = value;
-        else if (key == kUseSingleChannel)
-            mUseSingleChannel = value;
-        else if (key == kIsLightSourceLaser)
-            mIsLightSourceLaser = value;
         else
             logWarning("Unknown property '{}' in TransientHistogramReSTIRInline properties.", key);
     }
@@ -220,12 +133,11 @@ void TransientHistogramReSTIRInline::parseProperties(const Properties& props)
 Properties TransientHistogramReSTIRInline::getProperties() const
 {
     Properties props;
-    props[kMaxBounces] = mMaxBounces;
-    props[kComputeDirect] = mComputeDirect;
-    props[kUseImportanceSampling] = mUseImportanceSampling;
-    props[kUseBinReuse] = mUseBinReuse;
-    props[kUseTemporalReuse] = mUseTemporalReuse;
-    props[kTemporalHistoryLength] = mTemporalHistoryLength;
+    mOptions.histogram.serialize(props);
+    mOptions.pathTracing.serialize(props);
+    mOptions.restir.serialize(props);
+    props[kUseBinReuse] = mOptions.useBinReuse;
+    props[kRandomSeed] = mRandomSeed;
     return props;
 }
 
@@ -236,14 +148,14 @@ RenderPassReflection TransientHistogramReSTIRInline::reflect(const CompileData& 
     // Define our input/output channels.
     addRenderPassInputs(reflector, kInputChannels);
     addRenderPassInputs(reflector, kLaserInputChannels, ResourceBindFlags::ShaderResource, uint2(1, 1));
-    addRenderPassInputs(reflector, kLaserHitInputChannels, ResourceBindFlags::ShaderResource, mLaserHitVBufferRes);
+    addRenderPassInputs(reflector, kLaserHitInputChannels, ResourceBindFlags::ShaderResource, mOptions.restir.laserHitVBufferRes);
     addRenderPassOutputs(reflector, kOutputChannels);
 
-    ChannelList kHistogramOutputChannels = mUseSingleChannel ? kHistogramOutputChannelSingle : kHistogramOutputChannelsRGB;
+    ChannelList kHistogramOutputChannels = mOptions.pathTracing.useSingleChannel ? kHistogramOutputChannelSingle : kHistogramOutputChannelsRGB;
 
     for (const auto& it : kHistogramOutputChannels)
     {
-        auto& tex = reflector.addOutput(it.name, it.desc).texture3D(0, 0, mTimeBin);
+        auto& tex = reflector.addOutput(it.name, it.desc).texture3D(0, 0, mOptions.histogram.timeBin);
         tex.bindFlags(ResourceBindFlags::UnorderedAccess);
         if (it.format != ResourceFormat::Unknown)
             tex.format(it.format);
@@ -257,25 +169,20 @@ RenderPassReflection TransientHistogramReSTIRInline::reflect(const CompileData& 
 DefineList TransientHistogramReSTIRInline::getShaderDefines(const RenderData& renderData) const{
     DefineList defines;
 
-    defines.add("MAX_BOUNCES", std::to_string(mMaxBounces));
-    defines.add("COMPUTE_DIRECT", mComputeDirect ? "1" : "0");
-    defines.add("USE_IMPORTANCE_SAMPLING", mUseImportanceSampling ? "1" : "0");
+    defines.add("MAX_BOUNCES", std::to_string(mOptions.pathTracing.maxBounces));
+    defines.add("COMPUTE_DIRECT", mOptions.pathTracing.computeDirect ? "1" : "0");
+    defines.add("USE_IMPORTANCE_SAMPLING", mOptions.pathTracing.useImportanceSampling ? "1" : "0");
     defines.add("USE_ANALYTIC_LIGHTS", mpScene->useAnalyticLights() ? "1" : "0");
     defines.add("USE_EMISSIVE_LIGHTS", mpScene->useEmissiveLights() ? "1" : "0");
     defines.add("USE_ENV_LIGHT", mpScene->useEnvLight() ? "1" : "0");
     defines.add("USE_ENV_BACKGROUND", mpScene->useEnvBackground() ? "1" : "0");
-    defines.add("USE_ALPHA_TEST", mUseAlphaTest ? "1" : "0");
-    defines.add("USE_SINGLE_CHANNEL", mUseSingleChannel ? "1" : "0");
-    defines.add("RESERVOIR_SCALAR_TARGET", mUseSingleChannel ? "1" : "0");
-    defines.add("IS_LIGHT_SOURCE_LASER", mIsLightSourceLaser ? "1" : "0");
+    defines.add("USE_ALPHA_TEST", mOptions.pathTracing.useAlphaTest ? "1" : "0");
+    defines.add("USE_SINGLE_CHANNEL", mOptions.pathTracing.useSingleChannel ? "1" : "0");
+    defines.add("RESERVOIR_SCALAR_TARGET", mOptions.pathTracing.useSingleChannel ? "1" : "0");
+    defines.add("IS_LIGHT_SOURCE_LASER", mOptions.pathTracing.isLightSourceLaser ? "1" : "0");
     
-    defines.add("LIGHT_SAMPLING_METHOD", std::to_string((uint32_t)mSamplingMethod));
-    defines.add("DIRECT_CONNECTION", std::to_string((uint32_t)TimeGatedSamplingMethod::DIRECT));
-    defines.add("ELLIPSOIDAL_CONNECTION", std::to_string((uint32_t)TimeGatedSamplingMethod::ELLIPSOIDAL));
-    defines.add("TRIANGLE_APPROX", std::to_string((uint32_t)TimeGatedSamplingMethod::TRIANGLE_APPROX));
-    defines.add("USE_ELLIPSOIDAL_DIRECT_MIS", mUseEllipsoidalMIS ? "1" : "0");
-    defines.add("SHIFT_MAPPING_METHOD", std::to_string((uint32_t)mShiftmapMethod));
-    defines.add("USE_TEMPORAL_REUSE", mUseTemporalReuse ? "1" : "0");
+    defines.add("SHIFT_MAPPING_METHOD", std::to_string((uint32_t)mOptions.restir.shiftmapMethod));
+    defines.add("USE_TEMPORAL_REUSE", mOptions.restir.useTemporalReuse ? "1" : "0");
 
     // For optional I/O resources, set 'is_valid_<name>' defines to inform the program of which ones it can access.
     // TODO: This should be moved to a more general mechanism using Slang.
@@ -284,7 +191,7 @@ DefineList TransientHistogramReSTIRInline::getShaderDefines(const RenderData& re
     defines.add(getValidResourceDefines(kLaserHitInputChannels, renderData));
     defines.add(getValidResourceDefines(kOutputChannels, renderData));
 
-    ChannelList kHistogramOutputChannels = mUseSingleChannel ? kHistogramOutputChannelSingle : kHistogramOutputChannelsRGB;
+    ChannelList kHistogramOutputChannels = mOptions.pathTracing.useSingleChannel ? kHistogramOutputChannelSingle : kHistogramOutputChannelsRGB;
     defines.add(getValidResourceDefines(kHistogramOutputChannels, renderData));
     
     return defines;
@@ -308,11 +215,11 @@ void TransientHistogramReSTIRInline::bindShaderData(const ShaderVar& var, const 
     
     var["CB"]["gFrameDim"] = targetDim;
     var["CB"]["gPRNGDimension"] = dict.keyExists(kRenderPassPRNGDimension) ? dict[kRenderPassPRNGDimension] : 0u;
-    var["CB"]["gLaserHitVBufferRes" ] = mLaserHitVBufferRes;
-    var["CB"]["specularRoughnessThreshold" ] = mSpecularRoughnessThreshold;
+    var["CB"]["gLaserHitVBufferRes" ] = mOptions.restir.laserHitVBufferRes;
+    var["CB"]["specularRoughnessThreshold" ] = mOptions.restir.reconnectionRoughnessThreshold;
     
     // transients
-    // if(mLaserCollocated && mpScene){
+    // if(mOptions.pathTracing.laserCollocated && mpScene){
     //     var["Laser_CB"]["laserOrigin"] = mpScene->getCamera()->getPosition();
     //     var["Laser_CB"]["laserDirection"] = normalize(mpScene->getCamera()->getTarget() - mpScene->getCamera()->getPosition());
     // } else {
@@ -327,37 +234,36 @@ void TransientHistogramReSTIRInline::bindShaderData(const ShaderVar& var, const 
     var["Laser_CB"]["laserPower"] = mLaserPower;
     var["Laser_CB"]["laserCosAngle"] = mLaserCosAngle;
     
-    var["CB"]["samplesPerPixel"] = mSamplesPerPixel;
-    var["CB"]["gRoughTimeGateSampleRatio"] = mRoughTimeGateSampleRatio;
-    var["CB"]["gTemporalHistoryLength"] = mTemporalHistoryLength;
-    if (mUseTemporalReuse)
+    var["CB"]["samplesPerPixel"] = mOptions.pathTracing.samplesPerPixel;
+    var["CB"]["gTemporalHistoryLength"] = mOptions.restir.temporalHistoryLength;
+    if (mOptions.restir.useTemporalReuse)
     {
         // Temporal reuse shifts last frame's paths in this pass.
         var["gTemporalVBuffer"] = mpTemporalVBuffer;
         var["CB"]["gTemporalHistoryValid"] = mTemporalHistoryValid;
         var["CB"]["gPreviousCameraPosition"] = mPreviousCameraPosition;
-        var["Shiftmap_CB"]["gGaugeAxis"] = mGaugeAxis;
-        var["Shiftmap_CB"]["gGaugeMode"] = uint(mGaugeMode);
-        var["Shiftmap_CB"]["gShiftMappingMethod"] = uint(mShiftmapMethod);
-        var["Shiftmap_CB"]["gNewtonMaxIteration"] = mNewtonMaxIteration;
-        var["Shiftmap_CB"]["gNewtonRelativeTolerance"] = mNewtonRelativeTolerance;
+        var["Shiftmap_CB"]["gGaugeAxis"] = mOptions.restir.gaugeAxis;
+        var["Shiftmap_CB"]["gGaugeMode"] = uint(mOptions.restir.gaugeMode);
+        var["Shiftmap_CB"]["gShiftMappingMethod"] = uint(mOptions.restir.shiftmapMethod);
+        var["Shiftmap_CB"]["gNewtonMaxIteration"] = mOptions.restir.newtonMaxIteration;
+        var["Shiftmap_CB"]["gNewtonRelativeTolerance"] = mOptions.restir.newtonRelativeTolerance;
         if (mpEmissiveSampler)
             mpEmissiveSampler->bindShaderData(var["Shiftmap_CB"]["emissiveSamplerShiftmap"]);
     }
 
-    var["TimeGate"]["time_gate_window"] = (mTimeMax - mTimeMin) / mTimeBin;
-    var["TimeGate"]["time_gate_window_rough"] = (mTimeMax - mTimeMin) / mTimeBin;
-    var["TimeGate"]["time_gate_mode"] = uint(mTimeGateMode);
+    var["TimeGate"]["time_gate_window"] = (mOptions.histogram.timeMax - mOptions.histogram.timeMin) / mOptions.histogram.timeBin;
+    var["TimeGate"]["time_gate_window_rough"] = (mOptions.histogram.timeMax - mOptions.histogram.timeMin) / mOptions.histogram.timeBin;
+    var["TimeGate"]["time_gate_mode"] = uint(mOptions.histogram.filter);
 
-    // if(mFrameCount == mTimeBin){
+    // if(mFrameCount == mOptions.histogram.timeBin){
     //     mFrameCount = 0;
     // }
 
     // var["TimeGate"]["tcurr"] = mTcurr;
-    var["TimeGate"]["tbin"] = mTimeBin;
-    var["TimeGate"]["tmax"] = mTimeMax;
-    var["TimeGate"]["tmin"] = mTimeMin;
-    var["TimeGate"]["tunit"] = (mTimeMax - mTimeMin) / mTimeBin;
+    var["TimeGate"]["tbin"] = mOptions.histogram.timeBin;
+    var["TimeGate"]["tmax"] = mOptions.histogram.timeMax;
+    var["TimeGate"]["tmin"] = mOptions.histogram.timeMin;
+    var["TimeGate"]["tunit"] = (mOptions.histogram.timeMax - mOptions.histogram.timeMin) / mOptions.histogram.timeBin;
 
 
     // Bind I/O buffers. These needs to be done per-frame as the buffers may change anytime.
@@ -377,7 +283,7 @@ void TransientHistogramReSTIRInline::bindShaderData(const ShaderVar& var, const 
     for (auto channel : kOutputChannels)
         bind(channel);
 
-    ChannelList kHistogramOutputChannels = mUseSingleChannel ? kHistogramOutputChannelSingle : kHistogramOutputChannelsRGB;
+    ChannelList kHistogramOutputChannels = mOptions.pathTracing.useSingleChannel ? kHistogramOutputChannelSingle : kHistogramOutputChannelsRGB;
     for (auto channel : kHistogramOutputChannels)
         bind(channel);
 
@@ -400,12 +306,12 @@ void TransientHistogramReSTIRInline::spatialReuse(RenderContext* pRenderContext,
     const uint2 targetDim = renderData.getDefaultTextureDims();
 
     var["gFrameCount"] = mFrameCount;
-    var["specularRoughnessThreshold"] = mSpecularRoughnessThreshold;
+    var["specularRoughnessThreshold"] = mOptions.restir.reconnectionRoughnessThreshold;
     var["gFrameDim"] = targetDim;
     var["neighborOffsets"] = mpNeighborOffsets;
-    var["neighborCount"] = mSpatialReuseNeighborCount;
-    var["gatherRadius"] = mSpatialReuseGatherRadius;
-    var["useBinReuse"] = mUseBinReuse;
+    var["neighborCount"] = mOptions.restir.spatialReuseNeighborCount;
+    var["gatherRadius"] = mOptions.restir.spatialReuseGatherRadius;
+    var["useBinReuse"] = mOptions.useBinReuse;
     
     // Bind I/O buffers. These needs to be done per-frame as the buffers may change anytime.
     auto bind = [&](const ChannelDesc& desc)
@@ -423,18 +329,18 @@ void TransientHistogramReSTIRInline::spatialReuse(RenderContext* pRenderContext,
         bind(channel);
     
     // The histogram is a pass-level global, outside the shared SpatialReuse struct.
-    ChannelList kHistogramOutputChannels = mUseSingleChannel ? kHistogramOutputChannelSingle : kHistogramOutputChannelsRGB;
+    ChannelList kHistogramOutputChannels = mOptions.pathTracing.useSingleChannel ? kHistogramOutputChannelSingle : kHistogramOutputChannelsRGB;
     for (auto channel : kHistogramOutputChannels)
         rootvar[channel.texname] = renderData.getTexture(channel.name);
 
-    rootvar["TimeGate"]["time_gate_window"] = (mTimeMax - mTimeMin) / mTimeBin;
-    rootvar["TimeGate"]["time_gate_window_rough"] = (mTimeMax - mTimeMin) / mTimeBin;
-    rootvar["TimeGate"]["time_gate_mode"] = uint(mTimeGateMode);
+    rootvar["TimeGate"]["time_gate_window"] = (mOptions.histogram.timeMax - mOptions.histogram.timeMin) / mOptions.histogram.timeBin;
+    rootvar["TimeGate"]["time_gate_window_rough"] = (mOptions.histogram.timeMax - mOptions.histogram.timeMin) / mOptions.histogram.timeBin;
+    rootvar["TimeGate"]["time_gate_mode"] = uint(mOptions.histogram.filter);
 
-    rootvar["TimeGate"]["tbin"] = mTimeBin;
-    rootvar["TimeGate"]["tmax"] = mTimeMax;
-    rootvar["TimeGate"]["tmin"] = mTimeMin;
-    rootvar["TimeGate"]["tunit"] = (mTimeMax - mTimeMin) / mTimeBin;
+    rootvar["TimeGate"]["tbin"] = mOptions.histogram.timeBin;
+    rootvar["TimeGate"]["tmax"] = mOptions.histogram.timeMax;
+    rootvar["TimeGate"]["tmin"] = mOptions.histogram.timeMin;
+    rootvar["TimeGate"]["tunit"] = (mOptions.histogram.timeMax - mOptions.histogram.timeMin) / mOptions.histogram.timeBin;
 
     // transients
     rootvar["Laser_CB"]["laserOrigin"] = mLaserPosition;
@@ -442,7 +348,7 @@ void TransientHistogramReSTIRInline::spatialReuse(RenderContext* pRenderContext,
     rootvar["Laser_CB"]["laserPower"] = mLaserPower;
     rootvar["Laser_CB"]["laserCosAngle"] = mLaserCosAngle;
     
-    // if(mLaserCollocated && mpScene){
+    // if(mOptions.pathTracing.laserCollocated && mpScene){
     //     rootvar["Laser_CB"]["laserOrigin"] = mpScene->getCamera()->getPosition();
     //     rootvar["Laser_CB"]["laserDirection"] = normalize(mpScene->getCamera()->getTarget() - mpScene->getCamera()->getPosition());
     // } else {
@@ -452,13 +358,13 @@ void TransientHistogramReSTIRInline::spatialReuse(RenderContext* pRenderContext,
     // rootvar["Laser_CB"]["laserPower"] = dict.keyExists("laserPower") ? dict["laserPower"] : float3(1,1,1);
     // rootvar["Laser_CB"]["laserCosAngle"] = dict.keyExists("laserCosAngle") ? dict["laserCosAngle"] : 0.0f;
     
-    rootvar["Shiftmap_CB"]["gGaugeAxis"] = mGaugeAxis;
-    rootvar["Shiftmap_CB"]["gGaugeMode"] = uint(mGaugeMode);
-    rootvar["Shiftmap_CB"]["gShiftMappingMethod"] = uint(mShiftmapMethod);
-    rootvar["Shiftmap_CB"]["gNewtonMaxIteration"] = mNewtonMaxIteration;
-    rootvar["Shiftmap_CB"]["gNewtonRelativeTolerance"] = mNewtonRelativeTolerance;
+    rootvar["Shiftmap_CB"]["gGaugeAxis"] = mOptions.restir.gaugeAxis;
+    rootvar["Shiftmap_CB"]["gGaugeMode"] = uint(mOptions.restir.gaugeMode);
+    rootvar["Shiftmap_CB"]["gShiftMappingMethod"] = uint(mOptions.restir.shiftmapMethod);
+    rootvar["Shiftmap_CB"]["gNewtonMaxIteration"] = mOptions.restir.newtonMaxIteration;
+    rootvar["Shiftmap_CB"]["gNewtonRelativeTolerance"] = mOptions.restir.newtonRelativeTolerance;
 
-    for(uint iteration=0; iteration < mSpatialReusePassIteration; iteration++){
+    for(uint iteration=0; iteration < mOptions.restir.spatialReuseIteration; iteration++){
         std::swap(mpCurrReservoirs, mpPrevReservoirs);
         var["gRandomSeed"] = mRandomSeed++;
         var["prevReservoirs"] = mpPrevReservoirs;
@@ -476,9 +382,9 @@ void TransientHistogramReSTIRInline::finalEvaluate(RenderContext* pRenderContext
     var["gFrameDim"] = targetDim;
     var["currReservoirs"] = mpCurrReservoirs;
 
-    rootvar["TimeGate"]["time_gate_window"] = (mTimeMax - mTimeMin) / mTimeBin;
-    rootvar["TimeGate"]["time_gate_window_rough"] = (mTimeMax - mTimeMin) / mTimeBin;
-    rootvar["TimeGate"]["time_gate_mode"] = uint(mTimeGateMode);
+    rootvar["TimeGate"]["time_gate_window"] = (mOptions.histogram.timeMax - mOptions.histogram.timeMin) / mOptions.histogram.timeBin;
+    rootvar["TimeGate"]["time_gate_window_rough"] = (mOptions.histogram.timeMax - mOptions.histogram.timeMin) / mOptions.histogram.timeBin;
+    rootvar["TimeGate"]["time_gate_mode"] = uint(mOptions.histogram.filter);
     rootvar["TimeGate"]["tcurr"] = mTcurr;
 
     // Bind I/O buffers. These needs to be done per-frame as the buffers may change anytime.
@@ -518,7 +424,7 @@ void TransientHistogramReSTIRInline::execute(RenderContext* pRenderContext, cons
                 pRenderContext->clearTexture(pDst);
         }
 
-        ChannelList kHistogramOutputChannels = mUseSingleChannel ? kHistogramOutputChannelSingle : kHistogramOutputChannelsRGB;
+        ChannelList kHistogramOutputChannels = mOptions.pathTracing.useSingleChannel ? kHistogramOutputChannelSingle : kHistogramOutputChannelsRGB;
         for (auto it : kHistogramOutputChannels)
         {
             Texture* pDst = renderData.getTexture(it.name).get();
@@ -530,7 +436,7 @@ void TransientHistogramReSTIRInline::execute(RenderContext* pRenderContext, cons
 
     // clear histogram
     if(mNeedToClearHistogram){
-        ChannelList kHistogramOutputChannels = mUseSingleChannel ? kHistogramOutputChannelSingle : kHistogramOutputChannelsRGB;
+        ChannelList kHistogramOutputChannels = mOptions.pathTracing.useSingleChannel ? kHistogramOutputChannelSingle : kHistogramOutputChannelsRGB;
         for (auto it : kHistogramOutputChannels)
         {
             Texture* pDst = renderData.getTexture(it.name).get();
@@ -541,7 +447,7 @@ void TransientHistogramReSTIRInline::execute(RenderContext* pRenderContext, cons
     }
 
     // set laser position
-    if(mLaserCollocated){
+    if(mOptions.pathTracing.laserCollocated){
         mLaserPosition = mpScene->getCamera()->getPosition();
         mLaserDirection = normalize(mpScene->getCamera()->getTarget() - mpScene->getCamera()->getPosition());
     } else {
@@ -561,28 +467,6 @@ void TransientHistogramReSTIRInline::execute(RenderContext* pRenderContext, cons
         mpScene->getCamera()->getApertureRadius() > 0.f)
         mTemporalHistoryValid = false;
 
-    if (!mpEmissiveSampler && (mSamplingMethod == TimeGatedSamplingMethod::ELLIPSOIDAL))
-    {
-        const auto& pLights = mpScene->getITriCollection(pRenderContext);
-        FALCOR_ASSERT(pLights && pLights->getActiveLightCount(pRenderContext) > 0);
-        FALCOR_ASSERT(!mpEmissiveSampler);
-
-        switch (mTriSampler)
-        {
-        case EmissiveLightSamplerType::Uniform:
-            mpEmissiveSampler = std::make_unique<EmissiveUniformSampler>(pRenderContext, mpScene->getITriCollection(pRenderContext));
-            break;
-        case EmissiveLightSamplerType::LightBVH:
-            mpEmissiveSampler = std::make_unique<LightBVHSampler>(pRenderContext, mpScene->getITriCollection(pRenderContext), mLightBVHOptions);
-            break;
-        case EmissiveLightSamplerType::Power:
-            mpEmissiveSampler = std::make_unique<EmissivePowerSampler>(pRenderContext, mpScene->getITriCollection(pRenderContext));
-            break;
-        default:
-            FALCOR_THROW("Unknown emissive light sampler type");
-        }
-        mpEmissiveSampler->update(pRenderContext, mpScene->getITriCollection(pRenderContext));
-    }
     
     if(!mpComputePass){
         // Create ray tracing program.
@@ -679,7 +563,7 @@ void TransientHistogramReSTIRInline::execute(RenderContext* pRenderContext, cons
     mpComputePass->getProgram()->addDefines(getShaderDefines(renderData));
     
     // update time
-    // mTcurr = float((float(mTimeGateFrameCount % mTimeBin) / mTimeBin) * (mTimeMax - mTimeMin) + mTimeMin);
+    // mTcurr = float((float(mTimeGateFrameCount % mOptions.histogram.timeBin) / mOptions.histogram.timeBin) * (mOptions.histogram.timeMax - mOptions.histogram.timeMin) + mOptions.histogram.timeMin);
     
     // bind variables
     auto var = mpComputePass->getRootVar();
@@ -697,7 +581,7 @@ void TransientHistogramReSTIRInline::execute(RenderContext* pRenderContext, cons
 
     // The final reservoirs become next frame's temporal history.
     std::swap(mpCurrReservoirs, mpPrevReservoirs);
-    mTemporalHistoryValid = mUseTemporalReuse && mpScene->getCamera()->getApertureRadius() == 0.f;
+    mTemporalHistoryValid = mOptions.restir.useTemporalReuse && mpScene->getCamera()->getApertureRadius() == 0.f;
     if (mTemporalHistoryValid)
         pRenderContext->copyResource(mpTemporalVBuffer.get(), renderData["vbuffer"].get());
     mPreviousCameraPosition = mpScene->getCamera()->getPosition();
@@ -713,45 +597,40 @@ void TransientHistogramReSTIRInline::execute(RenderContext* pRenderContext, cons
 void TransientHistogramReSTIRInline::renderUI(Gui::Widgets& widget)
 {
     bool dirty = false;
+    const uint previousBins = mOptions.histogram.timeBin;
+    const bool previousSingleChannel = mOptions.pathTracing.useSingleChannel;
 
-    dirty |= widget.var("Time Gate Window", mTimeGateWindow, 0.001f, 100.0f);
-    widget.tooltip("Time gate window for transient rendering", true);
+    if (auto group = widget.group("Histogram", true))
+        dirty |= mOptions.histogram.renderUI(group, false);
 
-    dirty |= widget.var("Time Min", mTimeMin, 1.0f, 200.0f);
-    widget.tooltip("Minimum time in unit of distance", true);
-    
-    dirty |= widget.var("Time Max", mTimeMax, 1.0f, 200.0f);
-    widget.tooltip("Maximum time in unit of distance", true);
+    if (auto group = widget.group("Initial sampling", true))
+        dirty |= mOptions.pathTracing.renderSamplingUI(group, " Each vertex is connected to the laser spot.");
 
-
-    dirty |= widget.var("Samples per pixel", mSamplesPerPixel, 1u, 1024u);
-    widget.tooltip("Samples per pixel", true);
-
-    dirty |= widget.var("Max bounces", mMaxBounces, 0u, 1u << 16);
-    widget.tooltip("Maximum path length for indirect illumination.\n0 = direct only\n1 = one indirect bounce etc.", true);
-
-    dirty |= widget.checkbox("Evaluate direct illumination", mComputeDirect);
-    widget.tooltip("Compute direct illumination.\nIf disabled only indirect is computed (when max bounces > 0).", true);
-
-    dirty |= widget.checkbox("Use importance sampling", mUseImportanceSampling);
-    widget.tooltip("Use importance sampling for materials", true);
-
-    dirty |= widget.checkbox("Reuse adjacent bins", mUseBinReuse);
-    widget.tooltip("Each spatial reuse iteration also resamples bins j-1 and j+1 of the same pixel", true);
-
-    dirty |= widget.checkbox("Temporal reuse", mUseTemporalReuse);
-    widget.tooltip("Reuse each bin from the previous frame (static scene and light, moving camera)", true);
-    if (mUseTemporalReuse)
+    if (auto group = widget.group("Reuse", true))
     {
-        dirty |= widget.var("Temporal history length", mTemporalHistoryLength, 0.0f, 100000.0f);
-        widget.tooltip("M cap in units of samples per pixel; 0 disables the history", true);
+        dirty |= mOptions.restir.renderReuseUI(group, " Static scene and light; the camera may move.");
+
+        dirty |= group.checkbox("Reuse adjacent bins", mOptions.useBinReuse);
+        group.tooltip("Each spatial reuse iteration also resamples bins j-1 and j+1 of the same pixel.", true);
     }
+
+    if (auto group = widget.group("Shift mapping", true))
+        dirty |= mOptions.restir.renderShiftMappingUI(group);
+
+    if (auto group = widget.group("Light", true))
+        dirty |= mOptions.pathTracing.renderLightUI(group);
+
+    if (auto group = widget.group("Output", true))
+        dirty |= mOptions.pathTracing.renderOutputUI(group, true);
 
     // If rendering options that modify the output have changed, set flag to indicate that.
     // In execute() we will pass the flag to other passes for reset of temporal data etc.
     if (dirty)
     {
         mOptionsChanged = true;
+        // The histogram texture depends on the bin count and channel count.
+        if (mOptions.histogram.timeBin != previousBins || mOptions.pathTracing.useSingleChannel != previousSingleChannel)
+            requestRecompile();
     }
 }
 
@@ -772,10 +651,10 @@ void TransientHistogramReSTIRInline::prepareResources(RenderContext* pRenderCont
 {
     DefineList defines = mpScene->getSceneDefines();
     defines.add(mpSampleGenerator->getDefines());
-    defines.add("USE_ALPHA_TEST", mUseAlphaTest ? "1" : "0");
-    defines.add("USE_SINGLE_CHANNEL", mUseSingleChannel ? "1" : "0");
-    defines.add("RESERVOIR_SCALAR_TARGET", mUseSingleChannel ? "1" : "0");
-    defines.add("USE_IMPORTANCE_SAMPLING", mUseImportanceSampling ? "1" : "0");
+    defines.add("USE_ALPHA_TEST", mOptions.pathTracing.useAlphaTest ? "1" : "0");
+    defines.add("USE_SINGLE_CHANNEL", mOptions.pathTracing.useSingleChannel ? "1" : "0");
+    defines.add("RESERVOIR_SCALAR_TARGET", mOptions.pathTracing.useSingleChannel ? "1" : "0");
+    defines.add("USE_IMPORTANCE_SAMPLING", mOptions.pathTracing.useImportanceSampling ? "1" : "0");
     
     // create helper program
     if (!mpReflectTypes)
@@ -806,7 +685,7 @@ void TransientHistogramReSTIRInline::prepareResources(RenderContext* pRenderCont
     FALCOR_ASSERT(mpScene);
     auto var = mpReflectTypes->getRootVar();
     const uint2 targetDim = renderData.getDefaultTextureDims();
-    const uint32_t screenPixelCount = targetDim.x * targetDim.y * mTimeBin;
+    const uint32_t screenPixelCount = targetDim.x * targetDim.y * mOptions.histogram.timeBin;
 
     // create reservoirs (a resize discards the temporal history)
     if(!mpPrevReservoirs || (mpPrevReservoirs->getElementCount() != screenPixelCount)){
@@ -846,7 +725,7 @@ void TransientHistogramReSTIRInline::prepareResources(RenderContext* pRenderCont
         mpNeighborOffsets = createNeighborOffsetTexture(kNeighborOffsetCount);
     }
 
-    if (mUseTemporalReuse &&
+    if (mOptions.restir.useTemporalReuse &&
         (!mpTemporalVBuffer || any(mTemporalHistoryDimensions != targetDim) ||
          mpTemporalVBuffer->getFormat() != renderData.getTexture("vbuffer")->getFormat()))
     {
