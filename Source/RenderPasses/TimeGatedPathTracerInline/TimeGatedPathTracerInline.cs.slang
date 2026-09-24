@@ -100,18 +100,6 @@ float3 tracePath(const uint2 pixel, const uint2 frameDim)
 
         ShadingData sd0 = loadShadingData(hit0, primaryRayOrigin, primaryRayDir);
         IMaterialInstance mi0 = gScene.materials.getMaterialInstance(sd0, ExplicitLodTextureSampler(0.f));
-        // Legacy laser-spot overlay; this is separate from the time-gated estimator.
-        if(kComputeDirect)
-        {
-            float3 toLaserDir = normalize(laserOrigin - sd0.posW);
-            float toLaserDist = length(laserOrigin - sd0.posW);
-            float minCosAngle = min(laserCosAngle, 1.0-(1e-5));
-            bool inspot = (dot(-toLaserDir, laserDirection) > minCosAngle);
-            float3 L = mi0.eval(sd0, toLaserDir, sg) * laserPower / (toLaserDist * toLaserDist) * float(inspot);
-            L = float3(L.x, 0.0, 0.0);
-            outColor += samplesPerPixel * L;
-        }
-
         float maxPathLength = getMaxpathLength(tcurr);
         LaserLightSampler lls = LaserLightSampler(laserOrigin, laserDirection, laserCosAngle, laserPower);
 
@@ -131,7 +119,7 @@ float3 tracePath(const uint2 pixel, const uint2 frameDim)
             HitInfo hit = hit0;
             float hitT;
 
-            // show direct?
+            // Direct illumination at the primary hit (camera -> primary -> light).
             if(kComputeDirect){
                 // sample light
                 LightSample ls = {};

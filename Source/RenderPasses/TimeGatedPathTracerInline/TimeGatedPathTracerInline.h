@@ -30,7 +30,10 @@
 #include "RenderGraph/RenderPass.h"
 #include "Utils/Sampling/SampleGenerator.h"
 #include "Utils/Transient/Transient.h"
-#include "Rendering/Lights/LightBVHSampler.h"
+#include "../Shared/Configs/TimeGateConfig.h"
+#include "../Shared/Configs/EllipsoidalSamplingConfig.h"
+#include "../Shared/Configs/PathTracingConfig.h"
+#include "../Shared/Utils/InlinePassUtils.h"
 
 using namespace Falcor;
 
@@ -59,60 +62,27 @@ public:
     void setTimeGateInfo(float timeMin, float timeMax, uint timeBin);
 
 private:
-    enum class TimeGatedSamplingMethod
-    {
-        DIRECT = 0,
-        ELLIPSOIDAL = 1,
-        ELLIPSOIDAL_DIRECT_MIS = 2,
-    };
-
-    static const std::unordered_map<std::string, TimeGatedSamplingMethod>& getSamplingMethods();
     void parseProperties(const Properties& props);
     void bindShaderData(const ShaderVar& var, const RenderData& renderData);
     DefineList getShaderDefines(const RenderData& renderData) const;
 
-    /// User settings. The sampling method selects whether to use direct/ellipsoidal MIS.
+    /// User settings, composed of shared configs (Shared/Configs).
     struct Options
     {
-        uint maxBounces = 3;
-        bool computeDirect = true;
-        bool useImportanceSampling = true;
-        float timeGateWindow = 0.05f;
-        TimeGateMode timeGateMode = TimeGateMode::BOX;
-        float timeMin = 9.0f;
-        float timeMax = 12.0f;
-        uint timeBin = 512;
-        float specularRoughnessThreshold = 0.25f;
-        TimeGatedSamplingMethod samplingMethod = TimeGatedSamplingMethod::DIRECT;
-        EmissiveLightSamplerType triSampler = EmissiveLightSamplerType::Uniform;
-        bool laserCollocated = false;
-        bool useAlphaTest = false;
-        bool useSingleChannel = false;
-        bool isLightSourceLaser = true;
-        uint samplesPerPixel = 128;
-    };
-
-    struct FrameState
-    {
-        uint frameCount = 0;
-        uint gateIndex = 0;
-        uint previousGateIndex = 0;
-        float gatePosition = 0.f;
-        float previousGatePosition = 0.f;
+        TimeGateConfig timeGate;
+        EllipsoidalSamplingConfig ellipsoidalSampling;
+        PathTracingConfig pathTracing;
     };
 
     static void validateOptions(const Options& options);
-    void updateGatePosition();
-    void prepareLightSampler(RenderContext* pRenderContext);
-    void prepareProgram(RenderContext* pRenderContext, const RenderData& renderData);
 
     Options mOptions;
-    FrameState mFrameState;
+    uint mFrameCount = 0;
+    TimeGateState mGate;
     bool mOptionsChanged = false;
 
     ref<Scene> mpScene;
     ref<SampleGenerator> mpSampleGenerator;
-    std::unique_ptr<EmissiveLightSampler> mpEmissiveSampler;
-    LightBVHSampler::Options mLightBVHOptions;
+    EllipsoidalTriangleSampler mTriangleSampler;
     ref<ComputePass> mpComputePass;
 };

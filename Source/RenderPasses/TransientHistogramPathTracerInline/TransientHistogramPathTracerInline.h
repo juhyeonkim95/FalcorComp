@@ -28,12 +28,18 @@
 #pragma once
 #include "Falcor.h"
 #include "RenderGraph/RenderPass.h"
+#include "RenderGraph/RenderPassHelpers.h"
 #include "Utils/Sampling/SampleGenerator.h"
 #include "Utils/Transient/Transient.h"
+#include "../Shared/Configs/TransientHistogramConfig.h"
+#include "../Shared/Configs/PathTracingConfig.h"
+#include "../Shared/Utils/InlinePassUtils.h"
 
 using namespace Falcor;
 
-/** Inline transient histogram tracer. Histogram values accumulate until resetHistogram().
+/** Inline transient histogram tracer. Histogram values accumulate until resetHistogram(), or until the
+ * camera moves or an upstream pass changes its options when autoReset is enabled. The number of
+ * accumulated frames is published in the render data dictionary (kHistogramFrameCount).
  * Single-channel output stores the red channel in an H x W x B volume; RGB uses float4 bins.
  * Triangle approximation integrates a single intermediate triangle, not a full path walk.
  */
@@ -56,33 +62,28 @@ public:
 
 private:
     enum class SamplingMethod { Direct = 0, TriangleApprox = 2 };
+    /// User settings, composed of shared configs (Shared/Configs) plus this pass's own.
     struct Options
     {
-        uint maxBounces = 3;
-        uint samplesPerPixel = 128;
-        bool computeDirect = true;
-        bool useImportanceSampling = true;
-        float timeMin = 9.f;
-        float timeMax = 12.f;
-        uint timeBin = 512;
-        TimeGateMode timeGateMode = TimeGateMode::BOX;
+        TransientHistogramConfig histogram;
+        PathTracingConfig pathTracing;
         SamplingMethod samplingMethod = SamplingMethod::Direct;
-        bool laserCollocated = false;
-        bool useAlphaTest = false;
-        bool useSingleChannel = false;
-        bool isLightSourceLaser = true;
-        bool useKernelDensityEstimation = false;
-        float initialWindowRatio = 1.f; ///< Initial KDE bandwidth / histogram range, in (0, 1].
+        bool autoReset = false; ///< Clear the histogram when the camera moves or an upstream pass changes options.
+        RenderPassHelpers::IOSize outputSize = RenderPassHelpers::IOSize::Default;
+        uint2 fixedOutputSize = {512, 512}; ///< Output size when outputSize is Fixed.
     };
     static void validateOptions(const Options& options);
     void parseProperties(const Properties& props);
-    void prepareProgram(RenderContext* pRenderContext, const RenderData& renderData);
+    const ChannelList& histogramChannels() const;
     void bindShaderData(const ShaderVar& var, const RenderData& renderData);
+    bool needsAutoReset(const RenderData& renderData) const;
     DefineList getShaderDefines(const RenderData& renderData) const;
 
     Options mOptions;
     uint mFrameCount = 0;
+    uint mHistogramFrameCount = 0; ///< Frames accumulated in the histogram since it was cleared.
     bool mOptionsChanged = false;
+    std::string mUIWarning; ///< Why the last UI edit was rejected.
     bool mNeedToClearHistogram = true;
     ref<Scene> mpScene;
     ref<SampleGenerator> mpSampleGenerator;

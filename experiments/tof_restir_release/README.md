@@ -159,3 +159,25 @@ Edit SPP, bins, and KDE bandwidth ratio in the render shell; pixel coordinates i
 Defaults: 256×256, 64 bins over [16.75, 18.03), 64 spp, GT 1024 spp, pixel (192,132).
 Saves H×W×B red-channel NPY arrays; evaluation saves pixel curves, errors, PNG and SVG.
 GT is cached in `$OUTPUT_PATH/reference_histogram/`. Triangle approximation ignores SPP.
+
+Application 1 — scanning NLOS (SNLOS): PT / naive reuse / ours at equal time.
+```bash
+bash experiments/tof_restir_release/scripts/run_application_1_snlos_rendering.sh
+bash experiments/tof_restir_release/scripts/run_application_1_snlos_reconstruction.sh
+```
+The camera and laser sit at O = (-1, 0, 4) facing the relay wall z = 0; a 25×25 voxel grid
+covers the hidden plane around (2, 0, 4). Voxels are scanned in a column-wise serpentine; for
+each voxel V the gate is 2τ with τ = |O−C| + |C−V| + 0.5, and the laser visits 16 points on
+the illumination ellipse (|O−W| + |W−V| = τ), one frame each. Initial samples use ellipsoidal
+connection without MIS; naive and ours use temporal reuse across these frames (the laser
+moves, so the scene is dynamic) plus spatial reuse (1 iteration, 3 neighbors, radius 5).
+PT and naive SPP are calibrated so their mean frame time matches ours at 32 SPP (exp7
+procedure, timed on the first 50 voxels). Hidden objects: `scenes/application_1/`.
+
+Rendering saves per-voxel radiance stacks and `plots_rendering/`: frames with the voxel's
+detection ellipse in red, a selected-voxel figure, and MP4s of the scan (per method and side
+by side). Reconstruction scores each voxel by the fraction of nonzero detection-ellipse samples
+per laser position (squared geometric mean) and saves `reconstruction/`: score maps (NPY/CSV),
+final images, and MP4s revealing the voxels in scan order. Outputs:
+`$OUTPUT_PATH/application_1_snlos/<object>/`. The SNLOS scenes are read from
+`experiments/scene/nlos-snlos/`.

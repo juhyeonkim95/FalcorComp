@@ -165,13 +165,33 @@ void LaserVBufferRT::renderUI(Gui::Widgets& widget)
     bool dirty = false;
 
     float3 laserPower = mLaserPower;
-    if (widget.var("laserPower", laserPower, 0.0, FLT_MAX, 0.001f, false, "%.4f")) mLaserPower = laserPower;
+    if (widget.var("laserPower", laserPower, 0.0, FLT_MAX, 0.001f, false, "%.4f"))
+    {
+        mLaserPower = laserPower;
+        dirty = true;
+    }
 
     float3 laserDirection = mLaserDirection;
-    if (widget.var("laserDirection", laserDirection, -FLT_MAX, FLT_MAX, 0.001f, false, "%.4f")) mLaserDirection = normalize(laserDirection);
+    if (widget.var("laserDirection", laserDirection, -FLT_MAX, FLT_MAX, 0.001f, false, "%.4f"))
+    {
+        mLaserDirection = normalize(laserDirection);
+        dirty = true;
+    }
 
     float3 laserPosition = mLaserPosition;
-    if (widget.var("laserPosition", laserPosition, -FLT_MAX, FLT_MAX, 0.001f, false, "%.4f")) mLaserPosition = laserPosition;
+    if (widget.var("laserPosition", laserPosition, -FLT_MAX, FLT_MAX, 0.001f, false, "%.4f"))
+    {
+        mLaserPosition = laserPosition;
+        dirty = true;
+    }
+
+    float laserAngle = float(std::acos(std::clamp(mLaserCosAngle, -1.f, 1.f)) * 180.0 / M_PI);
+    if (widget.var("laserAngle", laserAngle, 0.f, 90.f, 0.1f, false, "%.2f"))
+    {
+        mLaserCosAngle = float(cos(laserAngle / 180.0 * M_PI));
+        dirty = true;
+    }
+    widget.tooltip("Half-angle of the laser cone in degrees. 0 = collimated beam.", true);
 
     // If rendering options that modify the output have changed, set flag to indicate that.
     // In execute() we will pass the flag to other passes for reset of temporal data etc.

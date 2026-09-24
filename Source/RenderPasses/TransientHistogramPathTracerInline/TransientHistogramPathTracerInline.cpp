@@ -70,21 +70,15 @@ const ChannelList kHistogramOutputChannelsRGB = {
     { "histogram",          "gTransientHistogram", "Accumulated transient radiance density per bin", false, ResourceFormat::RGBA32Float },
 };
 
-const char kMaxBounces[] = "maxBounces";
-const char kComputeDirect[] = "computeDirect";
-const char kUseImportanceSampling[] = "useImportanceSampling";
-const char kSamplesPerPixel[] = "samplesPerPixel";
-const char kTimeGateMode[] = "timeGateMode";
-const char kTimeMin[] = "timeMin";
-const char kTimeMax[] = "timeMax";
-const char kTimeBin[] = "timeBin";
 const char kSamplingMethod[] = "samplingMethod";
-const char kLaserCollocated[] = "laserCollocated";
-const char kUseAlphaTest[] = "useAlphaTest";
-const char kUseSingleChannel[] = "useSingleChannel";
-const char kIsLightSourceLaser[] = "isLightSourceLaser";
-const char kUseKernelDensityEstimation[] = "useKernelDensityEstimation";
-const char kInitialWindowRatio[] = "initialWindowRatio";
+const char kAutoReset[] = "autoReset";
+const char kOutputSize[] = "outputSize";
+const char kFixedOutputSize[] = "fixedOutputSize";
+
+// Render data dictionary keys read by histogram consumers (e.g. TransientHistogramViewer).
+const char kHistogramFrameCount[] = "transientHistogramFrameCount";
+const char kHistogramTimeMin[] = "transientHistogramTimeMin";
+const char kHistogramTimeMax[] = "transientHistogramTimeMax";
 } // namespace
 
 TransientHistogramPathTracerInline::TransientHistogramPathTracerInline(ref<Device> pDevice, const Properties& props) : RenderPass(pDevice)
@@ -106,46 +100,21 @@ void TransientHistogramPathTracerInline::parseProperties(const Properties& props
 {
     for (const auto& [key, value] : props)
     {
-        if (key == kMaxBounces)
-            mOptions.maxBounces = value;
-        else if (key == kComputeDirect)
-            mOptions.computeDirect = value;
-        else if (key == kUseImportanceSampling)
-            mOptions.useImportanceSampling = value;
-        else if (key == kSamplesPerPixel)
-            mOptions.samplesPerPixel = value;
-        else if (key == kTimeGateMode)
-        {
-            const std::string mode = value;
-            auto it = TimeGateModeTable.find(mode);
-            if (it == TimeGateModeTable.end()) FALCOR_THROW("Unknown timeGateMode '{}'.", mode);
-            mOptions.timeGateMode = it->second;
-        }
-        else if (key == kTimeMin)
-            mOptions.timeMin = value;
-        else if (key == kTimeMax)
-            mOptions.timeMax = value;
-        else if (key == kTimeBin)
-            mOptions.timeBin = value;
-        else if (key == kSamplingMethod)
+        if (mOptions.histogram.parse(key, value) || mOptions.pathTracing.parse(key, value))
+            continue;
+        if (key == kSamplingMethod)
         {
             const std::string method = value;
             if (method == "direct") mOptions.samplingMethod = SamplingMethod::Direct;
             else if (method == "tri_approx") mOptions.samplingMethod = SamplingMethod::TriangleApprox;
             else FALCOR_THROW("samplingMethod must be direct or tri_approx.");
         }
-        else if (key == kLaserCollocated)
-            mOptions.laserCollocated = value;
-        else if (key == kUseAlphaTest)
-            mOptions.useAlphaTest = value;
-        else if (key == kUseSingleChannel)
-            mOptions.useSingleChannel = value;
-        else if (key == kIsLightSourceLaser)
-            mOptions.isLightSourceLaser = value;
-        else if (key == kInitialWindowRatio)
-            mOptions.initialWindowRatio = value;
-        else if (key == kUseKernelDensityEstimation)
-            mOptions.useKernelDensityEstimation = value;
+        else if (key == kAutoReset)
+            mOptions.autoReset = value;
+        else if (key == kOutputSize)
+            mOptions.outputSize = value;
+        else if (key == kFixedOutputSize)
+            mOptions.fixedOutputSize = value;
         else
             logWarning("Unknown property '{}' in TransientHistogramPathTracerInline properties.", key);
     }
@@ -153,37 +122,23 @@ void TransientHistogramPathTracerInline::parseProperties(const Properties& props
 
 void TransientHistogramPathTracerInline::validateOptions(const Options& options)
 {
-    if (!options.useKernelDensityEstimation && options.samplingMethod == SamplingMethod::Direct &&
-        options.timeGateMode != TimeGateMode::BOX && options.timeGateMode != TimeGateMode::TENT)
+    options.histogram.validate();
+    options.pathTracing.validate();
+    if (!options.histogram.useKernelDensityEstimation && options.samplingMethod == SamplingMethod::Direct &&
+        options.histogram.filter != TimeGateMode::BOX && options.histogram.filter != TimeGateMode::TENT)
         FALCOR_THROW("Without KDE, histogram filtering supports box or tent.");
-    if (!std::isfinite(options.initialWindowRatio) || options.initialWindowRatio <= 0.f || options.initialWindowRatio > 1.f)
-        FALCOR_THROW("initialWindowRatio must be finite and in (0, 1]. Zero would produce a zero KDE bandwidth.");
-    if (!options.timeBin || !options.samplesPerPixel)
-        FALCOR_THROW("timeBin and samplesPerPixel must be positive.");
-    if (!std::isfinite(options.timeMin) || !std::isfinite(options.timeMax) || options.timeMin >= options.timeMax ||
-        !std::isfinite(options.timeMax - options.timeMin) || (options.timeMax - options.timeMin) / options.timeBin <= 0.f)
-        FALCOR_THROW("Histogram range must be finite with timeMin < timeMax and positive bin width.");
 }
 
 Properties TransientHistogramPathTracerInline::getProperties() const
 {
     Properties props;
-    props[kMaxBounces] = mOptions.maxBounces;
-    props[kComputeDirect] = mOptions.computeDirect;
-    props[kUseImportanceSampling] = mOptions.useImportanceSampling;
-    props[kSamplesPerPixel] = mOptions.samplesPerPixel;
-    props[kTimeMin] = mOptions.timeMin;
-    props[kTimeMax] = mOptions.timeMax;
-    props[kTimeBin] = mOptions.timeBin;
-    props[kLaserCollocated] = mOptions.laserCollocated;
-    props[kUseAlphaTest] = mOptions.useAlphaTest;
-    props[kUseSingleChannel] = mOptions.useSingleChannel;
-    props[kIsLightSourceLaser] = mOptions.isLightSourceLaser;
-    props[kUseKernelDensityEstimation] = mOptions.useKernelDensityEstimation;
-    props[kInitialWindowRatio] = mOptions.initialWindowRatio;
+    mOptions.histogram.serialize(props);
+    mOptions.pathTracing.serialize(props);
     props[kSamplingMethod] = mOptions.samplingMethod == SamplingMethod::Direct ? "direct" : "tri_approx";
-    for (const auto& [name, mode] : TimeGateModeTable)
-        if (mode == mOptions.timeGateMode) props[kTimeGateMode] = name;
+    props[kAutoReset] = mOptions.autoReset;
+    props[kOutputSize] = mOptions.outputSize;
+    if (mOptions.outputSize == RenderPassHelpers::IOSize::Fixed)
+        props[kFixedOutputSize] = mOptions.fixedOutputSize;
     return props;
 }
 
@@ -194,13 +149,14 @@ RenderPassReflection TransientHistogramPathTracerInline::reflect(const CompileDa
     // Define our input/output channels.
     addRenderPassInputs(reflector, kInputChannels);
     addRenderPassInputs(reflector, kLaserInputChannels, ResourceBindFlags::ShaderResource, uint2(1, 1));
-    addRenderPassOutputs(reflector, kOutputChannels);
+    const uint2 sz = RenderPassHelpers::calculateIOSize(mOptions.outputSize, mOptions.fixedOutputSize, compileData.defaultTexDims);
+    addRenderPassOutputs(reflector, kOutputChannels, ResourceBindFlags::UnorderedAccess, sz);
 
-    const ChannelList& histogramChannels = mOptions.useSingleChannel ? kHistogramOutputChannelSingle : kHistogramOutputChannelsRGB;
+    const ChannelList& histogramChannels = mOptions.pathTracing.useSingleChannel ? kHistogramOutputChannelSingle : kHistogramOutputChannelsRGB;
 
     for (const auto& it : histogramChannels)
     {
-        auto& tex = reflector.addOutput(it.name, it.desc).texture3D(0, 0, mOptions.timeBin);
+        auto& tex = reflector.addOutput(it.name, it.desc).texture3D(sz.x, sz.y, mOptions.histogram.timeBin);
         tex.bindFlags(ResourceBindFlags::UnorderedAccess | ResourceBindFlags::ShaderResource);
         if (it.format != ResourceFormat::Unknown)
             tex.format(it.format);
@@ -219,223 +175,176 @@ void TransientHistogramPathTracerInline::compile(RenderContext* pRenderContext, 
 
 DefineList TransientHistogramPathTracerInline::getShaderDefines(const RenderData& renderData) const
 {
-    DefineList defines;
-
-    defines.add("MAX_BOUNCES", std::to_string(mOptions.maxBounces));
-    defines.add("COMPUTE_DIRECT", mOptions.computeDirect ? "1" : "0");
-    defines.add("USE_IMPORTANCE_SAMPLING", mOptions.useImportanceSampling ? "1" : "0");
-    defines.add("USE_ALPHA_TEST", mOptions.useAlphaTest ? "1" : "0");
-    defines.add("USE_SINGLE_CHANNEL", mOptions.useSingleChannel ? "1" : "0");
-    defines.add("IS_LIGHT_SOURCE_LASER", mOptions.isLightSourceLaser ? "1" : "0");
-    defines.add("USE_KERNEL_DENSITY_ESTIMATION", mOptions.useKernelDensityEstimation ? "1" : "0");
+    DefineList defines = mOptions.pathTracing.getDefines();
+    defines.add("USE_KERNEL_DENSITY_ESTIMATION", mOptions.histogram.useKernelDensityEstimation ? "1" : "0");
 
     defines.add("LIGHT_SAMPLING_METHOD", std::to_string((uint32_t)mOptions.samplingMethod));
     defines.add("DIRECT_CONNECTION", std::to_string((uint32_t)SamplingMethod::Direct));
     defines.add("TRIANGLE_APPROX", std::to_string((uint32_t)SamplingMethod::TriangleApprox));
 
-    defines.add("HISTOGRAM_FILTER", std::to_string((uint32_t)mOptions.timeGateMode));
+    defines.add("HISTOGRAM_FILTER", std::to_string((uint32_t)mOptions.histogram.filter));
     defines.add("HISTOGRAM_FILTER_BOX", std::to_string((uint32_t)TimeGateMode::BOX));
     defines.add("HISTOGRAM_FILTER_TENT", std::to_string((uint32_t)TimeGateMode::TENT));
 
     // For optional I/O resources, set 'is_valid_<name>' defines to inform the program of which ones it can access.
-    // TODO: This should be moved to a more general mechanism using Slang.
     defines.add(getValidResourceDefines(kInputChannels, renderData));
     defines.add(getValidResourceDefines(kLaserInputChannels, renderData));
     defines.add(getValidResourceDefines(kOutputChannels, renderData));
-
-    const ChannelList& histogramChannels = mOptions.useSingleChannel ? kHistogramOutputChannelSingle : kHistogramOutputChannelsRGB;
-    defines.add(getValidResourceDefines(histogramChannels, renderData));
-
+    defines.add(getValidResourceDefines(histogramChannels(), renderData));
     return defines;
+}
+
+const ChannelList& TransientHistogramPathTracerInline::histogramChannels() const
+{
+    return mOptions.pathTracing.useSingleChannel ? kHistogramOutputChannelSingle : kHistogramOutputChannelsRGB;
 }
 
 void TransientHistogramPathTracerInline::bindShaderData(const ShaderVar& var, const RenderData& renderData)
 {
-    auto& dict = renderData.getDictionary();
-
-    // Get dimensions of ray dispatch.
-    const uint2 targetDim = renderData.getDefaultTextureDims();
-    FALCOR_ASSERT(targetDim.x > 0 && targetDim.y > 0);
-
+    // Dispatch over the output, which may have a fixed size.
+    const ref<Texture> pColor = renderData.getTexture("color");
     var["CB"]["gFrameCount"] = mFrameCount;
-    var["CB"]["gFrameDim"] = targetDim;
-    var["CB"]["gPRNGDimension"] = dict.keyExists(kRenderPassPRNGDimension) ? dict[kRenderPassPRNGDimension] : 0u;
+    var["CB"]["gFrameDim"] = uint2(pColor->getWidth(), pColor->getHeight());
+    var["CB"]["gPRNGDimension"] = InlinePass::getPRNGDimension(renderData);
+    var["CB"]["samplesPerPixel"] = mOptions.pathTracing.samplesPerPixel;
+    var["CB"]["initialWindowRatio"] = mOptions.histogram.initialWindowRatio;
+    mOptions.pathTracing.resolveLaser(renderData, *mpScene).bindShaderData(var["CB"]);
+    mOptions.histogram.bindShaderData(var["TimeGate"]);
 
-    // transients
-    if (mOptions.laserCollocated)
-    {
-        var["CB"]["laserOrigin"] = mpScene->getCamera()->getPosition();
-        var["CB"]["laserDirection"] = normalize(mpScene->getCamera()->getTarget() - mpScene->getCamera()->getPosition());
-    }
-    else
-    {
-        var["CB"]["laserOrigin"] = dict.keyExists("laserPosition") ? dict["laserPosition"] : float3(0,0,0);
-        var["CB"]["laserDirection"] = dict.keyExists("laserDirection") ? dict["laserDirection"] : float3(0,0,1);
-    }
-    var["CB"]["laserPower"] = dict.keyExists("laserPower") ? dict["laserPower"] : float3(1,1,1);
-    var["CB"]["laserCosAngle"] = dict.keyExists("laserCosAngle") ? dict["laserCosAngle"] : 0.0f;
-
-    var["CB"]["samplesPerPixel"] = mOptions.samplesPerPixel;
-    var["CB"]["initialWindowRatio"] = mOptions.initialWindowRatio;
-
-    var["TimeGate"]["time_gate_mode"] = uint(mOptions.timeGateMode);
-
-    var["TimeGate"]["tbin"] = mOptions.timeBin;
-    var["TimeGate"]["tmax"] = mOptions.timeMax;
-    var["TimeGate"]["tmin"] = mOptions.timeMin;
-    var["TimeGate"]["tunit"] = (mOptions.timeMax - mOptions.timeMin) / mOptions.timeBin;
-
-    // Bind I/O buffers. These needs to be done per-frame as the buffers may change anytime.
-    auto bind = [&](const ChannelDesc& desc)
-    {
-        if (!desc.texname.empty())
-        {
-            var[desc.texname] = renderData.getTexture(desc.name);
-        }
-    };
-    for (auto channel : kInputChannels)
-        bind(channel);
-    for (auto channel : kLaserInputChannels)
-        bind(channel);
-    for (auto channel : kOutputChannels)
-        bind(channel);
-
-    const ChannelList& histogramChannels = mOptions.useSingleChannel ? kHistogramOutputChannelSingle : kHistogramOutputChannelsRGB;
-    for (auto channel : histogramChannels)
-        bind(channel);
-}
-
-void TransientHistogramPathTracerInline::prepareProgram(RenderContext* pRenderContext, const RenderData& renderData)
-{
-    if (!mpComputePass)
-    {
-        // Create ray tracing program.
-        ProgramDesc desc;
-        desc.addShaderModules(mpScene->getShaderModules());
-        desc.addShaderLibrary(kShaderFile).csEntry("main");
-        desc.addTypeConformances(mpScene->getTypeConformances());
-
-        DefineList defines;
-        defines.add(mpScene->getSceneDefines());
-        defines.add(mpSampleGenerator->getDefines());
-        defines.add(getShaderDefines(renderData));
-
-        mpComputePass = ComputePass::create(mpDevice, desc, defines, true);
-
-        // Bind static resources
-        ShaderVar var = mpComputePass->getRootVar();
-        mpScene->bindShaderDataForRaytracing(pRenderContext, var["gScene"]);
-        mpSampleGenerator->bindShaderData(var);
-    }
-
+    InlinePass::bindChannels(var, renderData, kInputChannels);
+    InlinePass::bindChannels(var, renderData, kLaserInputChannels);
+    InlinePass::bindChannels(var, renderData, kOutputChannels);
+    InlinePass::bindChannels(var, renderData, histogramChannels());
 }
 
 void TransientHistogramPathTracerInline::execute(RenderContext* pRenderContext, const RenderData& renderData)
 {
-    // Update refresh flag if options that affect the output have changed.
     auto& dict = renderData.getDictionary();
     if (mOptionsChanged)
     {
-        auto flags = dict.getValue(kRenderPassRefreshFlags, RenderPassRefreshFlags::None);
-        dict[Falcor::kRenderPassRefreshFlags] = flags | Falcor::RenderPassRefreshFlags::RenderOptionsChanged;
+        InlinePass::flagOptionsChanged(renderData);
         mOptionsChanged = false;
     }
 
-    // If we have no scene, just clear the outputs and return.
     if (!mpScene)
     {
-        for (auto it : kOutputChannels)
-        {
-            Texture* pDst = renderData.getTexture(it.name).get();
-            if (pDst)
-                pRenderContext->clearTexture(pDst);
-        }
-        if (auto histogram = renderData.getTexture("histogram"))
-            pRenderContext->clearTexture(histogram.get());
+        InlinePass::clearChannels(pRenderContext, renderData, kOutputChannels);
+        InlinePass::clearChannels(pRenderContext, renderData, histogramChannels());
         return;
     }
 
+    if (mOptions.autoReset && needsAutoReset(renderData))
+        resetHistogram();
     if (mNeedToClearHistogram)
     {
         pRenderContext->clearTexture(renderData.getTexture("histogram").get());
         mNeedToClearHistogram = false;
+        mHistogramFrameCount = 0;
     }
 
     // Triangle approximation enumerates all triangles; no triangle sampling distribution is needed.
     if (mOptions.samplingMethod == SamplingMethod::TriangleApprox)
         mpScene->getTriCollection(pRenderContext)->update(pRenderContext);
-    prepareProgram(pRenderContext, renderData);
+    if (!mpComputePass)
+        mpComputePass = InlinePass::createScenePass(mpDevice, pRenderContext, mpScene, mpSampleGenerator, kShaderFile, getShaderDefines(renderData));
+    InlinePass::checkScene(*mpScene, renderData, kInputViewDir);
 
-    if (is_set(mpScene->getUpdates(), IScene::UpdateFlags::RecompileNeeded) ||
-        is_set(mpScene->getUpdates(), IScene::UpdateFlags::GeometryChanged))
-    {
-        FALCOR_THROW("This render pass does not support scene changes that require shader recompilation.");
-    }
-
-    // Configure depth-of-field.
-    const bool useDOF = mpScene->getCamera()->getApertureRadius() > 0.f;
-    if (useDOF && renderData[kInputViewDir] == nullptr)
-    {
-        logWarning("Depth-of-field requires the '{}' input. Expect incorrect shading.", kInputViewDir);
-    }
-
-    // Specialize program.
     mpComputePass->getProgram()->addDefines(getShaderDefines(renderData));
-
-    // bind variables
-    auto var = mpComputePass->getRootVar();
-    bindShaderData(var, renderData);
-
-    // Spawn the rays.
-    const uint2 targetDim = renderData.getDefaultTextureDims();
-    FALCOR_ASSERT(targetDim.x > 0 && targetDim.y > 0);
-    mpComputePass->execute(pRenderContext, uint3(targetDim, 1));
+    bindShaderData(mpComputePass->getRootVar(), renderData);
+    const ref<Texture> pColor = renderData.getTexture("color");
+    mpComputePass->execute(pRenderContext, uint3(pColor->getWidth(), pColor->getHeight(), 1));
 
     mFrameCount++;
+    mHistogramFrameCount++;
+    dict[kHistogramFrameCount] = mHistogramFrameCount;
+    dict[kHistogramTimeMin] = mOptions.histogram.timeMin;
+    dict[kHistogramTimeMax] = mOptions.histogram.timeMax;
 
+}
+
+bool TransientHistogramPathTracerInline::needsAutoReset(const RenderData& renderData) const
+{
+    // Same rule as AccumulatePass: any refresh flag or scene change except camera jitter/history.
+    auto& dict = renderData.getDictionary();
+    if (dict.getValue(kRenderPassRefreshFlags, RenderPassRefreshFlags::None) != RenderPassRefreshFlags::None)
+        return true;
+    const auto sceneUpdates = mpScene->getUpdates();
+    if ((sceneUpdates & ~IScene::UpdateFlags::CameraPropertiesChanged) != IScene::UpdateFlags::None)
+        return true;
+    if (is_set(sceneUpdates, IScene::UpdateFlags::CameraPropertiesChanged))
+    {
+        const auto excluded = Camera::Changes::Jitter | Camera::Changes::History;
+        if ((mpScene->getCamera()->getChanges() & ~excluded) != Camera::Changes::None)
+            return true;
+    }
+    return false;
 }
 
 void TransientHistogramPathTracerInline::renderUI(Gui::Widgets& widget)
 {
-    const Options previous = mOptions;
+    Options options = mOptions;
     bool dirty = false;
 
-    dirty |= widget.var("Time Min", mOptions.timeMin, 0.0f, 1000.0f);
-    widget.tooltip("Minimum time in unit of distance", true);
+    if (auto group = widget.group("Histogram", true))
+        dirty |= options.histogram.renderUI(group, options.samplingMethod == SamplingMethod::Direct);
 
-    dirty |= widget.var("Time Max", mOptions.timeMax, 6.0f, 1000.0f);
-    widget.tooltip("Maximum time in unit of distance", true);
-
-    if (mOptions.useKernelDensityEstimation)
+    if (auto group = widget.group("Sampling", true))
     {
-        dirty |= widget.var("Initial KDE window ratio", mOptions.initialWindowRatio, 0.0001f, 1.f);
-        widget.tooltip("Initial bandwidth = histogram range times this ratio. Restarted each frame.", true);
+        dirty |= options.pathTracing.renderSamplingUI(group, " Each vertex is connected to the laser spot.");
+
+        static const Gui::DropdownList kSamplingMethodList = {
+            {(uint32_t)SamplingMethod::Direct, "Direct"},
+            {(uint32_t)SamplingMethod::TriangleApprox, "Triangle approximation"},
+        };
+        uint32_t samplingMethod = (uint32_t)options.samplingMethod;
+        if (group.dropdown("Sampling method", kSamplingMethodList, samplingMethod))
+        {
+            options.samplingMethod = (SamplingMethod)samplingMethod;
+            dirty = true;
+        }
+        group.tooltip("Direct: trace camera paths and connect each vertex to the laser spot.\n"
+                      "Triangle approximation: integrate paths primary hit -> one scene triangle -> laser spot "
+                      "over every triangle (a single intermediate bounce).", true);
     }
 
-    dirty |= widget.var("Samples per pixel", mOptions.samplesPerPixel, 1u, 1024u);
-    widget.tooltip("Samples per pixel", true);
+    if (auto group = widget.group("Light", true))
+        dirty |= options.pathTracing.renderLightUI(group);
 
-    dirty |= widget.var("Max bounces", mOptions.maxBounces, 0u, 1u << 16);
-    widget.tooltip("Maximum path length for indirect illumination.\n0 = direct only\n1 = one indirect bounce etc.", true);
+    if (auto group = widget.group("Output", true))
+    {
+        dirty |= options.pathTracing.renderOutputUI(group, true);
 
-    dirty |= widget.checkbox("Evaluate direct illumination", mOptions.computeDirect);
-    widget.tooltip("Compute direct illumination.\nIf disabled only indirect is computed (when max bounces > 0).", true);
+        dirty |= group.checkbox("Auto reset", options.autoReset);
+        group.tooltip("Clear the histogram when the camera moves or an upstream pass changes its options. "
+                      "Otherwise it accumulates until reset.", true);
 
-    dirty |= widget.checkbox("Use importance sampling", mOptions.useImportanceSampling);
-    widget.tooltip("Use importance sampling for materials", true);
+        if (group.button("Reset histogram"))
+            resetHistogram();
+        group.text(fmt::format("Accumulated frames: {}", mHistogramFrameCount));
+    }
 
-    // If rendering options that modify the output have changed, set flag to indicate that.
-    // In execute() we will pass the flag to other passes for reset of temporal data etc.
     if (dirty)
     {
-        if (mOptions.timeMin >= mOptions.timeMax) mOptions = previous;
-        else
+        try
         {
-            validateOptions(mOptions);
-            mOptionsChanged = true;
-            resetHistogram();
+            validateOptions(options);
         }
+        catch (const std::exception& e)
+        {
+            mUIWarning = e.what();
+            return;
+        }
+        mUIWarning.clear();
+        // The histogram texture depends on the bin count and channel count.
+        const bool resize = options.histogram.timeBin != mOptions.histogram.timeBin || options.pathTracing.useSingleChannel != mOptions.pathTracing.useSingleChannel;
+        mOptions = options;
+        mOptionsChanged = true;
+        resetHistogram();
+        if (resize)
+            requestRecompile();
     }
+    if (!mUIWarning.empty())
+        widget.text(mUIWarning);
 }
 
 void TransientHistogramPathTracerInline::setScene(RenderContext* pRenderContext, const ref<Scene>& pScene)
