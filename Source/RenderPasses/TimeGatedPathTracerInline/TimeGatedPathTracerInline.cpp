@@ -368,156 +368,23 @@ void TimeGatedPathTracerInline::renderUI(Gui::Widgets& widget)
     auto options = mOptions;
 
     if (auto group = widget.group("Time gate", true))
-    {
-        // Only the kernels implemented by pathLengthImportance() are offered.
-        static const Gui::DropdownList kTimeGateModeList = {
-            {(uint32_t)TimeGateMode::BOX, "Box"},
-            {(uint32_t)TimeGateMode::TENT, "Tent"},
-            {(uint32_t)TimeGateMode::COS, "Cos"},
-            {(uint32_t)TimeGateMode::ALL, "All (no gating)"},
-        };
-        uint32_t timeGateMode = (uint32_t)options.timeGate.timeGateMode;
-        if (group.dropdown("Gate kernel", kTimeGateModeList, timeGateMode))
-        {
-            options.timeGate.timeGateMode = (TimeGateMode)timeGateMode;
-            dirty = true;
-        }
-        group.tooltip("Weight of a path as a function of its total optical length (laser -> scene -> camera) "
-                      "relative to the gate center.", true);
-
-        dirty |= group.var("Gate window", options.timeGate.timeGateWindow, 0.001f, 1000.0f);
-        group.tooltip("Gate width in path-length units (scene units). The output is divided by it.", true);
-
-        if (group.checkbox("Shift gate", options.timeGate.shiftGate))
-        {
-            // Start a shifting scan from a fixed gate with a default range and resolution.
-            if (options.timeGate.shiftGate && options.timeGate.timeMax <= options.timeGate.timeMin)
-            {
-                options.timeGate.timeMax = 1.2f * options.timeGate.timeMin;
-                options.timeGate.timeBin = 100;
-            }
-            dirty = true;
-        }
-        group.tooltip("Off: a fixed gate at Gate center.\nOn: the gate moves one step per frame from Gate min "
-                      "toward Gate max, then starts again at Gate min. Turning it on from a fixed gate sets "
-                      "Gate max = 1.2 x Gate min and 100 bins.", true);
-
-        if (!options.timeGate.shiftGate)
-        {
-            float gateCenter = options.timeGate.timeMin;
-            if (group.var("Gate center", gateCenter, 0.0f, 1000.0f))
-            {
-                options.timeGate.timeMin = options.timeGate.timeMax = gateCenter;
-                dirty = true;
-            }
-            group.tooltip("Gate center in path-length units.", true);
-        }
-        else
-        {
-            dirty |= group.var("Gate min", options.timeGate.timeMin, 0.0f, options.timeGate.timeMax);
-            group.tooltip("First gate center, in path-length units.", true);
-
-            dirty |= group.var("Gate max", options.timeGate.timeMax, options.timeGate.timeMin, 1000.0f);
-            group.tooltip("End of the scan, in path-length units. The last gate center is Gate max - Gate step.", true);
-
-            dirty |= group.var("Gate bins", options.timeGate.timeBin, 1u, 1u << 16);
-            group.tooltip("Number of gate centers from Gate min to Gate max.", true);
-
-            // The step is derived from the bins; editing it picks the nearest bin count.
-            const float range = options.timeGate.timeMax - options.timeGate.timeMin;
-            float gateStep = range / options.timeGate.timeBin;
-            if (range > 0.f && group.var("Gate step", gateStep, 1e-4f, range))
-            {
-                options.timeGate.timeBin = std::max(1u, (uint)std::lround(range / gateStep));
-                dirty = true;
-            }
-            group.tooltip("Gate center shift per frame, in path-length units. Sets Gate bins to the nearest count.", true);
-            if (range <= 0.f)
-                group.text("Set Gate max above Gate min to shift the gate.");
-        }
-
-        group.text(fmt::format("Current gate center: {:.4f}", mFrameState.gatePosition));
-    }
+        dirty |= options.timeGate.renderUI(group, mFrameState.gatePosition);
 
     if (auto group = widget.group("Sampling", true))
     {
-        dirty |= group.var("Samples per pixel", options.pathTracing.samplesPerPixel, 1u, 1024u);
-        group.tooltip("Camera paths traced per pixel in each frame.", true);
-
-        dirty |= group.var("Max bounces", options.pathTracing.maxBounces, 0u, 1u << 16);
-        group.tooltip("Maximum number of surface vertices on the camera path, counting the primary hit and any "
-                      "vertex inserted by an ellipsoidal connection. Each vertex is connected to the laser spot.", true);
-
-        static const Gui::DropdownList kSamplingMethodList = {
-            {(uint32_t)TimeGatedSamplingMethod::DIRECT, "Direct"},
-            {(uint32_t)TimeGatedSamplingMethod::ELLIPSOIDAL, "Ellipsoidal"},
-            {(uint32_t)TimeGatedSamplingMethod::ELLIPSOIDAL_DIRECT_MIS, "Ellipsoidal + direct (MIS)"},
-        };
-        uint32_t samplingMethod = (uint32_t)options.sampling.samplingMethod;
-        if (group.dropdown("Sampling method", kSamplingMethodList, samplingMethod))
-        {
-            options.sampling.samplingMethod = (TimeGatedSamplingMethod)samplingMethod;
-            dirty = true;
-        }
-        group.tooltip("How a camera-path vertex x is connected to the laser spot:\n"
-                      "Direct: connect x -> laser spot.\n"
-                      "Ellipsoidal: insert a vertex y on the ellipsoid of paths x -> y -> laser spot whose length "
-                      "matches the gate.\n"
-                      "Ellipsoidal + direct (MIS): both, combined with the balance heuristic.", true);
-
-        if (options.sampling.samplingMethod == TimeGatedSamplingMethod::ELLIPSOIDAL)
-        {
-            dirty |= group.var("Ellipsoid roughness threshold", options.sampling.ellipsoidRoughnessThreshold, 0.f, 1.f);
-            group.tooltip("Use an ellipsoidal connection at x only if its roughness is above this value; smoother "
-                          "vertices use a direct connection from the next vertex instead.", true);
-        }
-
-        if (options.sampling.samplingMethod != TimeGatedSamplingMethod::DIRECT)
-        {
-            static const Gui::DropdownList kTriangleSamplerList = {
-                {(uint32_t)EmissiveLightSamplerType::Uniform, "Uniform"},
-                {(uint32_t)EmissiveLightSamplerType::LightBVH, "LightBVH"},
-                {(uint32_t)EmissiveLightSamplerType::Power, "Power"},
-            };
-            uint32_t triSampler = (uint32_t)options.sampling.triSampler;
-            if (group.dropdown("Ellipsoid triangle sampler", kTriangleSamplerList, triSampler))
-            {
-                options.sampling.triSampler = (EmissiveLightSamplerType)triSampler;
-                dirty = true;
-            }
-            group.tooltip("How an ellipsoidal connection selects the scene triangle on which it places y.", true);
-        }
-
-        dirty |= group.checkbox("Use importance sampling", options.pathTracing.useImportanceSampling);
-        group.tooltip("Importance-sample the BSDF when extending the camera path. Off: the material's reference "
-                      "sampler (cosine-weighted for standard materials).", true);
+        dirty |= options.pathTracing.renderSamplingUI(group, " Each vertex is connected to the laser spot.");
+        dirty |= options.sampling.renderUI(group, true);
     }
 
     if (auto group = widget.group("Light", true))
-    {
-        dirty |= group.checkbox("Laser source", options.pathTracing.isLightSourceLaser);
-        group.tooltip("On: the light is the spot where the laser beam hits the scene, and the beam length adds to "
-                      "the path length.\nOff: a point light at the laser position.", true);
-
-        dirty |= group.checkbox("Laser collocated", options.pathTracing.laserCollocated);
-        group.tooltip("Place the laser at the camera, aimed at the camera target, instead of using the laser pass "
-                      "position and direction. The laser follows the camera when it moves.", true);
-    }
+        dirty |= options.pathTracing.renderLightUI(group);
 
     if (auto group = widget.group("Output", true))
     {
-        dirty |= group.checkbox("Primary-hit direct", options.pathTracing.computeDirect);
-        group.tooltip("Include the shortest path, camera -> primary hit -> laser spot (time gated).", true);
-
+        dirty |= options.pathTracing.renderOutputUI(group, true);
         dirty |= group.checkbox("Show laser spot", options.showLaserSpot);
         group.tooltip("Debug overlay: adds the laser spot seen directly from the primary hit (red channel, not time "
                       "gated).", true);
-
-        dirty |= group.checkbox("Single channel", options.pathTracing.useSingleChannel);
-        group.tooltip("Copy the red channel to green and blue.", true);
-
-        dirty |= group.checkbox("Alpha test", options.pathTracing.useAlphaTest);
-        group.tooltip("Honor alpha-tested (cutout) materials when tracing rays.", true);
     }
 
     // If rendering options that modify the output have changed, set flag to indicate that.
