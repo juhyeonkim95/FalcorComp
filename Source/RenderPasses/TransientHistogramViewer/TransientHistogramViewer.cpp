@@ -26,6 +26,7 @@
  # OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  **************************************************************************/
 #include "TransientHistogramViewer.h"
+#include "../Shared/Configs/TransientHistogramConfig.h"
 #include "RenderGraph/RenderPassHelpers.h"
 #include <algorithm>
 #include <cmath>
@@ -52,9 +53,6 @@ const char kSelectedPixel[] = "selectedPixel";
 const char kProfileRadius[] = "profileRadius";
 
 // Published by TransientHistogramPathTracerInline.
-const char kHistogramFrameCount[] = "transientHistogramFrameCount";
-const char kHistogramTimeMin[] = "transientHistogramTimeMin";
-const char kHistogramTimeMax[] = "transientHistogramTimeMax";
 } // namespace
 
 TransientHistogramViewer::TransientHistogramViewer(ref<Device> pDevice, const Properties& props) : RenderPass(pDevice)
@@ -129,12 +127,12 @@ void TransientHistogramViewer::execute(RenderContext* pRenderContext, const Rend
     if (any(mSelectedPixel >= int2(mHistogramDim)))
         mSelectedPixel = {-1, -1};
 
-    // Normalize the accumulated histogram. Without producer metadata, assume one frame and unit bins.
+    // The histogram range comes from the tracer (unit bins without it); the frame count is for display.
     auto& dict = renderData.getDictionary();
     mBinCount = histogramDim.z;
-    mFrameCount = std::max(1u, dict.getValue(kHistogramFrameCount, 1u));
-    mTimeMin = dict.getValue(kHistogramTimeMin, 0.f);
-    mTimeMax = dict.getValue(kHistogramTimeMax, float(mBinCount));
+    mFrameCount = dict.getValue(TransientHistogramConfig::kFrameCountKey, 0u);
+    mTimeMin = dict.getValue(TransientHistogramConfig::kTimeMinKey, 0.f);
+    mTimeMax = dict.getValue(TransientHistogramConfig::kTimeMaxKey, float(mBinCount));
     const float range = mTimeMax - mTimeMin;
 
     // The overlay is used only when it has the histogram's size.
@@ -156,9 +154,9 @@ void TransientHistogramViewer::execute(RenderContext* pRenderContext, const Rend
     auto var = mpViewPass->getRootVar();
     var["CB"]["gOutputDim"] = outputDim;
     var["CB"]["gHistogramDim"] = histogramDim;
-    var["CB"]["gSumScale"] = range / float(mBinCount) / float(mFrameCount);
+    var["CB"]["gSumScale"] = range / float(mBinCount);
     // A bin shown at the sum's brightness when all radiance arrives within it spread over the range.
-    var["CB"]["gTileScale"] = range / float(mFrameCount) * std::exp2(mBinExposure);
+    var["CB"]["gTileScale"] = range * std::exp2(mBinExposure);
     var["CB"]["gLeftBin"] = mLeftShowsBin ? std::min(mLeftBin, mBinCount - 1) : ~0u;
     for (uint row = 0; row < 4; ++row)
     {
@@ -173,12 +171,12 @@ void TransientHistogramViewer::execute(RenderContext* pRenderContext, const Rend
     mpViewPass->execute(pRenderContext, uint3(outputDim, 1));
 
     if (all(mSelectedPixel >= 0))
-        readProfile(pRenderContext, pHistogram, 1.f / float(mFrameCount));
+        readProfile(pRenderContext, pHistogram);
     else
         mProfile.clear();
 }
 
-void TransientHistogramViewer::readProfile(RenderContext* pRenderContext, const ref<Texture>& pHistogram, float frameScale)
+void TransientHistogramViewer::readProfile(RenderContext* pRenderContext, const ref<Texture>& pHistogram)
 {
     // The profile is read back asynchronously, so the plot lags the image by a frame or two
     // instead of stalling on the GPU every frame.
@@ -206,7 +204,6 @@ void TransientHistogramViewer::readProfile(RenderContext* pRenderContext, const 
     var["CB"]["gHistogramDim"] = uint3(mHistogramDim, mBinCount);
     var["CB"]["gSelectedPixel"] = mSelectedPixel;
     var["CB"]["gProfileRadius"] = mProfileRadius;
-    var["CB"]["gProfileScale"] = frameScale;
     var["gHistogram"] = pHistogram;
     var["gProfile"] = mpProfileBuffer;
     mpProfilePass->execute(pRenderContext, uint3(mBinCount, 1, 1));
@@ -306,7 +303,8 @@ void TransientHistogramViewer::renderUI(Gui::Widgets& widget)
 
     if (mBinCount == 0)
         return;
-    widget.text(fmt::format("Accumulated frames: {}", mFrameCount));
+    if (mFrameCount > 0)
+        widget.text(fmt::format("Averaged frames: {}", mFrameCount));
     renderProfileUI(widget);
     const float binWidth = (mTimeMax - mTimeMin) / float(mBinCount);
     if (auto group = widget.group("Tile bins"))

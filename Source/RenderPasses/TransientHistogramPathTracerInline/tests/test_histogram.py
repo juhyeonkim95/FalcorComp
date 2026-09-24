@@ -58,16 +58,12 @@ def main():
         assert np.isfinite(histogram).all() and np.isfinite(color).all()
         assert np.all(values >= 0) and values.max() > 0
         if method == "tri_approx" and mono:
-            testbed.frame()
-            accumulated = graph.get_output("P.histogram").to_numpy().copy()
-            np.testing.assert_allclose(accumulated, 2 * histogram, rtol=1e-4, atol=1e-6)
-            graph.get_pass("P").reset_histogram()
+            # Deterministic: every frame writes the same per-frame histogram (no accumulation).
             testbed.frame()
             np.testing.assert_allclose(graph.get_output("P.histogram").to_numpy(), histogram,
                                        rtol=1e-4, atol=1e-6)
         if method == "direct" and mono and not kde:
             graph.get_pass("L").update_laser_info([0., 1.7, 6.8], [0., 0., 1.])
-            graph.get_pass("P").reset_histogram()
             testbed.frame()
             assert not np.any(graph.get_output("P.histogram").to_numpy())
             assert not np.any(graph.get_output("P.color").to_numpy()[..., :3])
@@ -78,7 +74,6 @@ def main():
     testbed.frame()
     resized = graph.get_output("P.histogram").to_numpy().copy()
     assert resized.shape[:3] == (16, 11, 19) and np.isfinite(resized).all()
-    graph.get_pass("P").reset_histogram()
     testbed.frame()
     np.testing.assert_allclose(graph.get_output("P.histogram").to_numpy(), resized, rtol=1e-4, atol=1e-6)
     print("Passed histogram reallocation after resize")

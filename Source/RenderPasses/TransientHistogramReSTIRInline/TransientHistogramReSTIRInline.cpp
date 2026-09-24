@@ -310,6 +310,8 @@ void TransientHistogramReSTIRInline::execute(RenderContext* pRenderContext, cons
     spatialReuse(pRenderContext, renderData);
     mFrameCount++;
 
+    mOptions.histogram.publishRange(renderData);
+
     // The final reservoirs become next frame's temporal history.
     mReSTIR.endFrame(pRenderContext, mOptions.restir.useTemporalReuse, *mpScene, renderData.getTexture("vbuffer"));
     mPreviousLaser = mLaser;

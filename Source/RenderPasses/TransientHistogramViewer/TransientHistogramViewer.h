@@ -35,8 +35,8 @@ using namespace Falcor;
  *
  * Left half: the histogram summed over all bins (the steady-state image), or one chosen bin (leftView).
  * Right half: a 4 x 4 grid of 16 bins spread evenly from firstBin to lastBin, in reading order.
- * Both halves are fitted to their area with box filtering. The histogram is divided by the
- * frame count its producer publishes (TransientHistogramPathTracerInline accumulates across frames).
+ * Both halves are fitted to their area with box filtering. The input is a mean histogram (radiance per
+ * unit path length), e.g. from TransientHistogramAccumulatePass.
  * An optional overlay (e.g. LaserPositionViewer without an input) of the histogram's size is blended into the
  * left half only, with premultiplied alpha.
  * Shift+click (or drag) on either half selects a pixel: it gets a crosshair, and the UI plots its
@@ -69,7 +69,7 @@ private:
     uint tileBin(uint tile, uint binCount) const;
     /// Histogram pixel under output position `position` (in output pixels), if any.
     bool outputToHistogram(float2 position, int2& pixel) const;
-    void readProfile(RenderContext* pRenderContext, const ref<Texture>& pHistogram, float frameScale);
+    void readProfile(RenderContext* pRenderContext, const ref<Texture>& pHistogram);
     void renderProfileUI(Gui::Widgets& widget);
 
     uint mFirstBin = 0;
@@ -90,7 +90,7 @@ private:
     uint2 mOutputDim = {0, 0};
     uint2 mHistogramDim = {0, 0};
     uint mBinCount = 0;
-    uint mFrameCount = 0;
+    uint mFrameCount = 0; ///< Frames in the input's average, if an accumulation pass published it.
     float mTimeMin = 0.f;
     float mTimeMax = 0.f;
 

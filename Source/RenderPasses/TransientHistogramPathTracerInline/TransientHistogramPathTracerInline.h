@@ -38,9 +38,8 @@
 
 using namespace Falcor;
 
-/** Inline transient histogram tracer. Histogram values accumulate until resetHistogram(), or until the
- * camera moves or an upstream pass changes its options when autoReset is enabled. The number of
- * accumulated frames is published in the render data dictionary (kHistogramFrameCount).
+/** Inline transient histogram tracer. Each frame writes that frame's histogram; average frames with
+ * TransientHistogramAccumulatePass. The histogram range is published in the render data dictionary.
  * Single-channel output stores the red channel in an H x W x B volume; RGB uses float4 bins.
  * Triangle approximation integrates a single intermediate triangle, not a full path walk.
  */
@@ -55,11 +54,9 @@ public:
     TransientHistogramPathTracerInline(ref<Device> pDevice, const Properties& props);
     Properties getProperties() const override;
     RenderPassReflection reflect(const CompileData& compileData) override;
-    void compile(RenderContext* pRenderContext, const CompileData& compileData) override;
     void execute(RenderContext* pRenderContext, const RenderData& renderData) override;
     void renderUI(Gui::Widgets& widget) override;
     void setScene(RenderContext* pRenderContext, const ref<Scene>& pScene) override;
-    void resetHistogram();
 
 private:
     enum class SamplingMethod { Direct = 0, TriangleApprox = 2 };
@@ -69,7 +66,6 @@ private:
         TransientHistogramConfig histogram;
         PathTracingConfig pathTracing;
         SamplingMethod samplingMethod = SamplingMethod::Direct;
-        bool autoReset = false; ///< Clear the histogram when the camera moves or an upstream pass changes options.
         RenderPassHelpers::IOSize outputSize = RenderPassHelpers::IOSize::Default;
         uint2 fixedOutputSize = {512, 512}; ///< Output size when outputSize is Fixed.
     };
@@ -77,15 +73,12 @@ private:
     void parseProperties(const Properties& props);
     const ChannelList& histogramChannels() const;
     void bindShaderData(const ShaderVar& var, const RenderData& renderData);
-    bool needsAutoReset(const RenderData& renderData) const;
     DefineList getShaderDefines(const RenderData& renderData) const;
 
     Options mOptions;
     uint mFrameCount = 0;
-    uint mHistogramFrameCount = 0; ///< Frames accumulated in the histogram since it was cleared.
     bool mOptionsChanged = false;
     std::string mUIWarning; ///< Why the last UI edit was rejected.
-    bool mNeedToClearHistogram = true;
     ref<Scene> mpScene;
     ref<SampleGenerator> mpSampleGenerator;
     ref<ComputePass> mpComputePass;

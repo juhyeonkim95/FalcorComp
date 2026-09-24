@@ -17,7 +17,6 @@ from common.rendering import create_testbed
 
 def render(testbed, scene, method, spp, bins, ratio, destination):
     graph = create_histogram_graph(testbed, scene, method, spp, bins, ratio)
-    graph.get_pass("Tracer").reset_histogram()
     start = perf_counter()
     for _ in trange(1, desc=f"{method}: {spp} requested spp", unit="histogram"):
         testbed.frame()

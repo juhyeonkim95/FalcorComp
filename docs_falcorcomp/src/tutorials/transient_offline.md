@@ -21,8 +21,9 @@ arrives at each total path length (laser -> scene -> camera), in `timeBin` bins 
 
 ## 2. Build the render graph
 
-The tracer writes the histogram to its `histogram` output, a width x height x bins texture. It
-adds every frame to the histogram, so no `AccumulatePass` is needed.
+The tracer writes each frame's histogram to its `histogram` output, a width x height x bins
+texture. `TransientHistogramAccumulatePass` averages it over the frames, like `AccumulatePass` does
+for images.
 
 ```{literalinclude} code/transient_offline.py
 :language: python
@@ -40,8 +41,8 @@ adds every frame to the histogram, so no `AccumulatePass` is needed.
 
 ## 4. Read the histogram
 
-`to_numpy()` returns the histogram as bins x height x width x RGBA. Divided by the number of
-frames, each bin holds the radiance per unit path length.
+`to_numpy()` returns the averaged histogram as bins x height x width x RGBA. Each bin holds the
+radiance per unit path length.
 
 ```{literalinclude} code/transient_offline.py
 :language: python

@@ -1,5 +1,6 @@
 #pragma once
 #include "ConfigUtils.h"
+#include "RenderGraph/RenderPass.h"
 #include "Utils/Transient/Transient.h"
 #include <cmath>
 
@@ -7,6 +8,11 @@
 /// with kernel density estimation, a kernel.
 struct TransientHistogramConfig
 {
+    // Render data dictionary keys shared by the histogram passes (tracers, accumulation, viewer).
+    static constexpr char kTimeMinKey[] = "transientHistogramTimeMin";
+    static constexpr char kTimeMaxKey[] = "transientHistogramTimeMax";
+    static constexpr char kFrameCountKey[] = "transientHistogramFrameCount"; ///< Frames averaged by the accumulation.
+
     float timeMin = 9.f;
     float timeMax = 12.f;
     uint timeBin = 512;
@@ -15,6 +21,14 @@ struct TransientHistogramConfig
     float initialWindowRatio = 1.f;          ///< KDE: kernel width of a frame's first sample / histogram range, in (0, 1].
 
     float binWidth() const { return (timeMax - timeMin) / float(timeBin); }
+
+    /// Stores the histogram range for the passes downstream (e.g. TransientHistogramViewer).
+    void publishRange(const RenderData& renderData) const
+    {
+        auto& dict = renderData.getDictionary();
+        dict[kTimeMinKey] = timeMin;
+        dict[kTimeMaxKey] = timeMax;
+    }
 
     /// Sets the histogram constants (filter, tbin, tmin, tmax, tunit) under `timeGateVar`.
     void bindShaderData(const ShaderVar& timeGateVar) const

@@ -30,7 +30,9 @@ graph.add_edge("VBuffer.vbuffer", "Tracer.vbuffer")
 graph.add_edge("VBuffer.viewW", "Tracer.viewW")
 graph.add_edge("Laser.vbuffer", "Tracer.laservbuffer")
 graph.add_edge("Laser.viewW", "Tracer.laserviewW")
-graph.mark_output("Tracer.histogram")
+graph.create_pass("Accumulate", "TransientHistogramAccumulatePass", {})
+graph.add_edge("Tracer.histogram", "Accumulate.input")
+graph.mark_output("Accumulate.output")
 testbed.render_graph = graph
 
 # 3. Render
@@ -39,8 +41,8 @@ for _ in range(FRAMES):
     testbed.frame()
 
 # 4. Read the histogram
-# The histogram adds up every frame: divide by the frame count for radiance per unit path length.
-histogram = graph.get_output("Tracer.histogram").to_numpy()[..., :3] / FRAMES  # (bins, height, width, RGB)
+# The mean over the frames, in radiance per unit path length.
+histogram = graph.get_output("Accumulate.output").to_numpy()[..., :3]  # (bins, height, width, RGB)
 np.save("transient.npy", histogram)
 
 # 5. Show 16 bins in a 4 x 4 grid

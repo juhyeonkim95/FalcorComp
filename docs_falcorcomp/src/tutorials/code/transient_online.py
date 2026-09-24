@@ -21,8 +21,9 @@ graph.create_pass("Laser", "LaserVBufferRT", {
 })
 graph.create_pass("Tracer", "TransientHistogramPathTracerInline", {
     "samplesPerPixel": 16, "maxBounces": 6, "computeDirect": False,
-    "timeMin": 16.75, "timeMax": 18.03, "timeBin": 64, "autoReset": True, **fixed_size,
+    "timeMin": 16.75, "timeMax": 18.03, "timeBin": 64, **fixed_size,
 })
+graph.create_pass("Accumulate", "TransientHistogramAccumulatePass", {})
 graph.create_pass("Viewer", "TransientHistogramViewer", {})
 graph.create_pass("ToneMapper", "ToneMapper", {"autoExposure": False})
 
@@ -30,7 +31,8 @@ graph.add_edge("VBuffer.vbuffer", "Tracer.vbuffer")
 graph.add_edge("VBuffer.viewW", "Tracer.viewW")
 graph.add_edge("Laser.vbuffer", "Tracer.laservbuffer")
 graph.add_edge("Laser.viewW", "Tracer.laserviewW")
-graph.add_edge("Tracer.histogram", "Viewer.histogram")
+graph.add_edge("Tracer.histogram", "Accumulate.input")
+graph.add_edge("Accumulate.output", "Viewer.histogram")
 graph.add_edge("Viewer.output", "ToneMapper.src")
 graph.mark_output("ToneMapper.dst")  # shown in the window
 testbed.render_graph = graph
