@@ -6,7 +6,7 @@ camera can be changed while it runs.
 
 ```{image} images/time_gated_online.png
 :alt: The time-gated Cornell box in its window
-:width: 512px
+:width: 640px
 :align: center
 ```
 

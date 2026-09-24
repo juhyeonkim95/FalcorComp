@@ -3,7 +3,7 @@
 # 1. Open a window and load the scene
 import falcorcomp as falcor
 
-testbed = falcor.Testbed(create_window=True, width=512, height=512, title="Time-gated Cornell box")
+testbed = falcor.Testbed(create_window=True, width=1024, height=1024, title="Time-gated Cornell box")
 testbed.load_scene("cornell-box/scene-v4-nolight.pbrt")
 testbed.scene.camera.aspectRatio = 1.0
 testbed.clock.pause()
