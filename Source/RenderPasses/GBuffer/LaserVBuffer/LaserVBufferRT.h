@@ -28,7 +28,7 @@
 #pragma once
 #include "../GBufferBase.h"
 #include "Utils/Sampling/SampleGenerator.h"
-#include "../../Shared/Lights/LaserState.h"
+#include "../../Shared/Host/LaserState.h"
 
 using namespace Falcor;
 

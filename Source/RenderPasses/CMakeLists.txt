@@ -1,7 +1,4 @@
-add_subdirectory(Shared/Utils)
-add_subdirectory(Shared/Lights)
-add_subdirectory(Shared/ReSTIR)
-add_subdirectory(Shared/PathLengthNewtonSolver)
+add_subdirectory(Shared/Shaders)
 add_subdirectory(AccumulatePass)
 add_subdirectory(BlitPass)
 add_subdirectory(BSDFOptimizer)

@@ -31,10 +31,10 @@
 #include "RenderGraph/RenderPassHelpers.h"
 #include "Utils/Sampling/SampleGenerator.h"
 #include "Utils/Transient/Transient.h"
-#include "../Shared/Configs/TransientHistogramConfig.h"
-#include "../Shared/Configs/PathTracingConfig.h"
-#include "../Shared/Lights/LaserState.h"
-#include "../Shared/Utils/InlinePassUtils.h"
+#include "../Shared/Host/Configs/TransientHistogramConfig.h"
+#include "../Shared/Host/Configs/PathTracingConfig.h"
+#include "../Shared/Host/LaserState.h"
+#include "../Shared/Host/InlinePassUtils.h"
 
 using namespace Falcor;
 
@@ -64,7 +64,7 @@ public:
 
 private:
     enum class SamplingMethod { Direct = 0, TriangleApprox = 2 };
-    /// User settings, composed of shared configs (Shared/Configs) plus this pass's own.
+    /// User settings, composed of shared configs (Shared/Host/Configs) plus this pass's own.
     struct Options
     {
         TransientHistogramConfig histogram;

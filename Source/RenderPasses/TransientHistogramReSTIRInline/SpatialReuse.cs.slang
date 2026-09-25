@@ -1,6 +1,6 @@
-import RenderPasses.Shared.Utils.SingleChannel;
+import RenderPasses.Shared.Shaders.Utils.SingleChannel;
 import Utils.Transient.TransientUtils;
-import RenderPasses.Shared.ReSTIR.SpatialReuse;
+import RenderPasses.Shared.Shaders.ReSTIR.SpatialReuse;
 
 cbuffer CB
 {

@@ -12,4 +12,4 @@ target_copy_shaders(TimeGatedReSTIRInline RenderPasses/TimeGatedReSTIRInline)
 
 target_source_group(TimeGatedReSTIRInline "RenderPasses")
 
-add_dependencies(TimeGatedReSTIRInline PathLengthNewtonSolverShaders ReSTIRShaders)
+add_dependencies(TimeGatedReSTIRInline RenderPassSharedShaders)

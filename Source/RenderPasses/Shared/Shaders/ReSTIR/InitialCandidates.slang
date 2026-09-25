@@ -4,9 +4,9 @@
 import Utils.Sampling.SampleGenerator;
 import Rendering.Lights.LightHelpers;
 import Scene.RaytracingInline;
-import RenderPasses.Shared.ReSTIR.Reservoirs;
-import RenderPasses.Shared.Lights.LaserLightSampler;
-import RenderPasses.Shared.Lights.LightConnection;
+import RenderPasses.Shared.Shaders.ReSTIR.Reservoirs;
+import RenderPasses.Shared.Shaders.Lights.LaserLightSampler;
+import RenderPasses.Shared.Shaders.Lights.LightConnection;
 
 float shadingCosine(ShadingData surface, IMaterialInstance material, float3 direction)
 {

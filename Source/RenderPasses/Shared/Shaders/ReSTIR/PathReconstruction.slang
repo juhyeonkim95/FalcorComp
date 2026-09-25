@@ -4,11 +4,11 @@ import Utils.Sampling.SampleGenerator;
 import Scene.RaytracingInline;
 import Utils.Math.MathHelpers;
 import Rendering.Lights.LightHelpers;
-import RenderPasses.Shared.ReSTIR.Reservoirs;
+import RenderPasses.Shared.Shaders.ReSTIR.Reservoirs;
 #include "Utils/Math/MathConstants.slangh"
-import RenderPasses.Shared.Utils.LoadShadingData;
-import RenderPasses.Shared.Lights.LaserLightSampler;
-import RenderPasses.Shared.Lights.LightConnection;
+import RenderPasses.Shared.Shaders.Utils.LoadShadingData;
+import RenderPasses.Shared.Shaders.Lights.LaserLightSampler;
+import RenderPasses.Shared.Shaders.Lights.LightConnection;
 
 float3 getPHat3(
     const ShadingData sd1,

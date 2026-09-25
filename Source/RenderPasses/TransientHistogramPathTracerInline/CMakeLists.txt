@@ -10,4 +10,4 @@ target_copy_shaders(TransientHistogramPathTracerInline RenderPasses/TransientHis
 
 target_source_group(TransientHistogramPathTracerInline "RenderPasses")
 
-add_dependencies(TransientHistogramPathTracerInline RenderPassLightShaders)
+add_dependencies(TransientHistogramPathTracerInline RenderPassSharedShaders)

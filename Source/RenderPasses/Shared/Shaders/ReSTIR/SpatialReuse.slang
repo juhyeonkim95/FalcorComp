@@ -6,11 +6,11 @@
 // paths are shifted by one bin width with the path-length-aware shift mapping.
 import Utils.Sampling.SampleGenerator;
 import Utils.Transient.TransientUtils;
-import RenderPasses.Shared.ReSTIR.Reservoirs;
-import RenderPasses.Shared.ReSTIR.PathReconstruction;
-import RenderPasses.Shared.ReSTIR.ReservoirReuse;
-import RenderPasses.Shared.Utils.LoadShadingData;
-import RenderPasses.Shared.ReSTIR.PathLengthAwareShiftmapping;
+import RenderPasses.Shared.Shaders.ReSTIR.Reservoirs;
+import RenderPasses.Shared.Shaders.ReSTIR.PathReconstruction;
+import RenderPasses.Shared.Shaders.ReSTIR.ReservoirReuse;
+import RenderPasses.Shared.Shaders.Utils.LoadShadingData;
+import RenderPasses.Shared.Shaders.ReSTIR.PathLengthAwareShiftmapping;
 
 cbuffer Laser_CB
 {

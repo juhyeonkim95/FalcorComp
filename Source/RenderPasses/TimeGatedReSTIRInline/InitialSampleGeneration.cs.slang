@@ -12,17 +12,17 @@ import Utils.Transient.EllipsoidIntersection;
 import Rendering.Lights.EmissiveLightSamplerHelpers;
 import Rendering.Lights.EmissiveLightSampler;
 import Scene.RaytracingInline;
-import RenderPasses.Shared.ReSTIR.Reservoirs;
-import RenderPasses.Shared.ReSTIR.PathReconstruction;
-import RenderPasses.Shared.ReSTIR.ReservoirReuse;
-import RenderPasses.Shared.ReSTIR.InitialCandidates;
+import RenderPasses.Shared.Shaders.ReSTIR.Reservoirs;
+import RenderPasses.Shared.Shaders.ReSTIR.PathReconstruction;
+import RenderPasses.Shared.Shaders.ReSTIR.ReservoirReuse;
+import RenderPasses.Shared.Shaders.ReSTIR.InitialCandidates;
 #if USE_SHRINK_MAPPING || USE_TEMPORAL_REUSE
-import RenderPasses.Shared.ReSTIR.PathLengthAwareShiftmapping;
+import RenderPasses.Shared.Shaders.ReSTIR.PathLengthAwareShiftmapping;
 #endif
-import RenderPasses.Shared.Utils.LoadShadingData;
-import RenderPasses.Shared.Lights.LaserLightSampler;
-import RenderPasses.Shared.Lights.LightConnection;
-import RenderPasses.Shared.Lights.EllipsoidalSampling;
+import RenderPasses.Shared.Shaders.Utils.LoadShadingData;
+import RenderPasses.Shared.Shaders.Lights.LaserLightSampler;
+import RenderPasses.Shared.Shaders.Lights.LightConnection;
+import RenderPasses.Shared.Shaders.Lights.EllipsoidalSampling;
 
 
 cbuffer CB

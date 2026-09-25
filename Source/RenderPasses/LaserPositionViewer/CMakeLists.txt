@@ -8,4 +8,6 @@ target_sources(LaserPositionViewer PRIVATE
 
 target_copy_shaders(LaserPositionViewer RenderPasses/LaserPositionViewer)
 
+add_dependencies(LaserPositionViewer RenderPassSharedShaders)
+
 target_source_group(LaserPositionViewer "RenderPasses")

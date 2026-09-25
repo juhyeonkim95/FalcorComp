@@ -1,7 +1,7 @@
-import RenderPasses.Shared.Utils.LoadShadingData;
-import RenderPasses.Shared.Utils.SingleChannel;
-import RenderPasses.Shared.Lights.LaserLightSampler;
-import RenderPasses.Shared.Lights.LightConnection;
+import RenderPasses.Shared.Shaders.Utils.LoadShadingData;
+import RenderPasses.Shared.Shaders.Utils.SingleChannel;
+import RenderPasses.Shared.Shaders.Lights.LaserLightSampler;
+import RenderPasses.Shared.Shaders.Lights.LightConnection;
 #include "Scene/SceneDefines.slangh"
 #include "Utils/Math/MathConstants.slangh"
 

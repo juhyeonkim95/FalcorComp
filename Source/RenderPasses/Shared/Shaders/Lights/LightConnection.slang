@@ -4,7 +4,7 @@
 //     totalLength = pathLength + connection.distance + light.laserT
 import Utils.Sampling.SampleGenerator;
 import Scene.RaytracingInline;
-import RenderPasses.Shared.Lights.LaserLightSampler;
+import RenderPasses.Shared.Shaders.Lights.LaserLightSampler;
 
 // Offset each surface endpoint toward the open segment. The point-light endpoint
 // has no surface to offset. BSDFs and path lengths still use unmodified positions.

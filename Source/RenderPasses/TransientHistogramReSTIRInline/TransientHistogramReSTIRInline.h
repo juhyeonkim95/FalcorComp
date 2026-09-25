@@ -30,11 +30,11 @@
 #include "RenderGraph/RenderPass.h"
 #include "Utils/Sampling/SampleGenerator.h"
 #include "Utils/Transient/Transient.h"
-#include "../Shared/Configs/TransientHistogramConfig.h"
-#include "../Shared/Configs/PathTracingConfig.h"
-#include "../Shared/Lights/LaserState.h"
-#include "../Shared/Configs/PathLengthAwareReSTIRConfig.h"
-#include "../Shared/Utils/InlinePassUtils.h"
+#include "../Shared/Host/Configs/TransientHistogramConfig.h"
+#include "../Shared/Host/Configs/PathTracingConfig.h"
+#include "../Shared/Host/LaserState.h"
+#include "../Shared/Host/Configs/PathLengthAwareReSTIRConfig.h"
+#include "../Shared/Host/InlinePassUtils.h"
 
 using namespace Falcor;
 
@@ -80,7 +80,7 @@ private:
     void bindTimeGate(const ShaderVar& timeGateVar) const;
     void spatialReuse(RenderContext* pRenderContext, const RenderData& renderData);
 
-    /// User settings, composed of shared configs (Shared/Configs) plus this pass's own.
+    /// User settings, composed of shared configs (Shared/Host/Configs) plus this pass's own.
     struct Options
     {
         TransientHistogramConfig histogram;

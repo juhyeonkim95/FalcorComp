@@ -4,14 +4,14 @@ import Utils.Sampling.SampleGenerator;
 import Scene.RaytracingInline;
 import Utils.Math.MathHelpers;
 import Rendering.Lights.LightHelpers;
-import RenderPasses.Shared.ReSTIR.Reservoirs;
+import RenderPasses.Shared.Shaders.ReSTIR.Reservoirs;
 #include "Utils/Math/MathConstants.slangh"
-import RenderPasses.Shared.Utils.LoadShadingData;
-import RenderPasses.Shared.Lights.LaserLightSampler;
-import RenderPasses.Shared.Lights.LightConnection;
+import RenderPasses.Shared.Shaders.Utils.LoadShadingData;
+import RenderPasses.Shared.Shaders.Lights.LaserLightSampler;
+import RenderPasses.Shared.Shaders.Lights.LightConnection;
 
-import RenderPasses.Shared.ReSTIR.PathReconstruction;
-import RenderPasses.Shared.ReSTIR.PathLengthAwareShiftmapping;
+import RenderPasses.Shared.Shaders.ReSTIR.PathReconstruction;
+import RenderPasses.Shared.Shaders.ReSTIR.PathLengthAwareShiftmapping;
 
 // Balanced ratios with scaled mass, target and Jacobian factors. No logs and
 // no reciprocal of a tiny target are needed; all products here are <= 1.

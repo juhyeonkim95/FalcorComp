@@ -2,7 +2,7 @@
 // RESERVOIR_SCALAR_TARGET defaults to RGB when undefined. Histogram passes set it
 // consistently for reflection and execution. IS_SCENE_DYNAMIC enables replay data.
 import Utils.Color.ColorHelpers;
-import RenderPasses.Shared.Utils.SingleChannel;
+import RenderPasses.Shared.Shaders.Utils.SingleChannel;
 import Utils.Sampling.SampleGenerator;
 import Scene.Raytracing;
 

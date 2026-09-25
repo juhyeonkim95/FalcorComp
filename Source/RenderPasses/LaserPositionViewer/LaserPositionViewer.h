@@ -30,9 +30,9 @@
 #include "RenderGraph/RenderPass.h"
 #include "RenderGraph/RenderPassHelpers.h"
 #include "Utils/Sampling/SampleGenerator.h"
-#include "../Shared/Configs/PathTracingConfig.h"
-#include "../Shared/Lights/LaserState.h"
-#include "../Shared/Utils/InlinePassUtils.h"
+#include "../Shared/Host/Configs/PathTracingConfig.h"
+#include "../Shared/Host/LaserState.h"
+#include "../Shared/Host/InlinePassUtils.h"
 
 using namespace Falcor;
 

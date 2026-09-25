@@ -2,13 +2,13 @@ import Utils.Transient.TransientUtils;
 import Utils.Sampling.SampleGenerator;
 import Utils.Math.MathHelpers;
 import Scene.RaytracingInline;
-import RenderPasses.Shared.Utils.LoadShadingData;
-import RenderPasses.Shared.PathLengthNewtonSolver.SurfaceOps.LocalTangentSurface;
-import RenderPasses.Shared.PathLengthNewtonSolver.SurfaceOps.BarycentricTriSurface;
-import RenderPasses.Shared.PathLengthNewtonSolver.SurfaceOps.RayTraceHemisphere;
-import RenderPasses.Shared.PathLengthNewtonSolver.SurfaceOps.CartesianRayChart;
+import RenderPasses.Shared.Shaders.Utils.LoadShadingData;
+import RenderPasses.Shared.Shaders.PathLengthNewtonSolver.SurfaceOps.LocalTangentSurface;
+import RenderPasses.Shared.Shaders.PathLengthNewtonSolver.SurfaceOps.BarycentricTriSurface;
+import RenderPasses.Shared.Shaders.PathLengthNewtonSolver.SurfaceOps.RayTraceHemisphere;
+import RenderPasses.Shared.Shaders.PathLengthNewtonSolver.SurfaceOps.CartesianRayChart;
 
-import RenderPasses.Shared.PathLengthNewtonSolver.NewtonSolver;
+import RenderPasses.Shared.Shaders.PathLengthNewtonSolver.NewtonSolver;
 import Rendering.Lights.EmissiveLightSampler;
 
 #include "Scene/SceneDefines.slangh"

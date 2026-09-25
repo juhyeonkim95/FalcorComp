@@ -4,7 +4,7 @@
 
 import Scene.RaytracingInline;
 import Utils.Sampling.SampleGenerator;
-import RenderPasses.Shared.Utils.LoadShadingData;
+import RenderPasses.Shared.Shaders.Utils.LoadShadingData;
 
 cbuffer CB
 {

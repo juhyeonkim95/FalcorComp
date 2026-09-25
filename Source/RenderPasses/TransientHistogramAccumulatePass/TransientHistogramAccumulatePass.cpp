@@ -27,7 +27,7 @@
  **************************************************************************/
 #include "TransientHistogramAccumulatePass.h"
 #include "RenderGraph/RenderPassStandardFlags.h"
-#include "../Shared/Configs/TransientHistogramConfig.h"
+#include "../Shared/Host/Configs/TransientHistogramConfig.h"
 
 static void regTransientHistogramAccumulatePass(pybind11::module& m)
 {

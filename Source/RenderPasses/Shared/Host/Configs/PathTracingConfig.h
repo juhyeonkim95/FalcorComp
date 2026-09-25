@@ -2,7 +2,7 @@
 #include "ConfigUtils.h"
 #include "RenderGraph/RenderPass.h"
 
-/// Channel kept by single-channel rendering (SINGLE_CHANNEL in Shared/Utils/SingleChannel.slang).
+/// Channel kept by single-channel rendering (SINGLE_CHANNEL in Shared/Shaders/Utils/SingleChannel.slang).
 enum class SingleChannel : uint32_t
 {
     Luminance = 0,

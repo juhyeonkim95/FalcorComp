@@ -5,7 +5,7 @@
 
 using namespace Falcor;
 
-/** Helpers for render pass configs (Shared/Configs). A config is a group of render pass options that
+/** Helpers for render pass configs (Shared/Host/Configs). A config is a group of render pass options that
  * parses and serializes its own properties and draws its own UI controls (renderUI functions return
  * true when a value changed). Render passes compose the configs they need:
  *   TimeGatedPathTracerInline:          TimeGateConfig + EllipsoidalSamplingConfig + PathTracingConfig

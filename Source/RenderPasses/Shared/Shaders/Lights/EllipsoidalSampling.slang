@@ -17,8 +17,8 @@ import Utils.Transient.EllipsoidIntersection;
 import Rendering.Lights.EmissiveLightSampler;
 import Rendering.Lights.EmissiveLightSamplerHelpers;
 import Scene.RaytracingInline;
-import RenderPasses.Shared.Utils.LoadShadingData;
-import RenderPasses.Shared.Lights.LaserLightSampler;
+import RenderPasses.Shared.Shaders.Utils.LoadShadingData;
+import RenderPasses.Shared.Shaders.Lights.LaserLightSampler;
 
 // The x -> y segment of the ellipsoidal technique.
 struct EllipsoidalSample

@@ -13,4 +13,4 @@ target_copy_shaders(TransientHistogramReSTIRInline RenderPasses/TransientHistogr
 
 target_source_group(TransientHistogramReSTIRInline "RenderPasses")
 
-add_dependencies(TransientHistogramReSTIRInline PathLengthNewtonSolverShaders ReSTIRShaders)
+add_dependencies(TransientHistogramReSTIRInline RenderPassSharedShaders)

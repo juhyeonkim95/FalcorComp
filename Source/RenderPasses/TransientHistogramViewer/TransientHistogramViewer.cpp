@@ -26,7 +26,7 @@
  # OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  **************************************************************************/
 #include "TransientHistogramViewer.h"
-#include "../Shared/Configs/TransientHistogramConfig.h"
+#include "../Shared/Host/Configs/TransientHistogramConfig.h"
 #include "RenderGraph/RenderPassHelpers.h"
 #include <algorithm>
 #include <cmath>

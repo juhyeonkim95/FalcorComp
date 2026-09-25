@@ -1,8 +1,8 @@
 import Utils.Math.MathHelpers;
 import Utils.Transient.TransientUtils;
-import RenderPasses.Shared.ReSTIR.Reservoirs;
+import RenderPasses.Shared.Shaders.ReSTIR.Reservoirs;
 
-import RenderPasses.Shared.Utils.LoadShadingData;
+import RenderPasses.Shared.Shaders.Utils.LoadShadingData;
 
 struct EvaluateFinalSamples
 {
