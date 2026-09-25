@@ -21,7 +21,7 @@ graph.create_pass("Laser", "LaserVBufferRT", {
 })
 graph.create_pass("Tracer", "TransientHistogramPathTracerInline", {
     "samplesPerPixel": 16, "maxBounces": 6, "computeDirect": False,
-    "timeMin": 16.75, "timeMax": 18.03, "timeBin": 64, "autoReset": True, **fixed_size,
+    "timeMin": 16.75, "timeMax": 18.03, "timeBin": 64, "accumulate": True, **fixed_size,
 })
 graph.create_pass("Viewer", "TransientHistogramViewer", {})
 graph.create_pass("ToneMapper", "ToneMapper", {"autoExposure": False})

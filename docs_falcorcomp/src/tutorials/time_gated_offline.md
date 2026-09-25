@@ -2,8 +2,11 @@
 
 This tutorial renders a time-gated image of the Cornell box offline with
 `TimeGatedPathTracerInline`: only light whose total path length (laser -> scene -> camera) falls
-inside a gate reaches the image. The scene is the Cornell box without its area light
-(`cornell-box/scene-v4-nolight.pbrt`), so a laser is the only light.
+inside a gate reaches the image. The scene is the Cornell box without its area light, so a laser is
+the only light: download {download}`scene-v4-nolight.pbrt <scenes/cornell-box/scene-v4-nolight.pbrt>`
+and save it as `cornell-box/scene-v4-nolight.pbrt` next to the script. The other tutorials use the
+same file. (The Cornell box is by Benedikt Bitterli, released under
+{download}`CC0 <scenes/cornell-box/LICENSE.txt>`.)
 
 ```{image} images/time_gated_offline.png
 :alt: Time-gated Cornell box

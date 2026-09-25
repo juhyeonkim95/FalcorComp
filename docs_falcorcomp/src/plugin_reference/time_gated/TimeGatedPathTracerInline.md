@@ -50,14 +50,6 @@
   - boolean
   - Move the gate to the next center after every frame, wrapping from `timeMax` back to
     `timeMin`. (Default: `false`)
-* - `isLightSourceLaser`
-  - boolean
-  - `true`: the light is the spot where the laser beam hits the scene. `false`: a point light at
-    the laser position. (Default: `true`)
-* - `laserCollocated`
-  - boolean
-  - Place the laser at the camera, aimed at its target, instead of using the laser pass's
-    position and direction. (Default: `false`)
 * - `useSingleChannel`
   - boolean
   - Copy the red channel to green and blue. (Default: `false`)
@@ -108,9 +100,11 @@ Every camera-path vertex $x$ is connected to the laser spot:
 
 ## Laser
 
-The laser comes from `LaserVBufferRT`: its position, direction, power and cone angle
-(`laserAngle`, 0 for a collimated beam). With `isLightSourceLaser`, the light is the spot the
-beam hits, and the beam length adds to the path length.
+The laser is set on `LaserVBufferRT`: its position, direction, power and cone angle
+(`laserAngle`, 0 for a collimated beam), `laserCollocated` to place it at the camera, and
+`isLightSourceLaser`. With `isLightSourceLaser` (the default), the light is the spot the beam
+hits, and the beam length adds to the path length; otherwise it is a point light at the laser
+position.
 
 ## Inputs and outputs
 

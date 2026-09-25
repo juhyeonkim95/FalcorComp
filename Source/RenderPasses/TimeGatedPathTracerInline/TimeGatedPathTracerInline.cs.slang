@@ -1,7 +1,8 @@
-import RenderPasses.Shared.Utils.LoadShadingData;
-import RenderPasses.Shared.Lights.LaserLightSampler;
-import RenderPasses.Shared.Lights.LightConnection;
-import RenderPasses.Shared.Lights.EllipsoidalSampling;
+import RenderPasses.Shared.Shaders.Utils.LoadShadingData;
+import RenderPasses.Shared.Shaders.Utils.SingleChannel;
+import RenderPasses.Shared.Shaders.Lights.LaserLightSampler;
+import RenderPasses.Shared.Shaders.Lights.LightConnection;
+import RenderPasses.Shared.Shaders.Lights.EllipsoidalSampling;
 #include "Scene/SceneDefines.slangh"
 #include "Utils/Math/MathConstants.slangh"
 
@@ -280,7 +281,7 @@ void main(uint3 dispatchThreadId: SV_DispatchThreadID)
 
     float3 color = tracePath(pixel, gFrameDim);
 #if USE_SINGLE_CHANNEL
-    color = float3(color.x, color.x, color.x);
+    color = float3(selectChannel(color));
 #endif
     gOutputColor[pixel] = float4(color / time_gate_window, 1.f);
 }

@@ -32,7 +32,7 @@
      but the programs are not yet ready to be used when we create the buffers.
      Therefore we create this dummy program to make it easier.
  */
-import RenderPasses.Shared.ReSTIR.Reservoirs;
+import RenderPasses.Shared.Shaders.ReSTIR.Reservoirs;
 
 StructuredBuffer<Reservoir> reservoirs;
 

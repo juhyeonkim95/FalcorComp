@@ -31,15 +31,17 @@
 #include "RenderGraph/RenderPassHelpers.h"
 #include "Utils/Sampling/SampleGenerator.h"
 #include "Utils/Transient/Transient.h"
-#include "../Shared/Configs/TransientHistogramConfig.h"
-#include "../Shared/Configs/PathTracingConfig.h"
-#include "../Shared/Utils/InlinePassUtils.h"
+#include "../Shared/Host/Configs/TransientHistogramConfig.h"
+#include "../Shared/Host/Configs/PathTracingConfig.h"
+#include "../Shared/Host/LaserState.h"
+#include "../Shared/Host/InlinePassUtils.h"
 
 using namespace Falcor;
 
-/** Inline transient histogram tracer. Histogram values accumulate until resetHistogram(), or until the
- * camera moves or an upstream pass changes its options when autoReset is enabled. The number of
- * accumulated frames is published in the render data dictionary (kHistogramFrameCount).
+/** Inline transient histogram tracer. By default each frame writes that frame's histogram (average frames with
+ * TransientHistogramAccumulatePass). With accumulate, the histogram instead sums the frames in place, which is
+ * much cheaper for large histograms; it restarts on camera or option changes and on resetHistogram().
+ * The histogram range and the number of summed frames are published in the render data dictionary.
  * Single-channel output stores the red channel in an H x W x B volume; RGB uses float4 bins.
  * Triangle approximation integrates a single intermediate triangle, not a full path walk.
  */
@@ -54,37 +56,37 @@ public:
     TransientHistogramPathTracerInline(ref<Device> pDevice, const Properties& props);
     Properties getProperties() const override;
     RenderPassReflection reflect(const CompileData& compileData) override;
-    void compile(RenderContext* pRenderContext, const CompileData& compileData) override;
     void execute(RenderContext* pRenderContext, const RenderData& renderData) override;
     void renderUI(Gui::Widgets& widget) override;
     void setScene(RenderContext* pRenderContext, const ref<Scene>& pScene) override;
-    void resetHistogram();
+    /// With accumulate, restarts the sum.
+    void resetHistogram() { mNeedToClearHistogram = true; }
 
 private:
     enum class SamplingMethod { Direct = 0, TriangleApprox = 2 };
-    /// User settings, composed of shared configs (Shared/Configs) plus this pass's own.
+    /// User settings, composed of shared configs (Shared/Host/Configs) plus this pass's own.
     struct Options
     {
         TransientHistogramConfig histogram;
         PathTracingConfig pathTracing;
         SamplingMethod samplingMethod = SamplingMethod::Direct;
-        bool autoReset = false; ///< Clear the histogram when the camera moves or an upstream pass changes options.
+        bool accumulate = false; ///< Sum frames in the histogram instead of writing one frame per histogram.
         RenderPassHelpers::IOSize outputSize = RenderPassHelpers::IOSize::Default;
         uint2 fixedOutputSize = {512, 512}; ///< Output size when outputSize is Fixed.
     };
     static void validateOptions(const Options& options);
     void parseProperties(const Properties& props);
     const ChannelList& histogramChannels() const;
+    bool needsReset(const RenderData& renderData) const;
     void bindShaderData(const ShaderVar& var, const RenderData& renderData);
-    bool needsAutoReset(const RenderData& renderData) const;
     DefineList getShaderDefines(const RenderData& renderData) const;
 
     Options mOptions;
     uint mFrameCount = 0;
-    uint mHistogramFrameCount = 0; ///< Frames accumulated in the histogram since it was cleared.
+    uint mSummedFrames = 0;             ///< Frames in the histogram (accumulate).
+    bool mNeedToClearHistogram = true;
     bool mOptionsChanged = false;
     std::string mUIWarning; ///< Why the last UI edit was rejected.
-    bool mNeedToClearHistogram = true;
     ref<Scene> mpScene;
     ref<SampleGenerator> mpSampleGenerator;
     ref<ComputePass> mpComputePass;

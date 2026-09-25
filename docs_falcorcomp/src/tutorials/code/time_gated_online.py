@@ -3,7 +3,7 @@
 # 1. Open a window and load the scene
 import falcorcomp as falcor
 
-testbed = falcor.Testbed(create_window=True, width=512, height=512, title="Time-gated Cornell box")
+testbed = falcor.Testbed(create_window=True, width=1024, height=1024, title="Time-gated Cornell box")
 testbed.load_scene("cornell-box/scene-v4-nolight.pbrt")
 testbed.scene.camera.aspectRatio = 1.0
 testbed.clock.pause()
@@ -18,8 +18,7 @@ graph.create_pass("Laser", "LaserVBufferRT", {
 })
 graph.create_pass("Tracer", "TimeGatedPathTracerInline", {
     "samplesPerPixel": 16, "maxBounces": 6, "computeDirect": False,
-    "timeGateMode": "box", "timeGateWindow": 0.1,
-    "shiftGate": True, "timeMin": 16.6, "timeMax": 18.6, "timeBin": 100,
+    "timeGateMode": "box", "timeGateWindow": 0.1, "timeMin": 17.337, "timeMax": 17.337,
 })
 graph.create_pass("Accumulate", "AccumulatePass", {"precisionMode": "SingleCompensated"})
 graph.create_pass("ToneMapper", "ToneMapper", {"autoExposure": False})

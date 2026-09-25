@@ -5,15 +5,17 @@ cbuffer CB
 {
     uint2 gOutputDim;
     uint3 gHistogramDim; // width, height, bins
-    float gSumScale;     // bin width / frame count
-    float gTileScale;    // histogram range / frame count * 2^exposure
+    float gSumScale;     // bin width / summed frames
+    float gTileScale;    // histogram range / summed frames * 2^exposure
     uint4 gTileBins[4];  // bin of each tile, row-major
+    uint gLeftBin;       // bin shown on the left half; ~0u shows the sum over all bins
     int2 gSelectedPixel; // histogram pixel with a crosshair and profile; negative if none
     uint gProfileRadius; // the profile averages a (2r + 1)^2 patch
-    float gProfileScale; // 1 / frame count
+    float gProfileScale; // 1 / summed frames
 }
 
 Texture3D<float4> gHistogram;
+Texture2D<float4> gOverlay; // Optional (HAS_OVERLAY): histogram-sized, premultiplied alpha
 RWTexture2D<float4> gOutput;
 RWStructuredBuffer<float4> gProfile;
 
@@ -82,6 +84,17 @@ float3 sumImage(uint2 first, uint2 last)
     return sum * gSumScale / float(count.x * count.y);
 }
 
+// Average of the overlay over the footprint (same pixel grid as the histogram).
+float4 overlayImage(uint2 first, uint2 last)
+{
+    float4 sum = 0.f;
+    for (uint y = first.y; y <= last.y; ++y)
+        for (uint x = first.x; x <= last.x; ++x)
+            sum += gOverlay[uint2(x, y)];
+    uint2 count = last - first + 1;
+    return sum / float(count.x * count.y);
+}
+
 float3 binImage(uint2 first, uint2 last, uint bin)
 {
     float3 sum = 0.f;
@@ -107,7 +120,13 @@ void main(uint3 dispatchThreadId: SV_DispatchThreadID)
         if (onMarker(pixel, fit, 8.f))
             color = kMarkerColor;
         else if (footprint(pixel, fit, first, last))
-            color = sumImage(first, last);
+        {
+            color = gLeftBin == ~0u ? sumImage(first, last) : binImage(first, last, gLeftBin);
+#if HAS_OVERLAY
+            float4 overlay = overlayImage(first, last);
+            color = color * (1.f - overlay.a) + overlay.rgb;
+#endif
+        }
     }
     else
     {

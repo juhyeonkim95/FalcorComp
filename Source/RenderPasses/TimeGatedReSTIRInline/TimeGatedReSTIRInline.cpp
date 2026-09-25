@@ -178,6 +178,7 @@ RenderPassReflection TimeGatedReSTIRInline::reflect(const CompileData& compileDa
 DefineList TimeGatedReSTIRInline::getShaderDefines(const RenderData& renderData) const
 {
     DefineList defines = mOptions.pathTracing.getDefines();
+    defines.add(LaserState::resolve(renderData).getDefines());
     defines.add(InlinePass::getSceneLightDefines(*mpScene));
     defines.add(mOptions.restir.getDefines());
 
@@ -218,7 +219,7 @@ DefineList TimeGatedReSTIRInline::getReservoirDefines() const
     defines.add("USE_SINGLE_CHANNEL", mOptions.pathTracing.useSingleChannel ? "1" : "0");
     defines.add("USE_IMPORTANCE_SAMPLING", mOptions.pathTracing.useImportanceSampling ? "1" : "0");
     defines.add("USE_ALPHA_TEST", mOptions.pathTracing.useAlphaTest ? "1" : "0");
-    defines.add("IS_LIGHT_SOURCE_LASER", mOptions.pathTracing.isLightSourceLaser ? "1" : "0");
+    defines.add(mLaser.getDefines());
     return defines;
 }
 
@@ -325,7 +326,7 @@ void TimeGatedReSTIRInline::execute(RenderContext* pRenderContext, const RenderD
     }
 
     // Dynamic mode supports moving cameras/lights, but not geometry or material changes.
-    mLaser = mOptions.pathTracing.resolveLaser(renderData, *mpScene);
+    mLaser = LaserState::resolve(renderData);
     mReSTIR.invalidateHistory(*mpScene, mLaser != mPreviousLaser, mOptions.isSceneDynamic);
 
     mTriangleSampler.prepare(pRenderContext, mpScene, mOptions.ellipsoidalSampling);
@@ -414,9 +415,6 @@ void TimeGatedReSTIRInline::renderUI(Gui::Widgets& widget)
 
     if (auto group = widget.group("Shift mapping", true))
         dirty |= mOptions.restir.renderShiftMappingUI(group);
-
-    if (auto group = widget.group("Light", true))
-        dirty |= mOptions.pathTracing.renderLightUI(group);
 
     if (auto group = widget.group("Output", true))
         dirty |= mOptions.pathTracing.renderOutputUI(group, false);

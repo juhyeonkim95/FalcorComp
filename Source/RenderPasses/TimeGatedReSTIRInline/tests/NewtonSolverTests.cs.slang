@@ -1,6 +1,6 @@
 // Standalone numerical regression tests; exercised by test_newton_solver.py.
-import RenderPasses.Shared.PathLengthNewtonSolver.NewtonSolver;
-import RenderPasses.Shared.PathLengthNewtonSolver.SurfaceOps.LocalTangentSurface;
+import RenderPasses.Shared.Shaders.PathLengthNewtonSolver.NewtonSolver;
+import RenderPasses.Shared.Shaders.PathLengthNewtonSolver.SurfaceOps.LocalTangentSurface;
 
 RWStructuredBuffer<float4> results;
 

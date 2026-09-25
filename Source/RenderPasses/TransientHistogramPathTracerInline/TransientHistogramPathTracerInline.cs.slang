@@ -1,8 +1,15 @@
-import RenderPasses.Shared.Utils.LoadShadingData;
-import RenderPasses.Shared.Lights.LaserLightSampler;
-import RenderPasses.Shared.Lights.LightConnection;
+import RenderPasses.Shared.Shaders.Utils.LoadShadingData;
+import RenderPasses.Shared.Shaders.Utils.SingleChannel;
+import RenderPasses.Shared.Shaders.Lights.LaserLightSampler;
+import RenderPasses.Shared.Shaders.Lights.LightConnection;
 #include "Scene/SceneDefines.slangh"
 #include "Utils/Math/MathConstants.slangh"
+
+// Set by the host: 1 when the histogram sums frames (the host clears it only on reset), 0 for one frame per
+// histogram (the host clears it every frame).
+#ifndef ACCUMULATE_HISTOGRAM
+#define ACCUMULATE_HISTOGRAM 0
+#endif
 
 import Utils.Math.MathHelpers;
 import Utils.Geometry.GeometryHelpers;
@@ -85,7 +92,7 @@ float3 getPrimaryRayDir(uint2 launchIndex, uint2 launchDim, const Camera camera)
 void addHistogramBin(uint2 pixel, uint bin, float3 radiance, float weight = 1.f)
 {
 #if USE_SINGLE_CHANNEL
-    gTransientHistogram[uint3(pixel, bin)] += radiance.x * weight;
+    gTransientHistogram[uint3(pixel, bin)] += selectChannel(radiance) * weight;
 #else
     gTransientHistogram[uint3(pixel, bin)] += float4(radiance, 1.f) * weight;
 #endif

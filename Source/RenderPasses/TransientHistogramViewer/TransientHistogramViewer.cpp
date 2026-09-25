@@ -26,6 +26,7 @@
  # OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  **************************************************************************/
 #include "TransientHistogramViewer.h"
+#include "../Shared/Host/Configs/TransientHistogramConfig.h"
 #include "RenderGraph/RenderPassHelpers.h"
 #include <algorithm>
 #include <cmath>
@@ -40,18 +41,18 @@ namespace
 const char kShaderFile[] = "RenderPasses/TransientHistogramViewer/TransientHistogramViewer.cs.slang";
 
 const char kInput[] = "histogram";
+const char kOverlay[] = "overlay";
 const char kOutput[] = "output";
 
 const char kFirstBin[] = "firstBin";
 const char kLastBin[] = "lastBin";
 const char kBinExposure[] = "binExposure";
+const char kLeftView[] = "leftView"; // "sum" or "bin"
+const char kLeftBin[] = "leftBin";
 const char kSelectedPixel[] = "selectedPixel";
 const char kProfileRadius[] = "profileRadius";
 
 // Published by TransientHistogramPathTracerInline.
-const char kHistogramFrameCount[] = "transientHistogramFrameCount";
-const char kHistogramTimeMin[] = "transientHistogramTimeMin";
-const char kHistogramTimeMax[] = "transientHistogramTimeMax";
 } // namespace
 
 TransientHistogramViewer::TransientHistogramViewer(ref<Device> pDevice, const Properties& props) : RenderPass(pDevice)
@@ -64,6 +65,15 @@ TransientHistogramViewer::TransientHistogramViewer(ref<Device> pDevice, const Pr
             mLastBin = value;
         else if (key == kBinExposure)
             mBinExposure = value;
+        else if (key == kLeftView)
+        {
+            const std::string view = value;
+            if (view != "sum" && view != "bin")
+                FALCOR_THROW("leftView must be sum or bin.");
+            mLeftShowsBin = view == "bin";
+        }
+        else if (key == kLeftBin)
+            mLeftBin = value;
         else if (key == kSelectedPixel)
             mSelectedPixel = value;
         else if (key == kProfileRadius)
@@ -79,6 +89,8 @@ Properties TransientHistogramViewer::getProperties() const
     props[kFirstBin] = mFirstBin;
     props[kLastBin] = mLastBin;
     props[kBinExposure] = mBinExposure;
+    props[kLeftView] = mLeftShowsBin ? "bin" : "sum";
+    props[kLeftBin] = mLeftBin;
     props[kSelectedPixel] = mSelectedPixel;
     props[kProfileRadius] = mProfileRadius;
     return props;
@@ -88,6 +100,8 @@ RenderPassReflection TransientHistogramViewer::reflect(const CompileData& compil
 {
     RenderPassReflection reflector;
     reflector.addInput(kInput, "Transient histogram (width x height x bins)").texture3D(0, 0, 0);
+    reflector.addInput(kOverlay, "Overlay for the sum image: histogram-sized, premultiplied alpha")
+        .flags(RenderPassReflection::Field::Flags::Optional);
     reflector.addOutput(kOutput, "Sum image (left) and 4x4 grid of bins (right)")
         .format(ResourceFormat::RGBA32Float)
         .bindFlags(ResourceBindFlags::UnorderedAccess | ResourceBindFlags::ShaderResource);
@@ -113,16 +127,25 @@ void TransientHistogramViewer::execute(RenderContext* pRenderContext, const Rend
     if (any(mSelectedPixel >= int2(mHistogramDim)))
         mSelectedPixel = {-1, -1};
 
-    // Normalize the accumulated histogram. Without producer metadata, assume one frame and unit bins.
+    // The histogram range comes from the tracer (unit bins without it).
     auto& dict = renderData.getDictionary();
     mBinCount = histogramDim.z;
-    mFrameCount = std::max(1u, dict.getValue(kHistogramFrameCount, 1u));
-    mTimeMin = dict.getValue(kHistogramTimeMin, 0.f);
-    mTimeMax = dict.getValue(kHistogramTimeMax, float(mBinCount));
+    // A tracer that accumulates publishes a sum over frames; a mean or a single frame counts as 1.
+    const uint summedFrames = std::max(1u, dict.getValue(TransientHistogramConfig::kSummedFramesKey, 1u));
+    mFrameCount = dict.getValue(TransientHistogramConfig::kAveragedFramesKey, 0u);
+    mTimeMin = dict.getValue(TransientHistogramConfig::kTimeMinKey, 0.f);
+    mTimeMax = dict.getValue(TransientHistogramConfig::kTimeMaxKey, float(mBinCount));
     const float range = mTimeMax - mTimeMin;
+
+    // The overlay is used only when it has the histogram's size.
+    const ref<Texture> pOverlay = renderData.getTexture(kOverlay);
+    const bool hasOverlay = pOverlay && pOverlay->getWidth() == histogramDim.x && pOverlay->getHeight() == histogramDim.y;
+    if (pOverlay && !hasOverlay)
+        logWarning("TransientHistogramViewer: the overlay must be {}x{}; it is ignored.", histogramDim.x, histogramDim.y);
 
     DefineList defines;
     defines.add("SINGLE_CHANNEL", getFormatChannelCount(pHistogram->getFormat()) == 1 ? "1" : "0");
+    defines.add("HAS_OVERLAY", hasOverlay ? "1" : "0");
     if (!mpViewPass)
         mpViewPass = ComputePass::create(mpDevice, kShaderFile, "main", defines);
     mpViewPass->getProgram()->addDefines(defines);
@@ -133,9 +156,10 @@ void TransientHistogramViewer::execute(RenderContext* pRenderContext, const Rend
     auto var = mpViewPass->getRootVar();
     var["CB"]["gOutputDim"] = outputDim;
     var["CB"]["gHistogramDim"] = histogramDim;
-    var["CB"]["gSumScale"] = range / float(mBinCount) / float(mFrameCount);
+    var["CB"]["gSumScale"] = range / float(mBinCount) / float(summedFrames);
     // A bin shown at the sum's brightness when all radiance arrives within it spread over the range.
-    var["CB"]["gTileScale"] = range / float(mFrameCount) * std::exp2(mBinExposure);
+    var["CB"]["gTileScale"] = range / float(summedFrames) * std::exp2(mBinExposure);
+    var["CB"]["gLeftBin"] = mLeftShowsBin ? std::min(mLeftBin, mBinCount - 1) : ~0u;
     for (uint row = 0; row < 4; ++row)
     {
         var["CB"]["gTileBins"][row] = uint4(tileBin(4 * row, mBinCount), tileBin(4 * row + 1, mBinCount),
@@ -143,11 +167,13 @@ void TransientHistogramViewer::execute(RenderContext* pRenderContext, const Rend
     }
     var["CB"]["gSelectedPixel"] = mSelectedPixel;
     var["gHistogram"] = pHistogram;
+    if (hasOverlay)
+        var["gOverlay"] = pOverlay;
     var["gOutput"] = pOutput;
     mpViewPass->execute(pRenderContext, uint3(outputDim, 1));
 
     if (all(mSelectedPixel >= 0))
-        readProfile(pRenderContext, pHistogram, 1.f / float(mFrameCount));
+        readProfile(pRenderContext, pHistogram, 1.f / float(summedFrames));
     else
         mProfile.clear();
 }
@@ -248,6 +274,23 @@ bool TransientHistogramViewer::onMouseEvent(const MouseEvent& mouseEvent)
 void TransientHistogramViewer::renderUI(Gui::Widgets& widget)
 {
     const uint lastIndex = mBinCount > 0 ? mBinCount - 1 : 0;
+    static const Gui::DropdownList kLeftViewList = {{0, "Sum over bins"}, {1, "One bin"}};
+    uint32_t leftView = mLeftShowsBin ? 1 : 0;
+    if (widget.dropdown("Left half", kLeftViewList, leftView))
+        mLeftShowsBin = leftView == 1;
+    widget.tooltip("Sum over bins: the light arriving within the histogram range. One bin: the chosen bin, as bright "
+                   "as a tile.", true);
+    if (mLeftShowsBin)
+    {
+        widget.var("Left bin", mLeftBin, 0u, lastIndex);
+        if (mBinCount > 0)
+        {
+            const float binWidth = (mTimeMax - mTimeMin) / float(mBinCount);
+            const float start = mTimeMin + float(std::min(mLeftBin, lastIndex)) * binWidth;
+            widget.text(fmt::format("Path length [{:.3f}, {:.3f})", start, start + binWidth));
+        }
+    }
+
     widget.var("First bin", mFirstBin, 0u, lastIndex);
     widget.tooltip("Bin shown in the top-left tile.", true);
 
@@ -263,7 +306,8 @@ void TransientHistogramViewer::renderUI(Gui::Widgets& widget)
 
     if (mBinCount == 0)
         return;
-    widget.text(fmt::format("Accumulated frames: {}", mFrameCount));
+    if (mFrameCount > 0)
+        widget.text(fmt::format("Averaged frames: {}", mFrameCount));
     renderProfileUI(widget);
     const float binWidth = (mTimeMax - mTimeMin) / float(mBinCount);
     if (auto group = widget.group("Tile bins"))

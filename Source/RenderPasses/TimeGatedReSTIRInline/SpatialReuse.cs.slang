@@ -1,5 +1,5 @@
 import Utils.Transient.TransientUtils;
-import RenderPasses.Shared.ReSTIR.SpatialReuse;
+import RenderPasses.Shared.Shaders.ReSTIR.SpatialReuse;
 
 cbuffer CB
 {

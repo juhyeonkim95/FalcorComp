@@ -29,17 +29,17 @@
 #include "Falcor.h"
 #include "RenderGraph/RenderPass.h"
 #include "Utils/Sampling/SampleGenerator.h"
+#include "../Shared/Host/Configs/PathTracingConfig.h"
+#include "../Shared/Host/LaserState.h"
+#include "../Shared/Host/InlinePassUtils.h"
 
 using namespace Falcor;
 
-/** Simple steady-state path tracer using inline ray queries.
- * Analytic lights are sampled explicitly; mesh lights and environment lighting
- * are sampled by BSDF continuation. No reservoir reuse or light-sampling MIS.
- */
+/** Path tracing lit by the laser: each camera path vertex is connected to the laser spot. */
 class InlinePathTracer : public RenderPass
 {
 public:
-    FALCOR_PLUGIN_CLASS(InlinePathTracer, "InlinePathTracer", "Simple inline path tracer.");
+    FALCOR_PLUGIN_CLASS(InlinePathTracer, "InlinePathTracer", "Path tracer lit by the laser.");
 
     static ref<InlinePathTracer> create(ref<Device> pDevice, const Properties& props)
     {
@@ -47,30 +47,32 @@ public:
     }
 
     InlinePathTracer(ref<Device> pDevice, const Properties& props);
+
     Properties getProperties() const override;
     RenderPassReflection reflect(const CompileData& compileData) override;
     void execute(RenderContext* pRenderContext, const RenderData& renderData) override;
     void renderUI(Gui::Widgets& widget) override;
     void setScene(RenderContext* pRenderContext, const ref<Scene>& pScene) override;
+    bool onMouseEvent(const MouseEvent& mouseEvent) override { return false; }
+    bool onKeyEvent(const KeyboardEvent& keyEvent) override { return false; }
 
 private:
+    void parseProperties(const Properties& props);
+    void bindShaderData(const ShaderVar& var, const RenderData& renderData);
+    DefineList getShaderDefines(const RenderData& renderData) const;
+
+    /// User settings, composed of shared configs (Shared/Host/Configs).
     struct Options
     {
-        uint maxBounces = 3; ///< Maximum indirect bounces; zero still evaluates direct lighting.
-        uint samplesPerPixel = 1;
-        bool computeDirect = true;
-        bool useImportanceSampling = true;
-        bool useAlphaTest = true;
+        PathTracingConfig pathTracing;
     };
 
-    void parseProperties(const Properties& props);
-    DefineList getShaderDefines(const RenderData& renderData) const;
-    void prepareProgram(RenderContext* pRenderContext, const RenderData& renderData);
-    void bindShaderData(RenderContext* pRenderContext, const RenderData& renderData);
+    static void validateOptions(const Options& options);
 
     Options mOptions;
     uint mFrameCount = 0;
     bool mOptionsChanged = false;
+
     ref<Scene> mpScene;
     ref<SampleGenerator> mpSampleGenerator;
     ref<ComputePass> mpComputePass;

@@ -10,7 +10,7 @@ on:
 jobs:
   windows-vs2022:
     name: Windows VS2022
-    runs-on: windows-latest
+    runs-on: windows-2022
     strategy:
       matrix:
         include:
@@ -25,7 +25,6 @@ jobs:
         uses: ilammy/msvc-dev-cmd@v1
         with:
           arch: x64
-          sdk: 10.0.19041.0
       - name: Configure
         run: setup_vs2022.bat
         shell: cmd
@@ -34,7 +33,7 @@ jobs:
         shell: cmd
   windows-ninja-msvc:
     name: Windows Ninja/MSVC
-    runs-on: windows-latest
+    runs-on: windows-2022
     env:
       CMAKE_EXE: tools\.packman\cmake\bin\cmake.exe
       CMAKE_BUILD_PRESET: windows-ninja-msvc
@@ -52,7 +51,6 @@ jobs:
         uses: ilammy/msvc-dev-cmd@v1
         with:
           arch: x64
-          sdk: 10.0.19041.0
       - name: Configure
         run: setup.bat
         shell: cmd

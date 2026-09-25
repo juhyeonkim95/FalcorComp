@@ -34,7 +34,7 @@ graph.mark_output("ToneMapper.dst")     # output 1: tone mapped
 testbed.render_graph = graph
 
 # 3. Render
-for _ in range(64):  # 64 frames x 16 spp = 1024 spp
+for _ in range(256):  # 256 frames x 16 spp = 4096 spp
     testbed.frame()
 
 # 4. Save the image

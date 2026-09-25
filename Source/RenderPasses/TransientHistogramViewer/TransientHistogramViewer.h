@@ -33,10 +33,13 @@ using namespace Falcor;
 
 /** Displays a transient histogram (W x H x B volume) in one image.
  *
- * Left half: the histogram summed over all bins (the steady-state image).
+ * Left half: the histogram summed over all bins (the steady-state image), or one chosen bin (leftView).
  * Right half: a 4 x 4 grid of 16 bins spread evenly from firstBin to lastBin, in reading order.
- * Both halves are fitted to their area with box filtering. The histogram is divided by the
- * frame count its producer publishes (TransientHistogramPathTracerInline accumulates across frames).
+ * Both halves are fitted to their area with box filtering. The input is a histogram in radiance per unit path
+ * length, divided by the frames summed into it (TransientHistogramConfig::kSummedFramesKey; 1 for a mean, e.g.
+ * from TransientHistogramAccumulatePass, or a single frame).
+ * An optional overlay (e.g. LaserPositionViewer without an input) of the histogram's size is blended into the
+ * left half only, with premultiplied alpha.
  * Shift+click (or drag) on either half selects a pixel: it gets a crosshair, and the UI plots its
  * transient profile.
  */
@@ -72,7 +75,9 @@ private:
 
     uint mFirstBin = 0;
     int mLastBin = -1;         ///< Last bin shown in the grid; negative counts from the end (-1 = last bin).
-    float mBinExposure = 0.f;  ///< Extra exposure of the grid tiles, in stops.
+    float mBinExposure = 0.f;  ///< Extra exposure of the bin images (tiles and a bin on the left), in stops.
+    bool mLeftShowsBin = false; ///< Left half: mLeftBin instead of the sum over all bins.
+    uint mLeftBin = 0;
 
     // Transient profile of a selected pixel.
     int2 mSelectedPixel = {-1, -1}; ///< Histogram pixel; negative if none.
@@ -86,7 +91,7 @@ private:
     uint2 mOutputDim = {0, 0};
     uint2 mHistogramDim = {0, 0};
     uint mBinCount = 0;
-    uint mFrameCount = 0;
+    uint mFrameCount = 0; ///< Frames in the input's average, if an accumulation pass published it.
     float mTimeMin = 0.f;
     float mTimeMax = 0.f;
 

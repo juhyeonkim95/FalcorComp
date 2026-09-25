@@ -1,6 +1,5 @@
 # Build folder.
 /build/
-/build (copy)
 
 # Test output folder.
 /tests/data/
@@ -43,3 +42,9 @@
 /experiments/*
 !/experiments/tof_restir_release/
 !/experiments/falcorcomp/
+
+# Legacy render passes kept locally and left out of the build until they are checked
+/Source/RenderPasses/TempPasses/
+
+# Local files kept out of the repository
+/temp/

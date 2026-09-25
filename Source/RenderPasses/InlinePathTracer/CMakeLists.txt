@@ -9,3 +9,5 @@ target_sources(InlinePathTracer PRIVATE
 target_copy_shaders(InlinePathTracer RenderPasses/InlinePathTracer)
 
 target_source_group(InlinePathTracer "RenderPasses")
+
+add_dependencies(InlinePathTracer RenderPassSharedShaders)

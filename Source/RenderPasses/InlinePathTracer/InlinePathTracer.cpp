@@ -1,5 +1,5 @@
 /***************************************************************************
- # Copyright (c) 2015-23, NVIDIA CORPORATION. All rights reserved.
+ # Copyright (c) 2015-24, NVIDIA CORPORATION. All rights reserved.
  #
  # Redistribution and use in source and binary forms, with or without
  # modification, are permitted provided that the following conditions
@@ -37,153 +37,152 @@ extern "C" FALCOR_API_EXPORT void registerPlugin(Falcor::PluginRegistry& registr
 namespace
 {
 const char kShaderFile[] = "RenderPasses/InlinePathTracer/InlinePathTracer.cs.slang";
+const char kInputViewDir[] = "viewW";
+
 const ChannelList kInputChannels = {
-    {"vbuffer", "gVBuffer", "Packed visibility buffer"},
-    {"viewW", "gViewW", "World-space view direction", true},
+    // clang-format off
+    { "vbuffer",        "gVBuffer",     "Visibility buffer in packed format" },
+    { kInputViewDir,    "gViewW",       "World-space view direction (xyz float format)", true /* optional */ },
 };
+
+const ChannelList kLaserInputChannels = {
+    // 1 x 1 laser hit buffer
+    { "laservbuffer",        "gLaserVBuffer",     "Laser visibility buffer in packed format" },
+    { "laserviewW",    "gLaserViewW",       "World-space view direction (xyz float format)", true /* optional */ },
+};
+
 const ChannelList kOutputChannels = {
-    {"color", "gOutputColor", "Linear radiance", false, ResourceFormat::RGBA32Float},
+    // clang-format off
+    { "color",          "gOutputColor", "Output color (sum of direct and indirect)", false, ResourceFormat::RGBA32Float },
+    // clang-format on
 };
-const char kMaxBounces[] = "maxBounces";
-const char kSamplesPerPixel[] = "samplesPerPixel";
-const char kComputeDirect[] = "computeDirect";
-const char kUseImportanceSampling[] = "useImportanceSampling";
-const char kUseAlphaTest[] = "useAlphaTest";
+
 } // namespace
 
 InlinePathTracer::InlinePathTracer(ref<Device> pDevice, const Properties& props) : RenderPass(pDevice)
 {
     parseProperties(props);
-    mpSampleGenerator = SampleGenerator::create(mpDevice, SAMPLE_GENERATOR_UNIFORM);
+    validateOptions(mOptions);
+
+    // Create a sample generator.
+    mpSampleGenerator = SampleGenerator::create(mpDevice, SAMPLE_GENERATOR_TINY_UNIFORM);
+    FALCOR_ASSERT(mpSampleGenerator);
+}
+
+void InlinePathTracer::validateOptions(const Options& options)
+{
+    options.pathTracing.validate();
 }
 
 void InlinePathTracer::parseProperties(const Properties& props)
 {
     for (const auto& [key, value] : props)
     {
-        if (key == kMaxBounces) mOptions.maxBounces = value;
-        else if (key == kSamplesPerPixel) mOptions.samplesPerPixel = value;
-        else if (key == kComputeDirect) mOptions.computeDirect = value;
-        else if (key == kUseImportanceSampling) mOptions.useImportanceSampling = value;
-        else if (key == kUseAlphaTest) mOptions.useAlphaTest = value;
-        else FALCOR_THROW("Unknown InlinePathTracer property '{}'.", key);
+        if (mOptions.pathTracing.parse(key, value))
+            continue;
+        logWarning("Unknown property '{}' in InlinePathTracer properties.", key);
     }
-    if (mOptions.samplesPerPixel == 0)
-        FALCOR_THROW("samplesPerPixel must be greater than zero.");
 }
 
 Properties InlinePathTracer::getProperties() const
 {
     Properties props;
-    props[kMaxBounces] = mOptions.maxBounces;
-    props[kSamplesPerPixel] = mOptions.samplesPerPixel;
-    props[kComputeDirect] = mOptions.computeDirect;
-    props[kUseImportanceSampling] = mOptions.useImportanceSampling;
-    props[kUseAlphaTest] = mOptions.useAlphaTest;
+    mOptions.pathTracing.serialize(props);
     return props;
 }
 
 RenderPassReflection InlinePathTracer::reflect(const CompileData& compileData)
 {
-    RenderPassReflection reflection;
-    addRenderPassInputs(reflection, kInputChannels);
-    addRenderPassOutputs(reflection, kOutputChannels);
-    return reflection;
+    RenderPassReflection reflector;
+
+    // Define our input/output channels.
+    addRenderPassInputs(reflector, kInputChannels);
+    addRenderPassInputs(reflector, kLaserInputChannels, ResourceBindFlags::ShaderResource, uint2(1, 1));
+    addRenderPassOutputs(reflector, kOutputChannels);
+
+    return reflector;
 }
 
 DefineList InlinePathTracer::getShaderDefines(const RenderData& renderData) const
 {
-    DefineList defines;
-    defines.add("MAX_BOUNCES", std::to_string(mOptions.maxBounces));
-    defines.add("COMPUTE_DIRECT", mOptions.computeDirect ? "1" : "0");
-    defines.add("USE_IMPORTANCE_SAMPLING", mOptions.useImportanceSampling ? "1" : "0");
-    defines.add("USE_ALPHA_TEST", mOptions.useAlphaTest ? "1" : "0");
-    defines.add("USE_ANALYTIC_LIGHTS", mpScene->useAnalyticLights() ? "1" : "0");
-    defines.add("USE_EMISSIVE_LIGHTS", mpScene->useEmissiveLights() ? "1" : "0");
-    defines.add("USE_ENV_LIGHT", mpScene->useEnvLight() ? "1" : "0");
-    defines.add("USE_ENV_BACKGROUND", mpScene->useEnvBackground() ? "1" : "0");
+    DefineList defines = mOptions.pathTracing.getDefines();
+    defines.add(LaserState::resolve(renderData).getDefines());
+    defines.add(InlinePass::getSceneLightDefines(*mpScene));
+
+    // For optional I/O resources, set 'is_valid_<name>' defines to inform the program of which ones it can access.
     defines.add(getValidResourceDefines(kInputChannels, renderData));
+    defines.add(getValidResourceDefines(kLaserInputChannels, renderData));
+    defines.add(getValidResourceDefines(kOutputChannels, renderData));
     return defines;
 }
 
-void InlinePathTracer::prepareProgram(RenderContext* pRenderContext, const RenderData& renderData)
+void InlinePathTracer::bindShaderData(const ShaderVar& var, const RenderData& renderData)
 {
-    if (mpComputePass) return;
-
-    ProgramDesc desc;
-    desc.addShaderModules(mpScene->getShaderModules());
-    desc.addShaderLibrary(kShaderFile).csEntry("main");
-    desc.addTypeConformances(mpScene->getTypeConformances());
-    DefineList defines = mpScene->getSceneDefines();
-    defines.add(mpSampleGenerator->getDefines());
-    defines.add(getShaderDefines(renderData));
-    mpComputePass = ComputePass::create(mpDevice, desc, defines, true);
-}
-
-void InlinePathTracer::bindShaderData(RenderContext* pRenderContext, const RenderData& renderData)
-{
-    auto var = mpComputePass->getRootVar();
-    mpScene->bindShaderDataForRaytracing(pRenderContext, var["gScene"]);
-    mpSampleGenerator->bindShaderData(var);
-    var["CB"]["gFrameDim"] = renderData.getDefaultTextureDims();
     var["CB"]["gFrameCount"] = mFrameCount;
-    var["CB"]["gSamplesPerPixel"] = mOptions.samplesPerPixel;
-    const auto& dict = renderData.getDictionary();
-    var["CB"]["gPRNGDimension"] = dict.keyExists(kRenderPassPRNGDimension) ? dict[kRenderPassPRNGDimension] : 0u;
-    for (const auto& channel : kInputChannels)
-        var[channel.texname] = renderData.getTexture(channel.name);
-    for (const auto& channel : kOutputChannels)
-        var[channel.texname] = renderData.getTexture(channel.name);
+    var["CB"]["gFrameDim"] = renderData.getDefaultTextureDims();
+    var["CB"]["gPRNGDimension"] = InlinePass::getPRNGDimension(renderData);
+    var["CB"]["samplesPerPixel"] = mOptions.pathTracing.samplesPerPixel;
+    LaserState::resolve(renderData).bindShaderData(var["CB"]);
+
+    InlinePass::bindChannels(var, renderData, kInputChannels);
+    InlinePass::bindChannels(var, renderData, kLaserInputChannels);
+    InlinePass::bindChannels(var, renderData, kOutputChannels);
 }
 
 void InlinePathTracer::execute(RenderContext* pRenderContext, const RenderData& renderData)
 {
     if (mOptionsChanged)
     {
-        auto& dict = renderData.getDictionary();
-        auto flags = dict.getValue(kRenderPassRefreshFlags, RenderPassRefreshFlags::None);
-        dict[kRenderPassRefreshFlags] = flags | RenderPassRefreshFlags::RenderOptionsChanged;
+        InlinePass::flagOptionsChanged(renderData);
         mOptionsChanged = false;
     }
+
     if (!mpScene)
     {
-        pRenderContext->clearTexture(renderData.getTexture("color").get());
+        InlinePass::clearChannels(pRenderContext, renderData, kOutputChannels);
         return;
     }
-    if (is_set(mpScene->getUpdates(), IScene::UpdateFlags::RecompileNeeded) ||
-        is_set(mpScene->getUpdates(), IScene::UpdateFlags::GeometryChanged))
-        FALCOR_THROW("InlinePathTracer does not support scene changes requiring shader recompilation.");
 
-    if (mpScene->getCamera()->getApertureRadius() > 0.f && !renderData.getTexture("viewW"))
-        logWarning("InlinePathTracer: depth of field requires the 'viewW' input.");
+    if (!mpComputePass)
+        mpComputePass = InlinePass::createScenePass(mpDevice, pRenderContext, mpScene, mpSampleGenerator, kShaderFile, getShaderDefines(renderData));
+    InlinePass::checkScene(*mpScene, renderData, kInputViewDir);
 
-    // Scene::useEmissiveLights() requires the light collection to exist.
-    if (mpScene->getRenderSettings().useEmissiveLights)
-        mpScene->getLightCollection(pRenderContext);
-
-    prepareProgram(pRenderContext, renderData);
     mpComputePass->getProgram()->addDefines(getShaderDefines(renderData));
-    bindShaderData(pRenderContext, renderData);
+    bindShaderData(mpComputePass->getRootVar(), renderData);
     mpComputePass->execute(pRenderContext, uint3(renderData.getDefaultTextureDims(), 1));
-    ++mFrameCount;
+
+    mFrameCount++;
 }
 
 void InlinePathTracer::renderUI(Gui::Widgets& widget)
 {
     bool dirty = false;
-    dirty |= widget.var("Samples per pixel", mOptions.samplesPerPixel, 1u, 1024u);
-    dirty |= widget.var("Max indirect bounces", mOptions.maxBounces, 0u, 1u << 16);
-    widget.tooltip("Zero evaluates direct lighting only.");
-    dirty |= widget.checkbox("Evaluate direct illumination", mOptions.computeDirect);
-    dirty |= widget.checkbox("Use importance sampling", mOptions.useImportanceSampling);
-    dirty |= widget.checkbox("Use alpha test", mOptions.useAlphaTest);
-    mOptionsChanged |= dirty;
+    auto options = mOptions;
+
+    if (auto group = widget.group("Sampling", true))
+        dirty |= options.pathTracing.renderSamplingUI(group, " Each vertex is connected to the laser spot.");
+
+    if (auto group = widget.group("Output", true))
+        dirty |= options.pathTracing.renderOutputUI(group, true);
+
+    // If rendering options that modify the output have changed, set flag to indicate that.
+    // In execute() we will pass the flag to other passes for reset of temporal data etc.
+    if (dirty)
+    {
+        validateOptions(options);
+        mOptions = options;
+        mOptionsChanged = true;
+    }
 }
 
 void InlinePathTracer::setScene(RenderContext* pRenderContext, const ref<Scene>& pScene)
 {
+    // Clear data for previous scene.
+    // After changing scene, the raytracing program should to be recreated.
     mpComputePass = nullptr;
-    mpScene = pScene;
     mFrameCount = 0;
     mOptionsChanged = true;
+
+    // Set new scene.
+    mpScene = pScene;
 }

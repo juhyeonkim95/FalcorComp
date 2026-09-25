@@ -71,14 +71,11 @@ const ChannelList kHistogramOutputChannelsRGB = {
 };
 
 const char kSamplingMethod[] = "samplingMethod";
-const char kAutoReset[] = "autoReset";
+const char kAccumulate[] = "accumulate";
 const char kOutputSize[] = "outputSize";
 const char kFixedOutputSize[] = "fixedOutputSize";
 
 // Render data dictionary keys read by histogram consumers (e.g. TransientHistogramViewer).
-const char kHistogramFrameCount[] = "transientHistogramFrameCount";
-const char kHistogramTimeMin[] = "transientHistogramTimeMin";
-const char kHistogramTimeMax[] = "transientHistogramTimeMax";
 } // namespace
 
 TransientHistogramPathTracerInline::TransientHistogramPathTracerInline(ref<Device> pDevice, const Properties& props) : RenderPass(pDevice)
@@ -89,11 +86,6 @@ TransientHistogramPathTracerInline::TransientHistogramPathTracerInline(ref<Devic
     // Create a sample generator.
     mpSampleGenerator = SampleGenerator::create(mpDevice, SAMPLE_GENERATOR_TINY_UNIFORM);
     FALCOR_ASSERT(mpSampleGenerator);
-}
-
-void TransientHistogramPathTracerInline::resetHistogram()
-{
-    mNeedToClearHistogram = true;
 }
 
 void TransientHistogramPathTracerInline::parseProperties(const Properties& props)
@@ -109,8 +101,8 @@ void TransientHistogramPathTracerInline::parseProperties(const Properties& props
             else if (method == "tri_approx") mOptions.samplingMethod = SamplingMethod::TriangleApprox;
             else FALCOR_THROW("samplingMethod must be direct or tri_approx.");
         }
-        else if (key == kAutoReset)
-            mOptions.autoReset = value;
+        else if (key == kAccumulate)
+            mOptions.accumulate = value;
         else if (key == kOutputSize)
             mOptions.outputSize = value;
         else if (key == kFixedOutputSize)
@@ -135,7 +127,7 @@ Properties TransientHistogramPathTracerInline::getProperties() const
     mOptions.histogram.serialize(props);
     mOptions.pathTracing.serialize(props);
     props[kSamplingMethod] = mOptions.samplingMethod == SamplingMethod::Direct ? "direct" : "tri_approx";
-    props[kAutoReset] = mOptions.autoReset;
+    props[kAccumulate] = mOptions.accumulate;
     props[kOutputSize] = mOptions.outputSize;
     if (mOptions.outputSize == RenderPassHelpers::IOSize::Fixed)
         props[kFixedOutputSize] = mOptions.fixedOutputSize;
@@ -167,16 +159,12 @@ RenderPassReflection TransientHistogramPathTracerInline::reflect(const CompileDa
     return reflector;
 }
 
-void TransientHistogramPathTracerInline::compile(RenderContext* pRenderContext, const CompileData& compileData)
-{
-    // Recompilation may allocate a new histogram, for example after resizing.
-    resetHistogram();
-}
-
 DefineList TransientHistogramPathTracerInline::getShaderDefines(const RenderData& renderData) const
 {
     DefineList defines = mOptions.pathTracing.getDefines();
+    defines.add(LaserState::resolve(renderData).getDefines());
     defines.add("USE_KERNEL_DENSITY_ESTIMATION", mOptions.histogram.useKernelDensityEstimation ? "1" : "0");
+    defines.add("ACCUMULATE_HISTOGRAM", mOptions.accumulate ? "1" : "0");
 
     defines.add("LIGHT_SAMPLING_METHOD", std::to_string((uint32_t)mOptions.samplingMethod));
     defines.add("DIRECT_CONNECTION", std::to_string((uint32_t)SamplingMethod::Direct));
@@ -208,7 +196,7 @@ void TransientHistogramPathTracerInline::bindShaderData(const ShaderVar& var, co
     var["CB"]["gPRNGDimension"] = InlinePass::getPRNGDimension(renderData);
     var["CB"]["samplesPerPixel"] = mOptions.pathTracing.samplesPerPixel;
     var["CB"]["initialWindowRatio"] = mOptions.histogram.initialWindowRatio;
-    mOptions.pathTracing.resolveLaser(renderData, *mpScene).bindShaderData(var["CB"]);
+    LaserState::resolve(renderData).bindShaderData(var["CB"]);
     mOptions.histogram.bindShaderData(var["TimeGate"]);
 
     InlinePass::bindChannels(var, renderData, kInputChannels);
@@ -219,7 +207,6 @@ void TransientHistogramPathTracerInline::bindShaderData(const ShaderVar& var, co
 
 void TransientHistogramPathTracerInline::execute(RenderContext* pRenderContext, const RenderData& renderData)
 {
-    auto& dict = renderData.getDictionary();
     if (mOptionsChanged)
     {
         InlinePass::flagOptionsChanged(renderData);
@@ -233,13 +220,14 @@ void TransientHistogramPathTracerInline::execute(RenderContext* pRenderContext, 
         return;
     }
 
-    if (mOptions.autoReset && needsAutoReset(renderData))
+    // The shader adds this frame's paths to the bins: clear every frame, or only on reset when accumulating.
+    if (mOptions.accumulate && needsReset(renderData))
         resetHistogram();
-    if (mNeedToClearHistogram)
+    if (!mOptions.accumulate || mNeedToClearHistogram)
     {
-        pRenderContext->clearTexture(renderData.getTexture("histogram").get());
+        InlinePass::clearChannels(pRenderContext, renderData, histogramChannels());
         mNeedToClearHistogram = false;
-        mHistogramFrameCount = 0;
+        mSummedFrames = 0;
     }
 
     // Triangle approximation enumerates all triangles; no triangle sampling distribution is needed.
@@ -255,16 +243,16 @@ void TransientHistogramPathTracerInline::execute(RenderContext* pRenderContext, 
     mpComputePass->execute(pRenderContext, uint3(pColor->getWidth(), pColor->getHeight(), 1));
 
     mFrameCount++;
-    mHistogramFrameCount++;
-    dict[kHistogramFrameCount] = mHistogramFrameCount;
-    dict[kHistogramTimeMin] = mOptions.histogram.timeMin;
-    dict[kHistogramTimeMax] = mOptions.histogram.timeMax;
-
+    mSummedFrames = mOptions.accumulate ? mSummedFrames + 1 : 1;
+    mOptions.histogram.publishRange(renderData);
+    auto& dict = renderData.getDictionary();
+    dict[TransientHistogramConfig::kSummedFramesKey] = mSummedFrames;
+    dict[TransientHistogramConfig::kAveragedFramesKey] = mOptions.accumulate ? mSummedFrames : 0u;
 }
 
-bool TransientHistogramPathTracerInline::needsAutoReset(const RenderData& renderData) const
+bool TransientHistogramPathTracerInline::needsReset(const RenderData& renderData) const
 {
-    // Same rule as AccumulatePass: any refresh flag or scene change except camera jitter/history.
+    // Same rule as AccumulatePass: any refresh flag, or a scene change other than camera jitter/history.
     auto& dict = renderData.getDictionary();
     if (dict.getValue(kRenderPassRefreshFlags, RenderPassRefreshFlags::None) != RenderPassRefreshFlags::None)
         return true;
@@ -307,20 +295,20 @@ void TransientHistogramPathTracerInline::renderUI(Gui::Widgets& widget)
                       "over every triangle (a single intermediate bounce).", true);
     }
 
-    if (auto group = widget.group("Light", true))
-        dirty |= options.pathTracing.renderLightUI(group);
-
     if (auto group = widget.group("Output", true))
     {
         dirty |= options.pathTracing.renderOutputUI(group, true);
 
-        dirty |= group.checkbox("Auto reset", options.autoReset);
-        group.tooltip("Clear the histogram when the camera moves or an upstream pass changes its options. "
-                      "Otherwise it accumulates until reset.", true);
-
-        if (group.button("Reset histogram"))
-            resetHistogram();
-        group.text(fmt::format("Accumulated frames: {}", mHistogramFrameCount));
+        dirty |= group.checkbox("Accumulate", options.accumulate);
+        group.tooltip("Sum frames in the histogram in place, restarting when the camera moves or a setting changes. "
+                      "Much cheaper than TransientHistogramAccumulatePass for large histograms. Off: one frame per "
+                      "histogram.", true);
+        if (options.accumulate)
+        {
+            if (group.button("Reset histogram"))
+                resetHistogram();
+            group.text(fmt::format("Summed frames: {}", mSummedFrames));
+        }
     }
 
     if (dirty)

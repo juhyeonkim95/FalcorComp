@@ -28,20 +28,28 @@
 #pragma once
 #include "Falcor.h"
 #include "RenderGraph/RenderPass.h"
+#include "RenderGraph/RenderPassHelpers.h"
 #include "Utils/Sampling/SampleGenerator.h"
-#include "../Shared/Configs/PathTracingConfig.h"
-#include "../Shared/Utils/InlinePassUtils.h"
+#include "../Shared/Host/Configs/PathTracingConfig.h"
+#include "../Shared/Host/LaserState.h"
+#include "../Shared/Host/InlinePassUtils.h"
 
 using namespace Falcor;
 
-/** Shows where the laser is: adds the laser spot, the light the laser puts on the surface seen in each pixel
- * (not time gated), to the red channel of an optional input image. A collimated beam lights no pixel.
- * The laser comes from the laser pass (LaserVBufferRT) or, with laserCollocated, from the camera.
+/** Shows where the laser is, drawn over an optional input image:
+ * - the laser spot: the light the laser puts on the surface seen in each pixel (not time gated), tinted with
+ *   spotColor; a collimated beam lights no pixel;
+ * - the laser's cone, drawn like light in fog: it starts at the laser with radius beamRadius (so a collimated beam
+ *   shows as a thin cylinder), widens at the cone angle and ends where the central beam hits the scene. It is
+ *   off by default and never drawn for a laser collocated with the camera, which would cover the image.
+ * The laser is the one the laser pass (LaserVBufferRT) publishes this frame. Without an input, the output is the
+ * overlay alone with premultiplied alpha (image * (1 - alpha) + overlay.rgb), for a pass that blends it itself,
+ * e.g. TransientHistogramViewer. The output (and vbuffer) may have a fixed size (outputSize, fixedOutputSize).
  */
 class LaserPositionViewer : public RenderPass
 {
 public:
-    FALCOR_PLUGIN_CLASS(LaserPositionViewer, "LaserPositionViewer", "Draw the laser spot over an image.");
+    FALCOR_PLUGIN_CLASS(LaserPositionViewer, "LaserPositionViewer", "Draw the laser spot and cone over an image.");
 
     static ref<LaserPositionViewer> create(ref<Device> pDevice, const Properties& props)
     {
@@ -58,10 +66,15 @@ public:
 
 private:
     bool mShowSpot = true;
-    float mSpotScale = 1.f;          ///< Multiplies the spot's radiance before it is added to the red channel.
-    bool mLaserCollocated = false;   ///< Place the laser at the camera, as the path tracers' laserCollocated.
+    float mSpotScale = 20.f;              ///< Multiplies the spot's radiance (average of RGB).
+    float3 mSpotColor = float3(1, 0, 0);  ///< Tint of the spot.
+    bool mShowCone = false;
+    float3 mConeColor = float3(1, 0, 0);
+    float mConeDensity = 5.f;             ///< Opacity per unit length inside the cone: 1 - exp(-density * length).
+    float mBeamRadius = 0.01f;            ///< Cone radius at the laser, in scene units.
 
-    bool mOptionsChanged = false;
+    RenderPassHelpers::IOSize mOutputSize = RenderPassHelpers::IOSize::Default;
+    uint2 mFixedOutputSize = {512, 512}; ///< Output size when mOutputSize is Fixed; must match the vbuffer.
     uint mFrameCount = 0;
     ref<Scene> mpScene;
     ref<SampleGenerator> mpSampleGenerator;
