@@ -7,9 +7,10 @@ copyright = "2026, falcorcomp developers"
 extensions = [
     "myst_parser",
     "sphinx.ext.mathjax",
+    "sphinx_design",  # tutorial cards and the Linux / Windows tabs
 ]
 
-myst_enable_extensions = ["deflist", "dollarmath"]
+myst_enable_extensions = ["colon_fence", "deflist", "dollarmath"]
 
 source_suffix = {".md": "markdown", ".rst": "restructuredtext"}
 root_doc = "index"
