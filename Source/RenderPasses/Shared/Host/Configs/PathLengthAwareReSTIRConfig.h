@@ -69,9 +69,9 @@ struct PathLengthAwareReSTIRConfig
         else if (key == "temporalHistoryLength")
             temporalHistoryLength = value;
         else if (key == "shiftmapMethod")
-            shiftmapMethod = parseEnumProperty(ShiftmapMethodTable, std::string(value), key);
+            shiftmapMethod = parseEnumProperty(ShiftmapMethodTable, value, key);
         else if (key == "gaugeMode")
-            gaugeMode = parseEnumProperty(GaugeModeTable, std::string(value), key);
+            gaugeMode = parseEnumProperty(GaugeModeTable, value, key);
         else if (key == "gaugeAxis")
             gaugeAxis = value;
         else if (key == "NewtonMaxIteration")

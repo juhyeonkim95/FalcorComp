@@ -64,7 +64,7 @@ struct TimeGateConfig
         else if (key == "timeGateWindow")
             timeGateWindow = value;
         else if (key == "timeGateMode")
-            timeGateMode = parseEnumProperty(TimeGateModeTable, std::string(value), key);
+            timeGateMode = parseEnumProperty(TimeGateModeTable, value, key);
         else if (key == "shiftGate")
             shiftGate = value;
         else

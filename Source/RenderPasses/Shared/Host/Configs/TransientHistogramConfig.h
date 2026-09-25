@@ -62,7 +62,7 @@ struct TransientHistogramConfig
         else if (key == "timeBin")
             timeBin = value;
         else if (key == "timeGateMode")
-            filter = parseEnumProperty(TimeGateModeTable, std::string(value), key);
+            filter = parseEnumProperty(TimeGateModeTable, value, key);
         else if (key == "useKernelDensityEstimation")
             useKernelDensityEstimation = value;
         else if (key == "initialWindowRatio")

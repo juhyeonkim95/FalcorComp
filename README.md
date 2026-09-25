@@ -8,6 +8,14 @@
 <b>Computational Imaging Renderers Built on <a href="https://github.com/NVIDIAGameWorks/Falcor">Falcor</a></b>
 </p>
 
+<div align="center">
+
+| Documentation | PyPI | Build |
+|:---:|:---:|:---:|
+| [![docs](https://readthedocs.org/projects/falcorcomp/badge/?version=latest)](https://falcorcomp.readthedocs.io/en/latest/) | [![TestPyPI](https://img.shields.io/badge/TestPyPI-0.1.2-blue)](https://test.pypi.org/project/falcorcomp/) | [![build](https://github.com/juhyeonkim95/FalcorComp/actions/workflows/build.yml/badge.svg?branch=master)](https://github.com/juhyeonkim95/FalcorComp/actions/workflows/build.yml) |
+
+</div>
+
 
 ## Overview
 
@@ -15,10 +23,25 @@ FalcorComp is a collection of rendering algorithms for computational imaging bui
 
 Rather than serving as a general-purpose rendering framework, this repository provides implementations of specialized Monte Carlo renderers developed for computational imaging research. The current focus is on active sensing modalities such as Time-of-Flight, event cameras, and structured light.
 
+FalcorComp is **performance-oriented**: all renderers run on the GPU with hardware ray tracing, which enables **real-time, interactive simulation** as well as offline rendering.
+
 
 ## Implemented Renderers
 
-FalcorComp currently includes implementations of the following renderers:
+### Time-of-Flight
+
+| Renderer | Output | Description |
+|---|---|---|
+| **Time-gated rendering** | Image, `H × W` | Only the light whose total path length (laser → scene → camera) falls inside a time gate. |
+| **Transient histogram rendering** | Histogram, `H × W × B` | For every pixel, how much light arrives at each path length, in `B` bins. |
+
+### Coming soon
+
+Event camera · Structured light · Doppler rendering
+
+## Related Works
+
+FalcorComp includes implementations of the following papers:
 
 - **"ToF ReSTIR: Time-of-Flight Rendering with Spatio-temporal Reservoir Resampling"**  
   **SIGGRAPH 2026 (ACM TOG)**  
@@ -39,11 +62,25 @@ FalcorComp currently includes implementations of the following renderers:
 
   Variance reduction for rendering spatiotemporally modulated light (CW-ToF, structured light) using geometric antithetic sampling.
 
-For implementation details, usage instructions, and examples, please refer to the corresponding project page for each renderer.
+For details, please refer to the corresponding project page for each paper.
 
-## Compilation
+## Installation
 
-Please refer to the original Falcor repository ([link](https://github.com/nvidiagameworks/falcor)) for build instructions. We have tested the code working on **Ubuntu 22.04.5 LTS**.
+FalcorComp is installed as the Python package `falcorcomp`, which contains Falcor and the render passes, so no separate Falcor build is needed. It requires 64-bit Linux or Windows, an NVIDIA GPU with hardware ray tracing (RTX), and Python 3.9 to 3.13.
+
+The package is currently published on TestPyPI:
+
+```bash
+pip install --index-url https://test.pypi.org/simple/ --extra-index-url https://pypi.org/simple/ falcorcomp
+```
+
+To check the installation (this also initializes the GPU):
+
+```bash
+python -c "import falcorcomp as falcor; falcor.Testbed(create_window=False); print('falcorcomp works')"
+```
+
+See the [installation guide](https://falcorcomp.readthedocs.io/en/latest/src/getting_started/installation.html) for details, troubleshooting, and building from source.
 
 
 ## Acknowledgments
