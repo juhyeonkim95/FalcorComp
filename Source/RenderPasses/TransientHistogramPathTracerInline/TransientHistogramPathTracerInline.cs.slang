@@ -88,7 +88,7 @@ float3 getPrimaryRayDir(uint2 launchIndex, uint2 launchDim, const Camera camera)
 
 
 // Histogram values are radiance density per unit path length, summed across frames.
-// RGB alpha is auxiliary weight; single-channel storage deliberately uses red, not luminance.
+// RGB alpha is auxiliary weight; single-channel storage keeps the channel chosen by SINGLE_CHANNEL.
 void addHistogramBin(uint2 pixel, uint bin, float3 radiance, float weight = 1.f)
 {
 #if USE_SINGLE_CHANNEL

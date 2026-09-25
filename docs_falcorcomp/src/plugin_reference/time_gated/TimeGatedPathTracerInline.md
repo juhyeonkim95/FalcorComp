@@ -43,6 +43,10 @@
 * - `timeMin`, `timeMax`
   - float
   - Range of gate centers. Equal values give a single fixed gate. (Default: `9`, `12`)
+* - `timeCenter`
+  - float
+  - Shortcut for a single fixed gate: sets `timeMin` and `timeMax` to this value, overriding
+    them. (Optional)
 * - `timeBin`
   - integer
   - Number of gate centers from `timeMin` to `timeMax`. (Default: `512`)
@@ -52,7 +56,12 @@
     `timeMin`. (Default: `false`)
 * - `useSingleChannel`
   - boolean
-  - Copy the red channel to green and blue. (Default: `false`)
+  - Keep one channel of the image, chosen by `singleChannel`, and write it to all three color
+    channels. (Default: `false`)
+* - `singleChannel`
+  - string
+  - The channel kept by `useSingleChannel`: `luminance`, `red`, `green` or `blue`.
+    (Default: `red`)
 * - `useAlphaTest`
   - boolean
   - Honor alpha-tested materials when tracing rays. (Default: `false`)
@@ -69,11 +78,12 @@ $$
 
 where $f$ is the path contribution and $w$ the gate kernel of width $\Delta$ (`timeGateWindow`).
 With the `box` kernel, $w(v) = 1$ for $|v| < 1/2$, so $I(t)$ is the radiance per unit path
-length averaged over the gate. `tent` uses $w(v) = \max(1 - |v|, 0)$. `all` does not gate
-($w = 1$), so the output is the steady-state radiance divided by $\Delta$.
+length averaged over the gate. `tent` uses $w(v) = \max(1 - |v|, 0)$, and `cos` uses
+$w(v) = \cos(2\pi v)$ over all path lengths. `all` does not gate ($w = 1$), so the output is the
+steady-state radiance divided by $\Delta$.
 
-Camera paths start at the primary hits from `VBufferRT` and stop once they are longer than the
-gate allows.
+Camera paths start at the primary hits from `VBufferRT`. With `box` and `tent`, a path stops once
+it is longer than the gate's upper edge.
 
 ## Gate center
 
@@ -98,6 +108,7 @@ Every camera-path vertex $x$ is connected to the laser spot:
   `emissiveSampler`. This finds the rare paths that fit a narrow gate.
 - `ellipsoidal_direct_mis`: both, combined with the balance heuristic.
 
+(laser)=
 ## Laser
 
 The laser is set on `LaserVBufferRT`: its position, direction, power and cone angle
@@ -131,7 +142,7 @@ position.
 ```python
 graph.create_pass("Tracer", "TimeGatedPathTracerInline", {
     "samplesPerPixel": 16, "maxBounces": 6,
-    "timeGateMode": "box", "timeGateWindow": 0.1, "timeMin": 17.337, "timeMax": 17.337,
+    "timeGateMode": "box", "timeGateWindow": 0.1, "timeCenter": 17.337,
 })
 graph.add_edge("VBuffer.vbuffer", "Tracer.vbuffer")
 graph.add_edge("VBuffer.viewW", "Tracer.viewW")

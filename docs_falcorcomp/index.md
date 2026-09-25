@@ -28,4 +28,5 @@ src/tutorials/index
 :caption: Plugin reference
 
 src/plugin_reference/time_gated
+src/plugin_reference/transient
 ```
