@@ -157,6 +157,14 @@ Other:
 * - Parameter
   - Type
   - Description
+* - `useSingleChannel`
+  - boolean
+  - Keep one channel of the image, chosen by `singleChannel`: the reservoirs resample by that
+    channel only, and it is written to all three color channels. (Default: `false`)
+* - `singleChannel`
+  - string
+  - The channel kept by `useSingleChannel`: `luminance`, `red`, `green` or `blue`.
+    (Default: `red`)
 * - `useAlphaTest`
   - boolean
   - Honor alpha-tested materials when tracing rays. (Default: `false`)
@@ -166,8 +174,9 @@ Other:
     spatial reuse. (Default: `false`)
 ```
 
-The path tracer's `computeDirect`, `useSingleChannel` and `singleChannel` are accepted but have no
-effect in this pass. The reservoirs resample by the luminance of the path contribution.
+The path tracer's `computeDirect` is accepted but has no effect in this pass. The reservoirs
+resample by the luminance of the path contribution, or by the channel kept with
+`useSingleChannel`.
 
 ## Every frame
 
