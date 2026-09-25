@@ -120,7 +120,7 @@ struct SpatialReuse
         if (candidateCount == 0)
         {
             currReservoirs[reservoirIndex] = centralReservoir;
-            return centralReservoir.W * centralReservoir.f;
+            return float3(centralReservoir.W * centralReservoir.f);
         }
 
         float3 cameraOrigin = gScene.camera.getPosition();
@@ -233,7 +233,7 @@ struct SpatialReuse
         destination.W /= validNeighborCount + 1;
         currReservoirs[reservoirIndex] = destination;
 
-        float3 color = destination.W * destination.f;
+        float3 color = float3(destination.W * destination.f);
         if (any(isinf(color) || isnan(color))) color = 0.f;
         return color;
     }

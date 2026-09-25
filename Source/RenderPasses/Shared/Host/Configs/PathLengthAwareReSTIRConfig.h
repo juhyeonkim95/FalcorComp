@@ -272,9 +272,13 @@ public:
 
         const ShaderVar reservoirVar = mpReflectTypes->getRootVar()["reservoirs"];
         const uint32_t reservoirCount = frameDim.x * frameDim.y * reservoirsPerPixel;
+        // The reservoir layout depends on the defines (e.g. a scalar target with single channel).
+        const size_t reservoirStride =
+            reservoirVar.getType()->unwrapArray()->asResourceType()->getStructType()->getSlangTypeLayout()->getStride();
         for (ref<Buffer>* pReservoirs : {&prevReservoirs, &currReservoirs})
         {
-            if (!*pReservoirs || (*pReservoirs)->getElementCount() != reservoirCount)
+            if (!*pReservoirs || (*pReservoirs)->getElementCount() != reservoirCount ||
+                (*pReservoirs)->getStructSize() != reservoirStride)
             {
                 temporalHistoryValid = false;
                 *pReservoirs = pDevice->createStructuredBuffer(

@@ -330,7 +330,7 @@ void TransientHistogramReSTIRInline::renderUI(Gui::Widgets& widget)
         dirty |= mOptions.restir.renderShiftMappingUI(group);
 
     if (auto group = widget.group("Output", true))
-        dirty |= mOptions.pathTracing.renderOutputUI(group, true);
+        dirty |= mOptions.pathTracing.renderOutputUI(group, true, true);
 
     // If rendering options that modify the output have changed, set flag to indicate that.
     // In execute() we will pass the flag to other passes for reset of temporal data etc.

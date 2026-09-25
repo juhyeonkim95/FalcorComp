@@ -297,7 +297,7 @@ void TransientHistogramPathTracerInline::renderUI(Gui::Widgets& widget)
 
     if (auto group = widget.group("Output", true))
     {
-        dirty |= options.pathTracing.renderOutputUI(group, true);
+        dirty |= options.pathTracing.renderOutputUI(group, true, true);
 
         dirty |= group.checkbox("Accumulate", options.accumulate);
         group.tooltip("Sum frames in the histogram in place, restarting when the camera moves or a setting changes. "

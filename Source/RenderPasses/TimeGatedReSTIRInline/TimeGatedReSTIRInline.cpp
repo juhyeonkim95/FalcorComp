@@ -187,6 +187,8 @@ DefineList TimeGatedReSTIRInline::getShaderDefines(const RenderData& renderData)
     defines.add("USE_SHRINK_MAPPING", wideSampleCount > 0 ? "1" : "0");
     defines.add("SHRINK_WIDE_SAMPLE_COUNT", std::to_string(wideSampleCount));
     defines.add("DEBUG_NEWTON_ITERATIONS", mOptions.debugNewtonIterations ? "1" : "0");
+    // Single channel: the reservoirs keep and resample the chosen channel only.
+    defines.add("RESERVOIR_SCALAR_TARGET", mOptions.pathTracing.useSingleChannel ? "1" : "0");
     defines.add("IS_SCENE_DYNAMIC", mOptions.isSceneDynamic ? "1" : "0");
 
     defines.add("LIGHT_SAMPLING_METHOD", std::to_string((uint32_t)mOptions.ellipsoidalSampling.samplingMethod));
@@ -208,6 +210,7 @@ DefineList TimeGatedReSTIRInline::getReservoirDefines() const
     defines.add(mpSampleGenerator->getDefines());
     defines.add("IS_SCENE_DYNAMIC", mOptions.isSceneDynamic ? "1" : "0");
     defines.add("USE_SINGLE_CHANNEL", mOptions.pathTracing.useSingleChannel ? "1" : "0");
+    defines.add("RESERVOIR_SCALAR_TARGET", mOptions.pathTracing.useSingleChannel ? "1" : "0");
     defines.add("USE_IMPORTANCE_SAMPLING", mOptions.pathTracing.useImportanceSampling ? "1" : "0");
     defines.add("USE_ALPHA_TEST", mOptions.pathTracing.useAlphaTest ? "1" : "0");
     defines.add(mLaser.getDefines());
@@ -406,7 +409,7 @@ void TimeGatedReSTIRInline::renderUI(Gui::Widgets& widget)
         dirty |= mOptions.restir.renderShiftMappingUI(group);
 
     if (auto group = widget.group("Output", true))
-        dirty |= mOptions.pathTracing.renderOutputUI(group, false);
+        dirty |= mOptions.pathTracing.renderOutputUI(group, false, true);
 
     if (dirty)
     {

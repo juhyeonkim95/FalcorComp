@@ -140,8 +140,8 @@ void submitEllipsoidalCandidate(inout Reservoir reservoir, ReconnectionState rc,
 Reservoir mergeGateReservoirs(Reservoir narrow, Reservoir wide, uint narrowCount, uint wideCount,
     ShadingData primary, IMaterialInstance primaryMaterial, float primaryLength, inout SampleGenerator rng)
 {
-    float narrowTarget = luminance(narrow.f);
-    float wideTarget = luminance(wide.f);
+    float narrowTarget = getReservoirWeight(narrow.f);
+    float wideTarget = getReservoirWeight(wide.f);
     narrow.W = narrowTarget > 0.f ? narrow.wSum / narrowTarget : 0.f;
     wide.W = wideTarget > 0.f ? wide.wSum / wideTarget : 0.f;
     // MIS uses actual path counts, not the number of light connections submitted
@@ -179,7 +179,7 @@ Reservoir mergeGateReservoirs(Reservoir narrow, Reservoir wide, uint narrowCount
     // The no-RC canonical branch in the shared helper copies only f and its flag.
     // Preserve the selected narrow path length as well (there is no wide no-RC candidate).
     if (merged.rcVertexBounce == 0) merged.totalPathLength = narrow.totalPathLength;
-    float target = luminance(merged.f);
+    float target = getReservoirWeight(merged.f);
     merged.W = target > 0.f ? merged.wSum / target : 0.f;
     return merged;
 }
@@ -260,7 +260,7 @@ Reservoir reuseTemporalHistory(Reservoir fresh, uint2 pixel, ShadingData primary
 #endif
     );
     if (merged.rcVertexBounce == 0) merged.totalPathLength = fresh.totalPathLength;
-    float target = luminance(merged.f);
+    float target = getReservoirWeight(merged.f);
     merged.W = target > 0.f ? merged.wSum / target : 0.f;
     return merged;
 }
@@ -406,13 +406,13 @@ float3 tracePath(uint2 pixel, uint2 frameDim)
     reservoir = mergeGateReservoirs(reservoir, wideReservoir, narrowCount, wideCount,
         primary, primaryMaterial, primaryLength, rng);
 #endif
-    float target = luminance(reservoir.f);
+    float target = getReservoirWeight(reservoir.f);
     reservoir.W = target > 0.f ? reservoir.wSum / target : 0.f;
 #if USE_TEMPORAL_REUSE
     reservoir = reuseTemporalHistory(reservoir, pixel, primary, primaryMaterial, primaryLength, rng);
 #endif
     currReservoirs[index] = reservoir;
-    return reservoir.W * reservoir.f;
+    return float3(reservoir.W * reservoir.f); // with a scalar target, the kept channel in all three
 }
 
 [numthreads(16, 16, 1)]
