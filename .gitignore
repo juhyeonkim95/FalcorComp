@@ -1,6 +1,5 @@
 # Build folder.
 /build/
-/build (copy)
 
 # Test output folder.
 /tests/data/
