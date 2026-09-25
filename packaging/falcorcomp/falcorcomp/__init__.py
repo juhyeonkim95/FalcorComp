@@ -13,7 +13,7 @@ import os as _os
 import sys as _sys
 import sysconfig as _sysconfig
 
-__version__ = "0.1.2"
+__version__ = "0.1.3"
 
 
 def _preload_libpython():
