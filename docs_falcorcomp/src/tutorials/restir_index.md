@@ -22,10 +22,21 @@ They build on the [ToF rendering](index.md) tutorials, and use the same scene an
 Render a narrow gate with `TimeGatedReSTIRInline`, which reuses paths across pixels, and compare
 it with the path tracer at equal rendering time.
 ```
+
+```{grid-item-card} Time-gated ReSTIR (online)
+:img-top: images/thumbnails/time_gated_restir_online_thumb.jpg
+:img-alt: A frame of the moving-gate sequence rendered with TG ReSTIR
+:link: time_gated_restir_online
+:link-type: doc
+
+Sweep the gate over 100 frames with temporal reuse, and compare TGPT and TG ReSTIR at equal frame
+time in two videos.
+```
 ````
 
 ```{toctree}
 :hidden:
 
 time_gated_restir_offline
+time_gated_restir_online
 ```
