@@ -4,4 +4,5 @@
 :maxdepth: 1
 
 time_gated/TimeGatedPathTracerInline
+time_gated/TimeGatedReSTIRInline
 ```
