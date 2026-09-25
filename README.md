@@ -8,6 +8,14 @@
 <b>Computational Imaging Renderers Built on <a href="https://github.com/NVIDIAGameWorks/Falcor">Falcor</a></b>
 </p>
 
+<div align="center">
+
+| Documentation | PyPI | Build |
+|:---:|:---:|:---:|
+| [![docs](https://readthedocs.org/projects/falcorcomp/badge/?version=latest)](https://falcorcomp.readthedocs.io/en/latest/) | [![TestPyPI](https://img.shields.io/badge/TestPyPI-0.1.2-blue)](https://test.pypi.org/project/falcorcomp/) | [![build](https://github.com/juhyeonkim95/FalcorComp/actions/workflows/build.yml/badge.svg?branch=master)](https://github.com/juhyeonkim95/FalcorComp/actions/workflows/build.yml) |
+
+</div>
+
 
 ## Overview
 
