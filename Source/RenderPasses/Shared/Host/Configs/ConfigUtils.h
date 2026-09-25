@@ -14,9 +14,12 @@ using namespace Falcor;
  *   TransientHistogramReSTIRInline:     TransientHistogramConfig + PathTracingConfig + PathLengthAwareReSTIRConfig
  */
 
+/// Enum value named by a string property. Takes the property value itself: std::string(value) is ambiguous on
+/// MSVC, because Properties::ConstValue converts to several of std::string's constructor argument types.
 template<typename T>
-T parseEnumProperty(const std::unordered_map<std::string, T>& values, const std::string& name, const std::string& key)
+T parseEnumProperty(const std::unordered_map<std::string, T>& values, const Properties::ConstValue& value, const std::string& key)
 {
+    const std::string name = value;
     auto it = values.find(name);
     if (it == values.end())
         FALCOR_THROW("Invalid value '{}' for '{}'.", name, key);

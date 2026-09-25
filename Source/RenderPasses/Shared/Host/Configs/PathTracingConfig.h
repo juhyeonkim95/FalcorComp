@@ -63,7 +63,7 @@ struct PathTracingConfig
         else if (key == "useSingleChannel")
             useSingleChannel = value;
         else if (key == "singleChannel")
-            singleChannel = parseEnumProperty(kSingleChannels, std::string(value), key);
+            singleChannel = parseEnumProperty(kSingleChannels, value, key);
         else
             return false;
         return true;

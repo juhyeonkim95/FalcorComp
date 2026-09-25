@@ -33,7 +33,7 @@ struct EllipsoidalSamplingConfig
     bool parse(const std::string& key, const Properties::ConstValue& value)
     {
         if (key == "samplingMethod")
-            samplingMethod = parseEnumProperty(kEllipsoidalSamplingMethods, std::string(value), key);
+            samplingMethod = parseEnumProperty(kEllipsoidalSamplingMethods, value, key);
         else if (key == "emissiveSampler")
             triSampler = value;
         else if (key == "specularRoughnessThresholdEllipsoid")
