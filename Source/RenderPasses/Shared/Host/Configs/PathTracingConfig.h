@@ -105,7 +105,7 @@ struct PathTracingConfig
         if (pathTracerOptions)
         {
             dirty |= widget.checkbox("Primary-hit direct", computeDirect);
-            widget.tooltip("Include the shortest path, camera -> primary hit -> laser spot (time gated).", true);
+            widget.tooltip("Include the shortest path, camera -> primary hit -> laser spot.", true);
 
             dirty |= widget.checkbox("Single channel", useSingleChannel);
             widget.tooltip("Keep one channel. The time-gated path tracer writes it to all three; the histogram passes "
