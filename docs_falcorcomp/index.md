@@ -25,6 +25,14 @@ src/tutorials/index
 ```{toctree}
 :hidden:
 :maxdepth: 1
+:caption: Advanced tutorials
+
+src/tutorials/restir_index
+```
+
+```{toctree}
+:hidden:
+:maxdepth: 1
 :caption: Plugin reference
 
 src/plugin_reference/time_gated
