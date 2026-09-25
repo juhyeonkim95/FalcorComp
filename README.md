@@ -28,12 +28,16 @@ FalcorComp is **performance-oriented**: all renderers run on the GPU with hardwa
 
 ## Implemented Renderers
 
-- **Time-of-Flight rendering**
-  - **Time-gated rendering** (H x W): an image of only the light whose total path length (laser -> scene -> camera) falls inside a time gate.
-  - **Transient histogram rendering** (H x W x B): for every pixel, a histogram of how much light arrives at each path length, in B bins over a chosen path-length range.
-- (TBD) Event camera
-- (TBD) Structured light
-- (TBD) Doppler rendering
+### Time-of-Flight
+
+| Renderer | Output | Description |
+|---|---|---|
+| **Time-gated rendering** | Image, `H × W` | Only the light whose total path length (laser → scene → camera) falls inside a time gate. |
+| **Transient histogram rendering** | Histogram, `H × W × B` | For every pixel, how much light arrives at each path length, in `B` bins. |
+
+### Coming soon
+
+Event camera · Structured light · Doppler rendering
 
 ## Related Works
 
