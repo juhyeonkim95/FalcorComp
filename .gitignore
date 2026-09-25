@@ -42,3 +42,6 @@
 !/experiments/
 /experiments/*
 !/experiments/tof_restir_release/
+
+# Legacy render passes kept locally and left out of the build until they are checked
+/Source/RenderPasses/TempPasses/
