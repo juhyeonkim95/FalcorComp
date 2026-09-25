@@ -23,7 +23,7 @@ FalcorComp is a collection of rendering algorithms for computational imaging bui
 
 Rather than serving as a general-purpose rendering framework, this repository provides implementations of specialized Monte Carlo renderers developed for computational imaging research. The current focus is on active sensing modalities such as Time-of-Flight, event cameras, and structured light.
 
-FalcorComp is **performance-oriented**: every renderer runs on the GPU with hardware ray tracing (NVIDIA RTX), and the algorithms themselves target speed, for example by reusing samples across pixels and frames with ReSTIR. This makes **real-time, interactive simulation** possible: renderers run in an interactive window, where you can move the camera, change sensor and light settings, and watch the result update live. The same renderers also run offline from Python scripts for high-quality batch rendering.
+FalcorComp is **performance-oriented**: all renderers run on the GPU with hardware ray tracing, which enables **real-time, interactive simulation** as well as offline rendering.
 
 
 ## Implemented Renderers
