@@ -9,7 +9,7 @@ These tutorials render two kinds of ToF measurements:
 
 | Measurement | Output | Render pass |
 |---|---|---|
-| **Time-gated image** | `H × W` image of the light whose path length falls inside a gate of width `timeGateWindow`, centered between `timeMin` and `timeMax` | `TimeGatedPathTracerInline` |
+| **Time-gated image** | `H × W` image of the light whose path length falls inside a gate of width `timeGateWindow`, centered between `timeMin` and `timeMax` | `TimeGatedPathTracerInline`, `TimeGatedReSTIRInline` |
 | **Transient histogram** | `H × W × B` histogram: for every pixel, the light arriving at each path length, in `timeBin` bins from `timeMin` to `timeMax` | `TransientHistogramPathTracerInline` |
 
 All the tutorials use the same scene and a similar render graph:
@@ -57,6 +57,16 @@ EXR and PNG.
 Show the time-gated image in an interactive window, and change the gate, the sampling and the
 camera while it renders.
 ```
+
+```{grid-item-card} Time-gated ReSTIR (offline)
+:img-top: images/thumbnails/time_gated_restir_offline_thumb.jpg
+:img-alt: Time-gated Cornell box rendered with TG ReSTIR
+:link: time_gated_restir_offline
+:link-type: doc
+
+Render a narrow gate with `TimeGatedReSTIRInline`, which reuses paths across pixels, and compare
+it with the path tracer at equal rendering time.
+```
 ````
 
 ## Transient rendering
@@ -90,6 +100,7 @@ pixel's transient profile.
 
 time_gated_offline
 time_gated_online
+time_gated_restir_offline
 transient_offline
 transient_online
 ```
