@@ -33,7 +33,6 @@ cbuffer CB
 
     uint gPRNGDimension; // First available PRNG dimension.
     uint samplesPerPixel;
-    uint2 gLaserHitVBufferRes;
     float specularRoughnessThreshold;
     float specularRoughnessThresholdEllipsoid;
     float gTemporalHistoryLength;
@@ -73,10 +72,6 @@ Texture2D<PackedHitInfo> gTemporalVBuffer;
 Texture2D<PackedHitInfo> gLaserVBuffer;
 Texture2D<float4> gLaserViewW;
 
-// Laser Hit V Buffer (256 x 256)
-Texture2D<PackedHitInfo> gLaserHitVBuffer;
-Texture2D<float4> gLaserHitViewW;
-Texture2D<float> gLaserHitDepth;
 
 // Reservoir Struct
 StructuredBuffer<Reservoir> prevReservoirs;

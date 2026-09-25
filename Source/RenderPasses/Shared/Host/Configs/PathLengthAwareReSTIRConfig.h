@@ -54,7 +54,6 @@ struct PathLengthAwareReSTIRConfig
     float newtonRelativeTolerance = 0.01f;
     float reconnectionRoughnessThreshold = 0.25f; ///< Both vertices of a reconnection segment must be rougher.
 
-    uint2 laserHitVBufferRes = uint2(256, 256);
 
     bool parse(const std::string& key, const Properties::ConstValue& value)
     {
@@ -80,8 +79,6 @@ struct PathLengthAwareReSTIRConfig
             newtonRelativeTolerance = value;
         else if (key == "specularRoughnessThreshold")
             reconnectionRoughnessThreshold = value;
-        else if (key == "laserHitVBufferRes")
-            laserHitVBufferRes = value;
         else
             return false;
         return true;
@@ -100,7 +97,6 @@ struct PathLengthAwareReSTIRConfig
         props["NewtonMaxIteration"] = newtonMaxIteration;
         props["NewtonRelativeTolerance"] = newtonRelativeTolerance;
         props["specularRoughnessThreshold"] = reconnectionRoughnessThreshold;
-        props["laserHitVBufferRes"] = laserHitVBufferRes;
     }
 
     /// SHIFT_MAPPING_METHOD, SHIFT_MAPPING_GAUGE_MODE and USE_TEMPORAL_REUSE.

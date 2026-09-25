@@ -64,13 +64,6 @@ const ChannelList kLaserInputChannels = {
     { "laserviewW",    "gLaserViewW",       "World-space view direction (xyz float format)", true /* optional */ },
 };
 
-const ChannelList kLaserHitInputChannels = {
-    // shadow map from laser hit point
-    { "laserhitvbuffer",  "gLaserHitVBuffer",     "Laser visibility buffer in packed format", true /* optional */ },
-    { "laserhitviewW",    "gLaserHitViewW",       "World-space view direction (xyz float format)", true /* optional */ },
-    { "laserhitdepth",    "gLaserHitDepth",       "World-space view direction (xyz float format)", true /* optional */ },
-};
-
 const ChannelList kOutputChannels = {
     // clang-format off
     { "color",          "gOutputColor", "Output color (sum of direct and indirect)", false, ResourceFormat::RGBA32Float },
@@ -142,7 +135,6 @@ RenderPassReflection TransientHistogramReSTIRInline::reflect(const CompileData& 
     // Define our input/output channels.
     addRenderPassInputs(reflector, kInputChannels);
     addRenderPassInputs(reflector, kLaserInputChannels, ResourceBindFlags::ShaderResource, uint2(1, 1));
-    addRenderPassInputs(reflector, kLaserHitInputChannels, ResourceBindFlags::ShaderResource, mOptions.restir.laserHitVBufferRes);
     addRenderPassOutputs(reflector, kOutputChannels);
 
     ChannelList kHistogramOutputChannels = mOptions.pathTracing.useSingleChannel ? kHistogramOutputChannelSingle : kHistogramOutputChannelsRGB;
@@ -171,7 +163,6 @@ DefineList TransientHistogramReSTIRInline::getShaderDefines(const RenderData& re
     // For optional I/O resources, set 'is_valid_<name>' defines to inform the program of which ones it can access.
     defines.add(getValidResourceDefines(kInputChannels, renderData));
     defines.add(getValidResourceDefines(kLaserInputChannels, renderData));
-    defines.add(getValidResourceDefines(kLaserHitInputChannels, renderData));
     defines.add(getValidResourceDefines(kOutputChannels, renderData));
     defines.add(getValidResourceDefines(histogramChannels(), renderData));
     return defines;
@@ -211,7 +202,6 @@ void TransientHistogramReSTIRInline::bindShaderData(const ShaderVar& var, const 
     var["CB"]["gRandomSeed"] = mRandomSeed;
     var["CB"]["gFrameDim"] = renderData.getDefaultTextureDims();
     var["CB"]["gPRNGDimension"] = InlinePass::getPRNGDimension(renderData);
-    var["CB"]["gLaserHitVBufferRes"] = mOptions.restir.laserHitVBufferRes;
     var["CB"]["specularRoughnessThreshold"] = mOptions.restir.reconnectionRoughnessThreshold;
     var["CB"]["samplesPerPixel"] = mOptions.pathTracing.samplesPerPixel;
     var["CB"]["gTemporalHistoryLength"] = mOptions.restir.temporalHistoryLength;
@@ -229,7 +219,6 @@ void TransientHistogramReSTIRInline::bindShaderData(const ShaderVar& var, const 
 
     InlinePass::bindChannels(var, renderData, kInputChannels);
     InlinePass::bindChannels(var, renderData, kLaserInputChannels);
-    InlinePass::bindChannels(var, renderData, kLaserHitInputChannels);
     InlinePass::bindChannels(var, renderData, kOutputChannels);
     InlinePass::bindChannels(var, renderData, histogramChannels());
 }
