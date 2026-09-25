@@ -28,7 +28,16 @@ FalcorComp is **performance-oriented**: all renderers run on the GPU with hardwa
 
 ## Implemented Renderers
 
-FalcorComp currently includes implementations of the following renderers:
+- **Time-of-Flight rendering**
+  - **Time-gated rendering** (H x W): an image of only the light whose total path length (laser -> scene -> camera) falls inside a time gate.
+  - **Transient histogram rendering** (H x W x B): for every pixel, a histogram of how much light arrives at each path length, in B bins over a chosen path-length range.
+- (TBD) Event camera
+- (TBD) Structured light
+- (TBD) Doppler rendering
+
+## Related Works
+
+FalcorComp includes implementations of the following papers:
 
 - **"ToF ReSTIR: Time-of-Flight Rendering with Spatio-temporal Reservoir Resampling"**  
   **SIGGRAPH 2026 (ACM TOG)**  
@@ -49,7 +58,7 @@ FalcorComp currently includes implementations of the following renderers:
 
   Variance reduction for rendering spatiotemporally modulated light (CW-ToF, structured light) using geometric antithetic sampling.
 
-For implementation details, usage instructions, and examples, please refer to the corresponding project page for each renderer.
+For details, please refer to the corresponding project page for each paper.
 
 ## Installation
 
