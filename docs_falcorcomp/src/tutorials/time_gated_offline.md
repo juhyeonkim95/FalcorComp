@@ -1,4 +1,4 @@
-# Time-gated rendering
+# Time-gated rendering (offline)
 
 This tutorial renders a time-gated image of the Cornell box offline with
 `TimeGatedPathTracerInline`: only light whose total path length (laser -> scene -> camera) falls

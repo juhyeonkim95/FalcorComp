@@ -1,4 +1,4 @@
-# Transient rendering
+# Transient rendering (offline)
 
 This tutorial renders a transient histogram of the Cornell box offline with
 `TransientHistogramPathTracerInline`. For every pixel, the histogram records how much light

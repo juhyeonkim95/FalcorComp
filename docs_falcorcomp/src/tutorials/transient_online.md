@@ -1,4 +1,4 @@
-# Online transient rendering
+# Transient rendering (online)
 
 This tutorial shows the transient histogram from [Transient rendering](transient_offline.md) in
 an interactive window. `TransientHistogramViewer` draws the histogram summed over its bins on the
