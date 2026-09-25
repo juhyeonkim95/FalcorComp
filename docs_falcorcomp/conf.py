@@ -18,5 +18,6 @@ exclude_patterns = ["_build"]
 
 html_theme = "furo"
 html_title = "falcorcomp"
-html_logo = "../assets/logo.png"  # the repository logo
+html_logo = "_static/logo_icon.png"  # the icon from ../assets/logo.png, without the text
 html_static_path = ["_static"]
+html_css_files = ["custom.css"]

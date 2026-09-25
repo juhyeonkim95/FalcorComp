@@ -1,0 +1,4 @@
+/* Show the sidebar logo (the icon only) smaller than the full sidebar width. */
+.sidebar-logo {
+    max-width: 55%;
+}
