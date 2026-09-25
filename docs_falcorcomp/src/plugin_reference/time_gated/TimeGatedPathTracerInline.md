@@ -1,5 +1,58 @@
 # Time-gated path tracer (`TimeGatedPathTracerInline`)
 
+This render pass renders a *time-gated* image: the radiance carried by paths whose total optical
+length, from the laser through the scene to the camera, lies near a gate center $t$. For a path
+$\bar{x}$ with optical length $\ell(\bar{x})$ (segment lengths weighted by the index of
+refraction), each pixel estimates
+
+$$
+I(t) = \frac{1}{\Delta} \int f(\bar{x})\, w\!\left(\frac{\ell(\bar{x}) - t}{\Delta}\right) \mathrm{d}\bar{x},
+$$
+
+where $f$ is the path contribution and $w$ the gate kernel of width $\Delta$ (`timeGateWindow`).
+With the `box` kernel, $w(v) = 1$ for $|v| < 1/2$, so $I(t)$ is the radiance per unit path
+length averaged over the gate. `tent` uses $w(v) = \max(1 - |v|, 0)$, and `cos` uses
+$w(v) = \cos(2\pi v)$ over all path lengths. `all` does not gate ($w = 1$), so the output is the
+steady-state radiance divided by $\Delta$.
+
+Camera paths start at the primary hits from `VBufferRT`. With `box` and `tent`, a path stops once
+it is longer than the gate's upper edge.
+
+## Parameters
+
+Time gate:
+
+```{list-table}
+:header-rows: 1
+:widths: 25 10 65
+
+* - Parameter
+  - Type
+  - Description
+* - `timeGateMode`
+  - string
+  - Gate kernel: `box`, `tent`, `cos` or `all` (no gating). (Default: `box`)
+* - `timeGateWindow`
+  - float
+  - Gate width $\Delta$, in path-length units. (Default: `0.05`)
+* - `timeMin`, `timeMax`
+  - float
+  - Range of gate centers. Equal values give a single fixed gate. (Default: `9`, `12`)
+* - `timeCenter`
+  - float
+  - Shortcut for a single fixed gate: sets `timeMin` and `timeMax` to this value, overriding
+    them. (Optional)
+* - `timeBin`
+  - integer
+  - Number of gate centers from `timeMin` to `timeMax`. (Default: `512`)
+* - `shiftGate`
+  - boolean
+  - Move the gate to the next center after every frame, wrapping from `timeMax` back to
+    `timeMin`. (Default: `false`)
+```
+
+Sampling:
+
 ```{list-table}
 :header-rows: 1
 :widths: 25 10 65
@@ -31,29 +84,20 @@
   - boolean
   - Importance-sample the BSDF when extending the camera path; otherwise use the material's
     reference sampler (cosine-weighted for standard materials). (Default: `true`)
+```
+
+Output:
+
+```{list-table}
+:header-rows: 1
+:widths: 25 10 65
+
+* - Parameter
+  - Type
+  - Description
 * - `computeDirect`
   - boolean
   - Include the shortest path, camera -> primary hit -> laser spot. (Default: `false`)
-* - `timeGateMode`
-  - string
-  - Gate kernel: `box`, `tent`, `cos` or `all` (no gating). (Default: `box`)
-* - `timeGateWindow`
-  - float
-  - Gate width $\Delta$, in path-length units. (Default: `0.05`)
-* - `timeMin`, `timeMax`
-  - float
-  - Range of gate centers. Equal values give a single fixed gate. (Default: `9`, `12`)
-* - `timeCenter`
-  - float
-  - Shortcut for a single fixed gate: sets `timeMin` and `timeMax` to this value, overriding
-    them. (Optional)
-* - `timeBin`
-  - integer
-  - Number of gate centers from `timeMin` to `timeMax`. (Default: `512`)
-* - `shiftGate`
-  - boolean
-  - Move the gate to the next center after every frame, wrapping from `timeMax` back to
-    `timeMin`. (Default: `false`)
 * - `useSingleChannel`
   - boolean
   - Keep one channel of the image, chosen by `singleChannel`, and write it to all three color
@@ -66,24 +110,6 @@
   - boolean
   - Honor alpha-tested materials when tracing rays. (Default: `false`)
 ```
-
-This render pass renders a *time-gated* image: the radiance carried by paths whose total optical
-length, from the laser through the scene to the camera, lies near a gate center $t$. For a path
-$\bar{x}$ with optical length $\ell(\bar{x})$ (segment lengths weighted by the index of
-refraction), each pixel estimates
-
-$$
-I(t) = \frac{1}{\Delta} \int f(\bar{x})\, w\!\left(\frac{\ell(\bar{x}) - t}{\Delta}\right) \mathrm{d}\bar{x},
-$$
-
-where $f$ is the path contribution and $w$ the gate kernel of width $\Delta$ (`timeGateWindow`).
-With the `box` kernel, $w(v) = 1$ for $|v| < 1/2$, so $I(t)$ is the radiance per unit path
-length averaged over the gate. `tent` uses $w(v) = \max(1 - |v|, 0)$, and `cos` uses
-$w(v) = \cos(2\pi v)$ over all path lengths. `all` does not gate ($w = 1$), so the output is the
-steady-state radiance divided by $\Delta$.
-
-Camera paths start at the primary hits from `VBufferRT`. With `box` and `tent`, a path stops once
-it is longer than the gate's upper edge.
 
 ## Gate center
 

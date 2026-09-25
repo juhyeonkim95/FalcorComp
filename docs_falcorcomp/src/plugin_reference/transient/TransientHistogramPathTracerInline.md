@@ -1,5 +1,59 @@
 # Transient histogram path tracer (`TransientHistogramPathTracerInline`)
 
+This render pass renders a *transient histogram*: for every pixel, the radiance that arrives at
+each total optical path length, from the laser through the scene to the camera. The range
+`[timeMin, timeMax)` is split into $B$ bins (`timeBin`) of width
+$\Delta = (\text{timeMax} - \text{timeMin}) / B$. With the `box` filter, bin $i$ estimates
+
+$$
+H_i = \frac{1}{\Delta} \int f(\bar{x})\, \mathbf{1}\!\left[\ell(\bar{x}) \in [t_i, t_i + \Delta)\right] \mathrm{d}\bar{x},
+\qquad t_i = \text{timeMin} + i\Delta,
+$$
+
+where $f$ is the path contribution and $\ell$ the optical length (segment lengths weighted by the
+index of refraction). $H_i$ is radiance per unit path length, so $\sum_i H_i \Delta$ is the
+radiance of all paths in the range. Camera paths start at the primary hits from `VBufferRT` and
+stop once they are longer than `timeMax`.
+
+The histogram is a 3D texture of `width x height x timeBin` texels. From Python,
+`graph.get_output("Tracer.histogram").to_numpy()` returns an array of shape
+`(timeBin, height, width, 4)`, or `(timeBin, height, width)` with `useSingleChannel`. Its memory
+grows with all three dimensions: at 1024 x 1024 with 512 bins, an RGBA histogram takes 8 GB.
+
+## Parameters
+
+Histogram:
+
+```{list-table}
+:header-rows: 1
+:widths: 25 10 65
+
+* - Parameter
+  - Type
+  - Description
+* - `timeMin`, `timeMax`
+  - float
+  - Path-length range of the histogram. Paths outside `[timeMin, timeMax)` are not recorded.
+    (Default: `9`, `12`)
+* - `timeBin`
+  - integer
+  - Number of bins $B$. (Default: `512`)
+* - `timeGateMode`
+  - string
+  - The bin filter: `box` or `tent`; with kernel density estimation, the kernel: `box`, `tent`,
+    `gaussian`, `epanechnikov` or `perlin`. See [Filters](#filters). (Default: `box`)
+* - `useKernelDensityEstimation`
+  - boolean
+  - Spread each path over the bins with a kernel instead of a bin filter. `direct` only.
+    (Default: `false`)
+* - `initialWindowRatio`
+  - float
+  - With kernel density estimation, the kernel width of a frame's first sample, as a fraction of
+    `timeMax - timeMin`, in (0, 1]. (Default: `1`)
+```
+
+Sampling:
+
 ```{list-table}
 :header-rows: 1
 :widths: 25 10 65
@@ -21,28 +75,20 @@
   - boolean
   - Importance-sample the BSDF when extending the camera path; otherwise use the material's
     reference sampler (cosine-weighted for standard materials). (Default: `true`)
+```
+
+Output:
+
+```{list-table}
+:header-rows: 1
+:widths: 25 10 65
+
+* - Parameter
+  - Type
+  - Description
 * - `computeDirect`
   - boolean
   - Include the shortest path, camera -> primary hit -> laser spot. (Default: `false`)
-* - `timeMin`, `timeMax`
-  - float
-  - Path-length range of the histogram. Paths outside `[timeMin, timeMax)` are not recorded.
-    (Default: `9`, `12`)
-* - `timeBin`
-  - integer
-  - Number of bins $B$. (Default: `512`)
-* - `timeGateMode`
-  - string
-  - The bin filter: `box` or `tent`; with kernel density estimation, the kernel: `box`, `tent`,
-    `gaussian`, `epanechnikov` or `perlin`. See [Filters](#filters). (Default: `box`)
-* - `useKernelDensityEstimation`
-  - boolean
-  - Spread each path over the bins with a kernel instead of a bin filter. `direct` only.
-    (Default: `false`)
-* - `initialWindowRatio`
-  - float
-  - With kernel density estimation, the kernel width of a frame's first sample, as a fraction of
-    `timeMax - timeMin`, in (0, 1]. (Default: `1`)
 * - `accumulate`
   - boolean
   - Sum the frames in the histogram. See [Accumulation](#accumulation). (Default: `false`)
@@ -65,26 +111,6 @@
   - integer pair
   - Output size with `outputSize` `Fixed`. (Default: `[512, 512]`)
 ```
-
-This render pass renders a *transient histogram*: for every pixel, the radiance that arrives at
-each total optical path length, from the laser through the scene to the camera. The range
-`[timeMin, timeMax)` is split into $B$ bins (`timeBin`) of width
-$\Delta = (\text{timeMax} - \text{timeMin}) / B$. With the `box` filter, bin $i$ estimates
-
-$$
-H_i = \frac{1}{\Delta} \int f(\bar{x})\, \mathbf{1}\!\left[\ell(\bar{x}) \in [t_i, t_i + \Delta)\right] \mathrm{d}\bar{x},
-\qquad t_i = \text{timeMin} + i\Delta,
-$$
-
-where $f$ is the path contribution and $\ell$ the optical length (segment lengths weighted by the
-index of refraction). $H_i$ is radiance per unit path length, so $\sum_i H_i \Delta$ is the
-radiance of all paths in the range. Camera paths start at the primary hits from `VBufferRT` and
-stop once they are longer than `timeMax`.
-
-The histogram is a 3D texture of `width x height x timeBin` texels. From Python,
-`graph.get_output("Tracer.histogram").to_numpy()` returns an array of shape
-`(timeBin, height, width, 4)`, or `(timeBin, height, width)` with `useSingleChannel`. Its memory
-grows with all three dimensions: at 1024 x 1024 with 512 bins, an RGBA histogram takes 8 GB.
 
 (filters)=
 ## Filters
