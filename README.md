@@ -49,9 +49,23 @@ FalcorComp currently includes implementations of the following renderers:
 
 For implementation details, usage instructions, and examples, please refer to the corresponding project page for each renderer.
 
-## Compilation
+## Installation
 
-Please refer to the original Falcor repository ([link](https://github.com/nvidiagameworks/falcor)) for build instructions. We have tested the code working on **Ubuntu 22.04.5 LTS**.
+FalcorComp is installed as the Python package `falcorcomp`, which contains Falcor and the render passes, so no separate Falcor build is needed. It requires 64-bit Linux or Windows, an NVIDIA GPU with hardware ray tracing (RTX), and Python 3.9 to 3.13.
+
+The package is currently published on TestPyPI:
+
+```bash
+pip install --index-url https://test.pypi.org/simple/ --extra-index-url https://pypi.org/simple/ falcorcomp
+```
+
+To check the installation (this also initializes the GPU):
+
+```bash
+python -c "import falcorcomp as falcor; falcor.Testbed(create_window=False); print('falcorcomp works')"
+```
+
+See the [installation guide](https://falcorcomp.readthedocs.io/en/latest/src/getting_started/installation.html) for details, troubleshooting, and building from source.
 
 
 ## Acknowledgments
