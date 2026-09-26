@@ -231,7 +231,6 @@ void TimeGatedReSTIRInline::bindShaderData(const ShaderVar& var, const RenderDat
     var["CB"]["specularRoughnessThresholdEllipsoid"] = mOptions.ellipsoidalSampling.ellipsoidRoughnessThreshold;
     var["CB"]["samplesPerPixel"] = mOptions.pathTracing.samplesPerPixel;
     var["CB"]["gTemporalHistoryLength"] = mOptions.restir.temporalHistoryLength;
-    var["CB"]["gRoughTimeGateSampleRatio"] = mOptions.roughTimeGateSampleRatio;
 
     mLaser.bindShaderData(var["Laser_CB"]);
     var["Laser_CB"]["laserPrevOrigin"] = mPreviousLaser.origin;

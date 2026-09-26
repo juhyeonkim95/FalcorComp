@@ -31,7 +31,6 @@ cbuffer CB
     uint gPRNGDimension; // First available PRNG dimension.
     uint samplesPerPixel;
     float specularRoughnessThreshold;
-    float gRoughTimeGateSampleRatio;
     float gTemporalHistoryLength;
 #if USE_TEMPORAL_REUSE
     bool gTemporalHistoryValid;

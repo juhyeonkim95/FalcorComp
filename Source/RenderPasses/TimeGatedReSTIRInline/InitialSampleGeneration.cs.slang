@@ -40,8 +40,6 @@ cbuffer CB
     bool gTemporalHistoryValid;
     float3 gPreviousCameraPosition;
 #endif
-    // Fraction of initial paths assigned to the wider gate (direct sampling only).
-    float gRoughTimeGateSampleRatio;
 }
 
 cbuffer Laser_CB
