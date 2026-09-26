@@ -81,6 +81,7 @@ const ChannelList kDebugOutputChannels = {
 const char kRandomSeed[] = "randomSeed";
 const char kIsSceneDynamic[] = "isSceneDynamic";
 const char kDebugNewtonIterations[] = "debugNewtonIterations";
+const char kUseShrinkMapping[] = "useShrinkMapping";
 const char kTimeGateWindowRough[] = "timeGateWindowRough";
 const char kRoughTimeGateSampleRatio[] = "roughTimeGateSampleRatio";
 } // namespace
@@ -121,6 +122,8 @@ void TimeGatedReSTIRInline::parseProperties(const Properties& props)
             mOptions.isSceneDynamic = value;
         else if (key == kDebugNewtonIterations)
             mOptions.debugNewtonIterations = value;
+        else if (key == kUseShrinkMapping)
+            mOptions.useShrinkMapping = value;
         else if (key == kTimeGateWindowRough)
             mOptions.timeGateWindowRough = value;
         else if (key == kRoughTimeGateSampleRatio)
@@ -149,6 +152,7 @@ Properties TimeGatedReSTIRInline::getProperties() const
     props[kRandomSeed] = mRandomSeed;
     props[kIsSceneDynamic] = mOptions.isSceneDynamic;
     props[kDebugNewtonIterations] = mOptions.debugNewtonIterations;
+    props[kUseShrinkMapping] = mOptions.useShrinkMapping;
     props[kTimeGateWindowRough] = mOptions.timeGateWindowRough;
     props[kRoughTimeGateSampleRatio] = mOptions.roughTimeGateSampleRatio;
     return props;
@@ -176,9 +180,10 @@ DefineList TimeGatedReSTIRInline::getShaderDefines(const RenderData& renderData)
 
     // Specialize away the entire extra reservoir/shift path when it has no samples.
     uint32_t wideSampleCount = 0;
-    if (mOptions.ellipsoidalSampling.samplingMethod == EllipsoidalSamplingMethod::DIRECT && mOptions.pathTracing.samplesPerPixel > 0 &&
-        std::isfinite(mOptions.timeGateWindowRough) && mOptions.timeGate.timeGateWindow > 0.f &&
-        mOptions.timeGateWindowRough > mOptions.timeGate.timeGateWindow && std::isfinite(mOptions.roughTimeGateSampleRatio) &&
+    if (mOptions.useShrinkMapping && mOptions.ellipsoidalSampling.samplingMethod == EllipsoidalSamplingMethod::DIRECT &&
+        mOptions.pathTracing.samplesPerPixel > 0 && std::isfinite(mOptions.wideGateWindow()) &&
+        mOptions.timeGate.timeGateWindow > 0.f && mOptions.wideGateWindow() > mOptions.timeGate.timeGateWindow &&
+        std::isfinite(mOptions.roughTimeGateSampleRatio) &&
         (mOptions.timeGate.timeGateMode == TimeGateMode::BOX || mOptions.timeGate.timeGateMode == TimeGateMode::TENT))
     {
         const float ratio = std::clamp(mOptions.roughTimeGateSampleRatio, 0.f, 1.f);
@@ -237,7 +242,7 @@ void TimeGatedReSTIRInline::bindShaderData(const ShaderVar& var, const RenderDat
     var["Laser_CB"]["laserPrevDirection"] = mPreviousLaser.direction;
 
     mOptions.timeGate.bindShaderData(var["TimeGate"], mGate);
-    var["TimeGate"]["time_gate_window_rough"] = mOptions.timeGateWindowRough;
+    var["TimeGate"]["time_gate_window_rough"] = mOptions.wideGateWindow();
     mOptions.restir.bindShiftMapping(var["Shiftmap_CB"]);
 
     InlinePass::bindChannels(var, renderData, kInputChannels);
@@ -278,7 +283,7 @@ void TimeGatedReSTIRInline::spatialReuse(RenderContext* pRenderContext, const Re
         InlinePass::bindChannels(var, renderData, kDebugOutputChannels);
 
     mOptions.timeGate.bindShaderData(rootVar["TimeGate"], mGate);
-    rootVar["TimeGate"]["time_gate_window_rough"] = mOptions.timeGateWindowRough;
+    rootVar["TimeGate"]["time_gate_window_rough"] = mOptions.wideGateWindow();
     mLaser.bindShaderData(rootVar["Laser_CB"]);
     mOptions.restir.bindShiftMapping(rootVar["Shiftmap_CB"]);
 
@@ -385,12 +390,26 @@ void TimeGatedReSTIRInline::renderUI(Gui::Widgets& widget)
 
         if (mOptions.ellipsoidalSampling.samplingMethod == EllipsoidalSamplingMethod::DIRECT)
         {
-            dirty |= group.var("Wide gate window", mOptions.timeGateWindowRough, 0.f, 1000.0f);
-            group.tooltip("Direct sampling with a Box or Tent gate only: when wider than Gate window, a fraction of "
-                          "the paths is traced with this wider gate and shrunk into the gate by the path-length "
-                          "shift. 0 disables it.", true);
-            dirty |= group.var("Wide gate path fraction", mOptions.roughTimeGateSampleRatio, 0.f, 1.f);
-            group.tooltip("Fraction of the paths per pixel traced with the wide gate.", true);
+            dirty |= group.checkbox("Shrink mapping", mOptions.useShrinkMapping);
+            group.tooltip("Trace paths with a wider gate and shrink them into the gate with the path-length shift, "
+                          "which finds more candidates for a narrow gate. Box or Tent gate only.", true);
+            if (mOptions.useShrinkMapping)
+            {
+                float wideWindow = mOptions.wideGateWindow();
+                if (group.var("Wide gate window", wideWindow, 0.f, 1000.0f))
+                {
+                    mOptions.timeGateWindowRough = wideWindow;
+                    dirty = true;
+                }
+                group.tooltip("Width of the wider gate, in path-length units. Until set, 10 x Gate window.", true);
+                dirty |= group.var("Wide gate path fraction", mOptions.roughTimeGateSampleRatio, 0.f, 1.f);
+                group.tooltip("Fraction of the paths per pixel traced with the wide gate; the others use the gate "
+                              "itself.", true);
+                if (!(mOptions.wideGateWindow() > mOptions.timeGate.timeGateWindow))
+                    group.text("Off: the wide gate must be wider than Gate window.");
+                else if (mOptions.timeGate.timeGateMode != TimeGateMode::BOX && mOptions.timeGate.timeGateMode != TimeGateMode::TENT)
+                    group.text("Off: shrink mapping needs a Box or Tent gate.");
+            }
         }
     }
 

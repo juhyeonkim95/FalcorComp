@@ -20,6 +20,7 @@ def build_sweep(gate_width, multipliers, ratios):
             label = f"gate_{multiplier:g}_rough_{ratio:g}"
             variants[label] = ("ours", {"iterations": 0})
             options[label] = {
+                "useShrinkMapping": True,
                 "timeGateWindowRough": gate_width * multiplier,
                 "roughTimeGateSampleRatio": ratio,
             }

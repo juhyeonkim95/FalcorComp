@@ -89,8 +89,13 @@ private:
         PathLengthAwareReSTIRConfig restir;
         bool isSceneDynamic = false;          ///< Keep the history when the light moves, re-evaluating reused paths.
         bool debugNewtonIterations = false;   ///< Adds the newtonStatistics and mappingDistance outputs.
-        float timeGateWindowRough = 0.0f;     ///< Direct sampling: wide gate traced by some paths and shrunk into the gate.
-        float roughTimeGateSampleRatio = 0.5f; ///< Fraction of paths traced with the wide gate.
+        /// Direct sampling with a box or tent gate: trace paths with a wider gate and shrink them into the gate.
+        bool useShrinkMapping = false;
+        float timeGateWindowRough = 0.0f;      ///< Width of the wide gate; 0 means 10 x timeGateWindow.
+        float roughTimeGateSampleRatio = 1.0f; ///< Fraction of the paths traced with the wide gate.
+
+        /// Width of the wide gate that shrink mapping traces.
+        float wideGateWindow() const { return timeGateWindowRough > 0.f ? timeGateWindowRough : 10.f * timeGate.timeGateWindow; }
     };
     Options mOptions;
 
