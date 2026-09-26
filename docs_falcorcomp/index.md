@@ -28,6 +28,7 @@ src/tutorials/index
 :caption: Advanced tutorials
 
 src/tutorials/restir_index
+src/tutorials/ellipsoidal_index
 ```
 
 ```{toctree}
