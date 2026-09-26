@@ -22,9 +22,8 @@ length averaged over the gate. The other kernels:
 - `cos`: $w(v) = \cos(2\pi v)$ over all path lengths.
 - `all`: no gating ($w = 1$), so the output is the steady-state radiance divided by $\Delta$.
 
-All of them have weight 1 at the gate center. `box` and `tent` integrate to 1 over $v$; the
-truncation leaves `gaussian` at 0.997 and `exp` at 0.950, so their images are that much dimmer than a
-box of the same width.
+`box`, `tent`, `gaussian` and `exp` integrate to 1 over $v$ (the truncated kernels are rescaled), so
+they give images on the same scale.
 
 Camera paths start at the primary hits from `VBufferRT`. With `box`, `tent`, `gaussian` and `exp`, a
 path stops once it is longer than the end of the kernel.
