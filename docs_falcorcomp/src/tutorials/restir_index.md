@@ -24,8 +24,8 @@ it with the path tracer at equal rendering time.
 ```
 
 ```{grid-item-card} Time-gated ReSTIR (online)
-:img-top: images/thumbnails/time_gated_restir_online_thumb.jpg
-:img-alt: A frame of the moving-gate sequence rendered with TG ReSTIR
+:img-top: images/thumbnails/time_gated_restir_online_preview.webp
+:img-alt: The moving-gate sequence rendered with TG ReSTIR
 :link: time_gated_restir_online
 :link-type: doc
 
