@@ -83,6 +83,7 @@ private:
     float shrinkSampleRatio() const { return std::clamp(mOptions.roughTimeGateSampleRatio, 0.f, 1.f); }
     DefineList getReservoirDefines() const;
     void spatialReuse(RenderContext* pRenderContext, const RenderData& renderData);
+    void addDirect(RenderContext* pRenderContext, const RenderData& renderData);
 
     /// User settings, composed of shared configs (Shared/Host/Configs) plus this pass's own.
     struct Options
@@ -121,4 +122,6 @@ private:
 
     ref<ComputePass> mpComputePass;      ///< Initial candidates (and temporal reuse).
     ref<ComputePass> mpSpatialReusePass;
+    ref<ComputePass> mpAddDirectPass;    ///< Adds the primary-hit direct lighting to the output (computeDirect).
+    ref<Texture> mpDirectColor;          ///< Primary-hit direct lighting, kept out of the reservoirs (computeDirect).
 };

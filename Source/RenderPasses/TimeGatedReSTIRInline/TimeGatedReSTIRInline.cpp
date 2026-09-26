@@ -51,6 +51,7 @@ namespace
 const char kShaderFile[] = "RenderPasses/TimeGatedReSTIRInline/InitialSampleGeneration.cs.slang";
 const char kReflectTypesFile[] = "RenderPasses/TimeGatedReSTIRInline/ReflectTypes.cs.slang";
 const char kSpatialReuseFile[] = "RenderPasses/TimeGatedReSTIRInline/SpatialReuse.cs.slang";
+const char kAddDirectFile[] = "RenderPasses/TimeGatedReSTIRInline/AddDirect.cs.slang";
 const char kInputViewDir[] = "viewW";
 const char kInputMotionVectors[] = "mvec";
 
@@ -249,6 +250,8 @@ void TimeGatedReSTIRInline::bindShaderData(const ShaderVar& var, const RenderDat
     InlinePass::bindChannels(var, renderData, kInputChannels);
     InlinePass::bindChannels(var, renderData, kLaserInputChannels);
     InlinePass::bindChannels(var, renderData, kOutputChannels);
+    if (mOptions.pathTracing.computeDirect)
+        var["gDirectColor"] = mpDirectColor;
 
     if (mOptions.restir.useTemporalReuse)
     {
@@ -299,6 +302,18 @@ void TimeGatedReSTIRInline::spatialReuse(RenderContext* pRenderContext, const Re
     mReSTIR.runSpatialReuse(pRenderContext, mpSpatialReusePass, var, mOptions.restir.spatialReuseIteration, mRandomSeed, frameDim);
 }
 
+void TimeGatedReSTIRInline::addDirect(RenderContext* pRenderContext, const RenderData& renderData)
+{
+    if (!mpAddDirectPass)
+        mpAddDirectPass = ComputePass::create(mpDevice, kAddDirectFile, "main");
+    const uint2 frameDim = renderData.getDefaultTextureDims();
+    auto var = mpAddDirectPass->getRootVar();
+    var["CB"]["gFrameDim"] = frameDim;
+    var["gDirectColor"] = mpDirectColor;
+    var["gOutputColor"] = renderData.getTexture("color");
+    mpAddDirectPass->execute(pRenderContext, uint3(frameDim, 1));
+}
+
 void TimeGatedReSTIRInline::execute(RenderContext* pRenderContext, const RenderData& renderData)
 {
     if (mOptionsChanged)
@@ -341,6 +356,14 @@ void TimeGatedReSTIRInline::execute(RenderContext* pRenderContext, const RenderD
         mpSpatialReusePass = InlinePass::createScenePass(mpDevice, pRenderContext, mpScene, mpSampleGenerator, kSpatialReuseFile, defines);
     }
     const uint2 frameDim = renderData.getDefaultTextureDims();
+    if (mOptions.pathTracing.computeDirect &&
+        (!mpDirectColor || mpDirectColor->getWidth() != frameDim.x || mpDirectColor->getHeight() != frameDim.y))
+    {
+        mpDirectColor = mpDevice->createTexture2D(frameDim.x, frameDim.y, ResourceFormat::RGBA32Float, 1, 1, nullptr,
+            ResourceBindFlags::ShaderResource | ResourceBindFlags::UnorderedAccess);
+    }
+    else if (!mOptions.pathTracing.computeDirect)
+        mpDirectColor = nullptr;
     mReSTIR.prepare(mpDevice, mpScene, kReflectTypesFile, getReservoirDefines(), 1, frameDim,
         mOptions.restir.useTemporalReuse, renderData.getTexture("vbuffer")->getFormat());
 
@@ -354,6 +377,9 @@ void TimeGatedReSTIRInline::execute(RenderContext* pRenderContext, const RenderD
     mpComputePass->execute(pRenderContext, uint3(frameDim, 1));
 
     spatialReuse(pRenderContext, renderData);
+    // The primary-hit direct lighting is added after reuse; it never enters the reservoirs.
+    if (mOptions.pathTracing.computeDirect)
+        addDirect(pRenderContext, renderData);
     mFrameCount++;
 
     mReSTIR.endFrame(pRenderContext, mOptions.restir.useTemporalReuse, *mpScene, renderData.getTexture("vbuffer"));
@@ -428,7 +454,7 @@ void TimeGatedReSTIRInline::renderUI(Gui::Widgets& widget)
         dirty |= mOptions.restir.renderShiftMappingUI(group);
 
     if (auto group = widget.group("Output", true))
-        dirty |= mOptions.pathTracing.renderOutputUI(group, false, true);
+        dirty |= mOptions.pathTracing.renderOutputUI(group, true, true);
 
     if (dirty)
     {

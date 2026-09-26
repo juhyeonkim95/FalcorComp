@@ -6,6 +6,7 @@ target_sources(TimeGatedReSTIRInline PRIVATE
     InitialSampleGeneration.cs.slang
     ReflectTypes.cs.slang
     SpatialReuse.cs.slang
+    AddDirect.cs.slang
 )
 
 target_copy_shaders(TimeGatedReSTIRInline RenderPasses/TimeGatedReSTIRInline)

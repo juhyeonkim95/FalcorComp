@@ -23,6 +23,7 @@ import RenderPasses.Shared.Shaders.Utils.LoadShadingData;
 import RenderPasses.Shared.Shaders.Lights.LaserLightSampler;
 import RenderPasses.Shared.Shaders.Lights.LightConnection;
 import RenderPasses.Shared.Shaders.Lights.EllipsoidalSampling;
+import RenderPasses.Shared.Shaders.Utils.SingleChannel;
 
 
 cbuffer CB
@@ -78,6 +79,11 @@ RWStructuredBuffer<Reservoir> currReservoirs;
 
 // Outputs
 RWTexture2D<float4> gOutputColor;
+#if COMPUTE_DIRECT
+// Primary-hit direct lighting (camera -> primary hit -> laser spot), kept out of the reservoirs; AddDirect.cs.slang
+// adds it to the output after reuse.
+RWTexture2D<float4> gDirectColor;
+#endif
 
 EmissiveLightSampler emissiveSampler;
 
@@ -265,8 +271,35 @@ Reservoir reuseTemporalHistory(Reservoir fresh, uint2 pixel, ShadingData primary
 }
 #endif
 
+#if COMPUTE_DIRECT
+// Direct lighting at the primary hit, divided by the gate width like the output. It uses its own random stream, so
+// the reservoirs sample the same paths with and without it.
+float3 evalPrimaryDirect(uint2 pixel, ShadingData primary, IMaterialInstance primaryMaterial, float primaryLength)
+{
+    LaserLightSampler lightSampler = LaserLightSampler(laserOrigin, laserDirection, laserCosAngle, laserPower);
+    SampleGenerator sg = SampleGenerator(pixel, gFrameCount + 7919);
+    float3 direct = 0.f;
+    for (uint i = 0; i < samplesPerPixel; ++i)
+    {
+        LightSample light = {};
+        lightSampler.generateLightSample(sg, light);
+        if (!light.valid) continue;
+        LightConnection connection = evaluateLightConnection(primary, primaryMaterial, light, sg);
+        float gate = pathLengthImportance(primaryLength + connection.distance + light.laserT, tcurr);
+        direct += connection.bsdfCosine * connection.incidentRadiance * gate;
+    }
+    direct /= float(samplesPerPixel) * time_gate_window;
+    if (any(isinf(direct) || isnan(direct))) direct = 0.f;
+#if USE_SINGLE_CHANNEL
+    direct = float3(selectChannel(direct));
+#endif
+    return direct;
+}
+#endif
+
 // Generate initial RIS candidates by BSDF walking and connecting each secondary
-// surface to the single point/laser light. Primary direct lighting stays excluded.
+// surface to the single point/laser light. Primary direct lighting stays out of the reservoirs
+// (with computeDirect it is evaluated separately and added after reuse).
 float3 tracePath(uint2 pixel, uint2 frameDim)
 {
     uint index = pixel.y * frameDim.x + pixel.x;
@@ -275,6 +308,9 @@ float3 tracePath(uint2 pixel, uint2 frameDim)
     Reservoir reservoir = Reservoir();
     if (!primaryHit.isValid())
     {
+#if COMPUTE_DIRECT
+        gDirectColor[pixel] = float4(0.f);
+#endif
         currReservoirs[index] = reservoir;
         return kUseEnvBackground ? gScene.envMap.eval(primaryDirection) : float3(0.f);
     }
@@ -283,6 +319,9 @@ float3 tracePath(uint2 pixel, uint2 frameDim)
     ShadingData primary = loadShadingData(primaryHit, cameraPosition, primaryDirection);
     let primaryMaterial = gScene.materials.getMaterialInstance(primary, ExplicitLodTextureSampler(0.f));
     float primaryLength = length(primary.posW - cameraPosition);
+#if COMPUTE_DIRECT
+    gDirectColor[pixel] = float4(evalPrimaryDirect(pixel, primary, primaryMaterial, primaryLength), 0.f);
+#endif
 #if USE_SHRINK_MAPPING
     // The host enables shrink mapping only when this count is positive; ratio 1 uses only wide samples.
     const uint wideCount = min(uint(float(samplesPerPixel) * gRoughTimeGateSampleRatio), samplesPerPixel);

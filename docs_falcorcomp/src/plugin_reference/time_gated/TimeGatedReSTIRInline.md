@@ -165,6 +165,11 @@ Other:
 * - Parameter
   - Type
   - Description
+* - `computeDirect`
+  - boolean
+  - Include the shortest path, camera -> primary hit -> laser spot. It is evaluated at the primary
+    hit without reuse and added to the output after reuse; see [Every frame](#restir-every-frame).
+    (Default: `false`)
 * - `useSingleChannel`
   - boolean
   - Keep one channel of the image, chosen by `singleChannel`: the reservoirs resample by that
@@ -182,10 +187,10 @@ Other:
     spatial reuse. (Default: `false`)
 ```
 
-The path tracer's `computeDirect` is accepted but has no effect in this pass. The reservoirs
-resample by the luminance of the path contribution, or by the channel kept with
+The reservoirs resample by the luminance of the path contribution, or by the channel kept with
 `useSingleChannel`.
 
+(restir-every-frame)=
 ## Every frame
 
 1. **Initial sampling.** Every pixel traces `samplesPerPixel` candidate paths from its primary
@@ -197,6 +202,9 @@ resample by the luminance of the path contribution, or by the channel kept with
    `spatialReuseNeighborCount` random pixels within `spatialReuseGatherRadius`, each shifted to
    this pixel.
 4. **Output.** The pixel's reservoir gives its estimate of the time-gated image.
+5. **Primary-hit direct** (with `computeDirect`). The path camera -> primary hit -> laser spot is
+   evaluated in step 1 on its own, kept out of the reservoirs, and added to the output after the last
+   reuse step. Its length is fixed for each pixel, so reuse would not help it.
 
 Reuse gives a lower-variance image per frame, but not an independent one: neighboring pixels and
 consecutive frames share paths. Averaging frames with `AccumulatePass` reduces the remaining
