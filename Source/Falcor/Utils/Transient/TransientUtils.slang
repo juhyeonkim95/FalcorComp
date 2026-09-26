@@ -8,7 +8,6 @@ import Utils.Math.MathHelpers;
 #define TIME_GATE_EXP 4
 #define TIME_GATE_GAUSSIAN 5
 #define TIME_GATE_EPANECHNIKOV 6
-#define TIME_GATE_SAWTOOTH 7
 #define TIME_GATE_PERLIN 8
 #define TIME_GATE_EXP_TWO_SIDE 9
 
