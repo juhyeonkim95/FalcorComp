@@ -147,7 +147,7 @@ void InlinePathTracer::execute(RenderContext* pRenderContext, const RenderData& 
         mpComputePass = InlinePass::createScenePass(mpDevice, pRenderContext, mpScene, mpSampleGenerator, kShaderFile, getShaderDefines(renderData));
     InlinePass::checkScene(*mpScene, renderData, kInputViewDir);
 
-    mpComputePass->getProgram()->addDefines(getShaderDefines(renderData));
+    InlinePass::updateScenePassDefines(pRenderContext, mpComputePass, mpScene, mpSampleGenerator, getShaderDefines(renderData));
     bindShaderData(mpComputePass->getRootVar(), renderData);
     mpComputePass->execute(pRenderContext, uint3(renderData.getDefaultTextureDims(), 1));
 

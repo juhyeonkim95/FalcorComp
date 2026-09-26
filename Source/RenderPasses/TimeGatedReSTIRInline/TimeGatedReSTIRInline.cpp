@@ -159,6 +159,22 @@ Properties TimeGatedReSTIRInline::getProperties() const
     return props;
 }
 
+void TimeGatedReSTIRInline::setProperties(const Properties& props)
+{
+    const auto previousSamplingMethod = mOptions.ellipsoidalSampling.samplingMethod;
+    const auto previousTriSampler = mOptions.ellipsoidalSampling.triSampler;
+    parseProperties(props);
+    // Same rebuilds as a UI edit: the emissive sampler's defines are only added when the programs are created.
+    if (mOptions.ellipsoidalSampling.triSampler != previousTriSampler)
+        mTriangleSampler.reset();
+    if (mOptions.ellipsoidalSampling.samplingMethod != previousSamplingMethod || mOptions.ellipsoidalSampling.triSampler != previousTriSampler)
+    {
+        mpComputePass = nullptr;
+        mpSpatialReusePass = nullptr;
+    }
+    mOptionsChanged = true;
+}
+
 RenderPassReflection TimeGatedReSTIRInline::reflect(const CompileData& compileData)
 {
     RenderPassReflection reflector;
@@ -268,7 +284,7 @@ void TimeGatedReSTIRInline::bindShaderData(const ShaderVar& var, const RenderDat
 
 void TimeGatedReSTIRInline::spatialReuse(RenderContext* pRenderContext, const RenderData& renderData)
 {
-    mpSpatialReusePass->getProgram()->addDefines(getShaderDefines(renderData));
+    InlinePass::updateScenePassDefines(pRenderContext, mpSpatialReusePass, mpScene, mpSampleGenerator, getShaderDefines(renderData));
     auto rootVar = mpSpatialReusePass->getRootVar();
     auto var = rootVar["CB"]["gSpatialReuse"];
     const uint2 frameDim = renderData.getDefaultTextureDims();
@@ -372,7 +388,7 @@ void TimeGatedReSTIRInline::execute(RenderContext* pRenderContext, const RenderD
         mpScene->getLightCollection(pRenderContext);
 
     mOptions.timeGate.beginFrame(mGate);
-    mpComputePass->getProgram()->addDefines(getShaderDefines(renderData));
+    InlinePass::updateScenePassDefines(pRenderContext, mpComputePass, mpScene, mpSampleGenerator, getShaderDefines(renderData));
     bindShaderData(mpComputePass->getRootVar(), renderData);
     mpComputePass->execute(pRenderContext, uint3(frameDim, 1));
 

@@ -41,6 +41,25 @@ inline ref<ComputePass> createScenePass(
     return pPass;
 }
 
+/// Applies `defines` to a pass made by createScenePass(). When they change, the program is recompiled with a new
+/// layout (e.g. a resource that only exists under a define), so the pass's vars are recreated and the scene and the
+/// sample generator bound again; bind everything else after this call.
+inline void updateScenePassDefines(
+    RenderContext* pRenderContext,
+    const ref<ComputePass>& pPass,
+    const ref<Scene>& pScene,
+    const ref<SampleGenerator>& pSampleGenerator,
+    const DefineList& defines
+)
+{
+    if (!pPass->getProgram()->addDefines(defines))
+        return;
+    pPass->setVars(nullptr);
+    ShaderVar var = pPass->getRootVar();
+    pScene->bindShaderDataForRaytracing(pRenderContext, var["gScene"]);
+    pSampleGenerator->bindShaderData(var);
+}
+
 /// Which kinds of scene lights are in use (USE_ANALYTIC_LIGHTS, USE_EMISSIVE_LIGHTS, USE_ENV_LIGHT,
 /// USE_ENV_BACKGROUND).
 inline DefineList getSceneLightDefines(const Scene& scene)

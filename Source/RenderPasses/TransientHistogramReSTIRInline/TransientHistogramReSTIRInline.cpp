@@ -225,7 +225,7 @@ void TransientHistogramReSTIRInline::bindShaderData(const ShaderVar& var, const 
 
 void TransientHistogramReSTIRInline::spatialReuse(RenderContext* pRenderContext, const RenderData& renderData)
 {
-    mpSpatialReusePass->getProgram()->addDefines(getShaderDefines(renderData));
+    InlinePass::updateScenePassDefines(pRenderContext, mpSpatialReusePass, mpScene, mpSampleGenerator, getShaderDefines(renderData));
     auto rootVar = mpSpatialReusePass->getRootVar();
     auto var = rootVar["CB"]["gSpatialReuse"];
     const uint2 frameDim = renderData.getDefaultTextureDims();
@@ -292,7 +292,7 @@ void TransientHistogramReSTIRInline::execute(RenderContext* pRenderContext, cons
     if (mpScene->getRenderSettings().useEmissiveLights)
         mpScene->getLightCollection(pRenderContext);
 
-    mpComputePass->getProgram()->addDefines(getShaderDefines(renderData));
+    InlinePass::updateScenePassDefines(pRenderContext, mpComputePass, mpScene, mpSampleGenerator, getShaderDefines(renderData));
     bindShaderData(mpComputePass->getRootVar(), renderData);
     mpComputePass->execute(pRenderContext, uint3(frameDim, 1));
 

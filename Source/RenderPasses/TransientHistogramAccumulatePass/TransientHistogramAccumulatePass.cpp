@@ -215,7 +215,8 @@ void TransientHistogramAccumulatePass::execute(RenderContext* pRenderContext, co
     defines.add("COMPENSATED", mPrecision == Precision::SingleCompensated ? "1" : "0");
     if (!mpPass)
         mpPass = ComputePass::create(mpDevice, kShaderFile, "main", defines);
-    mpPass->getProgram()->addDefines(defines);
+    if (mpPass->getProgram()->addDefines(defines))
+        mpPass->setVars(nullptr);
 
     const uint3 dims = {pInput->getWidth(), pInput->getHeight(), pInput->getDepth()};
     auto var = mpPass->getRootVar();

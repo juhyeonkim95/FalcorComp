@@ -237,7 +237,7 @@ void TransientHistogramPathTracerInline::execute(RenderContext* pRenderContext, 
         mpComputePass = InlinePass::createScenePass(mpDevice, pRenderContext, mpScene, mpSampleGenerator, kShaderFile, getShaderDefines(renderData));
     InlinePass::checkScene(*mpScene, renderData, kInputViewDir);
 
-    mpComputePass->getProgram()->addDefines(getShaderDefines(renderData));
+    InlinePass::updateScenePassDefines(pRenderContext, mpComputePass, mpScene, mpSampleGenerator, getShaderDefines(renderData));
     bindShaderData(mpComputePass->getRootVar(), renderData);
     const ref<Texture> pColor = renderData.getTexture("color");
     mpComputePass->execute(pRenderContext, uint3(pColor->getWidth(), pColor->getHeight(), 1));

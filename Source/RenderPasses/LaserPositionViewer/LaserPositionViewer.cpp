@@ -126,7 +126,7 @@ void LaserPositionViewer::execute(RenderContext* pRenderContext, const RenderDat
     defines.add(getValidResourceDefines(kInputChannels, renderData));
     if (!mpPass)
         mpPass = InlinePass::createScenePass(mpDevice, pRenderContext, mpScene, mpSampleGenerator, kShaderFile, defines);
-    mpPass->getProgram()->addDefines(defines);
+    InlinePass::updateScenePassDefines(pRenderContext, mpPass, mpScene, mpSampleGenerator, defines);
 
     const ref<Texture> pOutput = renderData.getTexture("output");
     const uint2 frameDim = {pOutput->getWidth(), pOutput->getHeight()};
