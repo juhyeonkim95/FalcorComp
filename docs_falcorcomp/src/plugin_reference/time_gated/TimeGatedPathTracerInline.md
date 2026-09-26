@@ -11,12 +11,22 @@ $$
 
 where $f$ is the path contribution and $w$ the gate kernel of width $\Delta$ (`timeGateWindow`).
 With the `box` kernel, $w(v) = 1$ for $|v| < 1/2$, so $I(t)$ is the radiance per unit path
-length averaged over the gate. `tent` uses $w(v) = \max(1 - |v|, 0)$, and `cos` uses
-$w(v) = \cos(2\pi v)$ over all path lengths. `all` does not gate ($w = 1$), so the output is the
-steady-state radiance divided by $\Delta$.
+length averaged over the gate. The other kernels:
 
-Camera paths start at the primary hits from `VBufferRT`. With `box` and `tent`, a path stops once
-it is longer than the gate's upper edge.
+(gate-kernels)=
+- `tent`: $w(v) = \max(1 - |v|, 0)$.
+- `gaussian`: $w(v) \propto e^{-\pi v^2}$, a Gaussian with $\sigma = \Delta / \sqrt{2\pi}$, cut off at
+  $3\sigma$ ($|v| \le 3/\sqrt{2\pi}$).
+- `exp`: $w(v) \propto e^{-v}$ for $0 \le v \le 3$: a one-sided gate that opens at the center and
+  decays over one gate width, cut off at three.
+- `cos`: $w(v) = \cos(2\pi v)$ over all path lengths.
+- `all`: no gating ($w = 1$), so the output is the steady-state radiance divided by $\Delta$.
+
+`box`, `tent`, `gaussian` and `exp` integrate to 1 over $v$ (the truncated kernels are rescaled), so
+they give images on the same scale.
+
+Camera paths start at the primary hits from `VBufferRT`. With `box`, `tent`, `gaussian` and `exp`, a
+path stops once it is longer than the end of the kernel.
 
 ## Parameters
 
@@ -31,7 +41,8 @@ Time gate:
   - Description
 * - `timeGateMode`
   - string
-  - Gate kernel: `box`, `tent`, `cos` or `all` (no gating). (Default: `box`)
+  - Gate kernel: `box`, `tent`, `gaussian`, `exp` (one-sided exponential), `cos` or `all`
+    (no gating). See [the kernels](#gate-kernels). (Default: `box`)
 * - `timeGateWindow`
   - float
   - Gate width $\Delta$, in path-length units. (Default: `0.05`)

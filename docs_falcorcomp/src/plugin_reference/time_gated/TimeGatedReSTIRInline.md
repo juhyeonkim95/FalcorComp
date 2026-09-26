@@ -21,7 +21,8 @@ The time gate is set as for the path tracer:
   - Description
 * - `timeGateMode`
   - string
-  - Gate kernel: `box`, `tent`, `cos` or `all` (no gating). (Default: `box`)
+  - Gate kernel: `box`, `tent`, `gaussian`, `exp` (one-sided exponential), `cos` or `all`
+    (no gating). See [the kernels](#gate-kernels). (Default: `box`)
 * - `timeGateWindow`
   - float
   - Gate width $\Delta$, in path-length units. (Default: `0.05`)
