@@ -178,7 +178,8 @@ DefineList TimeGatedReSTIRInline::getShaderDefines(const RenderData& renderData)
     defines.add(InlinePass::getSceneLightDefines(*mpScene));
     defines.add(mOptions.restir.getDefines());
 
-    // Specialize away the entire extra reservoir/shift path when it has no samples.
+    // Specialize away the entire extra reservoir/shift path when it has no samples. The shader computes the
+    // same count from gRoughTimeGateSampleRatio, so changing the ratio or samplesPerPixel does not recompile.
     uint32_t wideSampleCount = 0;
     if (mOptions.useShrinkMapping && mOptions.ellipsoidalSampling.samplingMethod == EllipsoidalSamplingMethod::DIRECT &&
         mOptions.pathTracing.samplesPerPixel > 0 && std::isfinite(mOptions.wideGateWindow()) &&
@@ -186,11 +187,10 @@ DefineList TimeGatedReSTIRInline::getShaderDefines(const RenderData& renderData)
         std::isfinite(mOptions.roughTimeGateSampleRatio) &&
         (mOptions.timeGate.timeGateMode == TimeGateMode::BOX || mOptions.timeGate.timeGateMode == TimeGateMode::TENT))
     {
-        const float ratio = std::clamp(mOptions.roughTimeGateSampleRatio, 0.f, 1.f);
-        wideSampleCount = std::min(uint32_t(float(mOptions.pathTracing.samplesPerPixel) * ratio), mOptions.pathTracing.samplesPerPixel);
+        wideSampleCount = std::min(uint32_t(float(mOptions.pathTracing.samplesPerPixel) * shrinkSampleRatio()),
+                                   mOptions.pathTracing.samplesPerPixel);
     }
     defines.add("USE_SHRINK_MAPPING", wideSampleCount > 0 ? "1" : "0");
-    defines.add("SHRINK_WIDE_SAMPLE_COUNT", std::to_string(wideSampleCount));
     defines.add("DEBUG_NEWTON_ITERATIONS", mOptions.debugNewtonIterations ? "1" : "0");
     // Single channel: the reservoirs keep and resample the chosen channel only.
     defines.add("RESERVOIR_SCALAR_TARGET", mOptions.pathTracing.useSingleChannel ? "1" : "0");
@@ -236,6 +236,7 @@ void TimeGatedReSTIRInline::bindShaderData(const ShaderVar& var, const RenderDat
     var["CB"]["specularRoughnessThresholdEllipsoid"] = mOptions.ellipsoidalSampling.ellipsoidRoughnessThreshold;
     var["CB"]["samplesPerPixel"] = mOptions.pathTracing.samplesPerPixel;
     var["CB"]["gTemporalHistoryLength"] = mOptions.restir.temporalHistoryLength;
+    var["CB"]["gRoughTimeGateSampleRatio"] = shrinkSampleRatio();
 
     mLaser.bindShaderData(var["Laser_CB"]);
     var["Laser_CB"]["laserPrevOrigin"] = mPreviousLaser.origin;

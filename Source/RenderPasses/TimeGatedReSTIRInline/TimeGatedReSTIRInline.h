@@ -29,6 +29,7 @@
 #include "Falcor.h"
 #include "RenderGraph/RenderPass.h"
 #include "Utils/Sampling/SampleGenerator.h"
+#include <algorithm>
 #include "Utils/Transient/Transient.h"
 #include "../Shared/Host/Configs/TimeGateConfig.h"
 #include "../Shared/Host/Configs/EllipsoidalSamplingConfig.h"
@@ -77,6 +78,9 @@ private:
     void parseProperties(const Properties& props);
     void bindShaderData(const ShaderVar& var, const RenderData& renderData);
     DefineList getShaderDefines(const RenderData& renderData) const;
+    /// Shrink mapping's wide-gate path fraction, clamped to [0, 1]; the host and the shader derive the wide path
+    /// count from it the same way.
+    float shrinkSampleRatio() const { return std::clamp(mOptions.roughTimeGateSampleRatio, 0.f, 1.f); }
     DefineList getReservoirDefines() const;
     void spatialReuse(RenderContext* pRenderContext, const RenderData& renderData);
 

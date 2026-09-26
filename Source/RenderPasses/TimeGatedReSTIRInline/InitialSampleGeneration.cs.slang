@@ -36,6 +36,7 @@ cbuffer CB
     float specularRoughnessThreshold;
     float specularRoughnessThresholdEllipsoid;
     float gTemporalHistoryLength;
+    float gRoughTimeGateSampleRatio; // Shrink mapping: fraction of the paths traced with the wide gate, in [0, 1].
 #if USE_TEMPORAL_REUSE
     bool gTemporalHistoryValid;
     float3 gPreviousCameraPosition;
@@ -283,8 +284,8 @@ float3 tracePath(uint2 pixel, uint2 frameDim)
     let primaryMaterial = gScene.materials.getMaterialInstance(primary, ExplicitLodTextureSampler(0.f));
     float primaryLength = length(primary.posW - cameraPosition);
 #if USE_SHRINK_MAPPING
-    // C++ validates the gate and rounds the ratio; ratio 1 uses only wide samples.
-    const uint wideCount = SHRINK_WIDE_SAMPLE_COUNT;
+    // The host enables shrink mapping only when this count is positive; ratio 1 uses only wide samples.
+    const uint wideCount = min(uint(float(samplesPerPixel) * gRoughTimeGateSampleRatio), samplesPerPixel);
     const uint narrowCount = samplesPerPixel - wideCount;
     Reservoir wideReservoir = Reservoir();
     const float wideSampleWeight = float(samplesPerPixel) / float(wideCount);
