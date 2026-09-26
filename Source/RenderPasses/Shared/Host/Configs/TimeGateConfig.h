@@ -99,6 +99,7 @@ struct TimeGateConfig
             {(uint32_t)TimeGateMode::TENT, "Tent"},
             {(uint32_t)TimeGateMode::GAUSSIAN, "Gaussian"},
             {(uint32_t)TimeGateMode::EXP, "Exponential (one-sided)"},
+            {(uint32_t)TimeGateMode::EXP_TWO_SIDE, "Exponential (two-sided)"},
             {(uint32_t)TimeGateMode::COS, "Cos"},
             {(uint32_t)TimeGateMode::ALL, "All (no gating)"},
         };
@@ -110,7 +111,8 @@ struct TimeGateConfig
         }
         widget.tooltip("Weight of a path as a function of its total optical length (laser -> scene -> camera) "
                        "relative to the gate center. Gaussian: sigma = window / sqrt(2 pi), cut at 3 sigma. "
-                       "Exponential: opens at the center and decays over one window, cut at 3 windows.", true);
+                       "Exponential: opens at the center and decays over one window, cut at 3 windows. "
+                       "Two-sided exponential: decays over half a window on each side, cut at 1.5 windows.", true);
 
         dirty |= widget.var("Gate window", timeGateWindow, 0.001f, 1000.0f);
         widget.tooltip("Gate width in path-length units (scene units). The output is divided by it.", true);

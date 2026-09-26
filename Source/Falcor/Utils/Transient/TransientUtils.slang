@@ -10,6 +10,7 @@ import Utils.Math.MathHelpers;
 #define TIME_GATE_EPANECHNIKOV 6
 #define TIME_GATE_SAWTOOTH 7
 #define TIME_GATE_PERLIN 8
+#define TIME_GATE_EXP_TWO_SIDE 9
 
 cbuffer TimeGate
 {
@@ -46,6 +47,9 @@ static const float kGaussianGateMass = 0.99730020f;      // erf(3 / sqrt(2)): in
 // Exponential: one-sided exp(-v) for 0 <= v <= 3 widths; it opens at the center and decays.
 static const float kExponentialGateLength = 3.f;
 static const float kExponentialGateMass = 0.95021293f;   // 1 - exp(-3)
+// Two-sided exponential: exp(-2 |v|) (decays over half a width on each side), truncated at 3 decay lengths.
+static const float kExpTwoSideGateHalfWidth = 1.5f;
+static const float kExpTwoSideGateMass = 0.95021293f;    // 1 - exp(-3): integral of exp(-2 |v|) over |v| <= 1.5
 
 float gaussianGate(float v)
 {
@@ -55,6 +59,11 @@ float gaussianGate(float v)
 float exponentialGate(float v)
 {
 	return (v >= 0.f && v <= kExponentialGateLength) ? exp(-v) / kExponentialGateMass : 0.f;
+}
+
+float exponentialTwoSideGate(float v)
+{
+	return abs(v) <= kExpTwoSideGateHalfWidth ? exp(-2.f * abs(v)) / kExpTwoSideGateMass : 0.f;
 }
 
 float getMaxpathLength(float target_distance, bool use_rough = false)
@@ -76,6 +85,9 @@ float getMaxpathLength(float target_distance, bool use_rough = false)
 		}
 		case TIME_GATE_EXP:{
 			return target_distance + kExponentialGateLength * target_time_gate_window;
+		}
+		case TIME_GATE_EXP_TWO_SIDE:{
+			return target_distance + kExpTwoSideGateHalfWidth * target_time_gate_window;
 		}
 		case TIME_GATE_COS:{
 			return FLT_MAX;
@@ -116,6 +128,9 @@ float getMaxpathLength(float target_distance, bool use_rough = false)
 		}
 		case TIME_GATE_EXP:{
 			return exponentialGate(v);
+		}
+		case TIME_GATE_EXP_TWO_SIDE:{
+			return exponentialTwoSideGate(v);
 		}
 	}
 	return 1.0;
@@ -191,6 +206,8 @@ float getMaxpathLength(float target_distance, bool use_rough = false)
             return gaussianGate((distance - target_distance) / width) / width;
         case TIME_GATE_EXP:
             return exponentialGate((distance - target_distance) / width) / width;
+        case TIME_GATE_EXP_TWO_SIDE:
+            return exponentialTwoSideGate((distance - target_distance) / width) / width;
     }
     return 0.f; // No length sampler is implemented for the other gate modes.
  }
@@ -236,6 +253,16 @@ float getMaxpathLength(float target_distance, bool use_rough = false)
 			float v = -log(1.f - u * kExponentialGateMass);
 			tau = t + v * target_time_gate_window;
 			pdf = exponentialGate(v) / target_time_gate_window;
+			return;
+		}
+		case TIME_GATE_EXP_TWO_SIDE:{
+			// Pick a side with the first half of u, then invert the truncated exponential on [0, 3] decay
+			// lengths (half widths).
+			float side = u < 0.5f ? 1.f : -1.f;
+			float w = u < 0.5f ? 2.f * u : 2.f * u - 1.f;
+			float v = side * 0.5f * -log(1.f - w * kExpTwoSideGateMass);
+			tau = t + v * target_time_gate_window;
+			pdf = exponentialTwoSideGate(v) / target_time_gate_window;
 			return;
 		}
 	}
