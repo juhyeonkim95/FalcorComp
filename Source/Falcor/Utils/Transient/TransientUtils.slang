@@ -38,8 +38,8 @@ bool getPathLengthIndex(float distance, out uint idx, out float residual){
 	return true;
 }
 
-// Gaussian and exponential gates, in gate widths v = (length - center) / width. Both are truncated and
-// renormalized to unit integral, like the box and the tent, so the gated image keeps the same scale.
+// Gaussian and exponential gates, in gate widths v = (length - center) / width. Both are truncated and have
+// weight 1 at the gate center, like the box and the tent; their integrals are the masses below.
 // Gaussian: exp(-pi v^2) (sigma = 1 / sqrt(2 pi) widths), truncated at 3 sigma.
 static const float kGaussianGateHalfWidth = 1.19682684f; // 3 sigma, in gate widths
 static const float kGaussianGateMass = 0.99730020f;      // erf(3 / sqrt(2)): integral of exp(-pi v^2) over |v| <= 3 sigma
@@ -49,12 +49,12 @@ static const float kExponentialGateMass = 0.95021293f;   // 1 - exp(-3)
 
 float gaussianGate(float v)
 {
-	return abs(v) <= kGaussianGateHalfWidth ? exp(-M_PI * v * v) / kGaussianGateMass : 0.f;
+	return abs(v) <= kGaussianGateHalfWidth ? exp(-M_PI * v * v) : 0.f;
 }
 
 float exponentialGate(float v)
 {
-	return (v >= 0.f && v <= kExponentialGateLength) ? exp(-v) / kExponentialGateMass : 0.f;
+	return (v >= 0.f && v <= kExponentialGateLength) ? exp(-v) : 0.f;
 }
 
 float getMaxpathLength(float target_distance, bool use_rough = false)
@@ -188,9 +188,9 @@ float getMaxpathLength(float target_distance, bool use_rough = false)
         case TIME_GATE_TENT:
             return tentPdfTime(distance, target_distance, 0.5f * width);
         case TIME_GATE_GAUSSIAN:
-            return gaussianGate((distance - target_distance) / width) / width;
+            return gaussianGate((distance - target_distance) / width) / (kGaussianGateMass * width);
         case TIME_GATE_EXP:
-            return exponentialGate((distance - target_distance) / width) / width;
+            return exponentialGate((distance - target_distance) / width) / (kExponentialGateMass * width);
     }
     return 0.f; // No length sampler is implemented for the other gate modes.
  }
@@ -228,14 +228,14 @@ float getMaxpathLength(float target_distance, bool use_rough = false)
 			// Inverse CDF of the truncated Gaussian: v = sigma sqrt(2) erfinv(u'), u' uniform in +-erf(3 / sqrt(2)).
 			float v = M_1_SQRTPI * erfinv((2.f * u - 1.f) * kGaussianGateMass);
 			tau = t + v * target_time_gate_window;
-			pdf = gaussianGate(v) / target_time_gate_window;
+			pdf = gaussianGate(v) / (kGaussianGateMass * target_time_gate_window);
 			return;
 		}
 		case TIME_GATE_EXP:{
 			// Inverse CDF of the truncated exponential on [0, 3] widths.
 			float v = -log(1.f - u * kExponentialGateMass);
 			tau = t + v * target_time_gate_window;
-			pdf = exponentialGate(v) / target_time_gate_window;
+			pdf = exponentialGate(v) / (kExponentialGateMass * target_time_gate_window);
 			return;
 		}
 	}
