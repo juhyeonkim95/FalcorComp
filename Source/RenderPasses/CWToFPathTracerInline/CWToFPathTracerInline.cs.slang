@@ -4,7 +4,7 @@ import RenderPasses.Shared.Shaders.Lights.LaserLightSampler;
 import RenderPasses.Shared.Shaders.Lights.LightConnection;
 import RenderPasses.Shared.Shaders.ShiftMapping.PathLengthAwareShiftmapping;
 import RenderPasses.Shared.Shaders.Antithetic.AntitheticMIS;
-import RenderPasses.Shared.Shaders.Utils.Waveforms;
+import RenderPasses.Shared.Shaders.Utils.Waveform;
 #include "Scene/SceneDefines.slangh"
 #include "Utils/Math/MathConstants.slangh"
 

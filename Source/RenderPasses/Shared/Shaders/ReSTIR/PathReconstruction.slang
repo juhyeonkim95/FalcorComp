@@ -1,5 +1,5 @@
 import Utils.Color.ColorHelpers;
-import Utils.Transient.TransientUtils;
+import RenderPasses.Shared.Shaders.Utils.TimeGate;
 import Utils.Sampling.SampleGenerator;
 import Scene.RaytracingInline;
 import Utils.Math.MathHelpers;

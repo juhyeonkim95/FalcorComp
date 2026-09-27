@@ -35,7 +35,7 @@ import Rendering.Lights.LightBVH;
 import Rendering.Lights.LightBVHSamplerSharedDefinitions;
 import Rendering.Lights.EmissiveLightSamplerHelpers;
 import Rendering.Lights.EmissiveLightSamplerInterface;
-import Utils.Transient.Ellipsoid;
+import Utils.Geometry.Ellipsoid;
 
 // TODO: Use precise keyword at appropriate places.
 

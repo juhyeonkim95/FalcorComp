@@ -28,7 +28,7 @@
 #include "EmissiveLightSamplerType.slangh"
 __exported import Rendering.Lights.EmissiveLightSamplerInterface;
 __exported import Utils.Sampling.SampleGeneratorInterface;
-import Utils.Transient.Ellipsoid;
+import Utils.Geometry.Ellipsoid;
 
 /** The host sets the _EMISSIVE_LIGHT_SAMPLER_TYPE define to select sampler.
 

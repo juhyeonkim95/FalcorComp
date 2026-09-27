@@ -11,9 +11,9 @@
 #include "Utils/Math/MathConstants.slangh"
 import Utils.Math.MathHelpers;
 import Utils.Sampling.SampleGenerator;
-import Utils.Transient.TransientUtils;
-import Utils.Transient.Ellipsoid;
-import Utils.Transient.EllipsoidIntersection;
+import RenderPasses.Shared.Shaders.Utils.TimeGate;
+import Utils.Geometry.Ellipsoid;
+import Utils.Geometry.EllipsoidIntersection;
 import Rendering.Lights.EmissiveLightSampler;
 import Rendering.Lights.EmissiveLightSamplerHelpers;
 import Scene.RaytracingInline;

@@ -30,7 +30,6 @@
 #include "RenderGraph/RenderPass.h"
 #include "Utils/Sampling/SampleGenerator.h"
 #include <algorithm>
-#include "Utils/Transient/Transient.h"
 #include "../Shared/Host/Configs/TimeGateConfig.h"
 #include "../Shared/Host/Configs/EllipsoidalSamplingConfig.h"
 #include "../Shared/Host/Configs/PathTracingConfig.h"

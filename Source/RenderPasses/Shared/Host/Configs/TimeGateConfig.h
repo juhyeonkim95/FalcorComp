@@ -1,6 +1,6 @@
 #pragma once
 #include "ConfigUtils.h"
-#include "Utils/Transient/Transient.h"
+#include "TimeGate.h"
 #include <algorithm>
 #include <cmath>
 
@@ -64,7 +64,7 @@ struct TimeGateConfig
         else if (key == "timeGateWindow")
             timeGateWindow = value;
         else if (key == "timeGateMode")
-            timeGateMode = parseEnumProperty(TimeGateModeTable, value, key);
+            timeGateMode = parseEnumProperty(kTimeGateModes, value, key);
         else if (key == "shiftGate")
             shiftGate = value;
         else
@@ -85,7 +85,7 @@ struct TimeGateConfig
         props["timeMax"] = timeMax;
         props["timeBin"] = timeBin;
         props["timeGateWindow"] = timeGateWindow;
-        props["timeGateMode"] = enumPropertyName(TimeGateModeTable, timeGateMode);
+        props["timeGateMode"] = enumPropertyName(kTimeGateModes, timeGateMode);
         props["shiftGate"] = shiftGate;
     }
 
@@ -93,22 +93,7 @@ struct TimeGateConfig
     bool renderUI(Gui::Widgets& widget, float currentCenter, const std::string& shiftGateNote = "")
     {
         bool dirty = false;
-        // Only the kernels implemented by pathLengthImportance() are offered.
-        static const Gui::DropdownList kTimeGateModeList = {
-            {(uint32_t)TimeGateMode::BOX, "Box"},
-            {(uint32_t)TimeGateMode::TENT, "Tent"},
-            {(uint32_t)TimeGateMode::GAUSSIAN, "Gaussian"},
-            {(uint32_t)TimeGateMode::EXP, "Exponential (one-sided)"},
-            {(uint32_t)TimeGateMode::EXP_TWO_SIDE, "Exponential (two-sided)"},
-            {(uint32_t)TimeGateMode::COS, "Cos"},
-            {(uint32_t)TimeGateMode::ALL, "All (no gating)"},
-        };
-        uint32_t mode = (uint32_t)timeGateMode;
-        if (widget.dropdown("Gate kernel", kTimeGateModeList, mode))
-        {
-            timeGateMode = (TimeGateMode)mode;
-            dirty = true;
-        }
+        dirty |= renderTimeGateModeUI(widget, timeGateMode);
         widget.tooltip("Weight of a path as a function of its total optical length (laser -> scene -> camera) "
                        "relative to the gate center. Gaussian: sigma = window / sqrt(2 pi), cut at 3 sigma. "
                        "Exponential: opens at the center and decays over one window, cut at 3 windows. "

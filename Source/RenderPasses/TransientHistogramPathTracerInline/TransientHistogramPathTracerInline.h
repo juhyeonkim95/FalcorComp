@@ -30,7 +30,6 @@
 #include "RenderGraph/RenderPass.h"
 #include "RenderGraph/RenderPassHelpers.h"
 #include "Utils/Sampling/SampleGenerator.h"
-#include "Utils/Transient/Transient.h"
 #include "../Shared/Host/Configs/TransientHistogramConfig.h"
 #include "../Shared/Host/Configs/PathTracingConfig.h"
 #include "../Shared/Host/LaserState.h"

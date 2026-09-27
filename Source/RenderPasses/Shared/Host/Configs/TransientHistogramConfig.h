@@ -1,7 +1,7 @@
 #pragma once
 #include "ConfigUtils.h"
 #include "RenderGraph/RenderPass.h"
-#include "Utils/Transient/Transient.h"
+#include "TimeGate.h"
 #include <cmath>
 
 /// Transient histogram: timeBin bins over path lengths [timeMin, timeMax), filled with a bin filter or,
@@ -33,14 +33,16 @@ struct TransientHistogramConfig
         dict[kTimeMaxKey] = timeMax;
     }
 
-    /// Sets the histogram constants (filter, tbin, tmin, tmax, tunit) under `timeGateVar`.
-    void bindShaderData(const ShaderVar& timeGateVar) const
+    /// Sets the filter (TimeGate constants) and the bins (TransientHistogram constants: tbin, tmin, tmax, tunit)
+    /// under `var` (the root).
+    void bindShaderData(const ShaderVar& var) const
     {
-        timeGateVar["time_gate_mode"] = uint(filter);
-        timeGateVar["tbin"] = timeBin;
-        timeGateVar["tmin"] = timeMin;
-        timeGateVar["tmax"] = timeMax;
-        timeGateVar["tunit"] = binWidth();
+        var["TimeGate"]["time_gate_mode"] = uint(filter);
+        auto histogramVar = var["TransientHistogram"];
+        histogramVar["tbin"] = timeBin;
+        histogramVar["tmin"] = timeMin;
+        histogramVar["tmax"] = timeMax;
+        histogramVar["tunit"] = binWidth();
     }
 
     void validate() const
@@ -62,7 +64,7 @@ struct TransientHistogramConfig
         else if (key == "timeBin")
             timeBin = value;
         else if (key == "timeGateMode")
-            filter = parseEnumProperty(TimeGateModeTable, value, key);
+            filter = parseEnumProperty(kTimeGateModes, value, key);
         else if (key == "useKernelDensityEstimation")
             useKernelDensityEstimation = value;
         else if (key == "initialWindowRatio")
@@ -77,7 +79,7 @@ struct TransientHistogramConfig
         props["timeMin"] = timeMin;
         props["timeMax"] = timeMax;
         props["timeBin"] = timeBin;
-        props["timeGateMode"] = enumPropertyName(TimeGateModeTable, filter);
+        props["timeGateMode"] = enumPropertyName(kTimeGateModes, filter);
         props["useKernelDensityEstimation"] = useKernelDensityEstimation;
         props["initialWindowRatio"] = initialWindowRatio;
     }

@@ -29,7 +29,6 @@
 #include "Falcor.h"
 #include "RenderGraph/RenderPass.h"
 #include "Utils/Sampling/SampleGenerator.h"
-#include "Utils/Transient/Transient.h"
 #include "../Shared/Host/Configs/TransientHistogramConfig.h"
 #include "../Shared/Host/Configs/PathTracingConfig.h"
 #include "../Shared/Host/LaserState.h"
@@ -77,7 +76,7 @@ private:
     DefineList getShaderDefines(const RenderData& renderData) const;
     DefineList getReservoirDefines() const;
     const ChannelList& histogramChannels() const;
-    void bindTimeGate(const ShaderVar& timeGateVar) const;
+    void bindTimeGate(const ShaderVar& var) const;
     void spatialReuse(RenderContext* pRenderContext, const RenderData& renderData);
 
     /// User settings, composed of shared configs (Shared/Host/Configs) plus this pass's own.

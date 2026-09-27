@@ -10,11 +10,11 @@ import Utils.Math.MathHelpers;
 import Utils.Geometry.GeometryHelpers;
 import Utils.Sampling.SampleGenerator;
 import Rendering.Lights.LightHelpers;
-import Utils.Transient.TransientUtils;
-import Utils.Transient.EllipsoidIntersection;
+import RenderPasses.Shared.Shaders.Utils.TimeGate;
+import Utils.Geometry.EllipsoidIntersection;
 import Rendering.Lights.EmissiveLightSampler;
 import Rendering.Lights.EmissiveLightSamplerHelpers;
-import Utils.Transient.Ellipsoid;
+import Utils.Geometry.Ellipsoid;
 import Scene.RaytracingInline;
 
 cbuffer CB

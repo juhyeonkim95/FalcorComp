@@ -185,12 +185,12 @@ const ChannelList& TransientHistogramReSTIRInline::histogramChannels() const
     return mOptions.pathTracing.useSingleChannel ? kHistogramOutputChannelSingle : kHistogramOutputChannelsRGB;
 }
 
-void TransientHistogramReSTIRInline::bindTimeGate(const ShaderVar& timeGateVar) const
+void TransientHistogramReSTIRInline::bindTimeGate(const ShaderVar& var) const
 {
     // Each bin is a box gate one bin wide.
-    mOptions.histogram.bindShaderData(timeGateVar);
-    timeGateVar["time_gate_window"] = mOptions.histogram.binWidth();
-    timeGateVar["time_gate_window_rough"] = mOptions.histogram.binWidth();
+    mOptions.histogram.bindShaderData(var);
+    var["TimeGate"]["time_gate_window"] = mOptions.histogram.binWidth();
+    var["TimeGate"]["time_gate_window_rough"] = mOptions.histogram.binWidth();
 }
 
 void TransientHistogramReSTIRInline::bindShaderData(const ShaderVar& var, const RenderData& renderData)
@@ -206,7 +206,7 @@ void TransientHistogramReSTIRInline::bindShaderData(const ShaderVar& var, const 
     var["CB"]["samplesPerPixel"] = mOptions.pathTracing.samplesPerPixel;
     var["CB"]["gTemporalHistoryLength"] = mOptions.restir.temporalHistoryLength;
     mLaser.bindShaderData(var["Laser_CB"]);
-    bindTimeGate(var["TimeGate"]);
+    bindTimeGate(var);
 
     if (mOptions.restir.useTemporalReuse)
     {
@@ -242,7 +242,7 @@ void TransientHistogramReSTIRInline::spatialReuse(RenderContext* pRenderContext,
     // The histogram is a pass-level global, outside the shared SpatialReuse struct.
     InlinePass::bindChannels(rootVar, renderData, histogramChannels());
 
-    bindTimeGate(rootVar["TimeGate"]);
+    bindTimeGate(rootVar);
     mLaser.bindShaderData(rootVar["Laser_CB"]);
     mOptions.restir.bindShiftMapping(rootVar["Shiftmap_CB"]);
 

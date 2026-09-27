@@ -1,3 +1,7 @@
+/** Time gates: a kernel over the optical path length, centered on the gate center with width time_gate_window, and
+    samplers for path lengths inside it. The host picks the kernel with time_gate_mode (Shared/Host/Configs/TimeGate.h)
+    and sets the TimeGate constants (TimeGateConfig).
+*/
 #include "Utils/Math/MathConstants.slangh"
 import Utils.Math.MathHelpers;
 
@@ -13,30 +17,12 @@ import Utils.Math.MathHelpers;
 
 cbuffer TimeGate
 {
-	// used for time-gate
     float time_gate_window;
-	float time_gate_window_rough;
+    float time_gate_window_rough;
     uint time_gate_mode;
     float tcurr;
     float tprev;
-
-	// used for transient
-	uint tbin;
-	float tmin;
-	float tmax;
-	float tunit;
 };
-
-bool getPathLengthIndex(float distance, out uint idx, out float residual){
-	if(distance < tmin || distance > tmax){
-		return false; 
-	}
-	float v = (distance - tmin) / tunit;
-	idx = uint(v);
-	idx = clamp(idx, 0, tbin - 1);
-	residual = frac(v);
-	return true;
-}
 
 // Gaussian and exponential gates, in gate widths v = (length - center) / width. Both are truncated and
 // renormalized to unit integral, like the box and the tent, so the gated image keeps the same scale.

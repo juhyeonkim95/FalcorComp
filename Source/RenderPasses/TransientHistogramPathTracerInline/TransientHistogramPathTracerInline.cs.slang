@@ -16,7 +16,8 @@ import Utils.Geometry.GeometryHelpers;
 import Utils.Sampling.SampleGenerator;
 import Rendering.Lights.LightHelpers;
 import Utils.Color.ColorHelpers;
-import Utils.Transient.TransientUtils;
+import RenderPasses.Shared.Shaders.Utils.TimeGate;
+import RenderPasses.Shared.Shaders.Utils.TransientHistogram;
 import Scene.RaytracingInline;
 
 cbuffer CB

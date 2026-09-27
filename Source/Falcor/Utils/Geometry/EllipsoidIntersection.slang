@@ -1,5 +1,5 @@
 #include "Utils/Math/MathConstants.slangh"
-import Utils.Transient.Ellipsoid;
+import Utils.Geometry.Ellipsoid;
 
 struct SampleResultArea
 {

@@ -5,7 +5,8 @@
 // additional candidates in the same pairwise MIS as the spatial neighbors. Their
 // paths are shifted by one bin width with the path-length-aware shift mapping.
 import Utils.Sampling.SampleGenerator;
-import Utils.Transient.TransientUtils;
+import RenderPasses.Shared.Shaders.Utils.TimeGate;
+import RenderPasses.Shared.Shaders.Utils.TransientHistogram;
 import RenderPasses.Shared.Shaders.ReSTIR.Reservoirs;
 import RenderPasses.Shared.Shaders.ReSTIR.PathReconstruction;
 import RenderPasses.Shared.Shaders.ReSTIR.ReservoirReuse;

@@ -6,7 +6,7 @@
     ProjectorPatternCB (ProjectorConfig).
 */
 #include "Utils/Math/MathConstants.slangh"
-import RenderPasses.Shared.Shaders.Utils.Waveforms;
+import RenderPasses.Shared.Shaders.Utils.Waveform;
 
 #define PROJECTOR_PATTERN_CONSTANT 0
 #define PROJECTOR_PATTERN_PERIODIC 1

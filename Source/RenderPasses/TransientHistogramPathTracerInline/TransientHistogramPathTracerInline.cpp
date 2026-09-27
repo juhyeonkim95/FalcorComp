@@ -197,7 +197,7 @@ void TransientHistogramPathTracerInline::bindShaderData(const ShaderVar& var, co
     var["CB"]["samplesPerPixel"] = mOptions.pathTracing.samplesPerPixel;
     var["CB"]["initialWindowRatio"] = mOptions.histogram.initialWindowRatio;
     LaserState::resolve(renderData).bindShaderData(var["CB"]);
-    mOptions.histogram.bindShaderData(var["TimeGate"]);
+    mOptions.histogram.bindShaderData(var);
 
     InlinePass::bindChannels(var, renderData, kInputChannels);
     InlinePass::bindChannels(var, renderData, kLaserInputChannels);

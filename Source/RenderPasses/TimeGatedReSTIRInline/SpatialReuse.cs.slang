@@ -1,4 +1,4 @@
-import Utils.Transient.TransientUtils;
+import RenderPasses.Shared.Shaders.Utils.TimeGate;
 import RenderPasses.Shared.Shaders.ReSTIR.SpatialReuse;
 
 cbuffer CB
