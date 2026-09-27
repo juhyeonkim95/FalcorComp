@@ -34,7 +34,7 @@ struct PathLengthAwareReSTIRConfig
             useTemporalReuse = value;
         else if (key == "temporalHistoryLength")
             temporalHistoryLength = value;
-        else if (key == "specularRoughnessThreshold")
+        else if (key == "reconnectionRoughnessThreshold")
             reconnectionRoughnessThreshold = value;
         else
             return false;
@@ -49,7 +49,7 @@ struct PathLengthAwareReSTIRConfig
         props["useTemporalReuse"] = useTemporalReuse;
         props["temporalHistoryLength"] = temporalHistoryLength;
         shiftMapping.serialize(props);
-        props["specularRoughnessThreshold"] = reconnectionRoughnessThreshold;
+        props["reconnectionRoughnessThreshold"] = reconnectionRoughnessThreshold;
     }
 
     /// SHIFT_MAPPING_METHOD, SHIFT_MAPPING_GAUGE_MODE and USE_TEMPORAL_REUSE.

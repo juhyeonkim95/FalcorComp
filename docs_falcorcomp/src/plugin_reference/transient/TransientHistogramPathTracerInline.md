@@ -38,7 +38,7 @@ Histogram:
 * - `timeBin`
   - integer
   - Number of bins $B$. (Default: `512`)
-* - `timeGateMode`
+* - `histogramFilter`
   - string
   - The bin filter: `box` or `tent`; with kernel density estimation, the kernel: `box`, `tent`,
     `gaussian`, `epanechnikov` or `perlin`. See [Filters](#filters). (Default: `box`)
@@ -122,7 +122,7 @@ Without kernel density estimation, a path is added to the bins with a filter:
   bin.
 
 With `useKernelDensityEstimation`, every path is spread over all bins with the kernel chosen by
-`timeGateMode`. The kernel starts at `initialWindowRatio x (timeMax - timeMin)` wide for a frame's
+`histogramFilter`. The kernel starts at `initialWindowRatio x (timeMax - timeMin)` wide for a frame's
 first sample and narrows with every further sample of the frame, then restarts in the next frame.
 Paths up to `1.5 x timeMax` long can contribute through the kernel's support.
 

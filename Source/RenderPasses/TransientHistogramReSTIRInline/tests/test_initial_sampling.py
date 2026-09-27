@@ -16,9 +16,9 @@ def render(testbed, *, threshold=0.25, single=True, laser=True, direct=False, mo
     })
     graph.create_pass("P", "TransientHistogramReSTIRInline", {
         "samplesPerPixel": 32, "maxBounces": 6, "computeDirect": direct,
-        "timeMin": 0., "timeMax": 40., "timeBin": 8, "timeGateMode": mode,
+        "timeMin": 0., "timeMax": 40., "timeBin": 8, "histogramFilter": mode,
         "useSingleChannel": single, "isLightSourceLaser": laser,
-        "specularRoughnessThreshold": threshold, "spatialReuseIteration": 0,
+        "reconnectionRoughnessThreshold": threshold, "spatialReuseIteration": 0,
     })
     for source, target in [("V.vbuffer", "P.vbuffer"), ("V.viewW", "P.viewW"),
                            ("L", "P")]:

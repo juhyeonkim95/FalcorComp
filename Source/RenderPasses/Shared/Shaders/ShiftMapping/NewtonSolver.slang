@@ -6,17 +6,17 @@ import Charts.ShiftChart;
 // =============================================================
 enum GaugeMode : uint
 {
-    CONSTANT_A      = 0,
-    ORTHO_GRAD_START= 1,
-    ORTHO_AVG_GRAD  = 2,
+    Constant       = 0,
+    OrthoGradStart = 1,
+    OrthoAvgGrad   = 2,
 };
 
 enum NewtonResultStatus : uint
 {
-    SUCCESS         = 0,
-    NO_CONVERGE     = 1,
-    SINGULAR        = 2,
-    INVALID_POINT   = 3,
+    Success      = 0,
+    NoConverge   = 1,
+    Singular     = 2,
+    InvalidPoint = 3,
 };
 
 
@@ -64,14 +64,14 @@ void gaugeTerms(
 {
     float2 RDel = Rperp(Delta);
 
-    if (mode == GaugeMode::CONSTANT_A)
+    if (mode == GaugeMode::Constant)
     {
         a = a_const;
         JpDelta = float2(0.0, 0.0);
         J0Delta = float2(0.0, 0.0);
         return;
     }
-    if (mode == GaugeMode::ORTHO_GRAD_START)
+    if (mode == GaugeMode::OrthoGradStart)
     {
         a = Rperp(g0);
         JpDelta = float2(0.0, 0.0);
@@ -102,7 +102,7 @@ NewtonResult solveShiftNewton<Chart : IShiftChart>(
     R.xi_prime = xi;
     R.detJ = 1.0;
     R.iters = 0;
-    R.status = NewtonResultStatus::SUCCESS;
+    R.status = NewtonResultStatus::Success;
 
     const float epsDet = 1e-18;
     const float epsDir = 1e-12;
@@ -111,7 +111,7 @@ NewtonResult solveShiftNewton<Chart : IShiftChart>(
     // Start eval (fixed during solve)
     float  L0; float2 g0; float3 H0;
     if(!ops.eval(xi, L0, g0, H0)){
-        R.status = NewtonResultStatus::INVALID_POINT; return R;
+        R.status = NewtonResultStatus::InvalidPoint; return R;
     }
 
     // no need to search
@@ -123,7 +123,7 @@ NewtonResult solveShiftNewton<Chart : IShiftChart>(
     }
 
     // Predictor: move orthogonal to starting gauge
-    float2 a0 = (mode == GaugeMode::CONSTANT_A) ? a_const : Rperp(g0);
+    float2 a0 = (mode == GaugeMode::Constant) ? a_const : Rperp(g0);
     float2 dir = Rperp(a0);
     float n2 = max(dot(dir, dir), 1e-20);
     dir *= rsqrt(n2); // normalize
@@ -154,7 +154,7 @@ NewtonResult solveShiftNewton<Chart : IShiftChart>(
         float b11 = a.x + JpDelta.x, b12 = a.y + JpDelta.y;
 
         inv2(a11, a12, b11, b12, inv00, inv01, inv10, inv11, detJp);
-        if (abs(detJp) < epsDet) { R.status = NewtonResultStatus::SINGULAR; R.detJ = 0.0; return R; }
+        if (abs(detJp) < epsDet) { R.status = NewtonResultStatus::Singular; R.detJ = 0.0; return R; }
 
         // Δη' = - Jp^{-1} F
         float rhs1 = -F1, rhs2 = -F2;
@@ -200,11 +200,11 @@ NewtonResult solveShiftNewton<Chart : IShiftChart>(
     float n22 =  J0Delta.y - a.y;
     float detJ0 = n11 * n22 - n12 * n21;
 
-    if (abs(detJp) < 1e-20) { R.status = (R.status != 0 ? R.status : NewtonResultStatus::SINGULAR); R.detJ = 0.0; }
+    if (abs(detJp) < 1e-20) { R.status = (R.status != 0 ? R.status : NewtonResultStatus::Singular); R.detJ = 0.0; }
     else                    { R.detJ = abs(detJ0 / detJp); }
 
     // reject too large jacobian change
-    if (R.detJ >= 10.0 || R.detJ < 0.1) R.status = (NewtonResultStatus::NO_CONVERGE);
-    if (R.iters >= maxIters) R.status = (success ? NewtonResultStatus::SUCCESS : NewtonResultStatus::NO_CONVERGE);
+    if (R.detJ >= 10.0 || R.detJ < 0.1) R.status = (NewtonResultStatus::NoConverge);
+    if (R.iters >= maxIters) R.status = (success ? NewtonResultStatus::Success : NewtonResultStatus::NoConverge);
     return R;
 }

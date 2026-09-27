@@ -101,7 +101,7 @@ void TransientHistogramPathTracerInline::validateOptions(const Options& options)
     options.histogram.validate();
     options.pathTracing.validate();
     if (!options.histogram.useKernelDensityEstimation && options.samplingMethod == SamplingMethod::Direct &&
-        options.histogram.filter != TimeGateMode::BOX && options.histogram.filter != TimeGateMode::TENT)
+        options.histogram.filter != TimeGateMode::Box && options.histogram.filter != TimeGateMode::Tent)
         FALCOR_THROW("Without KDE, histogram filtering supports box or tent.");
 }
 
@@ -153,8 +153,8 @@ DefineList TransientHistogramPathTracerInline::getShaderDefines(const RenderData
     defines.add("TRIANGLE_APPROX", std::to_string((uint32_t)SamplingMethod::TriangleApprox));
 
     defines.add("HISTOGRAM_FILTER", std::to_string((uint32_t)mOptions.histogram.filter));
-    defines.add("HISTOGRAM_FILTER_BOX", std::to_string((uint32_t)TimeGateMode::BOX));
-    defines.add("HISTOGRAM_FILTER_TENT", std::to_string((uint32_t)TimeGateMode::TENT));
+    defines.add("HISTOGRAM_FILTER_BOX", std::to_string((uint32_t)TimeGateMode::Box));
+    defines.add("HISTOGRAM_FILTER_TENT", std::to_string((uint32_t)TimeGateMode::Tent));
 
     // For optional I/O resources, set 'is_valid_<name>' defines to inform the program of which ones it can access.
     defines.add(getValidResourceDefines(InlinePass::kPrimaryHitInputChannels, renderData));

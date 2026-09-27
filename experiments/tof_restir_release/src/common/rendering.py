@@ -34,7 +34,7 @@ class SpatialOptions:
             "spatialReuseNeighborCount": self.neighbors,
             "spatialReuseIteration": self.iterations,
             "spatialReuseGatherRadius": self.radius_pixels,
-            "specularRoughnessThreshold": self.roughness_threshold,
+            "reconnectionRoughnessThreshold": self.roughness_threshold,
             "gaugeMode": self.gauge_mode, "gaugeAxis": list(self.gauge_axis),
             "NewtonMaxIteration": self.newton_iterations,
             "isSceneDynamic": False, "useTemporalReuse": False,

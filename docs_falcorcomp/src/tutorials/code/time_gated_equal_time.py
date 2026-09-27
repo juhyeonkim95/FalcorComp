@@ -20,7 +20,7 @@ RESTIR = {**PT,
           "spatialReuseIteration": 3, "spatialReuseNeighborCount": 5,
           "spatialReuseGatherRadius": 10.0, "useTemporalReuse": False,
           "shiftmapMethod": "local_tangent", "gaugeMode": "avg_grad",
-          "specularRoughnessThreshold": 0.05}
+          "reconnectionRoughnessThreshold": 0.05}
 
 
 # 2. Build a render graph around a tracer

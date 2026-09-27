@@ -15,7 +15,7 @@ void main(uint3 tid : SV_DispatchThreadID)
     u = float2(.08182081f, .28834974f);
     float L0; float2 g0; float3 H0;
     ops.eval(u, L0, g0, H0);
-    NewtonResult result = solveShiftNewton(ops, u, .33747132f, GaugeMode::ORTHO_AVG_GRAD,
+    NewtonResult result = solveShiftNewton(ops, u, .33747132f, GaugeMode::OrthoAvgGrad,
         float2(0.f, 1.f), 5, .003374713f);
     float L1; float2 g1; float3 H1;
     ops.eval(result.xi_prime, L1, g1, H1);
@@ -25,12 +25,12 @@ void main(uint3 tid : SV_DispatchThreadID)
 
     LocalPlaneChart singular = LocalPlaneChart(float3(0.f, 0.f, 1.f), float3(0.f, 0.f, 2.f),
         float3(0.f), float3(1.f, 0.f, 0.f), float3(0.f, 1.f, 0.f));
-    result = solveShiftNewton(singular, float2(0.f), .1f, GaugeMode::ORTHO_AVG_GRAD,
+    result = solveShiftNewton(singular, float2(0.f), .1f, GaugeMode::OrthoAvgGrad,
         float2(0.f, 1.f), 5, 1e-6f);
     results[1] = float4(float(result.status), result.detJ, 0.f, 0.f);
 
     // Exhausted iterations must not be reported as success.
-    result = solveShiftNewton(ops, u, .33747132f, GaugeMode::ORTHO_AVG_GRAD,
+    result = solveShiftNewton(ops, u, .33747132f, GaugeMode::OrthoAvgGrad,
         float2(0.f, 1.f), 1, 1e-6f);
     results[2] = float4(float(result.status), result.detJ, 0.f, 0.f);
 

@@ -11,24 +11,24 @@
 /// ellipsoid of paths x -> y -> laser spot that fit the gate, or both combined with MIS.
 enum class EllipsoidalSamplingMethod
 {
-    DIRECT = 0,
-    ELLIPSOIDAL = 1,
-    ELLIPSOIDAL_DIRECT_MIS = 2,
+    Direct = 0,
+    Ellipsoidal = 1,
+    EllipsoidalDirectMIS = 2,
 };
 
 inline const std::unordered_map<std::string, EllipsoidalSamplingMethod> kEllipsoidalSamplingMethods = {
-    {"direct", EllipsoidalSamplingMethod::DIRECT},
-    {"ellipsoidal", EllipsoidalSamplingMethod::ELLIPSOIDAL},
-    {"ellipsoidal_direct_mis", EllipsoidalSamplingMethod::ELLIPSOIDAL_DIRECT_MIS},
+    {"direct", EllipsoidalSamplingMethod::Direct},
+    {"ellipsoidal", EllipsoidalSamplingMethod::Ellipsoidal},
+    {"ellipsoidal_direct_mis", EllipsoidalSamplingMethod::EllipsoidalDirectMIS},
 };
 
 struct EllipsoidalSamplingConfig
 {
-    EllipsoidalSamplingMethod samplingMethod = EllipsoidalSamplingMethod::DIRECT;
+    EllipsoidalSamplingMethod samplingMethod = EllipsoidalSamplingMethod::Direct;
     EmissiveLightSamplerType triSampler = EmissiveLightSamplerType::LightBVH; ///< Picks the triangle of an ellipsoidal connection.
     float ellipsoidRoughnessThreshold = 0.25f; ///< ELLIPSOIDAL only: minimum roughness for an ellipsoidal connection.
 
-    bool usesEllipsoid() const { return samplingMethod != EllipsoidalSamplingMethod::DIRECT; }
+    bool usesEllipsoid() const { return samplingMethod != EllipsoidalSamplingMethod::Direct; }
 
     bool parse(const std::string& key, const Properties::ConstValue& value)
     {
@@ -55,9 +55,9 @@ struct EllipsoidalSamplingConfig
     {
         bool dirty = false;
         static const Gui::DropdownList kSamplingMethodList = {
-            {(uint32_t)EllipsoidalSamplingMethod::DIRECT, "Direct"},
-            {(uint32_t)EllipsoidalSamplingMethod::ELLIPSOIDAL, "Ellipsoidal"},
-            {(uint32_t)EllipsoidalSamplingMethod::ELLIPSOIDAL_DIRECT_MIS, "Ellipsoidal + direct (MIS)"},
+            {(uint32_t)EllipsoidalSamplingMethod::Direct, "Direct"},
+            {(uint32_t)EllipsoidalSamplingMethod::Ellipsoidal, "Ellipsoidal"},
+            {(uint32_t)EllipsoidalSamplingMethod::EllipsoidalDirectMIS, "Ellipsoidal + direct (MIS)"},
         };
         uint32_t method = (uint32_t)samplingMethod;
         if (widget.dropdown("Sampling method", kSamplingMethodList, method))
@@ -71,7 +71,7 @@ struct EllipsoidalSamplingConfig
                        "matches the gate.\n"
                        "Ellipsoidal + direct (MIS): both, combined with the balance heuristic.", true);
 
-        if (samplingMethod == EllipsoidalSamplingMethod::ELLIPSOIDAL)
+        if (samplingMethod == EllipsoidalSamplingMethod::Ellipsoidal)
         {
             dirty |= widget.var("Ellipsoid roughness threshold", ellipsoidRoughnessThreshold, 0.f, 1.f);
             widget.tooltip("Use an ellipsoidal connection at x only if its roughness is above this value; smoother "

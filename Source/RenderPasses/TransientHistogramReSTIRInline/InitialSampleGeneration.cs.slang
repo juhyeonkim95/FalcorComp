@@ -58,7 +58,7 @@ RWTexture2D<float4> gOutputColor;
 RWTexture3D<HistogramTexel> gTransientHistogram;
 
 
-// TimeGateMode::BOX; macros in imported Slang modules are not exported.
+// TimeGateMode::Box; macros in imported Slang modules are not exported.
 static const uint kTimeGateBox = 1;
 
 

@@ -21,7 +21,7 @@ def create_graph(testbed, method, single_channel, kde, laser, filter_mode="box",
     graph.create_pass("P", "TransientHistogramPathTracerInline", {
         "samplingMethod": method, "useSingleChannel": single_channel,
         "useKernelDensityEstimation": kde, "accumulate": accumulate,
-        "timeGateMode": filter_mode, "timeMin": 0., "timeMax": 40., "timeBin": 16,
+        "histogramFilter": filter_mode, "timeMin": 0., "timeMax": 40., "timeBin": 16,
         "samplesPerPixel": 4, "maxBounces": 3,
     })
     for source, target in [("V.vbuffer", "P.vbuffer"), ("V.viewW", "P.viewW"),

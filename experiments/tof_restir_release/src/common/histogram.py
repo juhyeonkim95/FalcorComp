@@ -16,7 +16,7 @@ def create_histogram_graph(testbed, scene, method, spp, bins, initial_window_rat
     graph.create_pass("Tracer", "TransientHistogramPathTracerInline", {
         "samplingMethod": "tri_approx" if method == "tri_approx" else "direct",
         "useKernelDensityEstimation": method == "kde",
-        "timeGateMode": "epanechnikov" if method == "kde" else "box",
+        "histogramFilter": "epanechnikov" if method == "kde" else "box",
         "initialWindowRatio": initial_window_ratio,
         "samplesPerPixel": spp, "maxBounces": scene.max_bounces,
         "computeDirect": False, "useImportanceSampling": True, "useAlphaTest": True,

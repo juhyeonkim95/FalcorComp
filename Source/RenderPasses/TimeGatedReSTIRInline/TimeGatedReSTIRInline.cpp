@@ -107,13 +107,13 @@ void TimeGatedReSTIRInline::parseProperties(const Properties& props)
             logWarning("Unknown property '{}' in TimeGatedReSTIRInline properties.", key);
     }
     mOptions.timeGate.applyTimeCenter(props);
-    if (mOptions.ellipsoidalSampling.samplingMethod != EllipsoidalSamplingMethod::DIRECT &&
+    if (mOptions.ellipsoidalSampling.samplingMethod != EllipsoidalSamplingMethod::Direct &&
         mOptions.ellipsoidalSampling.triSampler != EmissiveLightSamplerType::Uniform && mOptions.ellipsoidalSampling.triSampler != EmissiveLightSamplerType::LightBVH)
         FALCOR_THROW("Ellipsoidal initial sampling requires the Uniform or LightBVH triangle sampler.");
     // Dynamic suffix replay reconstructs BSDF steps after y only. An ellipsoidal candidate
     // inserts x or y (both reevaluated exactly); inserting a vertex after y needs a walk
     // that reaches y and continues, i.e. maxBounces >= 4.
-    if (mOptions.isSceneDynamic && mOptions.ellipsoidalSampling.samplingMethod != EllipsoidalSamplingMethod::DIRECT && mOptions.pathTracing.maxBounces > 3)
+    if (mOptions.isSceneDynamic && mOptions.ellipsoidalSampling.samplingMethod != EllipsoidalSamplingMethod::Direct && mOptions.pathTracing.maxBounces > 3)
         FALCOR_THROW("Ellipsoidal initial sampling with isSceneDynamic=true requires maxBounces <= 3.");
 }
 
@@ -171,11 +171,11 @@ DefineList TimeGatedReSTIRInline::getShaderDefines(const RenderData& renderData)
     // Specialize away the entire extra reservoir/shift path when it has no samples. The shader computes the
     // same count from gRoughTimeGateSampleRatio, so changing the ratio or samplesPerPixel does not recompile.
     uint32_t wideSampleCount = 0;
-    if (mOptions.useShrinkMapping && mOptions.ellipsoidalSampling.samplingMethod == EllipsoidalSamplingMethod::DIRECT &&
+    if (mOptions.useShrinkMapping && mOptions.ellipsoidalSampling.samplingMethod == EllipsoidalSamplingMethod::Direct &&
         mOptions.pathTracing.samplesPerPixel > 0 && std::isfinite(mOptions.wideGateWindow()) &&
         mOptions.timeGate.timeGateWindow > 0.f && mOptions.wideGateWindow() > mOptions.timeGate.timeGateWindow &&
         std::isfinite(mOptions.roughTimeGateSampleRatio) &&
-        (mOptions.timeGate.timeGateMode == TimeGateMode::BOX || mOptions.timeGate.timeGateMode == TimeGateMode::TENT))
+        (mOptions.timeGate.timeGateMode == TimeGateMode::Box || mOptions.timeGate.timeGateMode == TimeGateMode::Tent))
     {
         wideSampleCount = std::min(uint32_t(float(mOptions.pathTracing.samplesPerPixel) * shrinkSampleRatio()),
                                    mOptions.pathTracing.samplesPerPixel);
@@ -185,9 +185,9 @@ DefineList TimeGatedReSTIRInline::getShaderDefines(const RenderData& renderData)
     defines.add(PathLengthAwareReSTIRResources::getReservoirDefines(mOptions.pathTracing, mOptions.isSceneDynamic));
 
     defines.add("LIGHT_SAMPLING_METHOD", std::to_string((uint32_t)mOptions.ellipsoidalSampling.samplingMethod));
-    defines.add("DIRECT_CONNECTION", std::to_string((uint32_t)EllipsoidalSamplingMethod::DIRECT));
-    defines.add("ELLIPSOIDAL_CONNECTION", std::to_string((uint32_t)EllipsoidalSamplingMethod::ELLIPSOIDAL));
-    defines.add("ELLIPSOIDAL_DIRECT_MIS", std::to_string((uint32_t)EllipsoidalSamplingMethod::ELLIPSOIDAL_DIRECT_MIS));
+    defines.add("DIRECT_CONNECTION", std::to_string((uint32_t)EllipsoidalSamplingMethod::Direct));
+    defines.add("ELLIPSOIDAL_CONNECTION", std::to_string((uint32_t)EllipsoidalSamplingMethod::Ellipsoidal));
+    defines.add("ELLIPSOIDAL_DIRECT_MIS", std::to_string((uint32_t)EllipsoidalSamplingMethod::EllipsoidalDirectMIS));
 
     // For optional I/O resources, set 'is_valid_<name>' defines to inform the program of which ones it can access.
     defines.add(getValidResourceDefines(InlinePass::kPrimaryHitAndMotionInputChannels, renderData));
@@ -382,7 +382,7 @@ void TimeGatedReSTIRInline::renderUI(Gui::Widgets& widget)
         // Ellipsoidal initial sampling supports the Uniform and LightBVH triangle samplers only.
         dirty |= mOptions.ellipsoidalSampling.renderUI(group, false);
 
-        if (mOptions.ellipsoidalSampling.samplingMethod == EllipsoidalSamplingMethod::DIRECT)
+        if (mOptions.ellipsoidalSampling.samplingMethod == EllipsoidalSamplingMethod::Direct)
         {
             dirty |= group.checkbox("Shrink mapping", mOptions.useShrinkMapping);
             group.tooltip("Trace paths with a wider gate and shrink them into the gate with the path-length shift, "
@@ -401,7 +401,7 @@ void TimeGatedReSTIRInline::renderUI(Gui::Widgets& widget)
                               "itself.", true);
                 if (!(mOptions.wideGateWindow() > mOptions.timeGate.timeGateWindow))
                     group.text("Off: the wide gate must be wider than Gate window.");
-                else if (mOptions.timeGate.timeGateMode != TimeGateMode::BOX && mOptions.timeGate.timeGateMode != TimeGateMode::TENT)
+                else if (mOptions.timeGate.timeGateMode != TimeGateMode::Box && mOptions.timeGate.timeGateMode != TimeGateMode::Tent)
                     group.text("Off: shrink mapping needs a Box or Tent gate.");
             }
         }
@@ -427,7 +427,7 @@ void TimeGatedReSTIRInline::renderUI(Gui::Widgets& widget)
     {
         mUIWarning.clear();
         // Same constraint as parseProperties(): see the comment there.
-        if (mOptions.isSceneDynamic && mOptions.ellipsoidalSampling.samplingMethod != EllipsoidalSamplingMethod::DIRECT && mOptions.pathTracing.maxBounces > 3)
+        if (mOptions.isSceneDynamic && mOptions.ellipsoidalSampling.samplingMethod != EllipsoidalSamplingMethod::Direct && mOptions.pathTracing.maxBounces > 3)
         {
             mUIWarning = "Ellipsoidal sampling with a dynamic light supports at most 3 bounces.";
             mOptions.ellipsoidalSampling.samplingMethod = previousSamplingMethod;

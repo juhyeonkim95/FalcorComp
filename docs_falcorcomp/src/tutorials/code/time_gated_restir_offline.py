@@ -24,7 +24,7 @@ graph.create_pass("Tracer", "TimeGatedReSTIRInline", {
     "spatialReuseGatherRadius": 10.0, "useTemporalReuse": False,
     # Path-length-aware shift mapping between pixels.
     "shiftmapMethod": "local_tangent", "gaugeMode": "avg_grad",
-    "specularRoughnessThreshold": 0.05,
+    "reconnectionRoughnessThreshold": 0.05,
 })
 graph.create_pass("Accumulate", "AccumulatePass", {"precisionMode": "SingleCompensated"})
 graph.create_pass("ToneMapper", "ToneMapper", {"autoExposure": False})

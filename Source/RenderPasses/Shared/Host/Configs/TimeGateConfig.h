@@ -22,7 +22,7 @@ struct TimeGateConfig
     float timeMax = 12.0f;
     uint timeBin = 512;
     float timeGateWindow = 0.05f;
-    TimeGateMode timeGateMode = TimeGateMode::BOX;
+    TimeGateMode timeGateMode = TimeGateMode::Box;
     bool shiftGate = false; ///< Advance the gate one bin per frame, wrapping from timeMax to timeMin.
 
     /// Center of gate `index`. Equal endpoints give a fixed gate.

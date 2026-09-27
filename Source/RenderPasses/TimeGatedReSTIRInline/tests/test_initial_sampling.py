@@ -35,7 +35,7 @@ def render(testbed, mode, sampler="LightBVH", iterations=0, radius=8., threshold
         "isSceneDynamic": False, "useTemporalReuse": False,
         "spatialReuseIteration": iterations, "spatialReuseNeighborCount": 5,
         "spatialReuseGatherRadius": radius,
-        "specularRoughnessThreshold": threshold,
+        "reconnectionRoughnessThreshold": threshold,
         "specularRoughnessThresholdEllipsoid": ellipse_threshold,
         "shiftmapMethod": shift_method, "gaugeMode": gauge_mode,
     })

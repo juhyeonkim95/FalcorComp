@@ -135,7 +135,7 @@ Shift mapping:
   - The chart on which the reconnection vertex is moved: `no` (naive reuse: the vertex stays
     fixed), `local_tangent`, `barycentric`, `ray_trace`, `area_adaptive` or `ray_trace_chart`.
     See [Shift mapping](#restir-shift-mapping). (Default: `no`)
-* - `specularRoughnessThreshold`
+* - `reconnectionRoughnessThreshold`
   - float
   - A path can reconnect at a segment only if both of its vertices are rougher than this.
     (Default: `0.25`)
@@ -216,7 +216,7 @@ noise.
 Reusing a path at another pixel changes its first segments (a different primary hit, and possibly
 a different gate), so its length changes too. The shift keeps the rest of the path and moves the
 *reconnection vertex*, the first vertex where the path may reconnect (a segment whose two
-vertices are both rougher than `specularRoughnessThreshold`), so that the shifted path has the
+vertices are both rougher than `reconnectionRoughnessThreshold`), so that the shifted path has the
 length it needs. The move is a Newton solve on a 2D chart around that vertex, chosen by
 `shiftmapMethod`; the path-length constraint fixes only one direction, and `gaugeMode` fixes the
 other. With `no`, the vertex is not moved, so the shifted path often no longer fits the gate.
@@ -300,7 +300,7 @@ graph.create_pass("Tracer", "TimeGatedReSTIRInline", {
     "timeGateMode": "box", "timeGateWindow": 0.02, "timeCenter": 17.337,
     "spatialReuseIteration": 3, "spatialReuseNeighborCount": 5,
     "shiftmapMethod": "local_tangent", "gaugeMode": "avg_grad",
-    "specularRoughnessThreshold": 0.05,
+    "reconnectionRoughnessThreshold": 0.05,
 })
 graph.add_edge("VBuffer.vbuffer", "Tracer.vbuffer")
 graph.add_edge("VBuffer.viewW", "Tracer.viewW")

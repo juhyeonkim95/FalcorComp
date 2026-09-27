@@ -47,8 +47,8 @@ CWToFPathTracerInline::CWToFPathTracerInline(ref<Device> pDevice, const Properti
     // Defaults that differ from the shared configs': the primary-hit term carries most of the signal, and the
     // antithetic shift needs a shift mapping with inverse forward and backward shifts.
     mOptions.pathTracing.computeDirect = true;
-    mOptions.shiftMapping.shiftmapMethod = ShiftMappingMethod::RADIAL;
-    mOptions.shiftMapping.gaugeMode = GaugeMode::ORTHO_AVG_GRAD;
+    mOptions.shiftMapping.shiftmapMethod = ShiftMappingMethod::Radial;
+    mOptions.shiftMapping.gaugeMode = GaugeMode::OrthoAvgGrad;
     mOptions.shiftMapping.newtonRelativeTolerance = 0.002f;
 
     parseProperties(props);

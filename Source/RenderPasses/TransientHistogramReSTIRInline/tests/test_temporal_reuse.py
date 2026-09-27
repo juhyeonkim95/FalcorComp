@@ -35,7 +35,7 @@ def main():
                                               'laserPower': [170., 120., 40.], 'laserAngle': 0.})
         g.create_pass('P', 'TransientHistogramReSTIRInline', {
             'samplesPerPixel': 4, 'timeMin': TIME_RANGE[0], 'timeMax': TIME_RANGE[1], 'timeBin': TIME_RANGE[2],
-            'timeGateMode': 'box', 'useSingleChannel': True, 'maxBounces': 4,
+            'histogramFilter': 'box', 'useSingleChannel': True, 'maxBounces': 4,
             'spatialReuseIteration': spatial, 'spatialReuseNeighborCount': 3, 'spatialReuseGatherRadius': 6.,
             'shiftmapMethod': 'local_tangent', 'gaugeMode': 'avg_grad',
             'useTemporalReuse': temporal, 'temporalHistoryLength': 20.})

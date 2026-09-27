@@ -27,7 +27,7 @@ RESTIR = {**PT,
           "spatialReuseIteration": 1, "spatialReuseNeighborCount": 3,
           "useTemporalReuse": True, "temporalHistoryLength": 10.0, "isSceneDynamic": False,
           "shiftmapMethod": "local_tangent", "gaugeMode": "avg_grad",
-          "specularRoughnessThreshold": 0.05}
+          "reconnectionRoughnessThreshold": 0.05}
 SKIP_FRAMES = 10          # frames left out of the timing: shader compilation, history warm-up
 TOLERANCE = 0.05          # accepted frame-time difference between the two tracers
 REFERENCE = Path("reference")  # frame_0000.npy ... frame_0099.npy; rendered below if missing

@@ -56,7 +56,7 @@ void recordShiftSolve(NewtonResult result, inout ShiftMappingDebugInfo debugInfo
     debugInfo.iters = result.iters;
     debugInfo.status = uint(result.status);
 #if DEBUG_NEWTON_ITERATIONS
-    debugInfo.newtonStats = uint4(result.status == NewtonResultStatus::SUCCESS, 0, 1, result.iters);
+    debugInfo.newtonStats = uint4(result.status == NewtonResultStatus::Success, 0, 1, result.iters);
 #endif
 }
 
@@ -198,7 +198,7 @@ HitInfo shiftLocalTangent(
     NewtonResult result = solveShiftNewton(ops, xi, dt, getShiftGaugeMode(), a_const, gNewtonMaxIteration, tol);
     recordShiftSolve(result, debuginfo);
     jacobian = 0.f;
-    if (result.status != NewtonResultStatus::SUCCESS) return x2;
+    if (result.status != NewtonResultStatus::Success) return x2;
 
     float3 x_prime = ops.X(result.xi_prime);
 #if DEBUG_NEWTON_ITERATIONS
@@ -244,7 +244,7 @@ HitInfo shiftRadial(
 {
     jacobian = 0.f;
     debuginfo.iters = 0;
-    debuginfo.status = uint(NewtonResultStatus::NO_CONVERGE);
+    debuginfo.status = uint(NewtonResultStatus::NoConverge);
 #if DEBUG_NEWTON_ITERATIONS
     debuginfo.newtonStats = uint4(0, 0, 1, 0);
 #endif
@@ -315,7 +315,7 @@ HitInfo shiftRadial(
     if (!(abs(dot(shiftedVertex.posW - x, n)) <= tol && dot(normalize(shiftedVertex.faceNormalW), n) > 0.999999f))
         return x2;
     jacobian = (s / r) * (slopeStart / slope);
-    debuginfo.status = uint(NewtonResultStatus::SUCCESS);
+    debuginfo.status = uint(NewtonResultStatus::Success);
 #if DEBUG_NEWTON_ITERATIONS
     debuginfo.newtonStats = uint4(1, 0, 1, debuginfo.iters);
     debuginfo.mappingDistance = float2(0.f, length(shiftedPosition - x));
@@ -344,7 +344,7 @@ HitInfo shiftBarycentric(
     NewtonResult result = solveShiftNewton(ops, triHit.barycentrics, dt, getShiftGaugeMode(), a_const, gNewtonMaxIteration, tol);
     recordShiftSolve(result, debuginfo);
     jacobian = 0.f;
-    if (result.status != NewtonResultStatus::SUCCESS) return x2;
+    if (result.status != NewtonResultStatus::Success) return x2;
     float2 bary = result.xi_prime;
 #if DEBUG_NEWTON_ITERATIONS
     debuginfo.mappingDistance = float2(length(bary - triHit.barycentrics), length(ops.X(bary) - ops.X(triHit.barycentrics)));
@@ -402,7 +402,7 @@ HitInfo shiftRayTrace(
     recordShiftSolve(result, debuginfo);
     HitInfo new_sample = x2;
 
-    if(result.status == NewtonResultStatus::SUCCESS && ops.hit.isValid()){
+    if(result.status == NewtonResultStatus::Success && ops.hit.isValid()){
         new_sample = ops.hit;
         VertexData vnew = gScene.getVertexData(new_sample.getTriangleHit());
 #if DEBUG_NEWTON_ITERATIONS
