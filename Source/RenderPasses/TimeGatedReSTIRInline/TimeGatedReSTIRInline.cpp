@@ -47,7 +47,6 @@ extern "C" FALCOR_API_EXPORT void registerPlugin(Falcor::PluginRegistry& registr
 namespace
 {
 const char kShaderFile[] = "RenderPasses/TimeGatedReSTIRInline/InitialSampleGeneration.cs.slang";
-const char kReflectTypesFile[] = "RenderPasses/TimeGatedReSTIRInline/ReflectTypes.cs.slang";
 const char kSpatialReuseFile[] = "RenderPasses/TimeGatedReSTIRInline/SpatialReuse.cs.slang";
 const char kAddDirectFile[] = "RenderPasses/TimeGatedReSTIRInline/AddDirect.cs.slang";
 
@@ -183,9 +182,7 @@ DefineList TimeGatedReSTIRInline::getShaderDefines(const RenderData& renderData)
     }
     defines.add("USE_SHRINK_MAPPING", wideSampleCount > 0 ? "1" : "0");
     defines.add("DEBUG_NEWTON_ITERATIONS", mOptions.debugNewtonIterations ? "1" : "0");
-    // Single channel: the reservoirs keep and resample the chosen channel only.
-    defines.add("RESERVOIR_SCALAR_TARGET", mOptions.pathTracing.useSingleChannel ? "1" : "0");
-    defines.add("IS_SCENE_DYNAMIC", mOptions.isSceneDynamic ? "1" : "0");
+    defines.add(PathLengthAwareReSTIRResources::getReservoirDefines(mOptions.pathTracing, mOptions.isSceneDynamic));
 
     defines.add("LIGHT_SAMPLING_METHOD", std::to_string((uint32_t)mOptions.ellipsoidalSampling.samplingMethod));
     defines.add("DIRECT_CONNECTION", std::to_string((uint32_t)EllipsoidalSamplingMethod::DIRECT));
@@ -195,20 +192,6 @@ DefineList TimeGatedReSTIRInline::getShaderDefines(const RenderData& renderData)
     // For optional I/O resources, set 'is_valid_<name>' defines to inform the program of which ones it can access.
     defines.add(getValidResourceDefines(InlinePass::kPrimaryHitAndMotionInputChannels, renderData));
     defines.add(getValidResourceDefines(InlinePass::kColorOutputChannels, renderData));
-    return defines;
-}
-
-DefineList TimeGatedReSTIRInline::getReservoirDefines() const
-{
-    // The reservoir layout depends on these (see ReflectTypes.cs.slang).
-    DefineList defines = mpScene->getSceneDefines();
-    defines.add(mpSampleGenerator->getDefines());
-    defines.add("IS_SCENE_DYNAMIC", mOptions.isSceneDynamic ? "1" : "0");
-    defines.add("USE_SINGLE_CHANNEL", mOptions.pathTracing.useSingleChannel ? "1" : "0");
-    defines.add("RESERVOIR_SCALAR_TARGET", mOptions.pathTracing.useSingleChannel ? "1" : "0");
-    defines.add("USE_IMPORTANCE_SAMPLING", mOptions.pathTracing.useImportanceSampling ? "1" : "0");
-    defines.add("USE_ALPHA_TEST", mOptions.pathTracing.useAlphaTest ? "1" : "0");
-    defines.add(mLaser.getDefines());
     return defines;
 }
 
@@ -348,7 +331,7 @@ void TimeGatedReSTIRInline::execute(RenderContext* pRenderContext, const RenderD
     }
     else if (!mOptions.pathTracing.computeDirect)
         mpDirectColor = nullptr;
-    mReSTIR.prepare(mpDevice, mpScene, kReflectTypesFile, getReservoirDefines(), 1, frameDim,
+    mReSTIR.prepare(mpDevice, mpScene, mpSampleGenerator, mOptions.pathTracing, mOptions.isSceneDynamic, 1, frameDim,
         mOptions.restir.useTemporalReuse, renderData.getTexture("vbuffer")->getFormat());
 
     InlinePass::checkScene(*mpScene, renderData);

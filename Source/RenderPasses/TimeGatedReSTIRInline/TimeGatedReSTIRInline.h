@@ -75,7 +75,6 @@ private:
     /// Shrink mapping's wide-gate path fraction, clamped to [0, 1]; the host and the shader derive the wide path
     /// count from it the same way.
     float shrinkSampleRatio() const { return std::clamp(mOptions.roughTimeGateSampleRatio, 0.f, 1.f); }
-    DefineList getReservoirDefines() const;
     void spatialReuse(RenderContext* pRenderContext, const RenderData& renderData);
     void addDirect(RenderContext* pRenderContext, const RenderData& renderData);
 

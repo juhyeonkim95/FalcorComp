@@ -44,7 +44,6 @@ extern "C" FALCOR_API_EXPORT void registerPlugin(Falcor::PluginRegistry& registr
 namespace
 {
 const char kShaderFile[] = "RenderPasses/TransientHistogramReSTIRInline/InitialSampleGeneration.cs.slang";
-const char kReflectTypesFile[] = "RenderPasses/TransientHistogramReSTIRInline/ReflectTypes.cs.slang";
 const char kSpatialReuseFile[] = "RenderPasses/TransientHistogramReSTIRInline/SpatialReuse.cs.slang";
 
 const ChannelList kHistogramOutputChannelsRGB = {
@@ -133,24 +132,12 @@ DefineList TransientHistogramReSTIRInline::getShaderDefines(const RenderData& re
     defines.add(LaserState::resolve(renderData).getDefines());
     defines.add(InlinePass::getSceneLightDefines(*mpScene));
     defines.add(mOptions.restir.getDefines());
-    defines.add("RESERVOIR_SCALAR_TARGET", mOptions.pathTracing.useSingleChannel ? "1" : "0");
+    defines.add(PathLengthAwareReSTIRResources::getReservoirDefines(mOptions.pathTracing, false));
 
     // For optional I/O resources, set 'is_valid_<name>' defines to inform the program of which ones it can access.
     defines.add(getValidResourceDefines(InlinePass::kPrimaryHitAndMotionInputChannels, renderData));
     defines.add(getValidResourceDefines(InlinePass::kColorOutputChannels, renderData));
     defines.add(getValidResourceDefines(histogramChannels(), renderData));
-    return defines;
-}
-
-DefineList TransientHistogramReSTIRInline::getReservoirDefines() const
-{
-    // The reservoir layout depends on these (see ReflectTypes.cs.slang).
-    DefineList defines = mpScene->getSceneDefines();
-    defines.add(mpSampleGenerator->getDefines());
-    defines.add("USE_ALPHA_TEST", mOptions.pathTracing.useAlphaTest ? "1" : "0");
-    defines.add("USE_SINGLE_CHANNEL", mOptions.pathTracing.useSingleChannel ? "1" : "0");
-    defines.add("RESERVOIR_SCALAR_TARGET", mOptions.pathTracing.useSingleChannel ? "1" : "0");
-    defines.add("USE_IMPORTANCE_SAMPLING", mOptions.pathTracing.useImportanceSampling ? "1" : "0");
     return defines;
 }
 
@@ -255,7 +242,7 @@ void TransientHistogramReSTIRInline::execute(RenderContext* pRenderContext, cons
         mpSpatialReusePass = InlinePass::createScenePass(mpDevice, pRenderContext, mpScene, mpSampleGenerator, kSpatialReuseFile, defines);
     }
     const uint2 frameDim = renderData.getDefaultTextureDims();
-    mReSTIR.prepare(mpDevice, mpScene, kReflectTypesFile, getReservoirDefines(), mOptions.histogram.timeBin, frameDim,
+    mReSTIR.prepare(mpDevice, mpScene, mpSampleGenerator, mOptions.pathTracing, false, mOptions.histogram.timeBin, frameDim,
         mOptions.restir.useTemporalReuse, renderData.getTexture("vbuffer")->getFormat());
 
     InlinePass::checkScene(*mpScene, renderData);

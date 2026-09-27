@@ -4,7 +4,6 @@ target_sources(TransientHistogramReSTIRInline PRIVATE
     TransientHistogramReSTIRInline.cpp
     TransientHistogramReSTIRInline.h
     InitialSampleGeneration.cs.slang
-    ReflectTypes.cs.slang
     SpatialReuse.cs.slang
 )
 

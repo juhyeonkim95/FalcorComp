@@ -1,6 +1,8 @@
 #pragma once
 #include "ConfigUtils.h"
 #include "ShiftMappingConfig.h"
+#include "PathTracingConfig.h"
+#include "Utils/Sampling/SampleGenerator.h"
 #include "RenderGraph/RenderPass.h"
 #include "Scene/Scene.h"
 #include <memory>
@@ -120,6 +122,7 @@ class PathLengthAwareReSTIRResources
 {
 public:
     static constexpr uint32_t kNeighborOffsetCount = 8192;
+    static constexpr char kReflectTypesFile[] = "RenderPasses/Shared/Shaders/ReSTIR/ReflectTypes.cs.slang";
 
     ref<Buffer> prevReservoirs;
     ref<Buffer> currReservoirs;
@@ -149,14 +152,24 @@ public:
             temporalHistoryValid = false;
     }
 
-    /// (Re)allocates `reservoirsPerPixel` reservoirs per pixel, of the type that `reflectTypesFile` reflects under
-    /// `reflectDefines`; the neighbor offsets; and, with temporal reuse, the previous frame's V-buffer. A resize
-    /// discards the history.
+    /// Defines that the reservoir layout depends on: a scalar target with a single channel, and the replay data of
+    /// dynamic scenes. Every program that uses the reservoirs needs them.
+    static DefineList getReservoirDefines(const PathTracingConfig& pathTracing, bool isSceneDynamic)
+    {
+        DefineList defines;
+        defines.add("RESERVOIR_SCALAR_TARGET", pathTracing.useSingleChannel ? "1" : "0");
+        defines.add("IS_SCENE_DYNAMIC", isSceneDynamic ? "1" : "0");
+        return defines;
+    }
+
+    /// (Re)allocates `reservoirsPerPixel` reservoirs per pixel, of the layout getReservoirDefines() gives; the neighbor
+    /// offsets; and, with temporal reuse, the previous frame's V-buffer. A resize discards the history.
     void prepare(
         ref<Device> pDevice,
         const ref<Scene>& pScene,
-        const std::string& reflectTypesFile,
-        const DefineList& reflectDefines,
+        const ref<SampleGenerator>& pSampleGenerator,
+        const PathTracingConfig& pathTracing,
+        bool isSceneDynamic,
         uint32_t reservoirsPerPixel,
         uint2 frameDim,
         bool useTemporalReuse,
@@ -168,9 +181,13 @@ public:
             ProgramDesc desc;
             desc.addShaderModules(pScene->getShaderModules());
             desc.addTypeConformances(pScene->getTypeConformances());
-            desc.addShaderLibrary(reflectTypesFile).csEntry("main");
-            mpReflectTypes = ComputePass::create(pDevice, desc, reflectDefines, false);
+            desc.addShaderLibrary(kReflectTypesFile).csEntry("main");
+            mpReflectTypes = ComputePass::create(pDevice, desc, DefineList(), false);
         }
+        DefineList reflectDefines = pScene->getSceneDefines();
+        reflectDefines.add(pSampleGenerator->getDefines());
+        reflectDefines.add(pathTracing.getDefines());
+        reflectDefines.add(getReservoirDefines(pathTracing, isSceneDynamic));
         // Set (not add) the defines to replace stale state; recreating the vars recompiles if needed.
         mpReflectTypes->getProgram()->setDefines(reflectDefines);
         mpReflectTypes->setVars(nullptr);

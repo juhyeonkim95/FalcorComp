@@ -100,6 +100,15 @@ struct Reservoir
         }
         return false;
     }
+
+    // Set W from the selected target: wSum / getReservoirWeight(f), or zero without a positive target.
+    [mutating]
+    void finalizeW()
+    {
+        float target = getReservoirWeight(f);
+        W = target > 0.f ? wSum / target : 0.f;
+    }
+
     __init()
     {
         this.wSum = 0;

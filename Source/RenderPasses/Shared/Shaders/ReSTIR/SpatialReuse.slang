@@ -33,7 +33,7 @@ struct SpatialReuse
     uint neighborCount;
     float specularRoughnessThreshold;
     float gatherRadius;
-    bool useBinReuse; // Histogram only: bin centers are tmin + (bin + 0.5) * tunit.
+    bool useBinReuse; // Histogram only: bin centers are binCenter(bin).
 
     uint gFrameCount;
     uint gRandomSeed;
@@ -174,7 +174,7 @@ struct SpatialReuse
             else
             {
                 neighborBin = getAdjacentBin(bin, i - neighborCount);
-                neighborGateCenter = tmin + (float(neighborBin) + 0.5f) * tunit;
+                neighborGateCenter = binCenter(neighborBin);
             }
 
             // Count geometric neighbors even if their reservoir or shift has no support.
@@ -212,8 +212,7 @@ struct SpatialReuse
         if (destination.update(centralReservoir.f, centralWeight, centralReservoir.M, sg))
             copySelectedPath(destination, centralReservoir);
 
-        float selectedTarget = getReservoirWeight(destination.f);
-        destination.W = (selectedTarget == 0.f) ? 0.f : destination.wSum / selectedTarget;
+        destination.finalizeW();
         destination.W /= validNeighborCount + 1;
         currReservoirs[reservoirIndex] = destination;
 

@@ -1,7 +1,6 @@
 #include "Scene/SceneDefines.slangh"
 #include "Utils/Math/MathConstants.slangh"
 
-import RenderPasses.Shared.Shaders.Utils.SingleChannel;
 import Utils.Math.MathHelpers;
 import Utils.Geometry.GeometryHelpers;
 import Utils.Sampling.SampleGenerator;
@@ -21,7 +20,6 @@ import RenderPasses.Shared.Shaders.Utils.RayUtils;
 #if USE_TEMPORAL_REUSE
 import RenderPasses.Shared.Shaders.ReSTIR.ReservoirReuse;
 import RenderPasses.Shared.Shaders.ReSTIR.TemporalReuse;
-import RenderPasses.Shared.Shaders.ShiftMapping.ShiftMapping;
 #endif
 
 
@@ -64,11 +62,7 @@ RWStructuredBuffer<Reservoir> currReservoirs;
 // Outputs
 RWTexture2D<float4> gOutputColor;
 
-#if USE_SINGLE_CHANNEL
-RWTexture3D<float> gTransientHistogram;
-#else
-RWTexture3D<float4> gTransientHistogram;
-#endif
+RWTexture3D<HistogramTexel> gTransientHistogram;
 
 
 // TimeGateMode::BOX; macros in imported Slang modules are not exported.
@@ -91,7 +85,7 @@ void submitHistogramCandidate(uint pixelIndex, ReconnectionState rc, ShadingData
     }
     for (uint bin = firstBin; bin < endBin; ++bin)
     {
-        float center = tmin + (float(bin) + 0.5f) * tunit;
+        float center = binCenter(bin);
         // Half-open box bins assign boundary samples exactly once.
         float gate = time_gate_mode == kTimeGateBox ? 1.f : pathLengthImportance(totalLength, center);
         if (!(gate > 0.f)) continue;
@@ -118,7 +112,7 @@ float3 tracePath(uint2 pixel, uint2 frameDim)
     ShadingData primary = loadShadingData(primaryHit, cameraPosition, getPrimaryRayDir(pixel, frameDim, gViewW));
     let primaryMaterial = gScene.materials.getMaterialInstance(primary, ExplicitLodTextureSampler(0.f));
     float primaryLength = length(primary.posW - cameraPosition);
-    float maxPathLength = getMaxpathLength(tmin + (float(tbin) - 0.5f) * tunit);
+    float maxPathLength = getMaxpathLength(binCenter(tbin - 1));
     LaserLightSampler lightSampler = LaserLightSampler(laserOrigin, laserDirection, laserCosAngle, laserPower);
     // Prefix replay must not consume light or reservoir RNG draws.
     SampleGenerator rng = createPixelSampleGenerator(pixel, gFrameCount, kReservoirSampleStream);
@@ -199,8 +193,7 @@ float3 tracePath(uint2 pixel, uint2 frameDim)
     {
         uint index = pixelIndex * tbin + bin;
         Reservoir reservoir = currReservoirs[index];
-        float target = getReservoirWeight(reservoir.f);
-        reservoir.W = target > 0.f ? reservoir.wSum / target : 0.f;
+        reservoir.finalizeW();
         // Each bin had samplesPerPixel path trials, including paths contributing zero.
         reservoir.M = samplesPerPixel;
 #if USE_TEMPORAL_REUSE
@@ -210,7 +203,7 @@ float3 tracePath(uint2 pixel, uint2 frameDim)
             previous.M = temporalHistoryMass(previous.M, gTemporalHistoryLength, samplesPerPixel);
             if (previous.M > 0.f)
             {
-                float gateCenter = tmin + (float(bin) + 0.5f) * tunit;
+                float gateCenter = binCenter(bin);
                 ReuseDomain current = { primary, primaryMaterial, primaryLength, gateCenter, laserOrigin,
                     laserDirection, laserPower, laserCosAngle };
                 ReuseDomain last = { history.primary, previousMaterial, history.primaryLength, gateCenter, laserOrigin,
@@ -223,11 +216,7 @@ float3 tracePath(uint2 pixel, uint2 frameDim)
         currReservoirs[index] = reservoir;
         float3 radiance = reservoir.W * reservoir.f;
         integratedRadiance += radiance;
-#if USE_SINGLE_CHANNEL
-        gTransientHistogram[uint3(pixel, bin)] = selectChannel(radiance) / tunit;
-#else
-        gTransientHistogram[uint3(pixel, bin)] = float4(radiance / tunit, 1.f);
-#endif
+        gTransientHistogram[uint3(pixel, bin)] = toHistogramTexel(radiance / tunit);
     }
     return integratedRadiance;
 }

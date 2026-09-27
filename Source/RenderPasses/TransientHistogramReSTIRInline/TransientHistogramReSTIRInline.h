@@ -67,7 +67,6 @@ private:
     void parseProperties(const Properties& props);
     void bindShaderData(const ShaderVar& var, const RenderData& renderData);
     DefineList getShaderDefines(const RenderData& renderData) const;
-    DefineList getReservoirDefines() const;
     const ChannelList& histogramChannels() const;
     void bindTimeGate(const ShaderVar& var) const;
     void spatialReuse(RenderContext* pRenderContext, const RenderData& renderData);

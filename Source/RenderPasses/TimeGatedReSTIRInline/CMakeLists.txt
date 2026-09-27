@@ -4,7 +4,6 @@ target_sources(TimeGatedReSTIRInline PRIVATE
     TimeGatedReSTIRInline.cpp
     TimeGatedReSTIRInline.h
     InitialSampleGeneration.cs.slang
-    ReflectTypes.cs.slang
     SpatialReuse.cs.slang
     AddDirect.cs.slang
 )

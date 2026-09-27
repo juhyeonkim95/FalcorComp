@@ -1,5 +1,4 @@
 import RenderPasses.Shared.Shaders.Utils.LoadShadingData;
-import RenderPasses.Shared.Shaders.Utils.SingleChannel;
 import RenderPasses.Shared.Shaders.Lights.LaserLightSampler;
 import RenderPasses.Shared.Shaders.Lights.LightConnection;
 #include "Scene/SceneDefines.slangh"
@@ -37,11 +36,7 @@ Texture2D<float4> gViewW; // Optional
 // Outputs
 RWTexture2D<float4> gOutputColor;
 
-#if USE_SINGLE_CHANNEL
-RWTexture3D<float> gTransientHistogram;
-#else
-RWTexture3D<float4> gTransientHistogram;
-#endif
+RWTexture3D<HistogramTexel> gTransientHistogram;
 
 // Static configuration based on defines set from the host.
 static const uint kMaxBounces = MAX_BOUNCES;
@@ -53,11 +48,7 @@ static const bool kUseImportanceSampling = USE_IMPORTANCE_SAMPLING;
 // RGB alpha is auxiliary weight; single-channel storage keeps the channel chosen by SINGLE_CHANNEL.
 void addHistogramBin(uint2 pixel, uint bin, float3 radiance, float weight = 1.f)
 {
-#if USE_SINGLE_CHANNEL
-    gTransientHistogram[uint3(pixel, bin)] += selectChannel(radiance) * weight;
-#else
-    gTransientHistogram[uint3(pixel, bin)] += float4(radiance, 1.f) * weight;
-#endif
+    gTransientHistogram[uint3(pixel, bin)] += toHistogramTexel(radiance) * weight;
 }
 
 void accumulateToHistogram(uint2 pixel, float pathLength, float3 radiance, float window)
@@ -67,7 +58,7 @@ void accumulateToHistogram(uint2 pixel, float pathLength, float3 radiance, float
     radiance /= window * samplesPerPixel;
     for (uint bin = 0; bin < tbin; ++bin)
     {
-        float center = tmin + (bin + 0.5f) * tunit;
+        float center = binCenter(bin);
         float weight = pathLengthImportanceGivenWindow(pathLength, center, window);
         if (weight > 0.f) addHistogramBin(pixel, bin, radiance * weight);
     }
@@ -273,7 +264,7 @@ float3 tracePathTriangleApprox(const uint2 pixel, const uint2 frameDim)
         sortTriangleSamples(lengths, values);
         for (uint bin = 0; bin < tbin; ++bin)
         {
-            float3 density = integrateLinearGate(lengths, values, tmin + (bin + 0.5f) * tunit, tunit) / tunit;
+            float3 density = integrateLinearGate(lengths, values, binCenter(bin), tunit) / tunit;
             addHistogramBin(pixel, bin, density);
             radiance += density * tunit;
         }

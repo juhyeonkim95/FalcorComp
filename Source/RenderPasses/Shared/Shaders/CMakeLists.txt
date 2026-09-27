@@ -21,6 +21,7 @@ set(shared_shaders
     ReSTIR/Reservoirs.slang
     ReSTIR/InitialCandidates.slang
     ReSTIR/PathReconstruction.slang
+    ReSTIR/ReflectTypes.cs.slang
     ReSTIR/ReservoirReuse.slang
     ReSTIR/SpatialReuse.slang
     ReSTIR/TemporalReuse.slang

@@ -371,7 +371,6 @@ Reservoir mergeReservoirPair(Reservoir canonical, ReuseDomain canonicalDomain, R
     );
     // The canonical no-RC branch copies only f and its flag; keep the selected length too.
     if (merged.rcVertexBounce == 0) merged.totalPathLength = canonical.totalPathLength;
-    float target = getReservoirWeight(merged.f);
-    merged.W = target > 0.f ? merged.wSum / target : 0.f;
+    merged.finalizeW();
     return merged;
 }

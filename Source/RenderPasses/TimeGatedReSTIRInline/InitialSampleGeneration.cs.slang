@@ -16,9 +16,6 @@ import RenderPasses.Shared.Shaders.ReSTIR.Reservoirs;
 import RenderPasses.Shared.Shaders.ReSTIR.PathReconstruction;
 import RenderPasses.Shared.Shaders.ReSTIR.ReservoirReuse;
 import RenderPasses.Shared.Shaders.ReSTIR.InitialCandidates;
-#if USE_SHRINK_MAPPING || USE_TEMPORAL_REUSE
-import RenderPasses.Shared.Shaders.ShiftMapping.ShiftMapping;
-#endif
 #if USE_TEMPORAL_REUSE
 import RenderPasses.Shared.Shaders.ReSTIR.TemporalReuse;
 #endif
@@ -134,10 +131,8 @@ void submitEllipsoidalCandidate(inout Reservoir reservoir, ReconnectionState rc,
 Reservoir mergeGateReservoirs(Reservoir narrow, Reservoir wide, uint narrowCount, uint wideCount,
     ShadingData primary, IMaterialInstance primaryMaterial, float primaryLength, inout SampleGenerator rng)
 {
-    float narrowTarget = getReservoirWeight(narrow.f);
-    float wideTarget = getReservoirWeight(wide.f);
-    narrow.W = narrowTarget > 0.f ? narrow.wSum / narrowTarget : 0.f;
-    wide.W = wideTarget > 0.f ? wide.wSum / wideTarget : 0.f;
+    narrow.finalizeW();
+    wide.finalizeW();
     // MIS uses actual path counts, not the number of light connections submitted
     // along those paths, nor the requested (possibly rounded) split ratio.
     narrow.M = float(narrowCount);
@@ -365,8 +360,7 @@ float3 tracePath(uint2 pixel, uint2 frameDim)
     reservoir = mergeGateReservoirs(reservoir, wideReservoir, narrowCount, wideCount,
         primary, primaryMaterial, primaryLength, rng);
 #endif
-    float target = getReservoirWeight(reservoir.f);
-    reservoir.W = target > 0.f ? reservoir.wSum / target : 0.f;
+    reservoir.finalizeW();
 #if USE_TEMPORAL_REUSE
     reservoir = reuseTemporalHistory(reservoir, pixel, primary, primaryMaterial, primaryLength, rng);
 #endif
