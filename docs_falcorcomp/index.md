@@ -25,6 +25,14 @@ src/tutorials/index
 ```{toctree}
 :hidden:
 :maxdepth: 1
+:caption: Modulated light
+
+src/tutorials/modulated_index
+```
+
+```{toctree}
+:hidden:
+:maxdepth: 1
 :caption: Advanced tutorials
 
 src/tutorials/restir_index
@@ -38,4 +46,5 @@ src/tutorials/ellipsoidal_index
 
 src/plugin_reference/time_gated
 src/plugin_reference/transient
+src/plugin_reference/modulated
 ```
