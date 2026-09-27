@@ -83,7 +83,7 @@ private:
         ShiftMappingConfig shiftMapping;
         bool useAntitheticSampling = true;
         bool antitheticRoundTripCheck = false; ///< Keep a shift only if shifting back returns to the start.
-        AntitheticMap antitheticMap = AntitheticMap::Newton;
+        AntitheticMap antitheticMap = AntitheticMap::Radial;
         uint antitheticSubsteps = 4;            ///< AntitheticMap::Substeps: Newton solves per shift.
         float antitheticGradientThreshold = 0.f; ///< AntitheticMap::Newton: reject pairs with a smaller path-length slope.
     };
