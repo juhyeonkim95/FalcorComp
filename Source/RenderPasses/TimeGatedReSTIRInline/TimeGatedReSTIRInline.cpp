@@ -198,23 +198,21 @@ DefineList TimeGatedReSTIRInline::getShaderDefines(const RenderData& renderData)
 void TimeGatedReSTIRInline::bindShaderData(const ShaderVar& var, const RenderData& renderData)
 {
     mTriangleSampler.bindShaderData(var["emissiveSampler"]);
-    var["prevReservoirs"] = mReSTIR.prevReservoirs;
-    var["currReservoirs"] = mReSTIR.currReservoirs;
+    var["gPrevReservoirs"] = mReSTIR.prevReservoirs;
+    var["gCurrReservoirs"] = mReSTIR.currReservoirs;
 
     var["CB"]["gFrameCount"] = mFrameCount;
     var["CB"]["gFrameDim"] = renderData.getDefaultTextureDims();
-    var["CB"]["specularRoughnessThreshold"] = mOptions.restir.reconnectionRoughnessThreshold;
-    var["CB"]["specularRoughnessThresholdEllipsoid"] = mOptions.ellipsoidalSampling.ellipsoidRoughnessThreshold;
-    var["CB"]["samplesPerPixel"] = mOptions.pathTracing.samplesPerPixel;
+    var["CB"]["gReconnectionRoughnessThreshold"] = mOptions.restir.reconnectionRoughnessThreshold;
+    var["CB"]["gEllipsoidRoughnessThreshold"] = mOptions.ellipsoidalSampling.ellipsoidRoughnessThreshold;
+    var["CB"]["gSamplesPerPixel"] = mOptions.pathTracing.samplesPerPixel;
     var["CB"]["gTemporalHistoryLength"] = mOptions.restir.temporalHistoryLength;
     var["CB"]["gRoughTimeGateSampleRatio"] = shrinkSampleRatio();
 
-    mLaser.bindShaderData(var["Laser_CB"]);
-    var["Laser_CB"]["laserPrevOrigin"] = mPreviousLaser.origin;
-    var["Laser_CB"]["laserPrevDirection"] = mPreviousLaser.direction;
+    mLaser.bindShaderData(var["Laser"]);
 
     mOptions.timeGate.bindShaderData(var["TimeGate"], mGate);
-    var["TimeGate"]["time_gate_window_rough"] = mOptions.wideGateWindow();
+    var["TimeGate"]["gTimeGateWindowRough"] = mOptions.wideGateWindow();
     mOptions.restir.bindShiftMapping(var["ShiftMappingCB"]);
 
     InlinePass::bindChannels(var, renderData, InlinePass::kPrimaryHitAndMotionInputChannels);
@@ -229,8 +227,10 @@ void TimeGatedReSTIRInline::bindShaderData(const ShaderVar& var, const RenderDat
         var["CB"]["gPreviousCameraPosition"] = mReSTIR.previousCameraPosition;
         if (mOptions.isSceneDynamic)
         {
-            var["Laser_CB"]["laserPrevPower"] = mPreviousLaser.power;
-            var["Laser_CB"]["laserPrevCosAngle"] = mPreviousLaser.cosAngle;
+            var["PreviousLaser"]["gPreviousLaserOrigin"] = mPreviousLaser.origin;
+            var["PreviousLaser"]["gPreviousLaserDirection"] = mPreviousLaser.direction;
+            var["PreviousLaser"]["gPreviousLaserPower"] = mPreviousLaser.power;
+            var["PreviousLaser"]["gPreviousLaserCosAngle"] = mPreviousLaser.cosAngle;
         }
     }
 }
@@ -254,8 +254,8 @@ void TimeGatedReSTIRInline::spatialReuse(RenderContext* pRenderContext, const Re
         InlinePass::bindChannels(var, renderData, kDebugOutputChannels);
 
     mOptions.timeGate.bindShaderData(rootVar["TimeGate"], mGate);
-    rootVar["TimeGate"]["time_gate_window_rough"] = mOptions.wideGateWindow();
-    mLaser.bindShaderData(rootVar["Laser_CB"]);
+    rootVar["TimeGate"]["gTimeGateWindowRough"] = mOptions.wideGateWindow();
+    mLaser.bindShaderData(rootVar["Laser"]);
     mOptions.restir.bindShiftMapping(rootVar["ShiftMappingCB"]);
 
     // Clear diagnostics once per frame; spatial iterations add to these buffers.

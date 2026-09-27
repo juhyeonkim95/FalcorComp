@@ -25,6 +25,7 @@ import RenderPasses.Shared.Shaders.Lights.LightConnection;
 import RenderPasses.Shared.Shaders.Lights.EllipsoidalSampling;
 import RenderPasses.Shared.Shaders.Utils.SingleChannel;
 import RenderPasses.Shared.Shaders.Utils.RayUtils;
+import RenderPasses.Shared.Shaders.Lights.Laser;
 
 
 cbuffer CB
@@ -32,9 +33,9 @@ cbuffer CB
     uint2 gFrameDim;
     uint gFrameCount;    // Frame count since scene was loaded.
 
-    uint samplesPerPixel;
-    float specularRoughnessThreshold;
-    float specularRoughnessThresholdEllipsoid;
+    uint gSamplesPerPixel;
+    float gReconnectionRoughnessThreshold;
+    float gEllipsoidRoughnessThreshold;
     float gTemporalHistoryLength;
     float gRoughTimeGateSampleRatio; // Shrink mapping: fraction of the paths traced with the wide gate, in [0, 1].
 #if USE_TEMPORAL_REUSE
@@ -43,19 +44,16 @@ cbuffer CB
 #endif
 }
 
-cbuffer Laser_CB
-{
-    float3 laserOrigin;
-    float3 laserDirection;
-    float3 laserPower;
-    float laserCosAngle;
-    float3 laserPrevOrigin;
-    float3 laserPrevDirection;
 #if IS_SCENE_DYNAMIC && USE_TEMPORAL_REUSE
-    float3 laserPrevPower;
-    float laserPrevCosAngle;
-#endif
+// Last frame's laser: temporal reuse re-lights the history with it.
+cbuffer PreviousLaser
+{
+    float3 gPreviousLaserOrigin;
+    float3 gPreviousLaserDirection;
+    float3 gPreviousLaserPower;
+    float gPreviousLaserCosAngle;
 }
+#endif
 
 
 // Inputs
@@ -68,8 +66,8 @@ Texture2D<PackedHitInfo> gTemporalVBuffer;
 
 
 // Reservoir Struct
-StructuredBuffer<Reservoir> prevReservoirs;
-RWStructuredBuffer<Reservoir> currReservoirs;
+StructuredBuffer<Reservoir> gPrevReservoirs;
+RWStructuredBuffer<Reservoir> gCurrReservoirs;
 
 // Outputs
 RWTexture2D<float4> gOutputColor;
@@ -95,11 +93,11 @@ void submitEllipsoidalCandidate(inout Reservoir reservoir, ReconnectionState rc,
 {
     if (!light.valid) return;
     EllipsoidalSample ellipsoidal;
-    if (!sampleEllipsoid(origin, prefixLength, light, tcurr, emissiveSampler, rng, ellipsoidal)) return;
+    if (!sampleEllipsoid(origin, prefixLength, light, gTimeCenter, emissiveSampler, rng, ellipsoidal)) return;
     ShadingData target = ellipsoidal.surface;
     let targetMaterial = gScene.materials.getMaterialInstance(target, ExplicitLodTextureSampler(0.f));
     float targetLength = prefixLength + ellipsoidal.distance * origin.IoR;
-    if (!(targetLength < getMaxPathLength(tcurr))) return;
+    if (!(targetLength < getMaxPathLength(gTimeCenter))) return;
     float techniqueWeight = 1.f;
 #if LIGHT_SAMPLING_METHOD == ELLIPSOIDAL_DIRECT_MIS
     float bsdfPdf = material.evalPdf(origin, ellipsoidal.direction, kUseImportanceSampling);
@@ -109,17 +107,17 @@ void submitEllipsoidalCandidate(inout Reservoir reservoir, ReconnectionState rc,
     proposal.wo = ellipsoidal.direction;
     proposal.pdf = ellipsoidal.pdf;
     proposal.weight = material.eval(origin, ellipsoidal.direction, rng) / ellipsoidal.pdf;
-    bool eligible = material.getProperties(origin).roughness > specularRoughnessThreshold &&
-        targetMaterial.getProperties(target).roughness > specularRoughnessThreshold;
+    bool eligible = material.getProperties(origin).roughness > gReconnectionRoughnessThreshold &&
+        targetMaterial.getProperties(target).roughness > gReconnectionRoughnessThreshold;
     float suffixDirectionWeight = 0.f;
     if (rc.postBounce == 2) suffixDirectionWeight = shadingCosine(origin, material, ellipsoidal.direction) / ellipsoidal.pdf;
     rc.recordHit(ellipsoidal.hit, target, proposal, targetDepth, eligible, ellipsoidal.distance, origin.IoR,
         suffixDirectionWeight, 0);
     LightConnection connection = evaluateLightConnection(target, targetMaterial, light, rng);
     float totalLength = targetLength + connection.distance + light.laserT;
-    float gate = pathLengthImportance(totalLength, tcurr);
+    float gate = pathLengthImportance(totalLength, gTimeCenter);
     submitCandidate(reservoir, rc, target, targetMaterial, light, connection, totalLength, gate,
-        throughput * proposal.weight, techniqueWeight, samplesPerPixel, lightSeed, false, rng);
+        throughput * proposal.weight, techniqueWeight, gSamplesPerPixel, lightSeed, false, rng);
 }
 
 #endif
@@ -137,13 +135,13 @@ Reservoir mergeGateReservoirs(Reservoir narrow, Reservoir wide, uint narrowCount
     // along those paths, nor the requested (possibly rounded) split ratio.
     narrow.M = float(narrowCount);
     wide.M = float(wideCount);
-    // K is the narrow/wide gate-width ratio: L' = tcurr + K*(L-tcurr).
-    const float K = time_gate_window / time_gate_window_rough;
+    // K is the narrow/wide gate-width ratio: L' = gTimeCenter + K*(L-gTimeCenter).
+    const float K = gTimeGateWindow / gTimeGateWindowRough;
     // Expanding the canonical narrow sample only evaluates competing wide support.
     // A failed expansion or no-RC path retains the full narrow contribution.
-    ReuseDomain domain = { primary, primaryMaterial, primaryLength, tcurr, laserOrigin, laserDirection, laserPower,
-        laserCosAngle };
-    return mergeReservoirPair(narrow, domain, wide, domain, K, false, specularRoughnessThreshold, rng);
+    ReuseDomain domain = { primary, primaryMaterial, primaryLength, gTimeCenter, gLaserOrigin, gLaserDirection, gLaserPower,
+        gLaserCosAngle };
+    return mergeReservoirPair(narrow, domain, wide, domain, K, false, gReconnectionRoughnessThreshold, rng);
 }
 #endif
 
@@ -154,7 +152,7 @@ Reservoir reuseTemporalHistory(Reservoir fresh, uint2 pixel, ShadingData primary
     IMaterialInstance primaryMaterial, float primaryLength, inout SampleGenerator rng)
 {
     // Use camera-path counts consistently, including paths with no contribution.
-    fresh.M = float(samplesPerPixel);
+    fresh.M = float(gSamplesPerPixel);
     if (!gTemporalHistoryValid || gTemporalHistoryLength == 0.f) return fresh;
     TemporalHistory history = findTemporalHistory(pixel, gFrameDim, gMotionVector, gTemporalVBuffer,
         gPreviousCameraPosition);
@@ -170,20 +168,20 @@ Reservoir reuseTemporalHistory(Reservoir fresh, uint2 pixel, ShadingData primary
         return fresh;
 #endif
 
-    Reservoir previous = prevReservoirs[history.pixelIndex];
-    previous.M = temporalHistoryMass(previous.M, gTemporalHistoryLength, samplesPerPixel);
+    Reservoir previous = gPrevReservoirs[history.pixelIndex];
+    previous.M = temporalHistoryMass(previous.M, gTemporalHistoryLength, gSamplesPerPixel);
     if (!(previous.M > 0.f)) return fresh;
 
-    ReuseDomain current = { primary, primaryMaterial, primaryLength, tcurr, laserOrigin, laserDirection, laserPower,
-        laserCosAngle };
+    ReuseDomain current = { primary, primaryMaterial, primaryLength, gTimeCenter, gLaserOrigin, gLaserDirection, gLaserPower,
+        gLaserCosAngle };
 #if IS_SCENE_DYNAMIC
-    ReuseDomain last = { history.primary, previousMaterial, history.primaryLength, tprev, laserPrevOrigin,
-        laserPrevDirection, laserPrevPower, laserPrevCosAngle };
+    ReuseDomain last = { history.primary, previousMaterial, history.primaryLength, gPreviousTimeCenter, gPreviousLaserOrigin,
+        gPreviousLaserDirection, gPreviousLaserPower, gPreviousLaserCosAngle };
 #else
-    ReuseDomain last = { history.primary, previousMaterial, history.primaryLength, tprev, laserOrigin,
-        laserDirection, laserPower, laserCosAngle };
+    ReuseDomain last = { history.primary, previousMaterial, history.primaryLength, gPreviousTimeCenter, gLaserOrigin,
+        gLaserDirection, gLaserPower, gLaserCosAngle };
 #endif
-    return mergeReservoirPair(fresh, current, previous, last, 1.f, true, specularRoughnessThreshold, rng);
+    return mergeReservoirPair(fresh, current, previous, last, 1.f, true, gReconnectionRoughnessThreshold, rng);
 }
 #endif
 
@@ -192,19 +190,19 @@ Reservoir reuseTemporalHistory(Reservoir fresh, uint2 pixel, ShadingData primary
 // the reservoirs sample the same paths with and without it.
 float3 evalPrimaryDirect(uint2 pixel, ShadingData primary, IMaterialInstance primaryMaterial, float primaryLength)
 {
-    LaserLightSampler lightSampler = LaserLightSampler(laserOrigin, laserDirection, laserCosAngle, laserPower);
+    LaserLightSampler lightSampler = createLaserLightSampler();
     SampleGenerator sg = createPixelSampleGenerator(pixel, gFrameCount, kDirectSampleStream);
     float3 direct = 0.f;
-    for (uint i = 0; i < samplesPerPixel; ++i)
+    for (uint i = 0; i < gSamplesPerPixel; ++i)
     {
         LightSample light = {};
         lightSampler.generateLightSample(sg, light);
         if (!light.valid) continue;
         LightConnection connection = evaluateLightConnection(primary, primaryMaterial, light, sg);
-        float gate = pathLengthImportance(primaryLength + connection.distance + light.laserT, tcurr);
+        float gate = pathLengthImportance(primaryLength + connection.distance + light.laserT, gTimeCenter);
         direct += connection.bsdfCosine * connection.incidentRadiance * gate;
     }
-    direct /= float(samplesPerPixel) * time_gate_window;
+    direct /= float(gSamplesPerPixel) * gTimeGateWindow;
     if (any(isinf(direct) || isnan(direct))) direct = 0.f;
 #if USE_SINGLE_CHANNEL
     direct = float3(selectChannel(direct));
@@ -227,7 +225,7 @@ float3 tracePath(uint2 pixel, uint2 frameDim)
 #if COMPUTE_DIRECT
         gDirectColor[pixel] = float4(0.f);
 #endif
-        currReservoirs[index] = reservoir;
+        gCurrReservoirs[index] = reservoir;
         return kUseEnvBackground ? gScene.envMap.eval(primaryDirection) : float3(0.f);
     }
 
@@ -240,26 +238,26 @@ float3 tracePath(uint2 pixel, uint2 frameDim)
 #endif
 #if USE_SHRINK_MAPPING
     // The host enables shrink mapping only when this count is positive; ratio 1 uses only wide samples.
-    const uint wideCount = min(uint(float(samplesPerPixel) * gRoughTimeGateSampleRatio), samplesPerPixel);
-    const uint narrowCount = samplesPerPixel - wideCount;
+    const uint wideCount = min(uint(float(gSamplesPerPixel) * gRoughTimeGateSampleRatio), gSamplesPerPixel);
+    const uint narrowCount = gSamplesPerPixel - wideCount;
     Reservoir wideReservoir = Reservoir();
-    const float wideSampleWeight = float(samplesPerPixel) / float(wideCount);
-    const float narrowSampleWeight = narrowCount > 0 ? float(samplesPerPixel) / float(narrowCount) : 0.f;
+    const float wideSampleWeight = float(gSamplesPerPixel) / float(wideCount);
+    const float narrowSampleWeight = narrowCount > 0 ? float(gSamplesPerPixel) / float(narrowCount) : 0.f;
 #else
-    float maxPathLength = getMaxPathLength(tcurr);
+    float maxPathLength = getMaxPathLength(gTimeCenter);
 #endif
-    LaserLightSampler lightSampler = LaserLightSampler(laserOrigin, laserDirection, laserCosAngle, laserPower);
+    LaserLightSampler lightSampler = createLaserLightSampler();
     // Preserve separate streams so prefix replay never consumes reservoir/light RNG draws.
     SampleGenerator rng = createPixelSampleGenerator(pixel, gFrameCount, kReservoirSampleStream);
     SampleGenerator bsdfRng = createPixelSampleGenerator(pixel, gFrameCount, kPathSampleStream);
     SampleGenerator lightRng = createPixelSampleGenerator(pixel, gFrameCount, kLightSampleStream);
 
-    for (uint sampleIndex = 0; sampleIndex < samplesPerPixel; ++sampleIndex)
+    for (uint sampleIndex = 0; sampleIndex < gSamplesPerPixel; ++sampleIndex)
     {
         bool useRoughGate = false;
 #if USE_SHRINK_MAPPING
         useRoughGate = sampleIndex >= narrowCount;
-        float maxPathLength = getMaxPathLength(tcurr, useRoughGate);
+        float maxPathLength = getMaxPathLength(gTimeCenter, useRoughGate);
 #endif
         ShadingData surface = primary;
         IMaterialInstance material = primaryMaterial;
@@ -284,7 +282,7 @@ float3 tracePath(uint2 pixel, uint2 frameDim)
             previous.ellipsoidEligible = (material.getLobeTypes(surface) & uint(LobeType::NonDelta)) != 0;
 #if LIGHT_SAMPLING_METHOD == ELLIPSOIDAL_CONNECTION
             previous.ellipsoidEligible = previous.ellipsoidEligible &&
-                material.getProperties(surface).roughness > specularRoughnessThresholdEllipsoid;
+                material.getProperties(surface).roughness > gEllipsoidRoughnessThreshold;
 #endif
             if (previous.ellipsoidEligible)
             {
@@ -295,7 +293,7 @@ float3 tracePath(uint2 pixel, uint2 frameDim)
                     pathLength, throughput, depth, ellipseLightSeed, rng);
             }
 #endif
-            bool previousDiffuse = material.getProperties(surface).roughness > specularRoughnessThreshold;
+            bool previousDiffuse = material.getProperties(surface).roughness > gReconnectionRoughnessThreshold;
             uint sampleSeed = bsdfRng.getCurrentSeed();
             BSDFSample sample = {};
             if (!material.sample(surface, bsdfRng, sample, kUseImportanceSampling)) break;
@@ -325,7 +323,7 @@ float3 tracePath(uint2 pixel, uint2 frameDim)
             float segmentLength = length(surface.posW - previousPosition);
             pathLength += segmentLength * segmentIoR;
             if (!(pathLength < maxPathLength)) break;
-            bool currentDiffuse = material.getProperties(surface).roughness > specularRoughnessThreshold;
+            bool currentDiffuse = material.getProperties(surface).roughness > gReconnectionRoughnessThreshold;
             rc.recordHit(hit, surface, sample, depth, previousDiffuse && currentDiffuse && segmentLength > 0.f,
                 segmentLength, segmentIoR, suffixDirectionWeight, sampleSeed);
 
@@ -334,24 +332,24 @@ float3 tracePath(uint2 pixel, uint2 frameDim)
             lightSampler.generateLightSample(lightRng, light);
             LightConnection connection = evaluateLightConnection(surface, material, light, rng);
             float totalLength = pathLength + connection.distance + light.laserT;
-            float gate = pathLengthImportance(totalLength, tcurr, useRoughGate);
+            float gate = pathLengthImportance(totalLength, gTimeCenter, useRoughGate);
             float techniqueWeight = 1.f;
 #if LIGHT_SAMPLING_METHOD != DIRECT_CONNECTION
-            techniqueWeight = evalBsdfTechniqueWeight(previous, surface, hit, light, tcurr, emissiveSampler,
+            techniqueWeight = evalBsdfTechniqueWeight(previous, surface, hit, light, gTimeCenter, emissiveSampler,
                 LIGHT_SAMPLING_METHOD == ELLIPSOIDAL_DIRECT_MIS);
 #endif
 #if USE_SHRINK_MAPPING
-            // submitCandidate divides by samplesPerPixel. Correct that to 1/N_i
+            // submitCandidate divides by gSamplesPerPixel. Correct that to 1/N_i
             // so each gate reservoir separately estimates its full gate integral.
             if (useRoughGate)
                 submitCandidate(wideReservoir, rc, surface, material, light, connection, totalLength, gate,
-                    throughput, wideSampleWeight, samplesPerPixel, lightSeed, false, rng);
+                    throughput, wideSampleWeight, gSamplesPerPixel, lightSeed, false, rng);
             else
                 submitCandidate(reservoir, rc, surface, material, light, connection, totalLength, gate,
-                    throughput, narrowSampleWeight, samplesPerPixel, lightSeed, false, rng);
+                    throughput, narrowSampleWeight, gSamplesPerPixel, lightSeed, false, rng);
 #else
             submitCandidate(reservoir, rc, surface, material, light, connection, totalLength, gate,
-                throughput, techniqueWeight, samplesPerPixel, lightSeed, false, rng);
+                throughput, techniqueWeight, gSamplesPerPixel, lightSeed, false, rng);
 #endif
             if (rc.bounce > 0) ++rc.postBounce;
         }
@@ -364,7 +362,7 @@ float3 tracePath(uint2 pixel, uint2 frameDim)
 #if USE_TEMPORAL_REUSE
     reservoir = reuseTemporalHistory(reservoir, pixel, primary, primaryMaterial, primaryLength, rng);
 #endif
-    currReservoirs[index] = reservoir;
+    gCurrReservoirs[index] = reservoir;
     return float3(reservoir.W * reservoir.f); // with a scalar target, the kept channel in all three
 }
 
@@ -373,5 +371,5 @@ void main(uint3 dispatchThreadId: SV_DispatchThreadID)
 {
     uint2 pixel = dispatchThreadId.xy;
     if (any(pixel >= gFrameDim)) return;
-    gOutputColor[pixel] = float4(tracePath(pixel, gFrameDim) / time_gate_window, 1.f);
+    gOutputColor[pixel] = float4(tracePath(pixel, gFrameDim) / gTimeGateWindow, 1.f);
 }

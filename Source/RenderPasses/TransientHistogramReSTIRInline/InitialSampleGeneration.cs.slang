@@ -21,6 +21,7 @@ import RenderPasses.Shared.Shaders.Utils.RayUtils;
 import RenderPasses.Shared.Shaders.ReSTIR.ReservoirReuse;
 import RenderPasses.Shared.Shaders.ReSTIR.TemporalReuse;
 #endif
+import RenderPasses.Shared.Shaders.Lights.Laser;
 
 
 cbuffer CB
@@ -28,21 +29,13 @@ cbuffer CB
     uint2 gFrameDim;
     uint gFrameCount;    // Frame count since scene was loaded.
     
-    uint samplesPerPixel;
-    float specularRoughnessThreshold;
+    uint gSamplesPerPixel;
+    float gReconnectionRoughnessThreshold;
     float gTemporalHistoryLength;
 #if USE_TEMPORAL_REUSE
     bool gTemporalHistoryValid;
     float3 gPreviousCameraPosition;
 #endif
-}
-
-cbuffer Laser_CB
-{
-    float3 laserOrigin;
-    float3 laserDirection;
-    float3 laserPower;
-    float laserCosAngle;
 }
 
 
@@ -56,8 +49,8 @@ Texture2D<PackedHitInfo> gTemporalVBuffer;
 
 
 // Reservoir Struct
-StructuredBuffer<Reservoir> prevReservoirs; // Last frame's final reservoirs (temporal reuse).
-RWStructuredBuffer<Reservoir> currReservoirs;
+StructuredBuffer<Reservoir> gPrevReservoirs; // Last frame's final reservoirs (temporal reuse).
+RWStructuredBuffer<Reservoir> gCurrReservoirs;
 
 // Outputs
 RWTexture2D<float4> gOutputColor;
@@ -76,33 +69,33 @@ void submitHistogramCandidate(uint pixelIndex, ReconnectionState rc, ShadingData
     float totalLength, float3 throughput, uint lightSeed, inout SampleGenerator rng)
 {
     uint firstBin = 0;
-    uint endBin = tbin;
-    if (time_gate_mode == kTimeGateBox)
+    uint endBin = gTimeBin;
+    if (gTimeGateMode == kTimeGateBox)
     {
-        if (!(totalLength >= tmin && totalLength < tmax)) return;
-        firstBin = min(uint((totalLength - tmin) / tunit), tbin - 1);
+        if (!(totalLength >= gTimeMin && totalLength < gTimeMax)) return;
+        firstBin = min(uint((totalLength - gTimeMin) / gBinWidth), gTimeBin - 1);
         endBin = firstBin + 1;
     }
     for (uint bin = firstBin; bin < endBin; ++bin)
     {
         float center = binCenter(bin);
         // Half-open box bins assign boundary samples exactly once.
-        float gate = time_gate_mode == kTimeGateBox ? 1.f : pathLengthImportance(totalLength, center);
+        float gate = gTimeGateMode == kTimeGateBox ? 1.f : pathLengthImportance(totalLength, center);
         if (!(gate > 0.f)) continue;
-        uint index = pixelIndex * tbin + bin;
-        Reservoir reservoir = currReservoirs[index];
+        uint index = pixelIndex * gTimeBin + bin;
+        Reservoir reservoir = gCurrReservoirs[index];
         submitCandidate(reservoir, rc, surface, material, light, connection, totalLength, gate,
-            throughput, 1.f, samplesPerPixel, lightSeed, true, rng);
-        currReservoirs[index] = reservoir;
+            throughput, 1.f, gSamplesPerPixel, lightSeed, true, rng);
+        gCurrReservoirs[index] = reservoir;
     }
 }
 
 float3 tracePath(uint2 pixel, uint2 frameDim)
 {
     uint pixelIndex = pixel.y * frameDim.x + pixel.x;
-    for (uint bin = 0; bin < tbin; ++bin)
+    for (uint bin = 0; bin < gTimeBin; ++bin)
     {
-        currReservoirs[pixelIndex * tbin + bin] = Reservoir();
+        gCurrReservoirs[pixelIndex * gTimeBin + bin] = Reservoir();
         gTransientHistogram[uint3(pixel, bin)] = 0.f;
     }
     HitInfo primaryHit = HitInfo(gVBuffer[pixel]);
@@ -112,14 +105,14 @@ float3 tracePath(uint2 pixel, uint2 frameDim)
     ShadingData primary = loadShadingData(primaryHit, cameraPosition, getPrimaryRayDir(pixel, frameDim, gViewW));
     let primaryMaterial = gScene.materials.getMaterialInstance(primary, ExplicitLodTextureSampler(0.f));
     float primaryLength = length(primary.posW - cameraPosition);
-    float maxPathLength = getMaxPathLength(binCenter(tbin - 1));
-    LaserLightSampler lightSampler = LaserLightSampler(laserOrigin, laserDirection, laserCosAngle, laserPower);
+    float maxPathLength = getMaxPathLength(binCenter(gTimeBin - 1));
+    LaserLightSampler lightSampler = createLaserLightSampler();
     // Prefix replay must not consume light or reservoir RNG draws.
     SampleGenerator rng = createPixelSampleGenerator(pixel, gFrameCount, kReservoirSampleStream);
     SampleGenerator bsdfRng = createPixelSampleGenerator(pixel, gFrameCount, kPathSampleStream);
     SampleGenerator lightRng = createPixelSampleGenerator(pixel, gFrameCount, kLightSampleStream);
 
-    for (uint sampleIndex = 0; sampleIndex < samplesPerPixel; ++sampleIndex)
+    for (uint sampleIndex = 0; sampleIndex < gSamplesPerPixel; ++sampleIndex)
     {
         ShadingData surface = primary;
         IMaterialInstance material = primaryMaterial;
@@ -149,7 +142,7 @@ float3 tracePath(uint2 pixel, uint2 frameDim)
             if (rc.bounce > 0) ++rc.postBounce;
             if (depth + 1 >= MAX_BOUNCES) break;
 
-            bool previousDiffuse = material.getProperties(surface).roughness > specularRoughnessThreshold;
+            bool previousDiffuse = material.getProperties(surface).roughness > gReconnectionRoughnessThreshold;
             uint sampleSeed = bsdfRng.getCurrentSeed();
             BSDFSample sample = {};
             if (!material.sample(surface, bsdfRng, sample, USE_IMPORTANCE_SAMPLING)) break;
@@ -170,7 +163,7 @@ float3 tracePath(uint2 pixel, uint2 frameDim)
             float segmentLength = length(surface.posW - previousPosition);
             // Match time-gated generation and shared prefix replay.
             pathLength += segmentLength * segmentIoR;
-            bool currentDiffuse = material.getProperties(surface).roughness > specularRoughnessThreshold;
+            bool currentDiffuse = material.getProperties(surface).roughness > gReconnectionRoughnessThreshold;
             rc.recordHit(hit, surface, sample, depth + 1,
                 previousDiffuse && currentDiffuse && segmentLength > 0.f,
                 segmentLength, segmentIoR, suffixDirectionWeight, sampleSeed);
@@ -189,34 +182,34 @@ float3 tracePath(uint2 pixel, uint2 frameDim)
 #endif
 
     float3 integratedRadiance = 0.f;
-    for (uint bin = 0; bin < tbin; ++bin)
+    for (uint bin = 0; bin < gTimeBin; ++bin)
     {
-        uint index = pixelIndex * tbin + bin;
-        Reservoir reservoir = currReservoirs[index];
+        uint index = pixelIndex * gTimeBin + bin;
+        Reservoir reservoir = gCurrReservoirs[index];
         reservoir.finalizeW();
-        // Each bin had samplesPerPixel path trials, including paths contributing zero.
-        reservoir.M = samplesPerPixel;
+        // Each bin had gSamplesPerPixel path trials, including paths contributing zero.
+        reservoir.M = gSamplesPerPixel;
 #if USE_TEMPORAL_REUSE
         if (history.valid)
         {
-            Reservoir previous = prevReservoirs[history.pixelIndex * tbin + bin];
-            previous.M = temporalHistoryMass(previous.M, gTemporalHistoryLength, samplesPerPixel);
+            Reservoir previous = gPrevReservoirs[history.pixelIndex * gTimeBin + bin];
+            previous.M = temporalHistoryMass(previous.M, gTemporalHistoryLength, gSamplesPerPixel);
             if (previous.M > 0.f)
             {
                 float gateCenter = binCenter(bin);
-                ReuseDomain current = { primary, primaryMaterial, primaryLength, gateCenter, laserOrigin,
-                    laserDirection, laserPower, laserCosAngle };
-                ReuseDomain last = { history.primary, previousMaterial, history.primaryLength, gateCenter, laserOrigin,
-                    laserDirection, laserPower, laserCosAngle };
+                ReuseDomain current = { primary, primaryMaterial, primaryLength, gateCenter, gLaserOrigin,
+                    gLaserDirection, gLaserPower, gLaserCosAngle };
+                ReuseDomain last = { history.primary, previousMaterial, history.primaryLength, gateCenter, gLaserOrigin,
+                    gLaserDirection, gLaserPower, gLaserCosAngle };
                 reservoir = mergeReservoirPair(reservoir, current, previous, last, 1.f, false,
-                    specularRoughnessThreshold, rng);
+                    gReconnectionRoughnessThreshold, rng);
             }
         }
 #endif
-        currReservoirs[index] = reservoir;
+        gCurrReservoirs[index] = reservoir;
         float3 radiance = reservoir.W * reservoir.f;
         integratedRadiance += radiance;
-        gTransientHistogram[uint3(pixel, bin)] = toHistogramTexel(radiance / tunit);
+        gTransientHistogram[uint3(pixel, bin)] = toHistogramTexel(radiance / gBinWidth);
     }
     return integratedRadiance;
 }

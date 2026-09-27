@@ -1,20 +1,20 @@
-/** Transient histogram: tbin bins of width tunit over the path lengths [tmin, tmax). The host sets the
+/** Transient histogram: gTimeBin bins of width gBinWidth over the path lengths [gTimeMin, gTimeMax). The host sets the
     TransientHistogram constants (TransientHistogramConfig).
 */
 import RenderPasses.Shared.Shaders.Utils.SingleChannel;
 
 cbuffer TransientHistogram
 {
-    uint tbin;
-    float tmin;
-    float tmax;
-    float tunit;
+    uint gTimeBin;
+    float gTimeMin;
+    float gTimeMax;
+    float gBinWidth;
 };
 
 /// Path length at the center of bin `bin`.
 float binCenter(uint bin)
 {
-    return tmin + (float(bin) + 0.5f) * tunit;
+    return gTimeMin + (float(bin) + 0.5f) * gBinWidth;
 }
 
 /// Texel of the histogram output (RWTexture3D<HistogramTexel>): the channel that USE_SINGLE_CHANNEL keeps, or RGB

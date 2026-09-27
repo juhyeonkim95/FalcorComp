@@ -37,12 +37,12 @@ struct TransientHistogramConfig
     /// under `var` (the root).
     void bindShaderData(const ShaderVar& var) const
     {
-        var["TimeGate"]["time_gate_mode"] = uint(filter);
+        var["TimeGate"]["gTimeGateMode"] = uint(filter);
         auto histogramVar = var["TransientHistogram"];
-        histogramVar["tbin"] = timeBin;
-        histogramVar["tmin"] = timeMin;
-        histogramVar["tmax"] = timeMax;
-        histogramVar["tunit"] = binWidth();
+        histogramVar["gTimeBin"] = timeBin;
+        histogramVar["gTimeMin"] = timeMin;
+        histogramVar["gTimeMax"] = timeMax;
+        histogramVar["gBinWidth"] = binWidth();
     }
 
     void validate() const

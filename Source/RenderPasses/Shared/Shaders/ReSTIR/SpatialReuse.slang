@@ -1,6 +1,6 @@
 // Spatial reuse shared by the time-gated and histogram ReSTIR passes.
 // Reservoirs are stored as [pixel * binCount + bin]; a time-gated pass is the
-// single-bin case (binCount = 1, bin = 0, gateCenter = tcurr).
+// single-bin case (binCount = 1, bin = 0, gateCenter = gTimeCenter).
 // With useBinReuse, the adjacent bins (bin - 1, bin + 1) of the same pixel are
 // additional candidates in the same pairwise MIS as the spatial neighbors. Their
 // paths are shifted by one bin width with the path-length-aware shift mapping.
@@ -13,14 +13,7 @@ import RenderPasses.Shared.Shaders.ReSTIR.ReservoirReuse;
 import RenderPasses.Shared.Shaders.Utils.LoadShadingData;
 import RenderPasses.Shared.Shaders.ShiftMapping.ShiftMapping;
 import RenderPasses.Shared.Shaders.Utils.RayUtils;
-
-cbuffer Laser_CB
-{
-    float3 laserOrigin;
-    float3 laserDirection;
-    float3 laserPower;
-    float laserCosAngle;
-}
+import RenderPasses.Shared.Shaders.Lights.Laser;
 
 struct SpatialReuse
 {
@@ -31,7 +24,7 @@ struct SpatialReuse
 
     Texture1D<float2> neighborOffsets;
     uint neighborCount;
-    float specularRoughnessThreshold;
+    float reconnectionRoughnessThreshold;
     float gatherRadius;
     bool useBinReuse; // Histogram only: bin centers are binCenter(bin).
 
@@ -144,7 +137,7 @@ struct SpatialReuse
         VertexData centralVertex;
         if (centralReservoir.W > 0 && centralReservoir.rcVertexBounce > 0)
         {
-            centralSuffix = loadReconnectionSuffix(centralReservoir, laserOrigin, laserDirection);
+            centralSuffix = loadReconnectionSuffix(centralReservoir, gLaserOrigin, gLaserDirection);
             centralVertex = gScene.getVertexData(centralReservoir.rcVertexHit.getTriangleHit());
         }
 
@@ -184,16 +177,16 @@ struct SpatialReuse
             // Central -> neighbor: accumulate the central sample's pairwise weight.
             ShiftMappingDebugInfo debugInfo;
             canonicalWeight += evaluateCanonicalShiftWeight(
-                centralReservoir, centralSuffix, centralVertex, neighborReservoir.M, specularRoughnessThreshold,
+                centralReservoir, centralSuffix, centralVertex, neighborReservoir.M, reconnectionRoughnessThreshold,
                 neighborPrimary, neighborMaterial, neighborDepth,
                 neighborGateCenter, gateCenter, sg, debugInfo);
 
             // Neighbor -> central: shift the neighbor sample and stream it into the reservoir.
             combineReservoirWithShiftMapping(
-                destination, neighborReservoir, centralReservoir.M, specularRoughnessThreshold,
+                destination, neighborReservoir, centralReservoir.M, reconnectionRoughnessThreshold,
                 primary, primaryMaterial, primaryDepth,
                 gateCenter, neighborGateCenter, 1.f, false,
-                laserOrigin, laserDirection, sg
+                gLaserOrigin, gLaserDirection, sg
 #if DEBUG_NEWTON_ITERATIONS
                 , debugInfo
 #endif

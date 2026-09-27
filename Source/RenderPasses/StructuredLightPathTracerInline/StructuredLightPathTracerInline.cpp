@@ -145,7 +145,7 @@ void StructuredLightPathTracerInline::bindShaderData(const ShaderVar& var, const
 {
     var["CB"]["gFrameCount"] = mFrameCount;
     var["CB"]["gFrameDim"] = renderData.getDefaultTextureDims();
-    var["CB"]["samplesPerPixel"] = mOptions.pathTracing.samplesPerPixel;
+    var["CB"]["gSamplesPerPixel"] = mOptions.pathTracing.samplesPerPixel;
     var["CB"]["gProjectorSampleCount"] = mOptions.projectorSampleCount;
     mOptions.projector.bindShaderData(var);
     if (mOptions.projector.pattern == ProjectorPatternType::Arbitrary)

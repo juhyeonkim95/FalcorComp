@@ -12,18 +12,14 @@ import RenderPasses.Shared.Shaders.Utils.RayUtils;
 import Utils.Math.MathHelpers;
 import Utils.Sampling.SampleGenerator;
 import Scene.RaytracingInline;
+import RenderPasses.Shared.Shaders.Lights.Laser;
 
 cbuffer CB
 {
     uint2 gFrameDim;
     uint gFrameCount;    // Frame count since scene was loaded.
 
-    float3 laserOrigin;
-    float3 laserDirection;
-    float3 laserPower;
-    float laserCosAngle;
-
-    uint samplesPerPixel;
+    uint gSamplesPerPixel;
 }
 
 // Inputs
@@ -145,9 +141,9 @@ float3 tracePath(const uint2 pixel, const uint2 frameDim)
 
         ShadingData sd0 = loadShadingData(hit0, primaryRayOrigin, primaryRayDir);
         IMaterialInstance mi0 = gScene.materials.getMaterialInstance(sd0, ExplicitLodTextureSampler(0.f));
-        LaserLightSampler lls = LaserLightSampler(laserOrigin, laserDirection, laserCosAngle, laserPower);
+        LaserLightSampler lls = createLaserLightSampler();
 
-        for (uint i = 0; i < samplesPerPixel; i++)
+        for (uint i = 0; i < gSamplesPerPixel; i++)
         {
             float3 result = float3(0.0f);
             float3 throughput = float3(1.0f);
@@ -203,7 +199,7 @@ float3 tracePath(const uint2 pixel, const uint2 frameDim)
             if (any(isinf(result) || isnan(result))) result = 0.f;
             outColor += result;
         }
-        outColor /= samplesPerPixel;
+        outColor /= gSamplesPerPixel;
     }
     else
     {

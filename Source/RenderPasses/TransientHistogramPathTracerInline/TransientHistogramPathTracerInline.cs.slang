@@ -13,19 +13,15 @@ import RenderPasses.Shared.Shaders.Utils.TimeGate;
 import RenderPasses.Shared.Shaders.Utils.TransientHistogram;
 import RenderPasses.Shared.Shaders.Utils.RayUtils;
 import Scene.RaytracingInline;
+import RenderPasses.Shared.Shaders.Lights.Laser;
 
 cbuffer CB
 {
     uint2 gFrameDim;
     uint gFrameCount;    // Frame count since scene was loaded.
 
-    float3 laserOrigin;
-    float3 laserDirection;
-    float3 laserPower;
-    float laserCosAngle;
-
-    uint samplesPerPixel;
-    float initialWindowRatio;
+    uint gSamplesPerPixel;
+    float gInitialWindowRatio;
 }
 
 // Inputs
@@ -55,26 +51,26 @@ void accumulateToHistogram(uint2 pixel, float pathLength, float3 radiance, float
 {
     if (!isfinite(pathLength)) return;
 #if USE_KERNEL_DENSITY_ESTIMATION
-    radiance /= window * samplesPerPixel;
-    for (uint bin = 0; bin < tbin; ++bin)
+    radiance /= window * gSamplesPerPixel;
+    for (uint bin = 0; bin < gTimeBin; ++bin)
     {
         float center = binCenter(bin);
         float weight = pathLengthImportanceGivenWindow(pathLength, center, window);
         if (weight > 0.f) addHistogramBin(pixel, bin, radiance * weight);
     }
 #else
-    // Half-open range prevents tmax from being incorrectly added to the final bin.
-    if (pathLength < tmin || pathLength >= tmax) return;
-    float coordinate = (pathLength - tmin) / tunit;
-    uint bin = min(uint(coordinate), tbin - 1);
-    radiance /= tunit * samplesPerPixel;
+    // Half-open range prevents gTimeMax from being incorrectly added to the final bin.
+    if (pathLength < gTimeMin || pathLength >= gTimeMax) return;
+    float coordinate = (pathLength - gTimeMin) / gBinWidth;
+    uint bin = min(uint(coordinate), gTimeBin - 1);
+    radiance /= gBinWidth * gSamplesPerPixel;
 #if HISTOGRAM_FILTER == HISTOGRAM_FILTER_BOX
     addHistogramBin(pixel, bin, radiance);
 #elif HISTOGRAM_FILTER == HISTOGRAM_FILTER_TENT
     // Retain the existing interpolation and final-bin clamping convention.
     float residual = frac(coordinate);
     addHistogramBin(pixel, bin, radiance, 1.f - residual);
-    addHistogramBin(pixel, min(bin + 1, tbin - 1), radiance, residual);
+    addHistogramBin(pixel, min(bin + 1, gTimeBin - 1), radiance, residual);
 #endif
 #endif
 }
@@ -87,17 +83,17 @@ float3 tracePath(const uint2 pixel, const uint2 frameDim)
     float3 cameraOrigin = gScene.camera.getPosition();
     ShadingData primary = loadShadingData(primaryHit, cameraOrigin, getPrimaryRayDir(pixel, frameDim, gViewW));
     SampleGenerator sg = createPixelSampleGenerator(pixel, gFrameCount, kPathSampleStream);
-    LaserLightSampler lightSampler = LaserLightSampler(laserOrigin, laserDirection, laserCosAngle, laserPower);
+    LaserLightSampler lightSampler = createLaserLightSampler();
     float3 radiance = 0.f;
     // Preserve the existing per-frame progressive KDE bandwidth schedule.
-    float window = (tmax - tmin) * initialWindowRatio;
+    float window = (gTimeMax - gTimeMin) * gInitialWindowRatio;
 #if USE_KERNEL_DENSITY_ESTIMATION
     // Ad hoc extension: paths beyond the histogram range can contribute through KDE support.
-    const float maxPathLength = 1.5f * tmax;
+    const float maxPathLength = 1.5f * gTimeMax;
 #else
-    const float maxPathLength = tmax;
+    const float maxPathLength = gTimeMax;
 #endif
-    for (uint sample = 0; sample < samplesPerPixel; ++sample)
+    for (uint sample = 0; sample < gSamplesPerPixel; ++sample)
     {
         ShadingData surface = primary;
         float pathLength = length(primary.posW - cameraOrigin);
@@ -134,7 +130,7 @@ float3 tracePath(const uint2 pixel, const uint2 frameDim)
         }
         window *= (sample + 0.8f) / (sample + 1.f);
     }
-    return radiance / samplesPerPixel;
+    return radiance / gSamplesPerPixel;
 }
 
 #if LIGHT_SAMPLING_METHOD == TRIANGLE_APPROX
@@ -194,7 +190,7 @@ void sortTriangleSamples(inout float lengths[3], inout float3 values[3])
 
 // Deterministic single-intermediate-triangle approximation. It uses center visibility,
 // vertex integrands and linear path-length interpolation, not unbiased path sampling.
-// samplesPerPixel and maxBounces apply only to the direct path walk.
+// gSamplesPerPixel and maxBounces apply only to the direct path walk.
 float3 tracePathTriangleApprox(const uint2 pixel, const uint2 frameDim)
 {
     HitInfo primaryHit = HitInfo(gVBuffer[pixel]);
@@ -206,7 +202,7 @@ float3 tracePathTriangleApprox(const uint2 pixel, const uint2 frameDim)
     SampleGenerator sg = createPixelSampleGenerator(pixel, gFrameCount, kPathSampleStream);
 
     // Preserve the approximation's collimated-laser assumption.
-    LaserLightSampler sampler = LaserLightSampler(laserOrigin, laserDirection, 1.f, laserPower);
+    LaserLightSampler sampler = LaserLightSampler(gLaserOrigin, gLaserDirection, 1.f, gLaserPower);
     LightSample light = {};
     sampler.generateLightSample(sg, light);
     if (!light.valid) return float3(0.f);
@@ -262,11 +258,11 @@ float3 tracePathTriangleApprox(const uint2 pixel, const uint2 frameDim)
                              cosine * triangle.area / max(distance * distance, kMinLightDistSqr);
         }
         sortTriangleSamples(lengths, values);
-        for (uint bin = 0; bin < tbin; ++bin)
+        for (uint bin = 0; bin < gTimeBin; ++bin)
         {
-            float3 density = integrateLinearGate(lengths, values, binCenter(bin), tunit) / tunit;
+            float3 density = integrateLinearGate(lengths, values, binCenter(bin), gBinWidth) / gBinWidth;
             addHistogramBin(pixel, bin, density);
-            radiance += density * tunit;
+            radiance += density * gBinWidth;
         }
     }
     return radiance;

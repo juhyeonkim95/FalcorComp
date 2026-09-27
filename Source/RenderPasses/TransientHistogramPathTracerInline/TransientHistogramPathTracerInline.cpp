@@ -174,9 +174,9 @@ void TransientHistogramPathTracerInline::bindShaderData(const ShaderVar& var, co
     const ref<Texture> pColor = renderData.getTexture("color");
     var["CB"]["gFrameCount"] = mFrameCount;
     var["CB"]["gFrameDim"] = uint2(pColor->getWidth(), pColor->getHeight());
-    var["CB"]["samplesPerPixel"] = mOptions.pathTracing.samplesPerPixel;
-    var["CB"]["initialWindowRatio"] = mOptions.histogram.initialWindowRatio;
-    LaserState::resolve(renderData).bindShaderData(var["CB"]);
+    var["CB"]["gSamplesPerPixel"] = mOptions.pathTracing.samplesPerPixel;
+    var["CB"]["gInitialWindowRatio"] = mOptions.histogram.initialWindowRatio;
+    LaserState::resolve(renderData).bindShaderData(var["Laser"]);
     mOptions.histogram.bindShaderData(var);
 
     InlinePass::bindChannels(var, renderData, InlinePass::kPrimaryHitInputChannels);

@@ -1,5 +1,5 @@
-/** Time gates: a kernel over the optical path length, centered on the gate center with width time_gate_window, and
-    samplers for path lengths inside it. The host picks the kernel with time_gate_mode (Shared/Host/Configs/TimeGate.h)
+/** Time gates: a kernel over the optical path length, centered on the gate center with width gTimeGateWindow, and
+    samplers for path lengths inside it. The host picks the kernel with gTimeGateMode (Shared/Host/Configs/TimeGate.h)
     and sets the TimeGate constants (TimeGateConfig).
 */
 #include "Utils/Math/MathConstants.slangh"
@@ -17,11 +17,11 @@ import Utils.Math.MathHelpers;
 
 cbuffer TimeGate
 {
-    float time_gate_window;
-    float time_gate_window_rough;
-    uint time_gate_mode;
-    float tcurr;
-    float tprev;
+    float gTimeGateWindow;
+    float gTimeGateWindowRough;
+    uint gTimeGateMode;
+    float gTimeCenter;
+    float gPreviousTimeCenter;
 };
 
 // Gaussian and exponential gates, in gate widths v = (length - center) / width. Both are truncated and
@@ -53,8 +53,8 @@ float exponentialTwoSideGate(float v)
 
 float getMaxPathLength(float target_distance, bool use_rough = false)
 {
-	float target_time_gate_window = use_rough ? time_gate_window_rough : time_gate_window;
-	switch(time_gate_mode)
+	float target_time_gate_window = use_rough ? gTimeGateWindowRough : gTimeGateWindow;
+	switch(gTimeGateMode)
 	{	
 		case TIME_GATE_ALL:{
 			return FLT_MAX;
@@ -87,9 +87,9 @@ float getMaxPathLength(float target_distance, bool use_rough = false)
 
  float pathLengthImportance(float distance, float target_distance, bool use_rough = false)
  {
-	float target_time_gate_window = use_rough ? time_gate_window_rough : time_gate_window;
+	float target_time_gate_window = use_rough ? gTimeGateWindowRough : gTimeGateWindow;
 	float v = (distance - target_distance) / (target_time_gate_window);
-    switch(time_gate_mode)
+    switch(gTimeGateMode)
 	{	
 		case TIME_GATE_ALL:{
 			return 1.0;
@@ -123,7 +123,7 @@ float getMaxPathLength(float target_distance, bool use_rough = false)
  float pathLengthImportanceGivenWindow(float distance, float target_distance, float target_time_gate_window)
  {
 	float v = (distance - target_distance) / (target_time_gate_window);
-	switch(time_gate_mode)
+	switch(gTimeGateMode)
 	{	
 		case TIME_GATE_ALL:{
 			return 1.0;
@@ -174,9 +174,9 @@ float getMaxPathLength(float target_distance, bool use_rough = false)
  // Density of samplePathLength(), including its finite support.
  float evalPdfPathLength(float distance, float target_distance, bool use_rough = false)
  {
-    float width = use_rough ? time_gate_window_rough : time_gate_window;
+    float width = use_rough ? gTimeGateWindowRough : gTimeGateWindow;
     if (!(width > 0.f)) return 0.f;
-    switch (time_gate_mode)
+    switch (gTimeGateMode)
     {
         case TIME_GATE_BOX:
             return abs(distance - target_distance) <= 0.5f * width ? 1.f / width : 0.f;
@@ -194,12 +194,12 @@ float getMaxPathLength(float target_distance, bool use_rough = false)
 
  void samplePathLength(float t, float u, out float tau, out float pdf, bool use_rough = false)
  {
-	float target_time_gate_window = use_rough ? time_gate_window_rough : time_gate_window;
+	float target_time_gate_window = use_rough ? gTimeGateWindowRough : gTimeGateWindow;
 	float a = 0.5 * target_time_gate_window;
 	tau = t;
 	pdf = 0.f;
 	if (!(a > 0.f)) return;
-	switch(time_gate_mode){
+	switch(gTimeGateMode){
 		case TIME_GATE_BOX:{
 			tau = t + (2 * u - 1.0) * a;
 			pdf = 1.0 / (target_time_gate_window);

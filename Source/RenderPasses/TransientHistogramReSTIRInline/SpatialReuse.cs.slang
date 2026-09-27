@@ -16,11 +16,11 @@ void main(uint3 dispatchThreadId: SV_DispatchThreadID)
     uint2 pixel = dispatchThreadId.xy;
     if (any(pixel >= gSpatialReuse.gFrameDim)) return;
     float3 integratedRadiance = 0.f;
-    for (uint bin = 0; bin < tbin; ++bin)
+    for (uint bin = 0; bin < gTimeBin; ++bin)
     {
-        float3 density = gSpatialReuse.resampleGate(pixel, tbin, bin, binCenter(bin)) / tunit;
+        float3 density = gSpatialReuse.resampleGate(pixel, gTimeBin, bin, binCenter(bin)) / gBinWidth;
         gTransientHistogram[uint3(pixel, bin)] = toHistogramTexel(density);
-        integratedRadiance += density * tunit;
+        integratedRadiance += density * gBinWidth;
     }
     gSpatialReuse.gOutputColor[pixel] = float4(integratedRadiance, 1.f);
 }

@@ -20,7 +20,7 @@ cbuffer CB
 {
     uint2 gFrameDim;
     uint gFrameCount;    // Frame count since scene was loaded.
-    uint samplesPerPixel;
+    uint gSamplesPerPixel;
     uint gProjectorSampleCount; // SAMPLING_PROJECTOR: projector samples per vertex.
 }
 
@@ -186,7 +186,7 @@ float3 tracePath(const uint2 pixel, const uint2 frameDim)
         IMaterialInstance mi0 = gScene.materials.getMaterialInstance(sd0, ExplicitLodTextureSampler(0.f));
         ProjectorLight projector = {};
 
-        for (uint i = 0; i < samplesPerPixel; i++)
+        for (uint i = 0; i < gSamplesPerPixel; i++)
         {
             float3 result = float3(0.0f);
             float3 throughput = float3(1.0f);
@@ -234,7 +234,7 @@ float3 tracePath(const uint2 pixel, const uint2 frameDim)
             if (any(isinf(result) || isnan(result))) result = 0.f;
             outColor += result;
         }
-        outColor /= samplesPerPixel;
+        outColor /= gSamplesPerPixel;
     }
     else
     {

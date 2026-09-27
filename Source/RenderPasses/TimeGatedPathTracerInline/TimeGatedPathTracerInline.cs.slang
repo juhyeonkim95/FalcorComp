@@ -17,19 +17,15 @@ import Rendering.Lights.EmissiveLightSampler;
 import Rendering.Lights.EmissiveLightSamplerHelpers;
 import Utils.Geometry.Ellipsoid;
 import Scene.RaytracingInline;
+import RenderPasses.Shared.Shaders.Lights.Laser;
 
 cbuffer CB
 {
     uint2 gFrameDim;
     uint gFrameCount;    // Frame count since scene was loaded.
-    float specularRoughnessThreshold;
+    float gEllipsoidRoughnessThreshold;
 
-    float3 laserOrigin;
-    float3 laserDirection;
-    float3 laserPower;
-    float laserCosAngle;
-
-    uint samplesPerPixel;
+    uint gSamplesPerPixel;
 }
 
 // Inputs
@@ -67,11 +63,11 @@ float3 tracePath(const uint2 pixel, const uint2 frameDim)
 
         ShadingData sd0 = loadShadingData(hit0, primaryRayOrigin, primaryRayDir);
         IMaterialInstance mi0 = gScene.materials.getMaterialInstance(sd0, ExplicitLodTextureSampler(0.f));
-        float maxPathLength = getMaxPathLength(tcurr);
-        LaserLightSampler lls = LaserLightSampler(laserOrigin, laserDirection, laserCosAngle, laserPower);
+        float maxPathLength = getMaxPathLength(gTimeCenter);
+        LaserLightSampler lls = createLaserLightSampler();
 
 
-        for(uint i=0; i<samplesPerPixel; i++){
+        for(uint i=0; i<gSamplesPerPixel; i++){
             float3 result = float3(0.0f);
             float3 throughput = float3(1.0f);
 
@@ -92,7 +88,7 @@ float3 tracePath(const uint2 pixel, const uint2 frameDim)
                 LightSample ls = {};
                 lls.generateLightSample(sg, ls);
                 LightConnection connection = evaluateLightConnection(sd, mi, ls, sg);
-                float gate = pathLengthImportance(pathLength + connection.distance + ls.laserT, tcurr);
+                float gate = pathLengthImportance(pathLength + connection.distance + ls.laserT, gTimeCenter);
                 result += throughput * (connection.bsdfCosine * connection.incidentRadiance * gate);
             }
 #if LIGHT_SAMPLING_METHOD == DIRECT_CONNECTION
@@ -120,7 +116,7 @@ float3 tracePath(const uint2 pixel, const uint2 frameDim)
                     LightSample ls = {};
                     lls.generateLightSample(sg, ls);
                     LightConnection connection = evaluateLightConnection(sd, mi, ls, sg);
-                    float gate = pathLengthImportance(pathLength + connection.distance + ls.laserT, tcurr);
+                    float gate = pathLengthImportance(pathLength + connection.distance + ls.laserT, gTimeCenter);
                     result += throughput * (connection.bsdfCosine * connection.incidentRadiance * gate);
                 }
             }
@@ -131,7 +127,7 @@ float3 tracePath(const uint2 pixel, const uint2 frameDim)
                 bool hasNonDelta = (mi.getLobeTypes(sd) & uint(LobeType::NonDelta)) != 0;
                 bool useEllipsoid = canSampleEllipsoid(depth, hasNonDelta);
 #if LIGHT_SAMPLING_METHOD == ELLIPSOIDAL_CONNECTION
-                useEllipsoid = useEllipsoid && mi.getProperties(sd).roughness > specularRoughnessThreshold;
+                useEllipsoid = useEllipsoid && mi.getProperties(sd).roughness > gEllipsoidRoughnessThreshold;
 #endif
                 LightSample ls = {};
                 lls.generateLightSample(sg, ls);
@@ -151,12 +147,12 @@ float3 tracePath(const uint2 pixel, const uint2 frameDim)
                 // BSDF technique at y: the walk sampled x -> y, now connect y -> light.
                 if (depth > 0 && hasNonDelta && ls.valid)
                 {
-                    float weight = evalBsdfTechniqueWeight(previous, sd, hit, ls, tcurr, emissiveSampler,
+                    float weight = evalBsdfTechniqueWeight(previous, sd, hit, ls, gTimeCenter, emissiveSampler,
                         LIGHT_SAMPLING_METHOD == ELLIPSOIDAL_DIRECT_MIS);
                     if (weight > 0.f)
                     {
                         LightConnection connection = evaluateLightConnection(sd, mi, ls, sg);
-                        float gate = pathLengthImportance(pathLength + connection.distance + ls.laserT, tcurr);
+                        float gate = pathLengthImportance(pathLength + connection.distance + ls.laserT, gTimeCenter);
                         result += throughput * weight * (connection.bsdfCosine * connection.incidentRadiance * gate);
                     }
                 }
@@ -186,7 +182,7 @@ float3 tracePath(const uint2 pixel, const uint2 frameDim)
             if (any(isinf(result) || isnan(result))) result = 0.f;
             outColor += result;
         }
-        outColor /= samplesPerPixel;
+        outColor /= gSamplesPerPixel;
     }
     else
     {
@@ -219,20 +215,20 @@ EllipsoidalEstimate estimateEllipsoidalPath(
     EllipsoidalEstimate estimate = {};
     if (!light.valid) return estimate;
     EllipsoidalSample ellipsoidal;
-    if (!sampleEllipsoid(x, prefixLength, light, tcurr, emissiveSampler, sg, ellipsoidal)) return estimate;
+    if (!sampleEllipsoid(x, prefixLength, light, gTimeCenter, emissiveSampler, sg, ellipsoidal)) return estimate;
     ShadingData y = ellipsoidal.surface;
     let yMaterial = gScene.materials.getMaterialInstance(y, ExplicitLodTextureSampler(0.f));
     estimate.ellipsePdf = ellipsoidal.pdf;
     if (!(estimate.ellipsePdf > 1e-7f)) return estimate;
     // Match the cutoff that would stop the competing BSDF walk before reaching y.
-    if (prefixLength + ellipsoidal.distance * x.IoR < getMaxPathLength(tcurr))
+    if (prefixLength + ellipsoidal.distance * x.IoR < getMaxPathLength(gTimeCenter))
         estimate.bsdfPdf = material.evalPdf(x, ellipsoidal.direction, kUseImportanceSampling);
 
     float3 firstScatter = material.eval(x, ellipsoidal.direction, sg);
     // sampleEllipsoid() traced x -> y; this connection traces y -> light and is
     // zero when occluded. Together the two checks cover the full x -> y -> light path.
     LightConnection connection = evaluateLightConnection(y, yMaterial, light, sg);
-    float gate = pathLengthImportance(prefixLength + ellipsoidal.distance * x.IoR + connection.distance + light.laserT, tcurr);
+    float gate = pathLengthImportance(prefixLength + ellipsoidal.distance * x.IoR + connection.distance + light.laserT, gTimeCenter);
     estimate.radiance = (firstScatter / estimate.ellipsePdf) *
         (connection.bsdfCosine * connection.incidentRadiance * gate);
     return estimate;
@@ -249,5 +245,5 @@ void main(uint3 dispatchThreadId: SV_DispatchThreadID)
 #if USE_SINGLE_CHANNEL
     color = float3(selectChannel(color));
 #endif
-    gOutputColor[pixel] = float4(color / time_gate_window, 1.f);
+    gOutputColor[pixel] = float4(color / gTimeGateWindow, 1.f);
 }

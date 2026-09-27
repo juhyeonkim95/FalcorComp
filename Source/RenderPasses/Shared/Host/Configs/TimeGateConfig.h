@@ -34,10 +34,10 @@ struct TimeGateConfig
     /// Sets the TimeGate constants (window, kernel, tcurr, tprev) under `timeGateVar`.
     void bindShaderData(const ShaderVar& timeGateVar, const TimeGateState& state) const
     {
-        timeGateVar["time_gate_window"] = timeGateWindow;
-        timeGateVar["time_gate_mode"] = uint(timeGateMode);
-        timeGateVar["tcurr"] = state.current;
-        timeGateVar["tprev"] = state.previous;
+        timeGateVar["gTimeGateWindow"] = timeGateWindow;
+        timeGateVar["gTimeGateMode"] = uint(timeGateMode);
+        timeGateVar["gTimeCenter"] = state.current;
+        timeGateVar["gPreviousTimeCenter"] = state.previous;
     }
 
     void validate() const

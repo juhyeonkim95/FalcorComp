@@ -71,7 +71,7 @@ struct PathLengthAwareReSTIRConfig
     {
         spatialVar["neighborCount"] = spatialReuseNeighborCount;
         spatialVar["gatherRadius"] = spatialReuseGatherRadius;
-        spatialVar["specularRoughnessThreshold"] = reconnectionRoughnessThreshold;
+        spatialVar["reconnectionRoughnessThreshold"] = reconnectionRoughnessThreshold;
     }
 
     /// Spatial and temporal reuse. `temporalNote` is appended to the Temporal reuse tooltip.

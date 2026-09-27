@@ -150,21 +150,21 @@ void TransientHistogramReSTIRInline::bindTimeGate(const ShaderVar& var) const
 {
     // Each bin is a box gate one bin wide.
     mOptions.histogram.bindShaderData(var);
-    var["TimeGate"]["time_gate_window"] = mOptions.histogram.binWidth();
-    var["TimeGate"]["time_gate_window_rough"] = mOptions.histogram.binWidth();
+    var["TimeGate"]["gTimeGateWindow"] = mOptions.histogram.binWidth();
+    var["TimeGate"]["gTimeGateWindowRough"] = mOptions.histogram.binWidth();
 }
 
 void TransientHistogramReSTIRInline::bindShaderData(const ShaderVar& var, const RenderData& renderData)
 {
-    var["prevReservoirs"] = mReSTIR.prevReservoirs;
-    var["currReservoirs"] = mReSTIR.currReservoirs;
+    var["gPrevReservoirs"] = mReSTIR.prevReservoirs;
+    var["gCurrReservoirs"] = mReSTIR.currReservoirs;
 
     var["CB"]["gFrameCount"] = mFrameCount;
     var["CB"]["gFrameDim"] = renderData.getDefaultTextureDims();
-    var["CB"]["specularRoughnessThreshold"] = mOptions.restir.reconnectionRoughnessThreshold;
-    var["CB"]["samplesPerPixel"] = mOptions.pathTracing.samplesPerPixel;
+    var["CB"]["gReconnectionRoughnessThreshold"] = mOptions.restir.reconnectionRoughnessThreshold;
+    var["CB"]["gSamplesPerPixel"] = mOptions.pathTracing.samplesPerPixel;
     var["CB"]["gTemporalHistoryLength"] = mOptions.restir.temporalHistoryLength;
-    mLaser.bindShaderData(var["Laser_CB"]);
+    mLaser.bindShaderData(var["Laser"]);
     bindTimeGate(var);
 
     if (mOptions.restir.useTemporalReuse)
@@ -200,7 +200,7 @@ void TransientHistogramReSTIRInline::spatialReuse(RenderContext* pRenderContext,
     InlinePass::bindChannels(rootVar, renderData, histogramChannels());
 
     bindTimeGate(rootVar);
-    mLaser.bindShaderData(rootVar["Laser_CB"]);
+    mLaser.bindShaderData(rootVar["Laser"]);
     mOptions.restir.bindShiftMapping(rootVar["ShiftMappingCB"]);
 
     mReSTIR.runSpatialReuse(pRenderContext, mpSpatialReusePass, var, mOptions.restir.spatialReuseIteration, mRandomSeed, frameDim);
