@@ -40,15 +40,6 @@ const char kShaderFile[] = "RenderPasses/CWToFPathTracerInline/CWToFPathTracerIn
 const char kInputViewDir[] = "viewW";
 const char kUseAntitheticSampling[] = "useAntitheticSampling";
 const char kAntitheticRoundTripCheck[] = "antitheticRoundTripCheck";
-const char kAntitheticMap[] = "antitheticMap";
-const char kAntitheticSubsteps[] = "antitheticSubsteps";
-const char kAntitheticGradientThreshold[] = "antitheticGradientThreshold";
-
-const std::unordered_map<std::string, AntitheticMap> kAntitheticMaps = {
-    {"newton", AntitheticMap::Newton},
-    {"radial", AntitheticMap::Radial},
-    {"substeps", AntitheticMap::Substeps},
-};
 
 const ChannelList kInputChannels = {
     // clang-format off
@@ -75,7 +66,7 @@ CWToFPathTracerInline::CWToFPathTracerInline(ref<Device> pDevice, const Properti
     // Defaults that differ from the shared configs': the primary-hit term carries most of the signal, and the
     // antithetic shift needs a shift mapping with inverse forward and backward shifts.
     mOptions.pathTracing.computeDirect = true;
-    mOptions.shiftMapping.shiftmapMethod = ShiftmapMethod::BARYCENTRIC;
+    mOptions.shiftMapping.shiftmapMethod = ShiftmapMethod::RADIAL;
     mOptions.shiftMapping.gaugeMode = GaugeMode::ORTHO_AVG_GRAD;
     mOptions.shiftMapping.newtonRelativeTolerance = 0.002f;
 
@@ -104,12 +95,6 @@ void CWToFPathTracerInline::parseProperties(const Properties& props)
             mOptions.useAntitheticSampling = value;
         else if (key == kAntitheticRoundTripCheck)
             mOptions.antitheticRoundTripCheck = value;
-        else if (key == kAntitheticMap)
-            mOptions.antitheticMap = parseEnumProperty(kAntitheticMaps, value, key);
-        else if (key == kAntitheticSubsteps)
-            mOptions.antitheticSubsteps = value;
-        else if (key == kAntitheticGradientThreshold)
-            mOptions.antitheticGradientThreshold = value;
         else
             logWarning("Unknown property '{}' in CWToFPathTracerInline properties.", key);
     }
@@ -123,9 +108,6 @@ Properties CWToFPathTracerInline::getProperties() const
     mOptions.shiftMapping.serialize(props);
     props[kUseAntitheticSampling] = mOptions.useAntitheticSampling;
     props[kAntitheticRoundTripCheck] = mOptions.antitheticRoundTripCheck;
-    props[kAntitheticMap] = enumPropertyName(kAntitheticMaps, mOptions.antitheticMap);
-    props[kAntitheticSubsteps] = mOptions.antitheticSubsteps;
-    props[kAntitheticGradientThreshold] = mOptions.antitheticGradientThreshold;
     return props;
 }
 
@@ -165,7 +147,6 @@ DefineList CWToFPathTracerInline::getShaderDefines(const RenderData& renderData)
     defines.add(mOptions.shiftMapping.getDefines());
     defines.add("USE_ANTITHETIC_SAMPLING", mOptions.useAntitheticSampling ? "1" : "0");
     defines.add("ANTITHETIC_ROUND_TRIP_CHECK", mOptions.antitheticRoundTripCheck ? "1" : "0");
-    defines.add("ANTITHETIC_MAP", std::to_string((uint32_t)mOptions.antitheticMap));
 
     // For optional I/O resources, set 'is_valid_<name>' defines to inform the program of which ones it can access.
     defines.add(getValidResourceDefines(kInputChannels, renderData));
@@ -180,8 +161,6 @@ void CWToFPathTracerInline::bindShaderData(const ShaderVar& var, const RenderDat
     var["CB"]["gFrameDim"] = renderData.getDefaultTextureDims();
     var["CB"]["gPRNGDimension"] = InlinePass::getPRNGDimension(renderData);
     var["CB"]["samplesPerPixel"] = mOptions.pathTracing.samplesPerPixel;
-    var["CB"]["gAntitheticSubsteps"] = mOptions.antitheticSubsteps;
-    var["CB"]["gAntitheticGradientThreshold"] = mOptions.antitheticGradientThreshold;
     LaserState::resolve(renderData).bindShaderData(var["CB"]);
     mOptions.continuousWave.bindShaderData(var["Modulation"]);
     mOptions.shiftMapping.bindShaderData(var["Shiftmap_CB"]);
@@ -239,37 +218,15 @@ void CWToFPathTracerInline::renderUI(Gui::Widgets& widget)
     {
         if (auto group = widget.group("Antithetic shift mapping", true))
         {
-            static const Gui::DropdownList kAntitheticMapList = {
-                {(uint32_t)AntitheticMap::Newton, "Newton"},
-                {(uint32_t)AntitheticMap::Radial, "Radial"},
-                {(uint32_t)AntitheticMap::Substeps, "Newton substeps"},
-            };
-            uint32_t map = (uint32_t)options.antitheticMap;
-            if (group.dropdown("Map", kAntitheticMapList, map))
-            {
-                options.antitheticMap = (AntitheticMap)map;
-                dirty = true;
-            }
-            group.tooltip("Newton: one solve with the shift mapping below.\nRadial: along the ray from the path "
-                          "length's minimum on the vertex's plane; the two shifts are exact inverses.\nNewton substeps: "
-                          "several small solves.", true);
-            if (options.antitheticMap == AntitheticMap::Substeps)
-                dirty |= group.var("Substeps", options.antitheticSubsteps, 1u, 64u);
-            if (options.antitheticMap == AntitheticMap::Newton)
-            {
-                dirty |= group.var("Slope threshold", options.antitheticGradientThreshold, 0.f, 2.f);
-                group.tooltip("Reject a pair if the path length's slope along the surface is below this at either "
-                              "end (0: off).", true);
-            }
             dirty |= group.checkbox("Round-trip check", options.antitheticRoundTripCheck);
             group.tooltip("Keep a shift only if shifting the partner back returns to the start, so the forward and "
                           "backward shifts are exact inverses. Costs a second Newton solve.", true);
             dirty |= options.shiftMapping.renderUI(group,
                 "How the antithetic vertex is found: it is moved on its surface so the path length changes by the "
-                "antithetic offset, using a Newton solve on the chosen chart. Barycentric (the default) keeps it on "
-                "its triangle.\nNone pairs the vertex with itself (no "
-                "variance reduction). Use a constant or average-gradient gauge: the forward and backward shifts must be "
-                "inverses of each other.");
+                "antithetic offset.\nRadial (the default): along the ray from the path length's minimum on the "
+                "vertex's plane; the forward and backward shifts are exact inverses.\nThe other methods use a Newton "
+                "solve on their chart, whose forward and backward shifts can disagree near the minimum (use the "
+                "round-trip check).\nNone pairs the vertex with itself (no variance reduction).");
         }
     }
 

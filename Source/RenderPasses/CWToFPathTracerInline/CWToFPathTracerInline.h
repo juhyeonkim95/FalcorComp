@@ -37,14 +37,6 @@
 
 using namespace Falcor;
 
-/// How the antithetic vertex is found (ANTITHETIC_MAP in the shader).
-enum class AntitheticMap : uint32_t
-{
-    Newton = 0,   ///< One Newton solve with the shift mapping (method, gauge).
-    Radial = 1,   ///< Along the ray from the path length's minimum on the vertex's plane (exact inverses).
-    Substeps = 2, ///< Several small Newton solves.
-};
-
 /** Continuous-wave time-of-flight path tracer: paths are weighted by a periodic modulation of their optical
  * length (ContinuousWaveConfig). With antithetic sampling, each BSDF-sampled vertex is paired with a copy moved on
  * its surface (path-length-aware shift mapping) so the modulation has the opposite sign.
@@ -83,9 +75,6 @@ private:
         ShiftMappingConfig shiftMapping;
         bool useAntitheticSampling = true;
         bool antitheticRoundTripCheck = false; ///< Keep a shift only if shifting back returns to the start.
-        AntitheticMap antitheticMap = AntitheticMap::Radial;
-        uint antitheticSubsteps = 4;            ///< AntitheticMap::Substeps: Newton solves per shift.
-        float antitheticGradientThreshold = 0.f; ///< AntitheticMap::Newton: reject pairs with a smaller path-length slope.
     };
 
     static void validateOptions(const Options& options);

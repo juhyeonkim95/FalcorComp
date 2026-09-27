@@ -24,8 +24,6 @@ cbuffer CB
     float laserCosAngle;
 
     uint samplesPerPixel;
-    uint gAntitheticSubsteps;          // ANTITHETIC_MAP_SUBSTEPS: shift steps.
-    float gAntitheticGradientThreshold; // ANTITHETIC_MAP_NEWTON: reject pairs with a smaller path-length slope.
 }
 
 cbuffer Modulation
@@ -58,11 +56,6 @@ static const bool kUseAlphaTest = USE_ALPHA_TEST;
 static const float3 kDefaultBackgroundColor = float3(0, 0, 0);
 static const float kRayTMax = FLT_MAX;
 static const float kRoundTripTolerance = 0.01f; // Round-trip error allowed, relative to the shift distance.
-
-// ANTITHETIC_MAP: how the antithetic vertex is found.
-#define ANTITHETIC_MAP_NEWTON 0   // One Newton solve with the chosen shift mapping (method, gauge).
-#define ANTITHETIC_MAP_RADIAL 1   // Along the ray from the path length's minimum on the vertex's plane.
-#define ANTITHETIC_MAP_SUBSTEPS 2 // gAntitheticSubsteps Newton solves of dt / gAntitheticSubsteps each.
 
 
 HitInfo traceRay(const float3 origin, const float3 dir, out float hitT)
@@ -128,143 +121,6 @@ ShadingData getLightEndpoint(LightSample light)
 #endif
 }
 
-/// Path length |p1 - X| + |p2 - X| at X, and its derivative along the unit direction u.
-float pathLengthAlong(float3 p1, float3 p2, float3 X, float3 u, out float slope)
-{
-    float3 r1 = p1 - X;
-    float3 r2 = p2 - X;
-    float d1 = length(r1);
-    float d2 = length(r2);
-    slope = -dot(u, r1 / d1 + r2 / d2);
-    return d1 + d2;
-}
-
-/** Radial shift: moves the vertex of `hit` along the ray from m, the minimum of the path length
-    |p1 - X| + |p2 - X| on the vertex's plane, until the path length changes by dt. The path length increases
-    along every ray from m, so the target has one solution on the ray, and the +dt and -dt shifts are exact
-    inverses (the partner lies on the same ray, and m depends only on the plane). The solution must be the
-    first hit from p2's vertex on the same plane.
-    @param[out] areaJacobian |dA' / dA|, or 0 when there is no partner.
-*/
-HitInfo radialShift(ShadingData lightEndpoint, HitInfo hit, ShadingData previous, float dt, out float areaJacobian,
-    float tolerance)
-{
-    areaJacobian = 0.f;
-    VertexData vertex = gScene.getVertexData(hit.getTriangleHit());
-    float3 n = normalize(vertex.faceNormalW);
-    float3 x = vertex.posW;
-    float3 p1 = lightEndpoint.posW;
-    float3 p2 = previous.posW;
-
-    // m: where the segment p1 -> p2 crosses the plane, with p2 mirrored when both are on the same side.
-    float h1 = dot(p1 - x, n);
-    float h2 = dot(p2 - x, n);
-    bool sameSide = h1 * h2 > 0.f;
-    float3 q2 = sameSide ? p2 - 2.f * h2 * n : p2;
-    float hq2 = sameSide ? -h2 : h2;
-    if (!(abs(h1 - hq2) > 1e-12f)) return hit;
-    float3 m = p1 + (h1 / (h1 - hq2)) * (q2 - p1);
-    m -= dot(m - x, n) * n; // onto the plane
-
-    float3 offset = x - m;
-    offset -= dot(offset, n) * n;
-    float r = length(offset);
-    if (!(r > 1e-6f)) return hit;
-    float3 u = offset / r;
-
-    float slopeStart;
-    float target = pathLengthAlong(p1, p2, m + r * u, u, slopeStart) + dt;
-    if (!(slopeStart > 0.f)) return hit;
-
-    // Bracket the root on the ray, then refine with Newton, falling back to bisection.
-    float lo, hi;
-    if (dt < 0.f)
-    {
-        float slopeAtMinimum;
-        if (!(target > pathLengthAlong(p1, p2, m, u, slopeAtMinimum))) return hit; // shorter than the minimum
-        lo = 0.f;
-        hi = r;
-    }
-    else
-    {
-        lo = r;
-        hi = r + dt;
-        float slope;
-        uint grow = 0;
-        while (pathLengthAlong(p1, p2, m + hi * u, u, slope) < target && grow++ < 40)
-            hi = lo + 2.f * (hi - lo);
-        if (grow > 40) return hit;
-    }
-    float s = r;
-    float slope = slopeStart;
-    bool converged = false;
-    for (uint iteration = 0; iteration < 60; iteration++)
-    {
-        float residual = pathLengthAlong(p1, p2, m + s * u, u, slope) - target;
-        if (abs(residual) < tolerance) { converged = true; break; }
-        if (residual > 0.f) hi = s; else lo = s;
-        float next = slope > 0.f ? s - residual / slope : 0.5f * (lo + hi);
-        s = (next > lo && next < hi) ? next : 0.5f * (lo + hi);
-    }
-    if (!converged || !(slope > 0.f) || !(s > 0.f)) return hit;
-
-    // Polar map (r, angle) -> (s, angle): dA' / dA = (s / r) * (ds / dr), ds / dr = slope(r) / slope(s).
-    float3 shiftedPosition = m + s * u;
-    HitInfo shifted = trace_shift_endpoint(previous, true, shiftedPosition, tolerance);
-    if (!shifted.isValid()) return hit;
-    VertexData shiftedVertex = gScene.getVertexData(shifted.getTriangleHit());
-    if (!(abs(dot(shiftedVertex.posW - x, n)) <= tolerance && dot(normalize(shiftedVertex.faceNormalW), n) > 0.999999f))
-        return hit;
-    areaJacobian = (s / r) * (slopeStart / slope);
-    return shifted;
-}
-
-/// Slope of the path length |p1 - X| + |p2 - X| within the plane of normal n at X.
-float tangentialSlope(float3 p1, float3 p2, float3 X, float3 n)
-{
-    float3 gradient = normalize(p1 - X) + normalize(p2 - X);
-    return length(gradient - dot(gradient, n) * n);
-}
-
-/// The antithetic vertex for the path-length change dt (ANTITHETIC_MAP). areaJacobian is |dA' / dA|, 0 without one.
-HitInfo antitheticShift(ShadingData lightEndpoint, HitInfo hit, ShadingData previous, float dt, out float areaJacobian,
-    float tolerance, inout SampleGenerator sg)
-{
-    ShiftMapDebugInfo debugInfo = {};
-#if ANTITHETIC_MAP == ANTITHETIC_MAP_RADIAL
-    return radialShift(lightEndpoint, hit, previous, dt, areaJacobian, tolerance);
-#elif ANTITHETIC_MAP == ANTITHETIC_MAP_SUBSTEPS
-    // Each small step has one solution near its start, so the steps, and their composition, invert exactly.
-    uint steps = max(gAntitheticSubsteps, 1u);
-    float step = dt / float(steps);
-    float stepTolerance = max(abs(step) * gNewtonRelativeTolerance, 1e-6f);
-    HitInfo current = hit;
-    areaJacobian = 1.f;
-    for (uint i = 0; i < steps; i++)
-    {
-        float stepJacobian = 0.f;
-        current = path_length_aware_shift_mapping(lightEndpoint, current, previous, step, stepJacobian, debugInfo,
-            stepTolerance, sg);
-        if (!(stepJacobian > 0.f) || !isfinite(stepJacobian)) { areaJacobian = 0.f; return hit; }
-        areaJacobian *= stepJacobian;
-    }
-    return current;
-#else
-    HitInfo shifted = path_length_aware_shift_mapping(lightEndpoint, hit, previous, dt, areaJacobian, debugInfo,
-        tolerance, sg);
-    if (gAntitheticGradientThreshold > 0.f && areaJacobian > 0.f)
-    {
-        // Symmetric in the pair: near a minimum of the path length the solve can pick another solution.
-        VertexData start = gScene.getVertexData(hit.getTriangleHit());
-        VertexData end = gScene.getVertexData(shifted.getTriangleHit());
-        float slope = min(tangentialSlope(lightEndpoint.posW, previous.posW, start.posW, normalize(start.faceNormalW)),
-            tangentialSlope(lightEndpoint.posW, previous.posW, end.posW, normalize(end.faceNormalW)));
-        if (slope < gAntitheticGradientThreshold) areaJacobian = 0.f;
-    }
-    return shifted;
-#endif
-}
-
 /** Estimate of the BSDF-sampled segment previous -> surface and its antithetic partner, including the connection
     of each to the light (AntitheticMIS). The partner moves `surface` on its surface so the path length changes by
     antitheticWaveformOffset(), which flips the sign of the waveform: half a wavelength longer or shorter with equal
@@ -285,8 +141,10 @@ float3 estimateWithAntithetic(ShadingData previous, IMaterialInstance previousMa
     // The shifted vertex is traced from `previous`, so it is the first hit in its direction, as a BSDF sample
     // from `previous` would be. The light endpoint stays fixed.
     float areaJacobian = 0.f;
+    ShiftMapDebugInfo debugInfo = {};
     float tolerance = max(abs(dt) * gNewtonRelativeTolerance, 1e-6f);
-    HitInfo shiftedHit = antitheticShift(getLightEndpoint(light), hit, previous, dt, areaJacobian, tolerance, sg);
+    HitInfo shiftedHit = path_length_aware_shift_mapping(getLightEndpoint(light), hit, previous, dt, areaJacobian,
+        debugInfo, tolerance, sg);
     if (!(areaJacobian > 0.f) || !isfinite(areaJacobian)) return primalEstimate;
     float3 shiftedPosition = gScene.getVertexData(shiftedHit.getTriangleHit()).posW;
 
@@ -295,8 +153,8 @@ float3 estimateWithAntithetic(ShadingData previous, IMaterialInstance previousMa
     // backward shifts are then exact inverses and one-to-one, as AntitheticMIS needs, even when the Newton solve
     // could land elsewhere (e.g. on another surface with the ray-trace charts).
     float reverseJacobian = 0.f;
-    HitInfo returnedHit = antitheticShift(getLightEndpoint(light), shiftedHit, previous, -dt, reverseJacobian,
-        tolerance, sg);
+    HitInfo returnedHit = path_length_aware_shift_mapping(getLightEndpoint(light), shiftedHit, previous, -dt,
+        reverseJacobian, debugInfo, tolerance, sg);
     if (!(reverseJacobian > 0.f) || !isfinite(reverseJacobian)) return primalEstimate;
     float3 returnedPosition = gScene.getVertexData(returnedHit.getTriangleHit()).posW;
     if (length(returnedPosition - surface.posW) > kRoundTripTolerance * length(shiftedPosition - surface.posW))

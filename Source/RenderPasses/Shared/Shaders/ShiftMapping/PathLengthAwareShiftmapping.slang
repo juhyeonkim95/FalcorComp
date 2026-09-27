@@ -20,6 +20,7 @@ import Rendering.Lights.EmissiveLightSampler;
 #define SHFITMAP_RAY_TRACE_HEMISPHERE 3
 #define SHFITMAP_AREA_ADAPTIVE 4
 #define SHIFTMAP_RAY_TRACE_CHART 5
+#define SHIFTMAP_RADIAL 6
 
 cbuffer Shiftmap_CB
 {
@@ -101,6 +102,8 @@ HitInfo path_length_aware_shift_mapping(
     return path_length_aware_shift_mapping_path_trace_shadowmap(x1, x2, x3, dt, a_const, jacobian, debuginfo, tol);
 #elif SHIFT_MAPPING_METHOD == SHFITMAP_AREA_ADAPTIVE
     return path_length_aware_shift_mapping_adaptive(x1, x2, x3, dt, a_const, jacobian, debuginfo, tol);
+#elif SHIFT_MAPPING_METHOD == SHIFTMAP_RADIAL
+    return path_length_aware_shift_mapping_radial(x1, x2, x3, dt, jacobian, debuginfo, tol);
 #endif
     jacobian = 1.0;
     return x2;
@@ -213,6 +216,116 @@ HitInfo path_length_aware_shift_mapping_local_tangent_surface(
 
     jacobian = result.detJ;
     return hit;
+}
+
+/// Path length |p1 - X| + |p2 - X| at X, and its derivative along the unit direction u.
+float pathLengthAlong(float3 p1, float3 p2, float3 X, float3 u, out float slope)
+{
+    float3 r1 = p1 - X;
+    float3 r2 = p2 - X;
+    float d1 = length(r1);
+    float d2 = length(r2);
+    slope = -dot(u, r1 / d1 + r2 / d2);
+    return d1 + d2;
+}
+
+/** Radial shift: moves x2's vertex along the ray from m, the minimum of the path length |p1 - X| + |p2 - X| on the
+    vertex's plane, until the path length changes by dt. The path length increases along every ray from m, so the
+    target has one solution on the ray (a 1D Newton search with bisection), and the +dt and -dt shifts are exact
+    inverses: the partner lies on the same ray, and m depends only on the plane and the two fixed vertices. m is
+    where the segment p1 -> p2 crosses the plane, with p2 mirrored when both are on the same side. The shifted
+    vertex must be the first hit from x3 on the same plane. The jacobian is the area ratio of the polar map
+    (r, angle) -> (s, angle), (s / r) * (slope(r) / slope(s)). The gauge settings are not used.
+*/
+HitInfo path_length_aware_shift_mapping_radial(
+    ShadingData x1, // preceding vertex
+    HitInfo x2, // vertex to shift
+    ShadingData x3, // fixed next vertex (surface or point light)
+    float dt,
+    out float jacobian,
+    inout ShiftMapDebugInfo debuginfo,
+    float tol=1e-7
+)
+{
+    jacobian = 0.f;
+    debuginfo.iters = 0;
+    debuginfo.status = uint(NewtonResultStatus::NO_CONVERGE);
+#if DEBUG_NEWTON_ITERATIONS
+    debuginfo.newtonStats = uint4(0, 0, 1, 0);
+#endif
+    VertexData vertex = gScene.getVertexData(x2.getTriangleHit());
+    float3 n = normalize(vertex.faceNormalW);
+    float3 x = vertex.posW;
+    float3 p1 = x1.posW;
+    float3 p2 = x3.posW;
+
+    // m: where the segment p1 -> p2 crosses the plane, with p2 mirrored when both are on the same side.
+    float h1 = dot(p1 - x, n);
+    float h2 = dot(p2 - x, n);
+    bool sameSide = h1 * h2 > 0.f;
+    float3 q2 = sameSide ? p2 - 2.f * h2 * n : p2;
+    float hq2 = sameSide ? -h2 : h2;
+    if (!(abs(h1 - hq2) > 1e-12f)) return x2;
+    float3 m = p1 + (h1 / (h1 - hq2)) * (q2 - p1);
+    m -= dot(m - x, n) * n; // onto the plane
+
+    float3 offset = x - m;
+    offset -= dot(offset, n) * n;
+    float r = length(offset);
+    if (!(r > 1e-6f)) return x2;
+    float3 u = offset / r;
+
+    float slopeStart;
+    float target = pathLengthAlong(p1, p2, m + r * u, u, slopeStart) + dt;
+    if (!(slopeStart > 0.f)) return x2;
+
+    // Bracket the root on the ray, then refine with Newton, falling back to bisection.
+    float lo, hi;
+    if (dt < 0.f)
+    {
+        float slopeAtMinimum;
+        if (!(target > pathLengthAlong(p1, p2, m, u, slopeAtMinimum))) return x2; // shorter than the minimum
+        lo = 0.f;
+        hi = r;
+    }
+    else
+    {
+        lo = r;
+        hi = r + dt;
+        float slope;
+        uint grow = 0;
+        while (pathLengthAlong(p1, p2, m + hi * u, u, slope) < target && grow++ < 40)
+            hi = lo + 2.f * (hi - lo);
+        if (grow > 40) return x2;
+    }
+    float s = r;
+    float slope = slopeStart;
+    bool converged = false;
+    for (uint iteration = 0; iteration < 60; iteration++)
+    {
+        debuginfo.iters = int(iteration + 1);
+        float residual = pathLengthAlong(p1, p2, m + s * u, u, slope) - target;
+        if (abs(residual) < tol) { converged = true; break; }
+        if (residual > 0.f) hi = s; else lo = s;
+        float next = slope > 0.f ? s - residual / slope : 0.5f * (lo + hi);
+        s = (next > lo && next < hi) ? next : 0.5f * (lo + hi);
+    }
+    if (!converged || !(slope > 0.f) || !(s > 0.f)) return x2;
+
+    // Polar map (r, angle) -> (s, angle): dA' / dA = (s / r) * (ds / dr), ds / dr = slope(r) / slope(s).
+    float3 shiftedPosition = m + s * u;
+    HitInfo shifted = trace_shift_endpoint(x3, true, shiftedPosition, tol);
+    if (!shifted.isValid()) return x2;
+    VertexData shiftedVertex = gScene.getVertexData(shifted.getTriangleHit());
+    if (!(abs(dot(shiftedVertex.posW - x, n)) <= tol && dot(normalize(shiftedVertex.faceNormalW), n) > 0.999999f))
+        return x2;
+    jacobian = (s / r) * (slopeStart / slope);
+    debuginfo.status = uint(NewtonResultStatus::SUCCESS);
+#if DEBUG_NEWTON_ITERATIONS
+    debuginfo.newtonStats = uint4(1, 0, 1, debuginfo.iters);
+    debuginfo.mappingDistance = float2(0.f, length(shiftedPosition - x));
+#endif
+    return shifted;
 }
 
 HitInfo path_length_aware_shift_mapping_barycentric_surface(

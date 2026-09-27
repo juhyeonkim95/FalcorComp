@@ -11,6 +11,7 @@ enum class ShiftmapMethod
     RAY_TRACE_HEMISPHERE = 3,
     AREA_ADAPTIVE = 4,
     RAY_TRACE_CHART = 5,
+    RADIAL = 6, ///< Along the ray from the path length's minimum on the vertex's plane; ignores the gauge.
 };
 
 static const std::unordered_map<std::string, ShiftmapMethod> ShiftmapMethodTable = {
@@ -19,7 +20,8 @@ static const std::unordered_map<std::string, ShiftmapMethod> ShiftmapMethodTable
     {"barycentric", ShiftmapMethod::BARYCENTRIC},
     {"ray_trace", ShiftmapMethod::RAY_TRACE_HEMISPHERE},
     {"area_adaptive", ShiftmapMethod::AREA_ADAPTIVE},
-    {"ray_trace_chart", ShiftmapMethod::RAY_TRACE_CHART}
+    {"ray_trace_chart", ShiftmapMethod::RAY_TRACE_CHART},
+    {"radial", ShiftmapMethod::RADIAL}
 };
 
 enum class GaugeMode
@@ -102,6 +104,7 @@ struct ShiftMappingConfig
             {(uint32_t)ShiftmapMethod::RAY_TRACE_HEMISPHERE, "Ray trace"},
             {(uint32_t)ShiftmapMethod::AREA_ADAPTIVE, "Area adaptive"},
             {(uint32_t)ShiftmapMethod::RAY_TRACE_CHART, "Ray trace chart"},
+            {(uint32_t)ShiftmapMethod::RADIAL, "Radial"},
         };
         uint32_t method = (uint32_t)shiftmapMethod;
         if (widget.dropdown("Method", kShiftmapMethodList, method))
@@ -113,7 +116,8 @@ struct ShiftMappingConfig
 
         dirty |= extraUI(widget);
 
-        if (shiftmapMethod != ShiftmapMethod::NO)
+        // Radial moves the vertex along the ray from the plane's path-length minimum: no gauge, no 2D Newton solve.
+        if (shiftmapMethod != ShiftmapMethod::NO && shiftmapMethod != ShiftmapMethod::RADIAL)
         {
             static const Gui::DropdownList kGaugeModeList = {
                 {(uint32_t)GaugeMode::CONSTANT, "Constant axis"},
