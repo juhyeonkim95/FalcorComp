@@ -50,6 +50,7 @@ struct ProjectorConfig
     ProjectorPatternType pattern = ProjectorPatternType::Periodic;
     PatternAxis patternAxis = PatternAxis::U;
     bool invertPattern = false;
+    bool unsignedModulation = false; ///< Show 0.5 p + 0.5 in [0, 1] instead of the zero-mean p in [-1, 1].
     Waveform waveform = Waveform::Cos;                      ///< Periodic.
     float patternWavelength = 0.05f;                       ///< Periodic: period, in uv units.
     float patternPhase = 0.f;                              ///< Periodic: offset, in periods.
@@ -93,6 +94,8 @@ struct ProjectorConfig
             patternAxis = parseEnumProperty(kPatternAxes, value, key);
         else if (key == "invertPattern")
             invertPattern = value;
+        else if (key == "unsignedModulation")
+            unsignedModulation = value;
         else if (key == "waveform")
             waveform = parseEnumProperty(kWaveforms, value, key);
         else if (key == "patternWavelength")
@@ -124,6 +127,7 @@ struct ProjectorConfig
         props["pattern"] = enumPropertyName(kProjectorPatternTypes, pattern);
         props["patternAxis"] = enumPropertyName(kPatternAxes, patternAxis);
         props["invertPattern"] = invertPattern;
+        props["unsignedModulation"] = unsignedModulation;
         props["waveform"] = enumPropertyName(kWaveforms, waveform);
         props["patternWavelength"] = patternWavelength;
         props["patternPhase"] = patternPhase;
@@ -159,6 +163,7 @@ struct ProjectorConfig
         auto patternVar = var["ProjectorPatternCB"];
         patternVar["gPatternAxis"] = uint(patternAxis);
         patternVar["gPatternSign"] = invertPattern ? -1.f : 1.f;
+        patternVar["gUnsignedModulation"] = uint(unsignedModulation);
         patternVar["gWaveform"] = uint(waveform);
         patternVar["gWavelength"] = patternWavelength;
         patternVar["gPhase"] = patternPhase;
@@ -220,6 +225,8 @@ struct ProjectorConfig
         }
         dirty |= widget.checkbox("Invert", invertPattern);
         widget.tooltip("Negate the pattern.", true);
+        dirty |= widget.checkbox("Unsigned", unsignedModulation);
+        widget.tooltip("Show 0.5 p + 0.5 in [0, 1] instead of the zero-mean pattern p in [-1, 1].", true);
 
         if (pattern == ProjectorPatternType::Periodic)
         {

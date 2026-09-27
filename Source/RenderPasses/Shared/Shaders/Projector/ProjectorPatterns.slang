@@ -27,6 +27,7 @@ cbuffer ProjectorPatternCB
 {
     uint gPatternAxis;   // Projector coordinate the pattern varies along: 0 = u, 1 = v.
     float gPatternSign;  // -1 inverts the pattern.
+    uint gUnsignedModulation; // Show 0.5 p + 0.5 instead of p.
 
     uint gWaveform;      // Periodic: WAVEFORM_* (Waveforms.slang).
     float gWavelength;   // Periodic: period in uv units.
