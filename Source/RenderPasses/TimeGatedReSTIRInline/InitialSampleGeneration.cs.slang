@@ -17,7 +17,7 @@ import RenderPasses.Shared.Shaders.ReSTIR.PathReconstruction;
 import RenderPasses.Shared.Shaders.ReSTIR.ReservoirReuse;
 import RenderPasses.Shared.Shaders.ReSTIR.InitialCandidates;
 #if USE_SHRINK_MAPPING || USE_TEMPORAL_REUSE
-import RenderPasses.Shared.Shaders.ReSTIR.PathLengthAwareShiftmapping;
+import RenderPasses.Shared.Shaders.ShiftMapping.PathLengthAwareShiftmapping;
 #endif
 import RenderPasses.Shared.Shaders.Utils.LoadShadingData;
 import RenderPasses.Shared.Shaders.Lights.LaserLightSampler;

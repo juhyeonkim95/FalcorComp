@@ -10,7 +10,7 @@ import RenderPasses.Shared.Shaders.ReSTIR.Reservoirs;
 import RenderPasses.Shared.Shaders.ReSTIR.PathReconstruction;
 import RenderPasses.Shared.Shaders.ReSTIR.ReservoirReuse;
 import RenderPasses.Shared.Shaders.Utils.LoadShadingData;
-import RenderPasses.Shared.Shaders.ReSTIR.PathLengthAwareShiftmapping;
+import RenderPasses.Shared.Shaders.ShiftMapping.PathLengthAwareShiftmapping;
 
 cbuffer Laser_CB
 {

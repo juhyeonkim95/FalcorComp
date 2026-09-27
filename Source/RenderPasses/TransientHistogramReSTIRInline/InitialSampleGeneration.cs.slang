@@ -18,7 +18,7 @@ import RenderPasses.Shared.Shaders.ReSTIR.PathReconstruction;
 import RenderPasses.Shared.Shaders.ReSTIR.InitialCandidates;
 #if USE_TEMPORAL_REUSE
 import RenderPasses.Shared.Shaders.ReSTIR.ReservoirReuse;
-import RenderPasses.Shared.Shaders.ReSTIR.PathLengthAwareShiftmapping;
+import RenderPasses.Shared.Shaders.ShiftMapping.PathLengthAwareShiftmapping;
 #endif
 
 

@@ -9,7 +9,7 @@ set(shared_shaders
     ReSTIR/Reservoirs.slang
     ReSTIR/InitialCandidates.slang
     ReSTIR/PathReconstruction.slang
-    ReSTIR/PathLengthAwareShiftmapping.slang
+    ShiftMapping/PathLengthAwareShiftmapping.slang
     ReSTIR/ReservoirReuse.slang
     ReSTIR/SpatialReuse.slang
     PathLengthNewtonSolver/NewtonSolver.slang

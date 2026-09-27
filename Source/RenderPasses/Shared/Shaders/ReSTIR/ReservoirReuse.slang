@@ -11,7 +11,7 @@ import RenderPasses.Shared.Shaders.Lights.LaserLightSampler;
 import RenderPasses.Shared.Shaders.Lights.LightConnection;
 
 import RenderPasses.Shared.Shaders.ReSTIR.PathReconstruction;
-import RenderPasses.Shared.Shaders.ReSTIR.PathLengthAwareShiftmapping;
+import RenderPasses.Shared.Shaders.ShiftMapping.PathLengthAwareShiftmapping;
 
 // Balanced ratios with scaled mass, target and Jacobian factors. No logs and
 // no reciprocal of a tiny target are needed; all products here are <= 1.
