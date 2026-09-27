@@ -3,7 +3,7 @@
 #include "RenderGraph/RenderPass.h"
 
 /// Path-length-aware shift mapping: the chart on which the shifted vertex is moved.
-enum class ShiftmapMethod
+enum class ShiftMappingMethod
 {
     NO = 0,
     LOCAL_TANGENT_SURFACE = 1,
@@ -14,14 +14,14 @@ enum class ShiftmapMethod
     RADIAL = 6, ///< Along the ray from the path length's minimum on the vertex's plane; ignores the gauge.
 };
 
-static const std::unordered_map<std::string, ShiftmapMethod> ShiftmapMethodTable = {
-    {"no", ShiftmapMethod::NO},
-    {"local_tangent", ShiftmapMethod::LOCAL_TANGENT_SURFACE},
-    {"barycentric", ShiftmapMethod::BARYCENTRIC},
-    {"ray_trace", ShiftmapMethod::RAY_TRACE_HEMISPHERE},
-    {"area_adaptive", ShiftmapMethod::AREA_ADAPTIVE},
-    {"ray_trace_chart", ShiftmapMethod::RAY_TRACE_CHART},
-    {"radial", ShiftmapMethod::RADIAL}
+inline const std::unordered_map<std::string, ShiftMappingMethod> kShiftMappingMethods = {
+    {"no", ShiftMappingMethod::NO},
+    {"local_tangent", ShiftMappingMethod::LOCAL_TANGENT_SURFACE},
+    {"barycentric", ShiftMappingMethod::BARYCENTRIC},
+    {"ray_trace", ShiftMappingMethod::RAY_TRACE_HEMISPHERE},
+    {"area_adaptive", ShiftMappingMethod::AREA_ADAPTIVE},
+    {"ray_trace_chart", ShiftMappingMethod::RAY_TRACE_CHART},
+    {"radial", ShiftMappingMethod::RADIAL}
 };
 
 enum class GaugeMode
@@ -31,17 +31,17 @@ enum class GaugeMode
     ORTHO_AVG_GRAD = 2,
 };
 
-static const std::unordered_map<std::string, GaugeMode> GaugeModeTable = {
+inline const std::unordered_map<std::string, GaugeMode> kGaugeModes = {
     {"constant", GaugeMode::CONSTANT},
     {"grad", GaugeMode::ORTHO_GRAD_START},
     {"avg_grad", GaugeMode::ORTHO_AVG_GRAD}
 };
 
-/// Path-length-aware shift mapping (Shared/Shaders/ShiftMapping/PathLengthAwareShiftmapping.slang): a vertex is
+/// Path-length-aware shift mapping (Shared/Shaders/ShiftMapping/ShiftMapping.slang): a vertex is
 /// moved on its surface so the path length changes by a given amount, with a Newton solve on the chosen chart.
 struct ShiftMappingConfig
 {
-    ShiftmapMethod shiftmapMethod = ShiftmapMethod::NO;
+    ShiftMappingMethod shiftmapMethod = ShiftMappingMethod::NO;
     GaugeMode gaugeMode = GaugeMode::CONSTANT;
     float2 gaugeAxis = float2(1, 0);
     uint newtonMaxIteration = 5;
@@ -50,9 +50,9 @@ struct ShiftMappingConfig
     bool parse(const std::string& key, const Properties::ConstValue& value)
     {
         if (key == "shiftmapMethod")
-            shiftmapMethod = parseEnumProperty(ShiftmapMethodTable, value, key);
+            shiftmapMethod = parseEnumProperty(kShiftMappingMethods, value, key);
         else if (key == "gaugeMode")
-            gaugeMode = parseEnumProperty(GaugeModeTable, value, key);
+            gaugeMode = parseEnumProperty(kGaugeModes, value, key);
         else if (key == "gaugeAxis")
             gaugeAxis = value;
         else if (key == "NewtonMaxIteration")
@@ -66,8 +66,8 @@ struct ShiftMappingConfig
 
     void serialize(Properties& props) const
     {
-        props["shiftmapMethod"] = enumPropertyName(ShiftmapMethodTable, shiftmapMethod);
-        props["gaugeMode"] = enumPropertyName(GaugeModeTable, gaugeMode);
+        props["shiftmapMethod"] = enumPropertyName(kShiftMappingMethods, shiftmapMethod);
+        props["gaugeMode"] = enumPropertyName(kGaugeModes, gaugeMode);
         props["gaugeAxis"] = gaugeAxis;
         props["NewtonMaxIteration"] = newtonMaxIteration;
         props["NewtonRelativeTolerance"] = newtonRelativeTolerance;
@@ -82,7 +82,7 @@ struct ShiftMappingConfig
         return defines;
     }
 
-    /// Sets the shift mapping constants (Shiftmap_CB) under `shiftmapVar`.
+    /// Sets the shift mapping constants (ShiftMappingCB) under `shiftmapVar`.
     void bindShaderData(const ShaderVar& shiftmapVar) const
     {
         shiftmapVar["gGaugeAxis"] = gaugeAxis;
@@ -96,18 +96,18 @@ struct ShiftMappingConfig
     {
         bool dirty = false;
         static const Gui::DropdownList kShiftmapMethodList = {
-            {(uint32_t)ShiftmapMethod::NO, "None"},
-            {(uint32_t)ShiftmapMethod::LOCAL_TANGENT_SURFACE, "Local tangent"},
-            {(uint32_t)ShiftmapMethod::BARYCENTRIC, "Barycentric"},
-            {(uint32_t)ShiftmapMethod::RAY_TRACE_HEMISPHERE, "Ray trace"},
-            {(uint32_t)ShiftmapMethod::AREA_ADAPTIVE, "Area adaptive"},
-            {(uint32_t)ShiftmapMethod::RAY_TRACE_CHART, "Ray trace chart"},
-            {(uint32_t)ShiftmapMethod::RADIAL, "Radial"},
+            {(uint32_t)ShiftMappingMethod::NO, "None"},
+            {(uint32_t)ShiftMappingMethod::LOCAL_TANGENT_SURFACE, "Local tangent"},
+            {(uint32_t)ShiftMappingMethod::BARYCENTRIC, "Barycentric"},
+            {(uint32_t)ShiftMappingMethod::RAY_TRACE_HEMISPHERE, "Ray trace"},
+            {(uint32_t)ShiftMappingMethod::AREA_ADAPTIVE, "Area adaptive"},
+            {(uint32_t)ShiftMappingMethod::RAY_TRACE_CHART, "Ray trace chart"},
+            {(uint32_t)ShiftMappingMethod::RADIAL, "Radial"},
         };
         uint32_t method = (uint32_t)shiftmapMethod;
         if (widget.dropdown("Method", kShiftmapMethodList, method))
         {
-            shiftmapMethod = (ShiftmapMethod)method;
+            shiftmapMethod = (ShiftMappingMethod)method;
             dirty = true;
         }
         widget.tooltip(methodTooltip, true);
@@ -115,7 +115,7 @@ struct ShiftMappingConfig
         dirty |= extraUI(widget);
 
         // Radial moves the vertex along the ray from the plane's path-length minimum: no gauge, no 2D Newton solve.
-        if (shiftmapMethod != ShiftmapMethod::NO && shiftmapMethod != ShiftmapMethod::RADIAL)
+        if (shiftmapMethod != ShiftMappingMethod::NO && shiftmapMethod != ShiftMappingMethod::RADIAL)
         {
             static const Gui::DropdownList kGaugeModeList = {
                 {(uint32_t)GaugeMode::CONSTANT, "Constant axis"},

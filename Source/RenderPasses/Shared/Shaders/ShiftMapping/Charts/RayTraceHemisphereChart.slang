@@ -1,4 +1,4 @@
-import SurfaceOpsInterface;
+import ShiftChart;
 import CartesianRayChart;
 // import Scene.Raytracing;
 // import Scene.Intersection;
@@ -8,7 +8,7 @@ import Scene.RaytracingInline;
 #include "Scene/SceneDefines.slangh"
 #include "Utils/Math/MathConstants.slangh"
 
-export struct RayTraceHemisphereOps:ISurfaceOps
+export struct RayTraceHemisphereChart:IShiftChart
 {
     // Geometry
     float3 p1, p2, p2o;

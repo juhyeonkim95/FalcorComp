@@ -2,26 +2,26 @@ import Utils.Sampling.SampleGenerator;
 import Utils.Math.MathHelpers;
 import Scene.RaytracingInline;
 import RenderPasses.Shared.Shaders.Utils.LoadShadingData;
-import RenderPasses.Shared.Shaders.PathLengthNewtonSolver.SurfaceOps.LocalTangentSurface;
-import RenderPasses.Shared.Shaders.PathLengthNewtonSolver.SurfaceOps.BarycentricTriSurface;
-import RenderPasses.Shared.Shaders.PathLengthNewtonSolver.SurfaceOps.RayTraceHemisphere;
-import RenderPasses.Shared.Shaders.PathLengthNewtonSolver.SurfaceOps.CartesianRayChart;
+import RenderPasses.Shared.Shaders.ShiftMapping.Charts.LocalPlaneChart;
+import RenderPasses.Shared.Shaders.ShiftMapping.Charts.BarycentricChart;
+import RenderPasses.Shared.Shaders.ShiftMapping.Charts.RayTraceHemisphereChart;
+import RenderPasses.Shared.Shaders.ShiftMapping.Charts.CartesianRayChart;
 
-import RenderPasses.Shared.Shaders.PathLengthNewtonSolver.NewtonSolver;
+import RenderPasses.Shared.Shaders.ShiftMapping.NewtonSolver;
 import RenderPasses.Shared.Shaders.Utils.RayUtils;
 
 #include "Scene/SceneDefines.slangh"
 #include "Utils/Math/MathConstants.slangh"
 
-#define SHIFTMAP_NO 0
-#define SHIFTMAP_LOCAL_TANGENT_SURFACE 1
-#define SHIFTMAP_BARYCENTRIC_SURFACE 2
-#define SHFITMAP_RAY_TRACE_HEMISPHERE 3
-#define SHFITMAP_AREA_ADAPTIVE 4
-#define SHIFTMAP_RAY_TRACE_CHART 5
-#define SHIFTMAP_RADIAL 6
+#define SHIFT_MAPPING_NO 0
+#define SHIFT_MAPPING_LOCAL_TANGENT 1
+#define SHIFT_MAPPING_BARYCENTRIC 2
+#define SHIFT_MAPPING_RAY_TRACE 3
+#define SHIFT_MAPPING_AREA_ADAPTIVE 4
+#define SHIFT_MAPPING_RAY_TRACE_CHART 5
+#define SHIFT_MAPPING_RADIAL 6
 
-cbuffer Shiftmap_CB
+cbuffer ShiftMappingCB
 {
     float2 gGaugeAxis;
     uint gNewtonMaxIteration;
@@ -38,7 +38,7 @@ GaugeMode getShiftGaugeMode()
     return GaugeMode(SHIFT_MAPPING_GAUGE_MODE);
 }
 
-struct ShiftMapDebugInfo
+struct ShiftMappingDebugInfo
 {
     int iters;
     uint status;
@@ -51,7 +51,7 @@ struct ShiftMapDebugInfo
 }
 
 // The solver status describes the solve before endpoint/visibility validation.
-void record_shift_solve(NewtonResult result, inout ShiftMapDebugInfo debugInfo)
+void record_shift_solve(NewtonResult result, inout ShiftMappingDebugInfo debugInfo)
 {
     debugInfo.iters = result.iters;
     debugInfo.status = uint(result.status);
@@ -66,7 +66,7 @@ HitInfo path_length_aware_shift_mapping(
     ShadingData x3, // fixed next vertex (surface or point light)
     float dt,
     out float jacobian,
-    inout ShiftMapDebugInfo debuginfo,
+    inout ShiftMappingDebugInfo debuginfo,
     float tol,
     inout SampleGenerator sg
 )
@@ -87,17 +87,17 @@ HitInfo path_length_aware_shift_mapping(
         a_const = float2(cos(phi), sin(phi));
     }
 
-#if SHIFT_MAPPING_METHOD == SHIFTMAP_NO
+#if SHIFT_MAPPING_METHOD == SHIFT_MAPPING_NO
     return path_length_aware_shift_mapping_no(x1, x2, x3, dt, a_const, jacobian, debuginfo, tol);
-#elif SHIFT_MAPPING_METHOD == SHIFTMAP_LOCAL_TANGENT_SURFACE
+#elif SHIFT_MAPPING_METHOD == SHIFT_MAPPING_LOCAL_TANGENT
     return path_length_aware_shift_mapping_local_tangent_surface(x1, x2, x3, dt, a_const, jacobian, debuginfo, tol);
-#elif SHIFT_MAPPING_METHOD == SHIFTMAP_BARYCENTRIC_SURFACE
+#elif SHIFT_MAPPING_METHOD == SHIFT_MAPPING_BARYCENTRIC
     return path_length_aware_shift_mapping_barycentric_surface(x1, x2, x3, dt, a_const, jacobian, debuginfo, tol);
-#elif SHIFT_MAPPING_METHOD == SHFITMAP_RAY_TRACE_HEMISPHERE || SHIFT_MAPPING_METHOD == SHIFTMAP_RAY_TRACE_CHART
+#elif SHIFT_MAPPING_METHOD == SHIFT_MAPPING_RAY_TRACE || SHIFT_MAPPING_METHOD == SHIFT_MAPPING_RAY_TRACE_CHART
     return path_length_aware_shift_mapping_path_trace_shadowmap(x1, x2, x3, dt, a_const, jacobian, debuginfo, tol);
-#elif SHIFT_MAPPING_METHOD == SHFITMAP_AREA_ADAPTIVE
+#elif SHIFT_MAPPING_METHOD == SHIFT_MAPPING_AREA_ADAPTIVE
     return path_length_aware_shift_mapping_adaptive(x1, x2, x3, dt, a_const, jacobian, debuginfo, tol);
-#elif SHIFT_MAPPING_METHOD == SHIFTMAP_RADIAL
+#elif SHIFT_MAPPING_METHOD == SHIFT_MAPPING_RADIAL
     return path_length_aware_shift_mapping_radial(x1, x2, x3, dt, jacobian, debuginfo, tol);
 #endif
     jacobian = 1.0;
@@ -134,7 +134,7 @@ HitInfo path_length_aware_shift_mapping_adaptive(
     float dt,
     float2 a_const,
     out float jacobian,
-    inout ShiftMapDebugInfo debuginfo,
+    inout ShiftMappingDebugInfo debuginfo,
     float tol=1e-7
 )
 {
@@ -163,7 +163,7 @@ HitInfo path_length_aware_shift_mapping_no(
     float dt,
     float2 a_const,
     out float jacobian,
-    inout ShiftMapDebugInfo debuginfo,
+    inout ShiftMappingDebugInfo debuginfo,
     float tol=1e-7
 )
 {
@@ -180,7 +180,7 @@ HitInfo path_length_aware_shift_mapping_local_tangent_surface(
     float dt,
     float2 a_const,
     out float jacobian,
-    inout ShiftMapDebugInfo debuginfo,
+    inout ShiftMappingDebugInfo debuginfo,
     float tol=1e-7
 )
 {
@@ -193,7 +193,7 @@ HitInfo path_length_aware_shift_mapping_local_tangent_surface(
     float3 bitangent = perp_stark_onb(n);
     float3 tangent = cross(bitangent, n);
 
-    LocalPlaneOps ops = LocalPlaneOps(p1, p2, x, tangent, bitangent);
+    LocalPlaneChart ops = LocalPlaneChart(p1, p2, x, tangent, bitangent);
     float2 xi = float2(0, 0);
     NewtonResult result = solve_xi_prime_newton_det(ops, xi, dt, getShiftGaugeMode(), a_const, gNewtonMaxIteration, tol);
     record_shift_solve(result, debuginfo);
@@ -238,7 +238,7 @@ HitInfo path_length_aware_shift_mapping_radial(
     ShadingData x3, // fixed next vertex (surface or point light)
     float dt,
     out float jacobian,
-    inout ShiftMapDebugInfo debuginfo,
+    inout ShiftMappingDebugInfo debuginfo,
     float tol=1e-7
 )
 {
@@ -330,7 +330,7 @@ HitInfo path_length_aware_shift_mapping_barycentric_surface(
     float dt,
     float2 a_const,
     out float jacobian,
-    inout ShiftMapDebugInfo debuginfo,
+    inout ShiftMappingDebugInfo debuginfo,
     float tol=1e-7
 )
 {
@@ -340,7 +340,7 @@ HitInfo path_length_aware_shift_mapping_barycentric_surface(
 
     const float3 p1 = x1.posW;
     const float3 p2 = x3.posW;
-    BarycentricTriOps ops = BarycentricTriOps(p1, p2, triposW[0], triposW[1], triposW[2]);
+    BarycentricChart ops = BarycentricChart(p1, p2, triposW[0], triposW[1], triposW[2]);
     NewtonResult result = solve_xi_prime_newton_det(ops, triHit.barycentrics, dt, getShiftGaugeMode(), a_const, gNewtonMaxIteration, tol);
     record_shift_solve(result, debuginfo);
     jacobian = 0.f;
@@ -369,7 +369,7 @@ HitInfo path_length_aware_shift_mapping_path_trace_shadowmap(
     float dt,
     float2 a_const,
     out float jacobian,
-    inout ShiftMapDebugInfo debuginfo,
+    inout ShiftMappingDebugInfo debuginfo,
     float tol=1e-7
 )
 {
@@ -384,13 +384,13 @@ HitInfo path_length_aware_shift_mapping_path_trace_shadowmap(
     float3 b2 = perp_stark_onb(n2);
     float3 t2 = cross(b2, n2);
 
-    RayTraceHemisphereOps ops = RayTraceHemisphereOps(p1, p2, p2o, t2, b2, n2);
+    RayTraceHemisphereChart ops = RayTraceHemisphereChart(p1, p2, p2o, t2, b2, n2);
     ops.hit = x2;
     ops.hitT = length(v2.posW - p2o);
 
     float3 dir = normalize(v2.posW - p2o);
     float3 local = float3(dot(t2, dir), dot(b2, dir), dot(n2, dir));
-#if SHIFT_MAPPING_METHOD == SHIFTMAP_RAY_TRACE_CHART
+#if SHIFT_MAPPING_METHOD == SHIFT_MAPPING_RAY_TRACE_CHART
     if (!(local.z > 1e-6f)) { jacobian = 0.f; return x2; }
     ops.useCartesianChart = true;
     float2 xi = local.xy / local.z;
@@ -420,7 +420,7 @@ HitInfo path_length_aware_shift_mapping_path_trace_shadowmap(
             jacobian = 0;
         } else {
             jacobian = result.detJ * G / G2;
-#if SHIFT_MAPPING_METHOD == SHIFTMAP_RAY_TRACE_CHART
+#if SHIFT_MAPPING_METHOD == SHIFT_MAPPING_RAY_TRACE_CHART
             jacobian *= CartesianRayChart::solidAngleDensity(result.xi_prime) / CartesianRayChart::solidAngleDensity(xi);
 #endif
         }

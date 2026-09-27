@@ -11,7 +11,7 @@ import RenderPasses.Shared.Shaders.Lights.LaserLightSampler;
 import RenderPasses.Shared.Shaders.Lights.LightConnection;
 
 import RenderPasses.Shared.Shaders.ReSTIR.PathReconstruction;
-import RenderPasses.Shared.Shaders.ShiftMapping.PathLengthAwareShiftmapping;
+import RenderPasses.Shared.Shaders.ShiftMapping.ShiftMapping;
 
 // Balanced ratios with scaled mass, target and Jacobian factors. No logs and
 // no reciprocal of a tiny target are needed; all products here are <= 1.
@@ -90,7 +90,7 @@ void combine_reservoir_with_shiftmapping(
     float3 laserDirection,  // this is to handle invalid curr_reservoir.rcNextVertex (point light)
     inout SampleGenerator sg
 #if DEBUG_NEWTON_ITERATIONS
-    , inout ShiftMapDebugInfo debugInfo
+    , inout ShiftMappingDebugInfo debugInfo
 #endif
 #if IS_SCENE_DYNAMIC
     , bool updateLight = false, float3 targetLightPower = float3(0.f), float targetLightCosAngle = 0.f
@@ -100,7 +100,7 @@ void combine_reservoir_with_shiftmapping(
     debugInfo.newtonStats = uint4(0);
     debugInfo.mappingDistance = float2(0.f);
 #else
-    ShiftMapDebugInfo debugInfo;
+    ShiftMappingDebugInfo debugInfo;
 #endif
 
     // no valid sample in reservoir
@@ -269,7 +269,7 @@ float evaluate_canonical_shiftmap_weight(
     const float other_t,
     const float curr_t,
     inout SampleGenerator sg,
-    inout ShiftMapDebugInfo debugInfo
+    inout ShiftMappingDebugInfo debugInfo
 )
 {
     float M_curr = curr_reservoir.M;

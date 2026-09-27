@@ -47,7 +47,7 @@ CWToFPathTracerInline::CWToFPathTracerInline(ref<Device> pDevice, const Properti
     // Defaults that differ from the shared configs': the primary-hit term carries most of the signal, and the
     // antithetic shift needs a shift mapping with inverse forward and backward shifts.
     mOptions.pathTracing.computeDirect = true;
-    mOptions.shiftMapping.shiftmapMethod = ShiftmapMethod::RADIAL;
+    mOptions.shiftMapping.shiftmapMethod = ShiftMappingMethod::RADIAL;
     mOptions.shiftMapping.gaugeMode = GaugeMode::ORTHO_AVG_GRAD;
     mOptions.shiftMapping.newtonRelativeTolerance = 0.002f;
 
@@ -130,8 +130,8 @@ void CWToFPathTracerInline::bindShaderData(const ShaderVar& var, const RenderDat
     var["CB"]["gFrameDim"] = renderData.getDefaultTextureDims();
     var["CB"]["samplesPerPixel"] = mOptions.pathTracing.samplesPerPixel;
     LaserState::resolve(renderData).bindShaderData(var["CB"]);
-    mOptions.continuousWave.bindShaderData(var["Modulation"]);
-    mOptions.shiftMapping.bindShaderData(var["Shiftmap_CB"]);
+    mOptions.continuousWave.bindShaderData(var["ContinuousWave"]);
+    mOptions.shiftMapping.bindShaderData(var["ShiftMappingCB"]);
 
     InlinePass::bindChannels(var, renderData, InlinePass::kPrimaryHitInputChannels);
     InlinePass::bindChannels(var, renderData, InlinePass::kColorOutputChannels);

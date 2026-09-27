@@ -7,24 +7,25 @@ set(shared_shaders
     Utils/TimeGate.slang
     Utils/TransientHistogram.slang
     Utils/Waveform.slang
+    Utils/ContinuousWave.slang
     Lights/LaserLightSampler.slang
     Lights/LightConnection.slang
     Lights/EllipsoidalSampling.slang
+    ShiftMapping/ShiftMapping.slang
+    ShiftMapping/NewtonSolver.slang
+    ShiftMapping/Charts/ShiftChart.slang
+    ShiftMapping/Charts/LocalPlaneChart.slang
+    ShiftMapping/Charts/BarycentricChart.slang
+    ShiftMapping/Charts/RayTraceHemisphereChart.slang
+    ShiftMapping/Charts/CartesianRayChart.slang
     ReSTIR/Reservoirs.slang
     ReSTIR/InitialCandidates.slang
     ReSTIR/PathReconstruction.slang
-    ShiftMapping/PathLengthAwareShiftmapping.slang
+    ReSTIR/ReservoirReuse.slang
+    ReSTIR/SpatialReuse.slang
     Antithetic/AntitheticMIS.slang
     Projector/ProjectorLight.slang
     Projector/ProjectorPatterns.slang
-    ReSTIR/ReservoirReuse.slang
-    ReSTIR/SpatialReuse.slang
-    PathLengthNewtonSolver/NewtonSolver.slang
-    PathLengthNewtonSolver/SurfaceOps/BarycentricTriSurface.slang
-    PathLengthNewtonSolver/SurfaceOps/CartesianRayChart.slang
-    PathLengthNewtonSolver/SurfaceOps/LocalTangentSurface.slang
-    PathLengthNewtonSolver/SurfaceOps/RayTraceHemisphere.slang
-    PathLengthNewtonSolver/SurfaceOps/SurfaceOpsInterface.slang
 )
 set(shared_shader_outputs)
 foreach(shader IN LISTS shared_shaders)

@@ -1,5 +1,5 @@
 
-import SurfaceOps.SurfaceOpsInterface;
+import Charts.ShiftChart;
 
 // =============================================================
 // Gauge mode
@@ -89,8 +89,8 @@ void gauge_terms(
 }
 
 // Constant-offset solver: c is held fixed for the Jacobian.
-NewtonResult solve_xi_prime_newton_det<SurfaceOps : ISurfaceOps>(
-    inout SurfaceOps ops,
+NewtonResult solve_xi_prime_newton_det<Chart : IShiftChart>(
+    inout Chart ops,
     float2 xi, float c,
     GaugeMode mode,
     float2 a_const,          // used iff CONSTANT_A

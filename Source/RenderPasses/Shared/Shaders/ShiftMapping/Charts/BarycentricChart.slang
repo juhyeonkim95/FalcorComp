@@ -1,8 +1,8 @@
-import SurfaceOpsInterface;
+import ShiftChart;
 
 // Distance from two points p1, p2 to a point X on a triangle parameterized by barycentric (coordinates.x, coordinates.y).
 // Triangle vertices: v0, v1, v2 (triposW0,1,2).
-export struct BarycentricTriOps : ISurfaceOps
+export struct BarycentricChart : IShiftChart
 {
     float3 p1; // preceding vertex
     float3 p2;

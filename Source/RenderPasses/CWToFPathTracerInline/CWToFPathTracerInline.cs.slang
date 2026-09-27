@@ -2,9 +2,9 @@ import RenderPasses.Shared.Shaders.Utils.LoadShadingData;
 import RenderPasses.Shared.Shaders.Utils.SingleChannel;
 import RenderPasses.Shared.Shaders.Lights.LaserLightSampler;
 import RenderPasses.Shared.Shaders.Lights.LightConnection;
-import RenderPasses.Shared.Shaders.ShiftMapping.PathLengthAwareShiftmapping;
+import RenderPasses.Shared.Shaders.ShiftMapping.ShiftMapping;
 import RenderPasses.Shared.Shaders.Antithetic.AntitheticMIS;
-import RenderPasses.Shared.Shaders.Utils.Waveform;
+import RenderPasses.Shared.Shaders.Utils.ContinuousWave;
 import RenderPasses.Shared.Shaders.Utils.RayUtils;
 #include "Scene/SceneDefines.slangh"
 #include "Utils/Math/MathConstants.slangh"
@@ -26,14 +26,6 @@ cbuffer CB
     uint samplesPerPixel;
 }
 
-cbuffer Modulation
-{
-    float gModulationWavelength; // Path length of one period.
-    float gModulationPhase;      // Sensor phase offset, in periods.
-    uint gWaveform;              // WAVEFORM_*.
-    uint gUnsignedModulation;    // Weight 0.5 w + 0.5 instead of w.
-}
-
 // Inputs
 Texture2D<PackedHitInfo> gVBuffer;
 Texture2D<float4> gViewW; // Optional
@@ -51,19 +43,6 @@ static const bool kUseEnvBackground = USE_ENV_BACKGROUND;
 static const float3 kDefaultBackgroundColor = float3(0, 0, 0);
 static const float kRoundTripTolerance = 0.01f; // Round-trip error allowed, relative to the shift distance.
 
-
-/// Position of a path of optical length `pathLength` in the modulation, in periods.
-float modulationPeriods(float pathLength)
-{
-    return pathLength / gModulationWavelength - gModulationPhase;
-}
-
-/// Weight of a path of optical length `pathLength`.
-float modulationWeight(float pathLength)
-{
-    float weight = evalWaveform(gWaveform, modulationPeriods(pathLength));
-    return gUnsignedModulation != 0 ? 0.5f * weight + 0.5f : weight;
-}
 
 // Connection of `surface` to the light, weighted by the modulation of the whole path.
 // `pathLength` is the optical length from the camera to `surface`; `totalLength` returns that of the whole path.
@@ -102,14 +81,14 @@ float3 estimateWithAntithetic(ShadingData previous, IMaterialInstance previousMa
     BSDFSample bsdfSample, LightSample light, float3 throughput, float3 primalEstimate, float primalLength,
     float prefixLength, inout SampleGenerator sg)
 {
-    float dt = antitheticWaveformOffset(gWaveform, modulationPeriods(primalLength), sampleNext1D(sg)) * gModulationWavelength;
+    float dt = antitheticPathLengthOffset(primalLength, sampleNext1D(sg));
     if (!light.valid || bsdfSample.isLobe(LobeType::Delta) || !(bsdfSample.pdf > 0.f)) return primalEstimate;
     if (hit.getType() != HitType::Triangle) return primalEstimate;
 
     // The shifted vertex is traced from `previous`, so it is the first hit in its direction, as a BSDF sample
     // from `previous` would be. The light endpoint stays fixed.
     float areaJacobian = 0.f;
-    ShiftMapDebugInfo debugInfo = {};
+    ShiftMappingDebugInfo debugInfo = {};
     float tolerance = max(abs(dt) * gNewtonRelativeTolerance, 1e-6f);
     HitInfo shiftedHit = path_length_aware_shift_mapping(getLightEndpoint(light), hit, previous, dt, areaJacobian,
         debugInfo, tolerance, sg);

@@ -17,7 +17,7 @@ import RenderPasses.Shared.Shaders.ReSTIR.PathReconstruction;
 import RenderPasses.Shared.Shaders.ReSTIR.ReservoirReuse;
 import RenderPasses.Shared.Shaders.ReSTIR.InitialCandidates;
 #if USE_SHRINK_MAPPING || USE_TEMPORAL_REUSE
-import RenderPasses.Shared.Shaders.ShiftMapping.PathLengthAwareShiftmapping;
+import RenderPasses.Shared.Shaders.ShiftMapping.ShiftMapping;
 #endif
 import RenderPasses.Shared.Shaders.Utils.LoadShadingData;
 import RenderPasses.Shared.Shaders.Lights.LaserLightSampler;
@@ -143,7 +143,7 @@ Reservoir mergeGateReservoirs(Reservoir narrow, Reservoir wide, uint narrowCount
     Reservoir merged = Reservoir();
 #if DEBUG_NEWTON_ITERATIONS
     // Initial shrinking must not enter the spatial-neighbor diagnostic buffers.
-    ShiftMapDebugInfo debugInfo = {};
+    ShiftMappingDebugInfo debugInfo = {};
 #endif
     // K is the narrow/wide gate-width ratio: L' = tcurr + K*(L-tcurr).
     combine_reservoir_with_shiftmapping(merged, wide, narrow.M,
@@ -220,7 +220,7 @@ Reservoir reuseTemporalHistory(Reservoir fresh, uint2 pixel, ShadingData primary
     Reservoir merged = Reservoir();
 #if DEBUG_NEWTON_ITERATIONS
     // Temporal mapping is excluded from the spatial-only diagnostic outputs.
-    ShiftMapDebugInfo debugInfo = {};
+    ShiftMappingDebugInfo debugInfo = {};
 #endif
     // Previous -> current: source gate tprev, target gate tcurr.
     combine_reservoir_with_shiftmapping(merged, history, fresh.M,

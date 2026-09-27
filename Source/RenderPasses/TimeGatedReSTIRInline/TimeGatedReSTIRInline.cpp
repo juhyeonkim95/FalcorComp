@@ -232,7 +232,7 @@ void TimeGatedReSTIRInline::bindShaderData(const ShaderVar& var, const RenderDat
 
     mOptions.timeGate.bindShaderData(var["TimeGate"], mGate);
     var["TimeGate"]["time_gate_window_rough"] = mOptions.wideGateWindow();
-    mOptions.restir.bindShiftMapping(var["Shiftmap_CB"]);
+    mOptions.restir.bindShiftMapping(var["ShiftMappingCB"]);
 
     InlinePass::bindChannels(var, renderData, InlinePass::kPrimaryHitAndMotionInputChannels);
     InlinePass::bindChannels(var, renderData, InlinePass::kColorOutputChannels);
@@ -273,7 +273,7 @@ void TimeGatedReSTIRInline::spatialReuse(RenderContext* pRenderContext, const Re
     mOptions.timeGate.bindShaderData(rootVar["TimeGate"], mGate);
     rootVar["TimeGate"]["time_gate_window_rough"] = mOptions.wideGateWindow();
     mLaser.bindShaderData(rootVar["Laser_CB"]);
-    mOptions.restir.bindShiftMapping(rootVar["Shiftmap_CB"]);
+    mOptions.restir.bindShiftMapping(rootVar["ShiftMappingCB"]);
 
     // Clear diagnostics once per frame; spatial iterations add to these buffers.
     // Keep initial RGB intact, including when spatial iteration count is zero.

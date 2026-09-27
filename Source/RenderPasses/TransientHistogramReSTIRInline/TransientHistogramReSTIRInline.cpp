@@ -186,7 +186,7 @@ void TransientHistogramReSTIRInline::bindShaderData(const ShaderVar& var, const 
         var["gTemporalVBuffer"] = mReSTIR.temporalVBuffer;
         var["CB"]["gTemporalHistoryValid"] = mReSTIR.temporalHistoryValid;
         var["CB"]["gPreviousCameraPosition"] = mReSTIR.previousCameraPosition;
-        mOptions.restir.bindShiftMapping(var["Shiftmap_CB"]);
+        mOptions.restir.bindShiftMapping(var["ShiftMappingCB"]);
     }
 
     InlinePass::bindChannels(var, renderData, InlinePass::kPrimaryHitAndMotionInputChannels);
@@ -214,7 +214,7 @@ void TransientHistogramReSTIRInline::spatialReuse(RenderContext* pRenderContext,
 
     bindTimeGate(rootVar);
     mLaser.bindShaderData(rootVar["Laser_CB"]);
-    mOptions.restir.bindShiftMapping(rootVar["Shiftmap_CB"]);
+    mOptions.restir.bindShiftMapping(rootVar["ShiftMappingCB"]);
 
     mReSTIR.runSpatialReuse(pRenderContext, mpSpatialReusePass, var, mOptions.restir.spatialReuseIteration, mRandomSeed, frameDim);
 }

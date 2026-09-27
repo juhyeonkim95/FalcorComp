@@ -20,7 +20,7 @@ import RenderPasses.Shared.Shaders.ReSTIR.InitialCandidates;
 import RenderPasses.Shared.Shaders.Utils.RayUtils;
 #if USE_TEMPORAL_REUSE
 import RenderPasses.Shared.Shaders.ReSTIR.ReservoirReuse;
-import RenderPasses.Shared.Shaders.ShiftMapping.PathLengthAwareShiftmapping;
+import RenderPasses.Shared.Shaders.ShiftMapping.ShiftMapping;
 #endif
 
 

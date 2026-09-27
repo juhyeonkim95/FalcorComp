@@ -5,7 +5,7 @@
 
 /// Continuous-wave (amplitude-modulated) time of flight: a path of optical length l is weighted by the waveform w at
 /// t = l / modulationWavelength - phase periods, the correlation of the modulated light with the sensor. The weight
-/// is w(t) in [-1, 1], or 0.5 w(t) + 0.5 in [0, 1] with unsignedModulation.
+/// is w(t) in [-1, 1], or 0.5 w(t) + 0.5 in [0, 1] with unsignedModulation (Shared/Shaders/Utils/ContinuousWave.slang).
 struct ContinuousWaveConfig
 {
     float modulationWavelength = 1.0f; ///< Path length of one modulation period (scene units).
@@ -44,13 +44,13 @@ struct ContinuousWaveConfig
         props["unsignedModulation"] = unsignedModulation;
     }
 
-    /// Sets the Modulation constants under `modulationVar`.
-    void bindShaderData(const ShaderVar& modulationVar) const
+    /// Sets the ContinuousWave constants (Shared/Shaders/Utils/ContinuousWave.slang) under `continuousWaveVar`.
+    void bindShaderData(const ShaderVar& continuousWaveVar) const
     {
-        modulationVar["gModulationWavelength"] = modulationWavelength;
-        modulationVar["gModulationPhase"] = phase;
-        modulationVar["gWaveform"] = uint(waveform);
-        modulationVar["gUnsignedModulation"] = uint(unsignedModulation);
+        continuousWaveVar["gModulationWavelength"] = modulationWavelength;
+        continuousWaveVar["gModulationPhase"] = phase;
+        continuousWaveVar["gWaveform"] = uint(waveform);
+        continuousWaveVar["gUnsignedModulation"] = uint(unsignedModulation);
     }
 
     bool renderUI(Gui::Widgets& widget)

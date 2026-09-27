@@ -1,6 +1,6 @@
-import SurfaceOpsInterface;
+import ShiftChart;
 
-export struct LocalPlaneOps: ISurfaceOps
+export struct LocalPlaneChart: IShiftChart
 {
     float3 p1; // preceding vertex
     float3 p2;

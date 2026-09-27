@@ -11,7 +11,7 @@ import RenderPasses.Shared.Shaders.ReSTIR.Reservoirs;
 import RenderPasses.Shared.Shaders.ReSTIR.PathReconstruction;
 import RenderPasses.Shared.Shaders.ReSTIR.ReservoirReuse;
 import RenderPasses.Shared.Shaders.Utils.LoadShadingData;
-import RenderPasses.Shared.Shaders.ShiftMapping.PathLengthAwareShiftmapping;
+import RenderPasses.Shared.Shaders.ShiftMapping.ShiftMapping;
 import RenderPasses.Shared.Shaders.Utils.RayUtils;
 
 cbuffer Laser_CB
@@ -194,7 +194,7 @@ struct SpatialReuse
             Reservoir neighborReservoir = prevReservoirs[getLinearizedPixel(neighborPixel) * binCount + neighborBin];
 
             // Central -> neighbor: accumulate the central sample's pairwise weight.
-            ShiftMapDebugInfo debugInfo;
+            ShiftMappingDebugInfo debugInfo;
             canonicalWeight += evaluate_canonical_shiftmap_weight(
                 centralReservoir,
                 centralNextVertex, centralVertex, centralNextMaterial,
