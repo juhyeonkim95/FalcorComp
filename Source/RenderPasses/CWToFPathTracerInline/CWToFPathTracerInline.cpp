@@ -65,7 +65,7 @@ CWToFPathTracerInline::CWToFPathTracerInline(ref<Device> pDevice, const Properti
     // Defaults that differ from the shared configs': the primary-hit term carries most of the signal, and the
     // antithetic shift needs a shift mapping with inverse forward and backward shifts.
     mOptions.pathTracing.computeDirect = true;
-    mOptions.shiftMapping.shiftmapMethod = ShiftmapMethod::LOCAL_TANGENT_SURFACE;
+    mOptions.shiftMapping.shiftmapMethod = ShiftmapMethod::BARYCENTRIC;
     mOptions.shiftMapping.gaugeMode = GaugeMode::ORTHO_AVG_GRAD;
     mOptions.shiftMapping.newtonRelativeTolerance = 0.002f;
 
@@ -157,7 +157,7 @@ void CWToFPathTracerInline::bindShaderData(const ShaderVar& var, const RenderDat
     var["CB"]["gPRNGDimension"] = InlinePass::getPRNGDimension(renderData);
     var["CB"]["samplesPerPixel"] = mOptions.pathTracing.samplesPerPixel;
     LaserState::resolve(renderData).bindShaderData(var["CB"]);
-    mOptions.continuousWave.bindShaderData(var["TimeGate"]);
+    mOptions.continuousWave.bindShaderData(var["Modulation"]);
     mOptions.shiftMapping.bindShaderData(var["Shiftmap_CB"]);
 
     InlinePass::bindChannels(var, renderData, kInputChannels);
@@ -204,16 +204,18 @@ void CWToFPathTracerInline::renderUI(Gui::Widgets& widget)
     {
         dirty |= options.pathTracing.renderSamplingUI(group, " Each vertex is connected to the laser spot.");
         dirty |= group.checkbox("Antithetic sampling", options.useAntitheticSampling);
-        group.tooltip("Pair each BSDF-sampled vertex with a copy moved on its surface so the path is half a "
-                      "wavelength longer or shorter, which flips the modulation, and combine the two with MIS.", true);
+        group.tooltip("Pair each BSDF-sampled vertex with a copy moved on its surface so the waveform has the "
+                      "opposite sign (half a wavelength longer or shorter; the sawtooth's mirror image), and combine "
+                      "the two with MIS.", true);
     }
 
     if (options.useAntitheticSampling)
     {
         if (auto group = widget.group("Antithetic shift mapping", true))
             dirty |= options.shiftMapping.renderUI(group,
-                "How the antithetic vertex is found: it is moved on its surface so the path length changes by half "
-                "a wavelength, using a Newton solve on the chosen chart.\nNone pairs the vertex with itself (no "
+                "How the antithetic vertex is found: it is moved on its surface so the path length changes by the "
+                "antithetic offset, using a Newton solve on the chosen chart. Barycentric (the default) keeps it on "
+                "its triangle.\nNone pairs the vertex with itself (no "
                 "variance reduction). Use a constant or average-gradient gauge: the forward and backward shifts must be "
                 "inverses of each other.");
     }

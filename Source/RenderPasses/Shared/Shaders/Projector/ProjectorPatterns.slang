@@ -6,6 +6,7 @@
     ProjectorPatternCB (ProjectorConfig).
 */
 #include "Utils/Math/MathConstants.slangh"
+import RenderPasses.Shared.Shaders.Utils.Waveforms;
 
 #define PROJECTOR_PATTERN_CONSTANT 0
 #define PROJECTOR_PATTERN_PERIODIC 1
@@ -13,11 +14,6 @@
 #define PROJECTOR_PATTERN_XOR 3
 #define PROJECTOR_PATTERN_CHECKERBOARD 4
 #define PROJECTOR_PATTERN_ARBITRARY 5
-
-#define PATTERN_WAVEFORM_SINUSOIDAL 0
-#define PATTERN_WAVEFORM_TRIANGLE 1
-#define PATTERN_WAVEFORM_SQUARE 2
-#define PATTERN_WAVEFORM_SAWTOOTH 3
 
 #define ARBITRARY_MAPPING_NONE 0
 #define ARBITRARY_MAPPING_INDEX 1
@@ -32,7 +28,7 @@ cbuffer ProjectorPatternCB
     uint gPatternAxis;   // Projector coordinate the pattern varies along: 0 = u, 1 = v.
     float gPatternSign;  // -1 inverts the pattern.
 
-    uint gWaveform;      // Periodic: PATTERN_WAVEFORM_*.
+    uint gWaveform;      // Periodic: WAVEFORM_* (Waveforms.slang).
     float gWavelength;   // Periodic: period in uv units.
     float gPhase;        // Periodic: offset in periods.
 
@@ -110,36 +106,15 @@ struct ConstantPattern : IProjectorPattern
 /// Periodic stripes along the pattern axis, with zero mean over a period.
 struct PeriodicPattern : IProjectorPattern
 {
-    /// Position within the period, in [0, 1).
-    float periodCoord(float2 uv) { return frac(axisCoord(uv) / gWavelength + gPhase); }
+    /// Position in the pattern, in periods.
+    float periods(float2 uv) { return axisCoord(uv) / gWavelength + gPhase; }
 
-    float eval(float2 uv)
-    {
-        float t = periodCoord(uv);
-        switch (gWaveform)
-        {
-        case PATTERN_WAVEFORM_SINUSOIDAL:
-            return cos(M_2PI * t);
-        case PATTERN_WAVEFORM_TRIANGLE:
-            return 1.f - 4.f * abs(t - 0.5f);
-        case PATTERN_WAVEFORM_SQUARE:
-            return abs(t - 0.5f) < 0.25f ? 1.f : -1.f;
-        default: // PATTERN_WAVEFORM_SAWTOOTH
-            return 2.f * t - 1.f;
-        }
-    }
+    float eval(float2 uv) { return evalWaveform(gWaveform, periods(uv)); }
 
-    /// Mirror image within the period, its own inverse: about t = 1/4 and 3/4 (t -> 1/2 - t) for the
-    /// symmetric waveforms, and about t = 1/2 (t -> 1 - t) for the sawtooth; both flip the sign.
+    /// Mirror image within the period (mirrorWaveformOffset), its own inverse.
     float2 antitheticCoord(float2 uv, float u)
     {
-        float t = periodCoord(uv);
-        float tAnti;
-        if (gWaveform == PATTERN_WAVEFORM_SAWTOOTH)
-            tAnti = 1.f - t;
-        else
-            tAnti = t > 0.25f ? 1.5f - t : -0.5f - t;
-        return withAxisCoord(uv, axisCoord(uv) + (tAnti - t) * gWavelength);
+        return withAxisCoord(uv, axisCoord(uv) + mirrorWaveformOffset(gWaveform, periods(uv)) * gWavelength);
     }
 
     float antitheticJacobian(float2 uv) { return 1.f; }

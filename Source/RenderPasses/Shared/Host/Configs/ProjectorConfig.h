@@ -1,5 +1,6 @@
 #pragma once
 #include "ConfigUtils.h"
+#include "Waveform.h"
 #include "RenderGraph/RenderPass.h"
 #include <cmath>
 #include <vector>
@@ -22,22 +23,6 @@ inline const std::unordered_map<std::string, ProjectorPatternType> kProjectorPat
     {"xor", ProjectorPatternType::XOR},
     {"checkerboard", ProjectorPatternType::Checkerboard},
     {"arbitrary", ProjectorPatternType::Arbitrary},
-};
-
-/// Waveform of the periodic pattern (PATTERN_WAVEFORM_*).
-enum class PatternWaveform : uint32_t
-{
-    Sinusoidal = 0,
-    Triangle = 1,
-    Square = 2,
-    Sawtooth = 3,
-};
-
-inline const std::unordered_map<std::string, PatternWaveform> kPatternWaveforms = {
-    {"sinusoidal", PatternWaveform::Sinusoidal},
-    {"triangle", PatternWaveform::Triangle},
-    {"square", PatternWaveform::Square},
-    {"sawtooth", PatternWaveform::Sawtooth},
 };
 
 /// Projector coordinate the pattern varies along.
@@ -65,7 +50,7 @@ struct ProjectorConfig
     ProjectorPatternType pattern = ProjectorPatternType::Periodic;
     PatternAxis patternAxis = PatternAxis::U;
     bool invertPattern = false;
-    PatternWaveform waveform = PatternWaveform::Sinusoidal; ///< Periodic.
+    Waveform waveform = Waveform::Cos;                      ///< Periodic.
     float patternWavelength = 0.05f;                       ///< Periodic: period, in uv units.
     float patternPhase = 0.f;                              ///< Periodic: offset, in periods.
     uint patternBits = 10;                                 ///< Gray, XOR: 2^bits columns.
@@ -109,7 +94,7 @@ struct ProjectorConfig
         else if (key == "invertPattern")
             invertPattern = value;
         else if (key == "waveform")
-            waveform = parseEnumProperty(kPatternWaveforms, value, key);
+            waveform = parseEnumProperty(kWaveforms, value, key);
         else if (key == "patternWavelength")
             patternWavelength = value;
         else if (key == "patternPhase")
@@ -139,7 +124,7 @@ struct ProjectorConfig
         props["pattern"] = enumPropertyName(kProjectorPatternTypes, pattern);
         props["patternAxis"] = enumPropertyName(kPatternAxes, patternAxis);
         props["invertPattern"] = invertPattern;
-        props["waveform"] = enumPropertyName(kPatternWaveforms, waveform);
+        props["waveform"] = enumPropertyName(kWaveforms, waveform);
         props["patternWavelength"] = patternWavelength;
         props["patternPhase"] = patternPhase;
         props["patternBits"] = patternBits;
@@ -238,18 +223,7 @@ struct ProjectorConfig
 
         if (pattern == ProjectorPatternType::Periodic)
         {
-            static const Gui::DropdownList kWaveformList = {
-                {(uint32_t)PatternWaveform::Sinusoidal, "Sinusoidal"},
-                {(uint32_t)PatternWaveform::Triangle, "Triangle"},
-                {(uint32_t)PatternWaveform::Square, "Square"},
-                {(uint32_t)PatternWaveform::Sawtooth, "Sawtooth"},
-            };
-            uint32_t shape = (uint32_t)waveform;
-            if (widget.dropdown("Waveform", kWaveformList, shape))
-            {
-                waveform = (PatternWaveform)shape;
-                dirty = true;
-            }
+            dirty |= renderWaveformUI(widget, waveform);
             dirty |= widget.var("Wavelength (uv)", patternWavelength, 1e-4f, 1.f);
             widget.tooltip("Period of the pattern, in uv units.", true);
             dirty |= widget.var("Phase", patternPhase, -1.f, 1.f);

@@ -37,9 +37,9 @@
 
 using namespace Falcor;
 
-/** Continuous-wave time-of-flight path tracer: paths are weighted by the cosine modulation of their optical
- * length. With antithetic sampling, each BSDF-sampled vertex is paired with a copy moved on its surface so the
- * path is half a wavelength longer or shorter (path-length-aware shift mapping), which flips the modulation.
+/** Continuous-wave time-of-flight path tracer: paths are weighted by a periodic modulation of their optical
+ * length (ContinuousWaveConfig). With antithetic sampling, each BSDF-sampled vertex is paired with a copy moved on
+ * its surface (path-length-aware shift mapping) so the modulation has the opposite sign.
  */
 class CWToFPathTracerInline : public RenderPass
 {

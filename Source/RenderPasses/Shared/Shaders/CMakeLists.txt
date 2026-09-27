@@ -3,6 +3,7 @@
 set(shared_shaders
     Utils/LoadShadingData.slang
     Utils/SingleChannel.slang
+    Utils/Waveforms.slang
     Lights/LaserLightSampler.slang
     Lights/LightConnection.slang
     Lights/EllipsoidalSampling.slang

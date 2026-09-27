@@ -4,12 +4,12 @@ import RenderPasses.Shared.Shaders.Lights.LaserLightSampler;
 import RenderPasses.Shared.Shaders.Lights.LightConnection;
 import RenderPasses.Shared.Shaders.ShiftMapping.PathLengthAwareShiftmapping;
 import RenderPasses.Shared.Shaders.Antithetic.AntitheticMIS;
+import RenderPasses.Shared.Shaders.Utils.Waveforms;
 #include "Scene/SceneDefines.slangh"
 #include "Utils/Math/MathConstants.slangh"
 
 import Utils.Math.MathHelpers;
 import Utils.Sampling.SampleGenerator;
-import Utils.Transient.TransientUtils;
 import Scene.RaytracingInline;
 
 cbuffer CB
@@ -24,6 +24,14 @@ cbuffer CB
     float laserCosAngle;
 
     uint samplesPerPixel;
+}
+
+cbuffer Modulation
+{
+    float gModulationWavelength; // Path length of one period.
+    float gModulationPhase;      // Sensor phase offset, in periods.
+    uint gWaveform;              // WAVEFORM_*.
+    uint gUnsignedModulation;    // Weight 0.5 w + 0.5 instead of w.
 }
 
 // Inputs
@@ -75,14 +83,27 @@ float3 getPrimaryRayDir(uint2 launchIndex, uint2 launchDim, const Camera camera)
     }
 }
 
+/// Position of a path of optical length `pathLength` in the modulation, in periods.
+float modulationPeriods(float pathLength)
+{
+    return pathLength / gModulationWavelength - gModulationPhase;
+}
+
+/// Weight of a path of optical length `pathLength`.
+float modulationWeight(float pathLength)
+{
+    float weight = evalWaveform(gWaveform, modulationPeriods(pathLength));
+    return gUnsignedModulation != 0 ? 0.5f * weight + 0.5f : weight;
+}
+
 // Connection of `surface` to the light, weighted by the modulation of the whole path.
-// `pathLength` is the optical length from the camera to `surface`.
+// `pathLength` is the optical length from the camera to `surface`; `totalLength` returns that of the whole path.
 float3 evaluateModulatedConnection(ShadingData surface, IMaterialInstance material, LightSample light,
-    float pathLength, inout SampleGenerator sg)
+    float pathLength, inout SampleGenerator sg, out float totalLength)
 {
     LightConnection connection = evaluateLightConnection(surface, material, light, sg);
-    float modulation = pathLengthImportance(pathLength + connection.distance + light.laserT, tcurr);
-    return connection.bsdfCosine * connection.incidentRadiance * modulation;
+    totalLength = pathLength + connection.distance + light.laserT;
+    return connection.bsdfCosine * connection.incidentRadiance * modulationWeight(totalLength);
 }
 
 // The light endpoint as a vertex of the shift mapping.
@@ -100,18 +121,19 @@ ShadingData getLightEndpoint(LightSample light)
 }
 
 /** Estimate of the BSDF-sampled segment previous -> surface and its antithetic partner, including the connection
-    of each to the light (AntitheticMIS). The partner moves `surface` on its surface so the path is half a
-    wavelength longer or shorter, chosen with equal probability, which flips the sign of the cosine modulation.
-    The two shifts are inverses of each other. Without a partner (e.g. the Newton solve fails), the primal
-    estimate is returned alone.
+    of each to the light (AntitheticMIS). The partner moves `surface` on its surface so the path length changes by
+    antitheticWaveformOffset(), which flips the sign of the waveform: half a wavelength longer or shorter with equal
+    probability (two inverse shifts), or the sawtooth's mirror (its own inverse). Without a partner (e.g. the
+    Newton solve fails), the primal estimate is returned alone.
     @param[in] primalEstimate throughput * f / p of the primal path, connected to the light.
+    @param[in] primalLength Optical length of the whole primal path.
     @param[in] prefixLength Optical length from the camera to `previous`.
 */
 float3 estimateWithAntithetic(ShadingData previous, IMaterialInstance previousMaterial, HitInfo hit, ShadingData surface,
-    BSDFSample bsdfSample, LightSample light, float3 throughput, float3 primalEstimate, float prefixLength,
-    inout SampleGenerator sg)
+    BSDFSample bsdfSample, LightSample light, float3 throughput, float3 primalEstimate, float primalLength,
+    float prefixLength, inout SampleGenerator sg)
 {
-    float dt = (sampleNext1D(sg) < 0.5f ? 0.5f : -0.5f) * time_gate_window;
+    float dt = antitheticWaveformOffset(gWaveform, modulationPeriods(primalLength), sampleNext1D(sg)) * gModulationWavelength;
     if (!light.valid || bsdfSample.isLobe(LobeType::Delta) || !(bsdfSample.pdf > 0.f)) return primalEstimate;
     if (hit.getType() != HitType::Triangle) return primalEstimate;
 
@@ -138,8 +160,10 @@ float3 estimateWithAntithetic(ShadingData previous, IMaterialInstance previousMa
     float jacobian = shiftedGeometry / primalGeometry * areaJacobian;
 
     float antitheticBsdfPdf = previousMaterial.evalPdf(previous, shiftedDir, kUseImportanceSampling);
+    float antitheticLength;
     float3 antitheticValue = throughput * previousMaterial.eval(previous, shiftedDir, sg) *
-        evaluateModulatedConnection(shifted, shiftedMaterial, light, prefixLength + shiftedDistance * previous.IoR, sg);
+        evaluateModulatedConnection(shifted, shiftedMaterial, light, prefixLength + shiftedDistance * previous.IoR, sg,
+            antitheticLength);
     return combineAntithetic(primalEstimate, bsdfSample.pdf, antitheticValue, antitheticBsdfPdf, jacobian);
 }
 
@@ -177,7 +201,8 @@ float3 tracePath(const uint2 pixel, const uint2 frameDim)
             {
                 LightSample ls = {};
                 lls.generateLightSample(sg, ls);
-                result += throughput * evaluateModulatedConnection(sd, mi, ls, pathLength, sg);
+                float totalLength;
+                result += throughput * evaluateModulatedConnection(sd, mi, ls, pathLength, sg, totalLength);
             }
 
             for (uint depth = 1; depth < kMaxBounces; depth++)
@@ -199,11 +224,12 @@ float3 tracePath(const uint2 pixel, const uint2 frameDim)
 
                 LightSample ls = {};
                 lls.generateLightSample(sg, ls);
+                float primalLength;
                 float3 primalEstimate = throughput * bsdfSample.weight *
-                    evaluateModulatedConnection(sd, mi, ls, pathLength + segmentLength, sg);
+                    evaluateModulatedConnection(sd, mi, ls, pathLength + segmentLength, sg, primalLength);
 #if USE_ANTITHETIC_SAMPLING
                 result += estimateWithAntithetic(previous, previousMaterial, hit, sd, bsdfSample, ls, throughput,
-                    primalEstimate, pathLength, sg);
+                    primalEstimate, primalLength, pathLength, sg);
 #else
                 result += primalEstimate;
 #endif
