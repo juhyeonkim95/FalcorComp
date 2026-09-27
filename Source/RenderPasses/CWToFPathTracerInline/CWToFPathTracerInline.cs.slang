@@ -55,6 +55,7 @@ static const bool kUseAlphaTest = USE_ALPHA_TEST;
 
 static const float3 kDefaultBackgroundColor = float3(0, 0, 0);
 static const float kRayTMax = FLT_MAX;
+static const float kRoundTripTolerance = 0.01f; // Round-trip error allowed, relative to the shift distance.
 
 
 HitInfo traceRay(const float3 origin, const float3 dir, out float hitT)
@@ -145,8 +146,22 @@ float3 estimateWithAntithetic(ShadingData previous, IMaterialInstance previousMa
     HitInfo shiftedHit = path_length_aware_shift_mapping(getLightEndpoint(light), hit, previous, dt, areaJacobian,
         debugInfo, tolerance, sg);
     if (!(areaJacobian > 0.f) || !isfinite(areaJacobian)) return primalEstimate;
+    float3 shiftedPosition = gScene.getVertexData(shiftedHit.getTriangleHit()).posW;
 
-    float3 toShifted = gScene.getVertexData(shiftedHit.getTriangleHit()).posW - previous.posW;
+#if ANTITHETIC_ROUND_TRIP_CHECK
+    // Keep the shift only if shifting the partner back (-dt) returns to `surface`. Where it is kept, the forward and
+    // backward shifts are then exact inverses and one-to-one, as AntitheticMIS needs, even when the Newton solve
+    // could land elsewhere (e.g. on another surface with the ray-trace charts).
+    float reverseJacobian = 0.f;
+    HitInfo returnedHit = path_length_aware_shift_mapping(getLightEndpoint(light), shiftedHit, previous, -dt,
+        reverseJacobian, debugInfo, tolerance, sg);
+    if (!(reverseJacobian > 0.f) || !isfinite(reverseJacobian)) return primalEstimate;
+    float3 returnedPosition = gScene.getVertexData(returnedHit.getTriangleHit()).posW;
+    if (length(returnedPosition - surface.posW) > kRoundTripTolerance * length(shiftedPosition - surface.posW))
+        return primalEstimate;
+#endif
+
+    float3 toShifted = shiftedPosition - previous.posW;
     float shiftedDistance = length(toShifted);
     float3 shiftedDir = toShifted / shiftedDistance;
     ShadingData shifted = loadShadingData(shiftedHit, previous.posW, shiftedDir);
