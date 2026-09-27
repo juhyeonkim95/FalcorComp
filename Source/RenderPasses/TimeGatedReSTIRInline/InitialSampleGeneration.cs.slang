@@ -146,8 +146,7 @@ Reservoir mergeGateReservoirs(Reservoir narrow, Reservoir wide, uint narrowCount
     ShiftMappingDebugInfo debugInfo = {};
 #endif
     // K is the narrow/wide gate-width ratio: L' = tcurr + K*(L-tcurr).
-    combine_reservoir_with_shiftmapping(merged, wide, narrow.M,
-        primary, primaryMaterial, primaryLength, specularRoughnessThreshold,
+    combine_reservoir_with_shiftmapping(merged, wide, narrow.M, specularRoughnessThreshold,
         primary, primaryMaterial, primaryLength, tcurr, tcurr, K, false,
         laserOrigin, laserDirection, rng
 #if DEBUG_NEWTON_ITERATIONS
@@ -158,8 +157,7 @@ Reservoir mergeGateReservoirs(Reservoir narrow, Reservoir wide, uint narrowCount
     // A failed expansion or no-RC path retains the full narrow contribution.
     if (narrowCount > 0)
     {
-        combine_reservoir_with_shiftmapping(merged, narrow, wide.M,
-            primary, primaryMaterial, primaryLength, specularRoughnessThreshold,
+        combine_reservoir_with_shiftmapping(merged, narrow, wide.M, specularRoughnessThreshold,
             primary, primaryMaterial, primaryLength, tcurr, tcurr, 1.f / K, true,
             laserOrigin, laserDirection, rng
 #if DEBUG_NEWTON_ITERATIONS
@@ -223,8 +221,7 @@ Reservoir reuseTemporalHistory(Reservoir fresh, uint2 pixel, ShadingData primary
     ShiftMappingDebugInfo debugInfo = {};
 #endif
     // Previous -> current: source gate tprev, target gate tcurr.
-    combine_reservoir_with_shiftmapping(merged, history, fresh.M,
-        previousPrimary, previousMaterial, previousLength, specularRoughnessThreshold,
+    combine_reservoir_with_shiftmapping(merged, history, fresh.M, specularRoughnessThreshold,
         primary, primaryMaterial, primaryLength, tcurr, tprev, 1.f, false,
         laserOrigin, laserDirection, rng
 #if DEBUG_NEWTON_ITERATIONS
@@ -235,8 +232,7 @@ Reservoir reuseTemporalHistory(Reservoir fresh, uint2 pixel, ShadingData primary
 #endif
     );
     // Current -> previous evaluates competing support, retaining the current sample.
-    combine_reservoir_with_shiftmapping(merged, fresh, history.M,
-        primary, primaryMaterial, primaryLength, specularRoughnessThreshold,
+    combine_reservoir_with_shiftmapping(merged, fresh, history.M, specularRoughnessThreshold,
         previousPrimary, previousMaterial, previousLength, tprev, tcurr, 1.f, true,
 #if IS_SCENE_DYNAMIC
         laserPrevOrigin, laserPrevDirection, rng

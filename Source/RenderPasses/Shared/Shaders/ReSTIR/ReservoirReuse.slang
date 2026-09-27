@@ -41,7 +41,6 @@ uint4 finalize_reuse_statistics(uint4 stats, float mappingJacobian, float jacobi
 }
 #endif
 
-// this shifts curr to other.
 // Copy the selected path payload; callers set the mapped hit and full path length.
 void copyReconnectionPayload(inout Reservoir destination, const Reservoir source)
 {
@@ -74,20 +73,114 @@ void combineUnsupportedShift(inout Reservoir destination, Reservoir source, bool
     }
 }
 
+// The part of a reservoir's path after its reconnection vertex y: the next vertex x3 (a surface, or the point light
+// at `lightPosition`), the optical length after x3 and the light arriving at x3.
+struct ReconnectionSuffix
+{
+    ShadingData vertex;
+    IMaterialInstance material; // Only if isSurface.
+    bool isSurface;
+    float length;
+    float3 irradiance;
+};
+
+ReconnectionSuffix loadReconnectionSuffix(Reservoir reservoir, float3 lightPosition, float3 lightDirection)
+{
+    ReconnectionSuffix suffix;
+#if IS_LIGHT_SOURCE_LASER
+    suffix.isSurface = true; // A laser path ends on the lit surface.
+#else
+    suffix.isSurface = reservoir.rcNextVertexHit.isValid();
+#endif
+    if (suffix.isSurface)
+    {
+        suffix.vertex = loadShadingData(reservoir.rcNextVertexHit, float3(0.f), reservoir.rcNextVertexWi);
+        suffix.material = gScene.materials.getMaterialInstance(suffix.vertex, ExplicitLodTextureSampler(0.f));
+    }
+    else
+    {
+        suffix.vertex.posW = lightPosition;
+        suffix.vertex.frontFacing = true;
+        suffix.vertex.faceN = lightDirection;
+    }
+    suffix.length = reservoir.rcNextVertexPathLength;
+    suffix.irradiance = reservoir.rcNextVertexIrradiance;
+    return suffix;
+}
+
+// A source path moved onto a target pixel's camera prefix: the shifted reconnection vertex, its target function f
+// (zero without support) and the area Jacobian.
+struct ShiftedPath
+{
+    HitInfo hit;
+    ShadingData vertex;
+    float3 f;
+    float jacobian;
+    float mappingJacobian; // Jacobian of the shift mapping alone (debug statistics).
+    float totalPathLength;
+};
+
+// Shift the reconnection vertex y of `source` (gate sourceGate) to the prefix of another pixel, ending at x1 (gate
+// targetGate), keeping the suffix. K scales the path length offset from the gate center (gate-width ratio).
+// Returns false if the prefix cannot be replayed there.
+bool shiftToPrefix(Reservoir source, VertexData y, ReconnectionSuffix suffix, float sourceGate,
+    ShadingData x1, IMaterialInstance x1Material, float d01, float targetGate, float K, float roughnessThreshold,
+    inout SampleGenerator sg, inout ShiftMappingDebugInfo debugInfo, out ShiftedPath shifted)
+{
+    // Replay the camera prefix in the target pixel.
+    float3 prefixThroughput = float3(1.f);
+    if (!reconstructPrefix(source.rcVertexBounce, source.initRandomSeed, x1, x1Material, d01, prefixThroughput,
+            roughnessThreshold))
+    {
+        shifted.jacobian = 0.f;
+        return false;
+    }
+
+    float targetLength = d01 + length(x1.posW - y.posW) + length(y.posW - suffix.vertex.posW) + suffix.length;
+    float dt = K * (source.totalPathLength - sourceGate) + targetGate - targetLength;
+    float tol = max(abs(dt) * gNewtonRelativeTolerance, 1e-6f);
+    float jacobian = 0.f;
+    shifted.hit = path_length_aware_shift_mapping(x1, source.rcVertexHit, suffix.vertex, dt, jacobian, debugInfo, tol, sg);
+    shifted.mappingJacobian = jacobian;
+    jacobian *= K;
+    // A rejected/non-finite shift must have zero support, not NaN weight.
+    jacobian = select(isfinite(jacobian), max(jacobian, 0.f), 0.f);
+
+    float3 shiftedPosition = gScene.getVertexData(shifted.hit.getTriangleHit()).posW;
+    shifted.vertex = loadShadingData(shifted.hit, x1.posW, normalize(shiftedPosition - x1.posW));
+    shifted.totalPathLength = d01 + length(x1.posW - shiftedPosition) + length(shiftedPosition - suffix.vertex.posW)
+        + suffix.length;
+
+    // A moved y must still qualify as a reconnection vertex.
+    let shiftedMaterial = gScene.materials.getMaterialInstance(shifted.vertex, ExplicitLodTextureSampler(0.f));
+    jacobian *= float(shiftedMaterial.getProperties(shifted.vertex).roughness > roughnessThreshold);
+    shifted.jacobian = jacobian;
+
+    shifted.f = prefixThroughput * getPHat3(x1, x1Material, shifted.vertex, suffix.vertex, suffix.material,
+        d01, suffix.length, targetGate, suffix.irradiance, sg, suffix.isSurface, K, source.rcNextVertexBounce > 0);
+    shifted.f *= checkVisibility(x1, shifted.vertex);
+    if (source.rcVertexBounce == 0 || jacobian == 0.f)
+        shifted.f = 0.f;
+    return true;
+}
+
+// Stream `source` (M_other: the mass of the other reservoir in the pair) into `destination` with its pairwise MIS
+// weight. A canonical source keeps its own sample and only evaluates the other pixel's support; any other source
+// is shifted to the destination pixel (prefix ending at x1, gate targetGate).
 void combine_reservoir_with_shiftmapping(
-    inout Reservoir dst_reservoir,
-    Reservoir curr_reservoir,
+    inout Reservoir destination,
+    Reservoir source,
     float M_other,
-    ShadingData source_x1, IMaterialInstance source_x1_mi, float source_d01, float roughnessThreshold,
-    ShadingData other_x1,
-    IMaterialInstance other_x1_mi,
-    float other_d01,
-    const float other_t,
-    const float curr_t,
+    float roughnessThreshold,
+    ShadingData x1,
+    IMaterialInstance x1Material,
+    float d01,
+    const float targetGate,
+    const float sourceGate,
     const float K,
-    bool is_curr_canonical,
-    float3 laserPosition,   // this is to handle invalid curr_reservoir.rcNextVertex (point light)
-    float3 laserDirection,  // this is to handle invalid curr_reservoir.rcNextVertex (point light)
+    bool isCanonical,
+    float3 lightPosition,  // The point light, when the suffix ends there.
+    float3 lightDirection,
     inout SampleGenerator sg
 #if DEBUG_NEWTON_ITERATIONS
     , inout ShiftMappingDebugInfo debugInfo
@@ -103,227 +196,126 @@ void combine_reservoir_with_shiftmapping(
     ShiftMappingDebugInfo debugInfo;
 #endif
 
-    // no valid sample in reservoir
-    if(curr_reservoir.W == 0.0)
+    // No valid sample.
+    if (source.W == 0.f)
     {
-        dst_reservoir.M += curr_reservoir.M;
+        destination.M += source.M;
         return;
     }
 
-    // sample cannot be shared with other. (update only for canonical)
-    if(curr_reservoir.W > 0 && curr_reservoir.rcVertexBounce == 0){
-        if(is_curr_canonical){
-            float pHat_proxy_curr_as_curr = getReservoirWeight(curr_reservoir.f);
-            float weight = 1.0 * pHat_proxy_curr_as_curr * curr_reservoir.W;
-            if(dst_reservoir.update(curr_reservoir.f, weight, curr_reservoir.M, sg)){
-                dst_reservoir.rcVertexBounce = 0;
-            }
-        } else {
-            dst_reservoir.M += curr_reservoir.M;
+    // A path without a reconnection vertex cannot be shifted; only the canonical side keeps it.
+    if (source.W > 0 && source.rcVertexBounce == 0)
+    {
+        if (isCanonical)
+        {
+            float weight = getReservoirWeight(source.f) * source.W;
+            if (destination.update(source.f, weight, source.M, sg))
+                destination.rcVertexBounce = 0;
         }
+        else
+            destination.M += source.M;
         return;
     }
 
-    // Keep the previous target f and full length intact for pairwise MIS/shift dt.
-    Reservoir targetReservoir = curr_reservoir;
+    // Keep the source target f and full length intact for pairwise MIS and the shift dt.
+    Reservoir suffixSource = source;
 #if IS_SCENE_DYNAMIC
     // Slang/HLSL logical operators must not guard calls with inout side effects.
     // Spatial/shrink callers pass updateLight=false and must keep cached lighting.
     if (updateLight)
     {
-        bool lightValid = reevaluateSuffixLighting(targetReservoir,
-            LaserLightSampler(laserPosition, laserDirection, targetLightCosAngle, targetLightPower), sg);
+        bool lightValid = reevaluateSuffixLighting(suffixSource,
+            LaserLightSampler(lightPosition, lightDirection, targetLightCosAngle, targetLightPower), sg);
         if (!lightValid)
         {
-            combineUnsupportedShift(dst_reservoir, curr_reservoir, is_curr_canonical, sg);
+            combineUnsupportedShift(destination, source, isCanonical, sg);
             return;
         }
     }
 #endif
-    VertexData v_curr = gScene.getVertexData(curr_reservoir.rcVertexHit.getTriangleHit());
+    VertexData y = gScene.getVertexData(source.rcVertexHit.getTriangleHit());
+    ReconnectionSuffix suffix = loadReconnectionSuffix(suffixSource, lightPosition, lightDirection);
 
-    float curr_d34 = targetReservoir.rcNextVertexPathLength;
-
-    // Replay the camera prefix in the target pixel.
-    float3 other_prefix_throughput = float3(1.f);
-    bool targetValid = reconstructPrefix(curr_reservoir.rcVertexBounce, curr_reservoir.initRandomSeed,
-        other_x1, other_x1_mi, other_d01, other_prefix_throughput, roughnessThreshold);
-    if (!targetValid)
+    ShiftedPath shifted;
+    if (!shiftToPrefix(source, y, suffix, sourceGate, x1, x1Material, d01, targetGate, K, roughnessThreshold,
+            sg, debugInfo, shifted))
     {
-        combineUnsupportedShift(dst_reservoir, curr_reservoir, is_curr_canonical, sg);
+        combineUnsupportedShift(destination, source, isCanonical, sg);
         return;
     }
-
-    ShadingData curr_x3;
-    IMaterialInstance curr_x3_mi;
-    #if IS_LIGHT_SOURCE_LASER
-    bool isRCNextNotPointLight = true;
-    #else
-    bool isRCNextNotPointLight = targetReservoir.rcNextVertexHit.isValid();
-    #endif
-
-    // rcNextVertexHit is not a point light
-    if(isRCNextNotPointLight){
-        curr_x3 = loadShadingData(targetReservoir.rcNextVertexHit, float3(0.0), targetReservoir.rcNextVertexWi);
-        curr_x3_mi = gScene.materials.getMaterialInstance(curr_x3, ExplicitLodTextureSampler(0));
-    } else {
-        curr_x3.posW = laserPosition;
-        curr_x3.frontFacing = true;
-        curr_x3.faceN = laserDirection;
-    }
-
-    float jacobian = 0.0;
-
-    float targetLength = other_d01 + length(other_x1.posW - v_curr.posW)
-        + length(v_curr.posW - curr_x3.posW) + curr_d34;
-    float dt = K * (curr_reservoir.totalPathLength - curr_t) + other_t - targetLength;
-    float tol = max(abs(dt) * gNewtonRelativeTolerance, 1e-6f);
-    HitInfo y_curr_as_other = path_length_aware_shift_mapping(
-        other_x1, curr_reservoir.rcVertexHit, curr_x3, dt, jacobian, debugInfo, tol, sg);
-#if DEBUG_NEWTON_ITERATIONS
-    float mappingJacobian = jacobian;
-#endif
-    jacobian *= K;
-    // A rejected/non-finite shift must have zero support, not NaN weight.
-    jacobian = select(isfinite(jacobian), max(jacobian, 0.f), 0.f);
-
-    // load information at new point
-    VertexData v_curr_as_other = gScene.getVertexData(y_curr_as_other.getTriangleHit());
-    ShadingData y_curr_as_other_sd = loadShadingData(
-            y_curr_as_other, other_x1.posW,
-            normalize(v_curr_as_other.posW - other_x1.posW));
-
-    // A moved x must still qualify as a reconnection vertex.
-    let shiftedMaterial = gScene.materials.getMaterialInstance(y_curr_as_other_sd, ExplicitLodTextureSampler(0.f));
-    jacobian *= float(shiftedMaterial.getProperties(y_curr_as_other_sd).roughness > roughnessThreshold);
-
-    // evaluate new path throughput
-    float3 f_curr_as_other = other_prefix_throughput * getPHat3(
-            other_x1, other_x1_mi,
-            y_curr_as_other_sd,
-            curr_x3, curr_x3_mi,
-            other_d01, curr_d34, other_t,
-            targetReservoir.rcNextVertexIrradiance, sg, isRCNextNotPointLight, K, curr_reservoir.rcNextVertexBounce > 0);
-
-    f_curr_as_other *= checkVisibility(other_x1, y_curr_as_other_sd);
 #if IS_SCENE_DYNAMIC
     if (updateLight)
     {
-        if (targetReservoir.rcNextVertexBounce > 0)
-            f_curr_as_other *= checkVisibility(y_curr_as_other_sd, curr_x3);
+        if (suffixSource.rcNextVertexBounce > 0)
+            shifted.f *= checkVisibility(shifted.vertex, suffix.vertex);
         else
         {
-            SampleGenerator lightRng = SampleGenerator(targetReservoir.lightRandomSeed);
-            LaserLightSampler sampler = LaserLightSampler(laserPosition, laserDirection, targetLightCosAngle, targetLightPower);
+            SampleGenerator lightRng = SampleGenerator(suffixSource.lightRandomSeed);
+            LaserLightSampler sampler = LaserLightSampler(lightPosition, lightDirection, targetLightCosAngle, targetLightPower);
             LightSample light = {};
             sampler.generateLightSample(lightRng, light);
-            f_curr_as_other *= light.valid ? float(checkLightVisibility(y_curr_as_other_sd, light)) : 0.f;
+            shifted.f *= light.valid ? float(checkLightVisibility(shifted.vertex, light)) : 0.f;
         }
     }
 #endif
-    if(curr_reservoir.rcVertexBounce == 0 || jacobian == 0.0){
-        f_curr_as_other = 0.0;
-    }
-    float pHat_proxy_curr_as_other = getReservoirWeight(f_curr_as_other);
+    float shiftedTarget = getReservoirWeight(shifted.f);
 #if DEBUG_NEWTON_ITERATIONS
     debugInfo.newtonStats = finalize_reuse_statistics(
-        debugInfo.newtonStats, mappingJacobian, jacobian, pHat_proxy_curr_as_other);
+        debugInfo.newtonStats, shifted.mappingJacobian, shifted.jacobian, shiftedTarget);
 #endif
 
-    float pHat_proxy_curr_as_curr = getReservoirWeight(curr_reservoir.f);
-    float M_curr = curr_reservoir.M;
+    float sourceTarget = getReservoirWeight(source.f);
+    float misWeight = spatialPairCoefficient(source.M, sourceTarget, M_other, shiftedTarget, shifted.jacobian);
 
-    float mis_weight = spatialPairCoefficient(M_curr, pHat_proxy_curr_as_curr,
-        M_other, pHat_proxy_curr_as_other, jacobian);
-
-    if(is_curr_canonical){
-        float weight = mis_weight * pHat_proxy_curr_as_curr * curr_reservoir.W;
-        if(dst_reservoir.update(curr_reservoir.f, weight, M_curr, sg)){
-            copyReconnectionPayload(dst_reservoir, curr_reservoir);
-            dst_reservoir.rcVertexHit = curr_reservoir.rcVertexHit;
-
-            dst_reservoir.totalPathLength = curr_reservoir.totalPathLength;
+    if (isCanonical)
+    {
+        float weight = misWeight * sourceTarget * source.W;
+        if (destination.update(source.f, weight, source.M, sg))
+        {
+            copyReconnectionPayload(destination, source);
+            destination.rcVertexHit = source.rcVertexHit;
+            destination.totalPathLength = source.totalPathLength;
         }
-    } else {
-        float weight = mis_weight * pHat_proxy_curr_as_other * curr_reservoir.W * jacobian;
-        if(dst_reservoir.update(f_curr_as_other, weight, M_curr, sg)){
-            copyReconnectionPayload(dst_reservoir, targetReservoir);
-            dst_reservoir.rcVertexHit = y_curr_as_other;
-
-            dst_reservoir.totalPathLength = other_d01 + length(other_x1.posW - v_curr_as_other.posW)
-                 + length(v_curr_as_other.posW - curr_x3.posW) + curr_d34;
+    }
+    else
+    {
+        float weight = misWeight * shiftedTarget * source.W * shifted.jacobian;
+        if (destination.update(shifted.f, weight, source.M, sg))
+        {
+            copyReconnectionPayload(destination, suffixSource);
+            destination.rcVertexHit = shifted.hit;
+            destination.totalPathLength = shifted.totalPathLength;
         }
     }
 }
 
+// Pairwise MIS weight of the canonical sample of `source` against another pixel (mass M_other, prefix ending at x1,
+// gate targetGate). y and suffix are the source's reconnection vertex and suffix (loadReconnectionSuffix).
 float evaluate_canonical_shiftmap_weight(
-    Reservoir curr_reservoir,
-    ShadingData curr_x3,
-    const VertexData v_curr,
-    IMaterialInstance curr_x3_mi,
+    Reservoir source,
+    ReconnectionSuffix suffix,
+    const VertexData y,
     float M_other,
-    ShadingData source_x1, IMaterialInstance source_x1_mi, float source_d01, float roughnessThreshold,
-    ShadingData other_x1,
-    IMaterialInstance other_x1_mi,
-    float other_d01,
-    const float other_t,
-    const float curr_t,
+    float roughnessThreshold,
+    ShadingData x1,
+    IMaterialInstance x1Material,
+    float d01,
+    const float targetGate,
+    const float sourceGate,
     inout SampleGenerator sg,
     inout ShiftMappingDebugInfo debugInfo
 )
 {
-    float M_curr = curr_reservoir.M;
+    // Cannot be shared with the other pixel.
+    if (source.W > 0 && source.rcVertexBounce == 0)
+        return 1.f;
+    if (!(source.W > 0))
+        return 0.f;
 
-    // this cannot be shared with other.
-    if(curr_reservoir.W > 0 && curr_reservoir.rcVertexBounce == 0){
-        return 1.0;
-    }
-
-    if(curr_reservoir.W > 0){
-        // (1) Reconstruct prefix
-        float3 other_prefix_throughput = float3(1.f);
-        bool targetValid = reconstructPrefix(curr_reservoir.rcVertexBounce, curr_reservoir.initRandomSeed,
-            other_x1, other_x1_mi, other_d01, other_prefix_throughput, roughnessThreshold);
-        if (!targetValid) { return 1.f; }
-
-        float jacobian = 0.0;
-        float targetLength = other_d01 + length(other_x1.posW - v_curr.posW)
-            + length(v_curr.posW - curr_x3.posW) + curr_reservoir.rcNextVertexPathLength;
-        float dt = (curr_reservoir.totalPathLength - curr_t) + other_t - targetLength;
-        float tol = max(abs(dt) * gNewtonRelativeTolerance, 1e-6f);
-        HitInfo y_curr_as_other = path_length_aware_shift_mapping(
-            other_x1, curr_reservoir.rcVertexHit, curr_x3, dt, jacobian, debugInfo, tol, sg);
-        jacobian = select(isfinite(jacobian), max(jacobian, 0.f), 0.f);
-
-        VertexData v_curr_as_other = gScene.getVertexData(y_curr_as_other.getTriangleHit());
-
-        ShadingData y_curr_as_other_sd = loadShadingData(
-            y_curr_as_other, other_x1.posW,
-            normalize(v_curr_as_other.posW - other_x1.posW));
-
-        // A moved x must still qualify as a reconnection vertex.
-        let shiftedMaterial = gScene.materials.getMaterialInstance(y_curr_as_other_sd, ExplicitLodTextureSampler(0.f));
-        jacobian *= float(shiftedMaterial.getProperties(y_curr_as_other_sd).roughness > roughnessThreshold);
-
-        float3 f_curr_as_other = other_prefix_throughput * getPHat3(
-            other_x1, other_x1_mi,
-            y_curr_as_other_sd,
-            curr_x3, curr_x3_mi,
-            other_d01, curr_reservoir.rcNextVertexPathLength, other_t,
-            curr_reservoir.rcNextVertexIrradiance, sg, curr_reservoir.rcNextVertexHit.isValid(), 1.f, curr_reservoir.rcNextVertexBounce > 0);
-
-        f_curr_as_other *= checkVisibility(other_x1, y_curr_as_other_sd);
-
-        if(curr_reservoir.rcVertexBounce == 0){
-            f_curr_as_other = 0.0;
-        }
-
-        float pHat_proxy_curr_as_other = (jacobian == 0.0) ? 0.0 : getReservoirWeight(f_curr_as_other);
-        float pHat_proxy_curr_as_curr = getReservoirWeight(curr_reservoir.f);
-
-        return spatialPairCoefficient(M_curr, pHat_proxy_curr_as_curr,
-            M_other, pHat_proxy_curr_as_other, jacobian);
-    }
-
-    return 0.0f;
+    ShiftedPath shifted;
+    if (!shiftToPrefix(source, y, suffix, sourceGate, x1, x1Material, d01, targetGate, 1.f, roughnessThreshold,
+            sg, debugInfo, shifted))
+        return 1.f;
+    return spatialPairCoefficient(source.M, getReservoirWeight(source.f),
+        M_other, getReservoirWeight(shifted.f), shifted.jacobian);
 }

@@ -149,13 +149,11 @@ Reservoir reuseTemporalBin(Reservoir fresh, Reservoir previous, TemporalHistory 
 
     Reservoir merged = Reservoir();
     // Previous -> current.
-    combine_reservoir_with_shiftmapping(merged, previous, fresh.M,
-        history.primary, previousMaterial, history.primaryLength, specularRoughnessThreshold,
+    combine_reservoir_with_shiftmapping(merged, previous, fresh.M, specularRoughnessThreshold,
         primary, primaryMaterial, primaryLength, gateCenter, gateCenter, 1.f, false,
         laserOrigin, laserDirection, rng);
     // Current -> previous evaluates competing support, retaining the current sample.
-    combine_reservoir_with_shiftmapping(merged, fresh, previous.M,
-        primary, primaryMaterial, primaryLength, specularRoughnessThreshold,
+    combine_reservoir_with_shiftmapping(merged, fresh, previous.M, specularRoughnessThreshold,
         history.primary, previousMaterial, history.primaryLength, gateCenter, gateCenter, 1.f, true,
         laserOrigin, laserDirection, rng);
     // The canonical no-RC branch copies only f and its flag; keep the selected length too.

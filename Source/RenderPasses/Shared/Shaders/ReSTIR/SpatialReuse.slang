@@ -138,25 +138,13 @@ struct SpatialReuse
         // before the final update; rejected neighbors do not change this split.
         centralReservoir.M /= candidateCount;
 
-        // Prepare the central path's x and y once for central -> neighbor weights.
+        // Prepare the central path's y and suffix once for central -> neighbor weights.
         // A no-RC sample has no valid reconnection payload; its pair weight is one.
-        ShadingData centralNextVertex;
-        IMaterialInstance centralNextMaterial;
+        ReconnectionSuffix centralSuffix;
         VertexData centralVertex;
         if (centralReservoir.W > 0 && centralReservoir.rcVertexBounce > 0)
         {
-            if (centralReservoir.rcNextVertexHit.isValid())
-            {
-                centralNextVertex = loadShadingData(centralReservoir.rcNextVertexHit,
-                    float3(0.f), centralReservoir.rcNextVertexWi);
-                centralNextMaterial = gScene.materials.getMaterialInstance(centralNextVertex, ExplicitLodTextureSampler(0.f));
-            }
-            else
-            {
-                centralNextVertex.posW = laserOrigin;
-                centralNextVertex.frontFacing = true;
-                centralNextVertex.faceN = laserDirection;
-            }
+            centralSuffix = loadReconnectionSuffix(centralReservoir, laserOrigin, laserDirection);
             centralVertex = gScene.getVertexData(centralReservoir.rcVertexHit.getTriangleHit());
         }
 
@@ -196,17 +184,13 @@ struct SpatialReuse
             // Central -> neighbor: accumulate the central sample's pairwise weight.
             ShiftMappingDebugInfo debugInfo;
             canonicalWeight += evaluate_canonical_shiftmap_weight(
-                centralReservoir,
-                centralNextVertex, centralVertex, centralNextMaterial,
-                neighborReservoir.M,
-                primary, primaryMaterial, primaryDepth, specularRoughnessThreshold,
+                centralReservoir, centralSuffix, centralVertex, neighborReservoir.M, specularRoughnessThreshold,
                 neighborPrimary, neighborMaterial, neighborDepth,
                 neighborGateCenter, gateCenter, sg, debugInfo);
 
             // Neighbor -> central: shift the neighbor sample and stream it into the reservoir.
             combine_reservoir_with_shiftmapping(
-                destination, neighborReservoir, centralReservoir.M,
-                neighborPrimary, neighborMaterial, neighborDepth, specularRoughnessThreshold,
+                destination, neighborReservoir, centralReservoir.M, specularRoughnessThreshold,
                 primary, primaryMaterial, primaryDepth,
                 gateCenter, neighborGateCenter, 1.f, false,
                 laserOrigin, laserDirection, sg
