@@ -10,6 +10,9 @@ set(shared_shaders
     ReSTIR/InitialCandidates.slang
     ReSTIR/PathReconstruction.slang
     ShiftMapping/PathLengthAwareShiftmapping.slang
+    Antithetic/AntitheticMIS.slang
+    Projector/ProjectorLight.slang
+    Projector/ProjectorPatterns.slang
     ReSTIR/ReservoirReuse.slang
     ReSTIR/SpatialReuse.slang
     PathLengthNewtonSolver/NewtonSolver.slang

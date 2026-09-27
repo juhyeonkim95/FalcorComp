@@ -1,0 +1,13 @@
+add_plugin(StructuredLightPathTracerInline)
+
+target_sources(StructuredLightPathTracerInline PRIVATE
+    StructuredLightPathTracerInline.cpp
+    StructuredLightPathTracerInline.h
+    StructuredLightPathTracerInline.cs.slang
+)
+
+target_copy_shaders(StructuredLightPathTracerInline RenderPasses/StructuredLightPathTracerInline)
+
+target_source_group(StructuredLightPathTracerInline "RenderPasses")
+
+add_dependencies(StructuredLightPathTracerInline RenderPassSharedShaders)
