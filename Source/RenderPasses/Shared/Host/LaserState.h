@@ -4,9 +4,10 @@
 
 using namespace Falcor;
 
-/** The laser for one frame. LaserVBufferRT publishes it in the render data dictionary (publish()), and the passes
- * that use the laser read it back (resolve()), so they all see the same laser, including when it is collocated
- * with the camera.
+/** The laser for one frame. The LaserLight pass publishes it in the render data dictionary (publish()), and the
+ * passes that use the laser read it back (resolve()), so they all see the same laser, including when it is
+ * collocated with the camera. Those passes need an execution edge from LaserLight (graph.add_edge("Laser",
+ * "Tracer")) so that it runs first.
  */
 struct LaserState
 {
@@ -43,11 +44,19 @@ struct LaserState
         dict[kCollocated] = collocated;
     }
 
-    /// The laser the laser pass published this frame; the defaults where it did not.
+    /// The laser the laser pass published this frame; the defaults where it did not (with a warning, once).
     static LaserState resolve(const RenderData& renderData)
     {
         auto& dict = renderData.getDictionary();
         LaserState laser;
+        if (!dict.keyExists(kOrigin))
+        {
+            static bool warned = false;
+            if (!warned)
+                logWarning("No laser was published: add a LaserLight pass with an execution edge to this pass, e.g. "
+                           "graph.add_edge(\"Laser\", \"Tracer\"). Using the default laser.");
+            warned = true;
+        }
         laser.origin = dict.getValue(kOrigin, laser.origin);
         laser.direction = dict.getValue(kDirection, laser.direction);
         laser.power = dict.getValue(kPower, laser.power);

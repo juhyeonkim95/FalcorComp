@@ -18,7 +18,7 @@ inline const std::unordered_map<std::string, SingleChannel> kSingleChannels = {
     {"blue", SingleChannel::Blue},
 };
 
-/// Camera paths and the output. The light is set on the laser pass (LaserVBufferRT, see LaserState).
+/// Camera paths and the output. The light is set on the laser pass (LaserLight, see LaserState).
 struct PathTracingConfig
 {
     uint samplesPerPixel = 128;

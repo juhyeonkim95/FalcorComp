@@ -42,8 +42,6 @@ struct SpatialReuse
     Texture2D<PackedHitInfo> gVBuffer;
     Texture2D<float4> gViewW;
     Texture2D<float2> gMotionVector; // Optional
-    Texture2D<PackedHitInfo> gLaserVBuffer;
-    Texture2D<float4> gLaserViewW;
 
     StructuredBuffer<Reservoir> prevReservoirs;
     RWStructuredBuffer<Reservoir> currReservoirs;

@@ -52,12 +52,6 @@ const ChannelList kInputChannels = {
     { kInputViewDir,    "gViewW",       "World-space view direction (xyz float format)", true /* optional */ },
 };
 
-const ChannelList kLaserInputChannels = {
-    // 1 x 1 laser hit buffer
-    { "laservbuffer",        "gLaserVBuffer",     "Laser visibility buffer in packed format" },
-    { "laserviewW",    "gLaserViewW",       "World-space view direction (xyz float format)", true /* optional */ },
-};
-
 const ChannelList kOutputChannels = {
     { "color",          "gOutputColor", "Output color (sum of direct and indirect)", false, ResourceFormat::RGBA32Float },
 };
@@ -140,7 +134,6 @@ RenderPassReflection TransientHistogramPathTracerInline::reflect(const CompileDa
 
     // Define our input/output channels.
     addRenderPassInputs(reflector, kInputChannels);
-    addRenderPassInputs(reflector, kLaserInputChannels, ResourceBindFlags::ShaderResource, uint2(1, 1));
     const uint2 sz = RenderPassHelpers::calculateIOSize(mOptions.outputSize, mOptions.fixedOutputSize, compileData.defaultTexDims);
     addRenderPassOutputs(reflector, kOutputChannels, ResourceBindFlags::UnorderedAccess, sz);
 
@@ -176,7 +169,6 @@ DefineList TransientHistogramPathTracerInline::getShaderDefines(const RenderData
 
     // For optional I/O resources, set 'is_valid_<name>' defines to inform the program of which ones it can access.
     defines.add(getValidResourceDefines(kInputChannels, renderData));
-    defines.add(getValidResourceDefines(kLaserInputChannels, renderData));
     defines.add(getValidResourceDefines(kOutputChannels, renderData));
     defines.add(getValidResourceDefines(histogramChannels(), renderData));
     return defines;
@@ -200,7 +192,6 @@ void TransientHistogramPathTracerInline::bindShaderData(const ShaderVar& var, co
     mOptions.histogram.bindShaderData(var);
 
     InlinePass::bindChannels(var, renderData, kInputChannels);
-    InlinePass::bindChannels(var, renderData, kLaserInputChannels);
     InlinePass::bindChannels(var, renderData, kOutputChannels);
     InlinePass::bindChannels(var, renderData, histogramChannels());
 }

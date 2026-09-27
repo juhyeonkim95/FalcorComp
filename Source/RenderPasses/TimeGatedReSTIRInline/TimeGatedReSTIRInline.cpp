@@ -62,12 +62,6 @@ const ChannelList kInputChannels = {
     { kInputViewDir,    "gViewW",       "World-space view direction (xyz float format)", true /* optional */ },
 };
 
-const ChannelList kLaserInputChannels = {
-    // 1 x 1 laser hit buffer
-    { "laservbuffer",  "gLaserVBuffer",     "Laser visibility buffer in packed format", true /* optional */ },
-    { "laserviewW",    "gLaserViewW",       "World-space view direction (xyz float format)", true /* optional */ },
-};
-
 const ChannelList kOutputChannels = {
     // clang-format off
     { "color",          "gOutputColor", "Output color (sum of direct and indirect)", false, ResourceFormat::RGBA32Float },
@@ -181,7 +175,6 @@ RenderPassReflection TimeGatedReSTIRInline::reflect(const CompileData& compileDa
 
     // Define our input/output channels.
     addRenderPassInputs(reflector, kInputChannels);
-    addRenderPassInputs(reflector, kLaserInputChannels, ResourceBindFlags::ShaderResource, uint2(1, 1));
     addRenderPassOutputs(reflector, kOutputChannels);
     if (mOptions.debugNewtonIterations) addRenderPassOutputs(reflector, kDebugOutputChannels);
 
@@ -220,7 +213,6 @@ DefineList TimeGatedReSTIRInline::getShaderDefines(const RenderData& renderData)
 
     // For optional I/O resources, set 'is_valid_<name>' defines to inform the program of which ones it can access.
     defines.add(getValidResourceDefines(kInputChannels, renderData));
-    defines.add(getValidResourceDefines(kLaserInputChannels, renderData));
     defines.add(getValidResourceDefines(kOutputChannels, renderData));
     return defines;
 }
@@ -264,7 +256,6 @@ void TimeGatedReSTIRInline::bindShaderData(const ShaderVar& var, const RenderDat
     mOptions.restir.bindShiftMapping(var["Shiftmap_CB"]);
 
     InlinePass::bindChannels(var, renderData, kInputChannels);
-    InlinePass::bindChannels(var, renderData, kLaserInputChannels);
     InlinePass::bindChannels(var, renderData, kOutputChannels);
     if (mOptions.pathTracing.computeDirect)
         var["gDirectColor"] = mpDirectColor;
@@ -297,7 +288,6 @@ void TimeGatedReSTIRInline::spatialReuse(RenderContext* pRenderContext, const Re
     mOptions.restir.bindSpatialReuse(var);
 
     InlinePass::bindChannels(var, renderData, kInputChannels);
-    InlinePass::bindChannels(var, renderData, kLaserInputChannels);
     InlinePass::bindChannels(var, renderData, kOutputChannels);
     if (mOptions.debugNewtonIterations)
         InlinePass::bindChannels(var, renderData, kDebugOutputChannels);

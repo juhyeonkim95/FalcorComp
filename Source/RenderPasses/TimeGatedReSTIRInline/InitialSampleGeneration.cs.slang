@@ -68,11 +68,6 @@ Texture2D<PackedHitInfo> gTemporalVBuffer;
 #endif
 
 
-// Laser V Buffer (1 pixel)
-Texture2D<PackedHitInfo> gLaserVBuffer;
-Texture2D<float4> gLaserViewW;
-
-
 // Reservoir Struct
 StructuredBuffer<Reservoir> prevReservoirs;
 RWStructuredBuffer<Reservoir> currReservoirs;

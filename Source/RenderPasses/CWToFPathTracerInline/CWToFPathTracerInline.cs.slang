@@ -38,9 +38,6 @@ cbuffer Modulation
 Texture2D<PackedHitInfo> gVBuffer;
 Texture2D<float4> gViewW; // Optional
 
-// Retained for the C++ render-pass bindings; connection sampling traces its own laser ray.
-Texture2D<PackedHitInfo> gLaserVBuffer;
-Texture2D<float4> gLaserViewW; // Optional
 
 // Outputs
 RWTexture2D<float4> gOutputColor;

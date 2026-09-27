@@ -58,12 +58,6 @@ const ChannelList kInputChannels = {
     { kInputViewDir,    "gViewW",       "World-space view direction (xyz float format)", true /* optional */ },
 };
 
-const ChannelList kLaserInputChannels = {
-    // 1 x 1 laser hit buffer
-    { "laservbuffer",  "gLaserVBuffer",     "Laser visibility buffer in packed format", true /* optional */ },
-    { "laserviewW",    "gLaserViewW",       "World-space view direction (xyz float format)", true /* optional */ },
-};
-
 const ChannelList kOutputChannels = {
     // clang-format off
     { "color",          "gOutputColor", "Output color (sum of direct and indirect)", false, ResourceFormat::RGBA32Float },
@@ -134,7 +128,6 @@ RenderPassReflection TransientHistogramReSTIRInline::reflect(const CompileData& 
 
     // Define our input/output channels.
     addRenderPassInputs(reflector, kInputChannels);
-    addRenderPassInputs(reflector, kLaserInputChannels, ResourceBindFlags::ShaderResource, uint2(1, 1));
     addRenderPassOutputs(reflector, kOutputChannels);
 
     ChannelList kHistogramOutputChannels = mOptions.pathTracing.useSingleChannel ? kHistogramOutputChannelSingle : kHistogramOutputChannelsRGB;
@@ -162,7 +155,6 @@ DefineList TransientHistogramReSTIRInline::getShaderDefines(const RenderData& re
 
     // For optional I/O resources, set 'is_valid_<name>' defines to inform the program of which ones it can access.
     defines.add(getValidResourceDefines(kInputChannels, renderData));
-    defines.add(getValidResourceDefines(kLaserInputChannels, renderData));
     defines.add(getValidResourceDefines(kOutputChannels, renderData));
     defines.add(getValidResourceDefines(histogramChannels(), renderData));
     return defines;
@@ -218,7 +210,6 @@ void TransientHistogramReSTIRInline::bindShaderData(const ShaderVar& var, const 
     }
 
     InlinePass::bindChannels(var, renderData, kInputChannels);
-    InlinePass::bindChannels(var, renderData, kLaserInputChannels);
     InlinePass::bindChannels(var, renderData, kOutputChannels);
     InlinePass::bindChannels(var, renderData, histogramChannels());
 }
@@ -237,7 +228,6 @@ void TransientHistogramReSTIRInline::spatialReuse(RenderContext* pRenderContext,
     mOptions.restir.bindSpatialReuse(var);
 
     InlinePass::bindChannels(var, renderData, kInputChannels);
-    InlinePass::bindChannels(var, renderData, kLaserInputChannels);
     InlinePass::bindChannels(var, renderData, kOutputChannels);
     // The histogram is a pass-level global, outside the shared SpatialReuse struct.
     InlinePass::bindChannels(rootVar, renderData, histogramChannels());
