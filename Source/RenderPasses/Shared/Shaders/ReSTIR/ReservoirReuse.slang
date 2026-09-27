@@ -319,3 +319,59 @@ float evaluate_canonical_shiftmap_weight(
     return spatialPairCoefficient(source.M, getReservoirWeight(source.f),
         M_other, getReservoirWeight(shifted.f), shifted.jacobian);
 }
+
+// One side of a pairwise merge: its camera prefix (primary hit and optical length to it), gate center, and the
+// light for suffixes ending at the point light (and for dynamic re-evaluation).
+struct ReuseDomain
+{
+    ShadingData primary;
+    IMaterialInstance material;
+    float primaryLength;
+    float gate;
+    float3 lightPosition;
+    float3 lightDirection;
+    float3 lightPower;
+    float lightCosAngle;
+};
+
+// Pairwise MIS merge of a canonical reservoir with another one. K is the canonical/other gate-width ratio (the
+// shift to the canonical domain maps L to gate + K (L - otherGate)). With updateLight (dynamic scenes), each shifted suffix is
+// re-lit with its target domain's light. Both reservoirs must have W set; the result has W set.
+Reservoir mergeReservoirPair(Reservoir canonical, ReuseDomain canonicalDomain, Reservoir other, ReuseDomain otherDomain,
+    float K, bool updateLight, float roughnessThreshold, inout SampleGenerator rng)
+{
+    Reservoir merged = Reservoir();
+#if DEBUG_NEWTON_ITERATIONS
+    // Merges are excluded from the spatial-reuse diagnostic outputs.
+    ShiftMappingDebugInfo debugInfo = {};
+#endif
+    // Other -> canonical.
+    combine_reservoir_with_shiftmapping(merged, other, canonical.M, roughnessThreshold,
+        canonicalDomain.primary, canonicalDomain.material, canonicalDomain.primaryLength,
+        canonicalDomain.gate, otherDomain.gate, K, false,
+        canonicalDomain.lightPosition, canonicalDomain.lightDirection, rng
+#if DEBUG_NEWTON_ITERATIONS
+        , debugInfo
+#endif
+#if IS_SCENE_DYNAMIC
+        , updateLight, canonicalDomain.lightPower, canonicalDomain.lightCosAngle
+#endif
+    );
+    // Canonical -> other evaluates competing support, retaining the canonical sample.
+    combine_reservoir_with_shiftmapping(merged, canonical, other.M, roughnessThreshold,
+        otherDomain.primary, otherDomain.material, otherDomain.primaryLength,
+        otherDomain.gate, canonicalDomain.gate, 1.f / K, true,
+        otherDomain.lightPosition, otherDomain.lightDirection, rng
+#if DEBUG_NEWTON_ITERATIONS
+        , debugInfo
+#endif
+#if IS_SCENE_DYNAMIC
+        , updateLight, otherDomain.lightPower, otherDomain.lightCosAngle
+#endif
+    );
+    // The canonical no-RC branch copies only f and its flag; keep the selected length too.
+    if (merged.rcVertexBounce == 0) merged.totalPathLength = canonical.totalPathLength;
+    float target = getReservoirWeight(merged.f);
+    merged.W = target > 0.f ? merged.wSum / target : 0.f;
+    return merged;
+}

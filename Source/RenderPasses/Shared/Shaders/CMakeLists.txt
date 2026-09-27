@@ -23,6 +23,7 @@ set(shared_shaders
     ReSTIR/PathReconstruction.slang
     ReSTIR/ReservoirReuse.slang
     ReSTIR/SpatialReuse.slang
+    ReSTIR/TemporalReuse.slang
     Antithetic/AntitheticMIS.slang
     Projector/ProjectorLight.slang
     Projector/ProjectorPatterns.slang

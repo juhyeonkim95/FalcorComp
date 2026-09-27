@@ -19,6 +19,9 @@ import RenderPasses.Shared.Shaders.ReSTIR.InitialCandidates;
 #if USE_SHRINK_MAPPING || USE_TEMPORAL_REUSE
 import RenderPasses.Shared.Shaders.ShiftMapping.ShiftMapping;
 #endif
+#if USE_TEMPORAL_REUSE
+import RenderPasses.Shared.Shaders.ReSTIR.TemporalReuse;
+#endif
 import RenderPasses.Shared.Shaders.Utils.LoadShadingData;
 import RenderPasses.Shared.Shaders.Lights.LaserLightSampler;
 import RenderPasses.Shared.Shaders.Lights.LightConnection;
@@ -139,38 +142,13 @@ Reservoir mergeGateReservoirs(Reservoir narrow, Reservoir wide, uint narrowCount
     // along those paths, nor the requested (possibly rounded) split ratio.
     narrow.M = float(narrowCount);
     wide.M = float(wideCount);
-    const float K = time_gate_window / time_gate_window_rough;
-    Reservoir merged = Reservoir();
-#if DEBUG_NEWTON_ITERATIONS
-    // Initial shrinking must not enter the spatial-neighbor diagnostic buffers.
-    ShiftMappingDebugInfo debugInfo = {};
-#endif
     // K is the narrow/wide gate-width ratio: L' = tcurr + K*(L-tcurr).
-    combine_reservoir_with_shiftmapping(merged, wide, narrow.M, specularRoughnessThreshold,
-        primary, primaryMaterial, primaryLength, tcurr, tcurr, K, false,
-        laserOrigin, laserDirection, rng
-#if DEBUG_NEWTON_ITERATIONS
-        , debugInfo
-#endif
-    );
-    // Expand the canonical narrow sample only to evaluate competing wide support.
+    const float K = time_gate_window / time_gate_window_rough;
+    // Expanding the canonical narrow sample only evaluates competing wide support.
     // A failed expansion or no-RC path retains the full narrow contribution.
-    if (narrowCount > 0)
-    {
-        combine_reservoir_with_shiftmapping(merged, narrow, wide.M, specularRoughnessThreshold,
-            primary, primaryMaterial, primaryLength, tcurr, tcurr, 1.f / K, true,
-            laserOrigin, laserDirection, rng
-#if DEBUG_NEWTON_ITERATIONS
-            , debugInfo
-#endif
-        );
-    }
-    // The no-RC canonical branch in the shared helper copies only f and its flag.
-    // Preserve the selected narrow path length as well (there is no wide no-RC candidate).
-    if (merged.rcVertexBounce == 0) merged.totalPathLength = narrow.totalPathLength;
-    float target = getReservoirWeight(merged.f);
-    merged.W = target > 0.f ? merged.wSum / target : 0.f;
-    return merged;
+    ReuseDomain domain = { primary, primaryMaterial, primaryLength, tcurr, laserOrigin, laserDirection, laserPower,
+        laserCosAngle };
+    return mergeReservoirPair(narrow, domain, wide, domain, K, false, specularRoughnessThreshold, rng);
 }
 #endif
 
@@ -183,73 +161,34 @@ Reservoir reuseTemporalHistory(Reservoir fresh, uint2 pixel, ShadingData primary
     // Use camera-path counts consistently, including paths with no contribution.
     fresh.M = float(samplesPerPixel);
     if (!gTemporalHistoryValid || gTemporalHistoryLength == 0.f) return fresh;
-
-    float2 previousPosition = float2(pixel) + 0.5f;
-#if is_valid_gMotionVector
-    previousPosition += gMotionVector[pixel] * float2(gFrameDim);
-#endif
-    if (!all(isfinite(previousPosition)) || any(previousPosition < 0.f) ||
-        any(previousPosition >= float2(gFrameDim))) return fresh;
-    uint2 previousPixel = uint2(floor(previousPosition));
-    HitInfo previousHit = HitInfo(gTemporalVBuffer[previousPixel]);
-    if (!previousHit.isValid()) return fresh;
-    float3 previousPoint = gScene.getVertexData(previousHit.getTriangleHit()).posW;
-    float3 previousDirection = previousPoint - gPreviousCameraPosition;
-    float previousLength = length(previousDirection);
-    if (!(previousLength > 0.f)) return fresh;
-    ShadingData previousPrimary = loadShadingData(previousHit, gPreviousCameraPosition,
-        previousDirection / previousLength);
-    let previousMaterial = gScene.materials.getMaterialInstance(previousPrimary, ExplicitLodTextureSampler(0.f));
+    TemporalHistory history = findTemporalHistory(pixel, gFrameDim, gMotionVector, gTemporalVBuffer,
+        gPreviousCameraPosition);
+    if (!history.valid) return fresh;
+    let previousMaterial = gScene.materials.getMaterialInstance(history.primary, ExplicitLodTextureSampler(0.f));
 
 #if IS_SCENE_DYNAMIC
     // Match the old temporal disocclusion test before assigning history any mass.
     // A valid previous hit can still belong to a different surface/material.
-    if (primary.materialID != previousPrimary.materialID ||
-        dot(primary.getOrientedFaceNormal(), previousPrimary.getOrientedFaceNormal()) <= 0.7f ||
-        abs(primaryLength - previousLength) >= 0.1f * primaryLength)
+    if (primary.materialID != history.primary.materialID ||
+        dot(primary.getOrientedFaceNormal(), history.primary.getOrientedFaceNormal()) <= 0.7f ||
+        abs(primaryLength - history.primaryLength) >= 0.1f * primaryLength)
         return fresh;
 #endif
 
-    Reservoir history = prevReservoirs[previousPixel.y * gFrameDim.x + previousPixel.x];
-    if (gTemporalHistoryLength > 0.f)
-        history.M = min(history.M, gTemporalHistoryLength * float(samplesPerPixel));
-    if (!(history.M > 0.f)) return fresh;
+    Reservoir previous = prevReservoirs[history.pixelIndex];
+    previous.M = temporalHistoryMass(previous.M, gTemporalHistoryLength, samplesPerPixel);
+    if (!(previous.M > 0.f)) return fresh;
 
-    Reservoir merged = Reservoir();
-#if DEBUG_NEWTON_ITERATIONS
-    // Temporal mapping is excluded from the spatial-only diagnostic outputs.
-    ShiftMappingDebugInfo debugInfo = {};
-#endif
-    // Previous -> current: source gate tprev, target gate tcurr.
-    combine_reservoir_with_shiftmapping(merged, history, fresh.M, specularRoughnessThreshold,
-        primary, primaryMaterial, primaryLength, tcurr, tprev, 1.f, false,
-        laserOrigin, laserDirection, rng
-#if DEBUG_NEWTON_ITERATIONS
-        , debugInfo
-#endif
+    ReuseDomain current = { primary, primaryMaterial, primaryLength, tcurr, laserOrigin, laserDirection, laserPower,
+        laserCosAngle };
 #if IS_SCENE_DYNAMIC
-        , true, laserPower, laserCosAngle
-#endif
-    );
-    // Current -> previous evaluates competing support, retaining the current sample.
-    combine_reservoir_with_shiftmapping(merged, fresh, history.M, specularRoughnessThreshold,
-        previousPrimary, previousMaterial, previousLength, tprev, tcurr, 1.f, true,
-#if IS_SCENE_DYNAMIC
-        laserPrevOrigin, laserPrevDirection, rng
+    ReuseDomain last = { history.primary, previousMaterial, history.primaryLength, tprev, laserPrevOrigin,
+        laserPrevDirection, laserPrevPower, laserPrevCosAngle };
 #else
-        laserOrigin, laserDirection, rng
+    ReuseDomain last = { history.primary, previousMaterial, history.primaryLength, tprev, laserOrigin,
+        laserDirection, laserPower, laserCosAngle };
 #endif
-#if DEBUG_NEWTON_ITERATIONS
-        , debugInfo
-#endif
-#if IS_SCENE_DYNAMIC
-        , true, laserPrevPower, laserPrevCosAngle
-#endif
-    );
-    if (merged.rcVertexBounce == 0) merged.totalPathLength = fresh.totalPathLength;
-    float target = getReservoirWeight(merged.f);
-    merged.W = target > 0.f ? merged.wSum / target : 0.f;
-    return merged;
+    return mergeReservoirPair(fresh, current, previous, last, 1.f, true, specularRoughnessThreshold, rng);
 }
 #endif
 

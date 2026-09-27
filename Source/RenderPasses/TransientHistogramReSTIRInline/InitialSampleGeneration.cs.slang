@@ -20,6 +20,7 @@ import RenderPasses.Shared.Shaders.ReSTIR.InitialCandidates;
 import RenderPasses.Shared.Shaders.Utils.RayUtils;
 #if USE_TEMPORAL_REUSE
 import RenderPasses.Shared.Shaders.ReSTIR.ReservoirReuse;
+import RenderPasses.Shared.Shaders.ReSTIR.TemporalReuse;
 import RenderPasses.Shared.Shaders.ShiftMapping.ShiftMapping;
 #endif
 
@@ -102,68 +103,6 @@ void submitHistogramCandidate(uint pixelIndex, ReconnectionState rc, ShadingData
     }
 }
 
-#if USE_TEMPORAL_REUSE
-// Last frame's primary hit that this pixel reprojects to. Geometry and the light
-// are static, so only the camera (and hence the camera prefix) differs between frames.
-struct TemporalHistory
-{
-    bool valid;
-    uint pixelIndex;      // Linearized previous pixel.
-    ShadingData primary;  // Previous primary hit, seen from the previous camera.
-    float primaryLength;  // Previous camera -> previous primary hit.
-};
-
-TemporalHistory findTemporalHistory(uint2 pixel)
-{
-    TemporalHistory history = {};
-    if (!gTemporalHistoryValid || gTemporalHistoryLength == 0.f) return history;
-    float2 previousPosition = float2(pixel) + 0.5f;
-#if is_valid_gMotionVector
-    previousPosition += gMotionVector[pixel] * float2(gFrameDim);
-#endif
-    if (!all(isfinite(previousPosition)) || any(previousPosition < 0.f) ||
-        any(previousPosition >= float2(gFrameDim))) return history;
-    uint2 previousPixel = uint2(floor(previousPosition));
-    HitInfo previousHit = HitInfo(gTemporalVBuffer[previousPixel]);
-    if (!previousHit.isValid()) return history;
-    float3 previousPoint = gScene.getVertexData(previousHit.getTriangleHit()).posW;
-    float3 previousDirection = previousPoint - gPreviousCameraPosition;
-    history.primaryLength = length(previousDirection);
-    if (!(history.primaryLength > 0.f)) return history;
-    history.primary = loadShadingData(previousHit, gPreviousCameraPosition,
-        previousDirection / history.primaryLength);
-    history.pixelIndex = previousPixel.y * gFrameDim.x + previousPixel.x;
-    history.valid = true;
-    return history;
-}
-
-// Pairwise-MIS merge of one bin with the same bin of the previous frame. The gate
-// center is identical in both frames; the shift absorbs the camera-prefix change.
-Reservoir reuseTemporalBin(Reservoir fresh, Reservoir previous, TemporalHistory history,
-    IMaterialInstance previousMaterial, float gateCenter, ShadingData primary,
-    IMaterialInstance primaryMaterial, float primaryLength, inout SampleGenerator rng)
-{
-    if (gTemporalHistoryLength > 0.f)
-        previous.M = min(previous.M, gTemporalHistoryLength * float(samplesPerPixel));
-    if (!(previous.M > 0.f)) return fresh;
-
-    Reservoir merged = Reservoir();
-    // Previous -> current.
-    combine_reservoir_with_shiftmapping(merged, previous, fresh.M, specularRoughnessThreshold,
-        primary, primaryMaterial, primaryLength, gateCenter, gateCenter, 1.f, false,
-        laserOrigin, laserDirection, rng);
-    // Current -> previous evaluates competing support, retaining the current sample.
-    combine_reservoir_with_shiftmapping(merged, fresh, previous.M, specularRoughnessThreshold,
-        history.primary, previousMaterial, history.primaryLength, gateCenter, gateCenter, 1.f, true,
-        laserOrigin, laserDirection, rng);
-    // The canonical no-RC branch copies only f and its flag; keep the selected length too.
-    if (merged.rcVertexBounce == 0) merged.totalPathLength = fresh.totalPathLength;
-    float target = getReservoirWeight(merged.f);
-    merged.W = target > 0.f ? merged.wSum / target : 0.f;
-    return merged;
-}
-#endif
-
 float3 tracePath(uint2 pixel, uint2 frameDim)
 {
     uint pixelIndex = pixel.y * frameDim.x + pixel.x;
@@ -245,7 +184,11 @@ float3 tracePath(uint2 pixel, uint2 frameDim)
     }
 
 #if USE_TEMPORAL_REUSE
-    TemporalHistory history = findTemporalHistory(pixel);
+    // Geometry and the light are static, so only the camera (and hence the camera prefix) differs between frames.
+    // The gate center of a bin is the same in both frames.
+    TemporalHistory history = {};
+    if (gTemporalHistoryValid && gTemporalHistoryLength != 0.f)
+        history = findTemporalHistory(pixel, frameDim, gMotionVector, gTemporalVBuffer, gPreviousCameraPosition);
     IMaterialInstance previousMaterial = primaryMaterial;
     if (history.valid)
         previousMaterial = gScene.materials.getMaterialInstance(history.primary, ExplicitLodTextureSampler(0.f));
@@ -263,9 +206,18 @@ float3 tracePath(uint2 pixel, uint2 frameDim)
 #if USE_TEMPORAL_REUSE
         if (history.valid)
         {
-            float gateCenter = tmin + (float(bin) + 0.5f) * tunit;
-            reservoir = reuseTemporalBin(reservoir, prevReservoirs[history.pixelIndex * tbin + bin], history,
-                previousMaterial, gateCenter, primary, primaryMaterial, primaryLength, rng);
+            Reservoir previous = prevReservoirs[history.pixelIndex * tbin + bin];
+            previous.M = temporalHistoryMass(previous.M, gTemporalHistoryLength, samplesPerPixel);
+            if (previous.M > 0.f)
+            {
+                float gateCenter = tmin + (float(bin) + 0.5f) * tunit;
+                ReuseDomain current = { primary, primaryMaterial, primaryLength, gateCenter, laserOrigin,
+                    laserDirection, laserPower, laserCosAngle };
+                ReuseDomain last = { history.primary, previousMaterial, history.primaryLength, gateCenter, laserOrigin,
+                    laserDirection, laserPower, laserCosAngle };
+                reservoir = mergeReservoirPair(reservoir, current, previous, last, 1.f, false,
+                    specularRoughnessThreshold, rng);
+            }
         }
 #endif
         currReservoirs[index] = reservoir;
