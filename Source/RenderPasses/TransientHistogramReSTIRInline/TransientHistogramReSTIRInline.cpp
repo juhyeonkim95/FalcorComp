@@ -35,7 +35,6 @@ static void regTransientHistogramReSTIRInline(pybind11::module& m)
     pass.def("reset_histogram", &TransientHistogramReSTIRInline::resetHistogram);
 }
 
-
 extern "C" FALCOR_API_EXPORT void registerPlugin(Falcor::PluginRegistry& registry)
 {
     registry.registerClass<RenderPass, TransientHistogramReSTIRInline>();
@@ -47,21 +46,6 @@ namespace
 const char kShaderFile[] = "RenderPasses/TransientHistogramReSTIRInline/InitialSampleGeneration.cs.slang";
 const char kReflectTypesFile[] = "RenderPasses/TransientHistogramReSTIRInline/ReflectTypes.cs.slang";
 const char kSpatialReuseFile[] = "RenderPasses/TransientHistogramReSTIRInline/SpatialReuse.cs.slang";
-const char kInputViewDir[] = "viewW";
-const char kInputMotionVectors[] = "mvec";
-
-const ChannelList kInputChannels = {
-    // clang-format off
-    { "vbuffer",        "gVBuffer",     "Visibility buffer in packed format" },
-    { kInputMotionVectors,  "gMotionVector",   "Motion vector buffer (float format)", true /* optional */ },
-    { kInputViewDir,    "gViewW",       "World-space view direction (xyz float format)", true /* optional */ },
-};
-
-const ChannelList kOutputChannels = {
-    // clang-format off
-    { "color",          "gOutputColor", "Output color (sum of direct and indirect)", false, ResourceFormat::RGBA32Float },
-    // clang-format on
-};
 
 const ChannelList kHistogramOutputChannelsRGB = {
     // clang-format off
@@ -92,7 +76,6 @@ void TransientHistogramReSTIRInline::resetHistogram()
 {
     mNeedToClearHistogram = true;
 }
-
 
 void TransientHistogramReSTIRInline::parseProperties(const Properties& props)
 {
@@ -126,8 +109,8 @@ RenderPassReflection TransientHistogramReSTIRInline::reflect(const CompileData& 
     RenderPassReflection reflector;
 
     // Define our input/output channels.
-    addRenderPassInputs(reflector, kInputChannels);
-    addRenderPassOutputs(reflector, kOutputChannels);
+    addRenderPassInputs(reflector, InlinePass::kPrimaryHitAndMotionInputChannels);
+    addRenderPassOutputs(reflector, InlinePass::kColorOutputChannels);
 
     ChannelList kHistogramOutputChannels = mOptions.pathTracing.useSingleChannel ? kHistogramOutputChannelSingle : kHistogramOutputChannelsRGB;
 
@@ -153,8 +136,8 @@ DefineList TransientHistogramReSTIRInline::getShaderDefines(const RenderData& re
     defines.add("RESERVOIR_SCALAR_TARGET", mOptions.pathTracing.useSingleChannel ? "1" : "0");
 
     // For optional I/O resources, set 'is_valid_<name>' defines to inform the program of which ones it can access.
-    defines.add(getValidResourceDefines(kInputChannels, renderData));
-    defines.add(getValidResourceDefines(kOutputChannels, renderData));
+    defines.add(getValidResourceDefines(InlinePass::kPrimaryHitAndMotionInputChannels, renderData));
+    defines.add(getValidResourceDefines(InlinePass::kColorOutputChannels, renderData));
     defines.add(getValidResourceDefines(histogramChannels(), renderData));
     return defines;
 }
@@ -206,8 +189,8 @@ void TransientHistogramReSTIRInline::bindShaderData(const ShaderVar& var, const 
         mOptions.restir.bindShiftMapping(var["Shiftmap_CB"]);
     }
 
-    InlinePass::bindChannels(var, renderData, kInputChannels);
-    InlinePass::bindChannels(var, renderData, kOutputChannels);
+    InlinePass::bindChannels(var, renderData, InlinePass::kPrimaryHitAndMotionInputChannels);
+    InlinePass::bindChannels(var, renderData, InlinePass::kColorOutputChannels);
     InlinePass::bindChannels(var, renderData, histogramChannels());
 }
 
@@ -224,8 +207,8 @@ void TransientHistogramReSTIRInline::spatialReuse(RenderContext* pRenderContext,
     var["useBinReuse"] = mOptions.useBinReuse;
     mOptions.restir.bindSpatialReuse(var);
 
-    InlinePass::bindChannels(var, renderData, kInputChannels);
-    InlinePass::bindChannels(var, renderData, kOutputChannels);
+    InlinePass::bindChannels(var, renderData, InlinePass::kPrimaryHitAndMotionInputChannels);
+    InlinePass::bindChannels(var, renderData, InlinePass::kColorOutputChannels);
     // The histogram is a pass-level global, outside the shared SpatialReuse struct.
     InlinePass::bindChannels(rootVar, renderData, histogramChannels());
 
@@ -248,7 +231,7 @@ void TransientHistogramReSTIRInline::execute(RenderContext* pRenderContext, cons
     if (!mpScene)
     {
         mReSTIR.temporalHistoryValid = false;
-        InlinePass::clearChannels(pRenderContext, renderData, kOutputChannels);
+        InlinePass::clearChannels(pRenderContext, renderData, InlinePass::kColorOutputChannels);
         InlinePass::clearChannels(pRenderContext, renderData, histogramChannels());
         return;
     }
@@ -275,7 +258,7 @@ void TransientHistogramReSTIRInline::execute(RenderContext* pRenderContext, cons
     mReSTIR.prepare(mpDevice, mpScene, kReflectTypesFile, getReservoirDefines(), mOptions.histogram.timeBin, frameDim,
         mOptions.restir.useTemporalReuse, renderData.getTexture("vbuffer")->getFormat());
 
-    InlinePass::checkScene(*mpScene, renderData, kInputViewDir);
+    InlinePass::checkScene(*mpScene, renderData);
     if (mpScene->getRenderSettings().useEmissiveLights)
         mpScene->getLightCollection(pRenderContext);
 

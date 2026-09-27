@@ -45,16 +45,6 @@ extern "C" FALCOR_API_EXPORT void registerPlugin(Falcor::PluginRegistry& registr
 namespace
 {
 const char kShaderFile[] = "RenderPasses/TransientHistogramPathTracerInline/TransientHistogramPathTracerInline.cs.slang";
-const char kInputViewDir[] = "viewW";
-
-const ChannelList kInputChannels = {
-    { "vbuffer",        "gVBuffer",     "Visibility buffer in packed format" },
-    { kInputViewDir,    "gViewW",       "World-space view direction (xyz float format)", true /* optional */ },
-};
-
-const ChannelList kOutputChannels = {
-    { "color",          "gOutputColor", "Output color (sum of direct and indirect)", false, ResourceFormat::RGBA32Float },
-};
 
 const ChannelList kHistogramOutputChannelSingle = {
     { "histogram",          "gTransientHistogram", "Accumulated transient radiance density per bin", false, ResourceFormat::R32Float },
@@ -133,9 +123,9 @@ RenderPassReflection TransientHistogramPathTracerInline::reflect(const CompileDa
     RenderPassReflection reflector;
 
     // Define our input/output channels.
-    addRenderPassInputs(reflector, kInputChannels);
+    addRenderPassInputs(reflector, InlinePass::kPrimaryHitInputChannels);
     const uint2 sz = RenderPassHelpers::calculateIOSize(mOptions.outputSize, mOptions.fixedOutputSize, compileData.defaultTexDims);
-    addRenderPassOutputs(reflector, kOutputChannels, ResourceBindFlags::UnorderedAccess, sz);
+    addRenderPassOutputs(reflector, InlinePass::kColorOutputChannels, ResourceBindFlags::UnorderedAccess, sz);
 
     const ChannelList& histogramChannels = mOptions.pathTracing.useSingleChannel ? kHistogramOutputChannelSingle : kHistogramOutputChannelsRGB;
 
@@ -167,8 +157,8 @@ DefineList TransientHistogramPathTracerInline::getShaderDefines(const RenderData
     defines.add("HISTOGRAM_FILTER_TENT", std::to_string((uint32_t)TimeGateMode::TENT));
 
     // For optional I/O resources, set 'is_valid_<name>' defines to inform the program of which ones it can access.
-    defines.add(getValidResourceDefines(kInputChannels, renderData));
-    defines.add(getValidResourceDefines(kOutputChannels, renderData));
+    defines.add(getValidResourceDefines(InlinePass::kPrimaryHitInputChannels, renderData));
+    defines.add(getValidResourceDefines(InlinePass::kColorOutputChannels, renderData));
     defines.add(getValidResourceDefines(histogramChannels(), renderData));
     return defines;
 }
@@ -189,8 +179,8 @@ void TransientHistogramPathTracerInline::bindShaderData(const ShaderVar& var, co
     LaserState::resolve(renderData).bindShaderData(var["CB"]);
     mOptions.histogram.bindShaderData(var);
 
-    InlinePass::bindChannels(var, renderData, kInputChannels);
-    InlinePass::bindChannels(var, renderData, kOutputChannels);
+    InlinePass::bindChannels(var, renderData, InlinePass::kPrimaryHitInputChannels);
+    InlinePass::bindChannels(var, renderData, InlinePass::kColorOutputChannels);
     InlinePass::bindChannels(var, renderData, histogramChannels());
 }
 
@@ -204,7 +194,7 @@ void TransientHistogramPathTracerInline::execute(RenderContext* pRenderContext, 
 
     if (!mpScene)
     {
-        InlinePass::clearChannels(pRenderContext, renderData, kOutputChannels);
+        InlinePass::clearChannels(pRenderContext, renderData, InlinePass::kColorOutputChannels);
         InlinePass::clearChannels(pRenderContext, renderData, histogramChannels());
         return;
     }
@@ -224,7 +214,7 @@ void TransientHistogramPathTracerInline::execute(RenderContext* pRenderContext, 
         mpScene->getTriCollection(pRenderContext)->update(pRenderContext);
     if (!mpComputePass)
         mpComputePass = InlinePass::createScenePass(mpDevice, pRenderContext, mpScene, mpSampleGenerator, kShaderFile, getShaderDefines(renderData));
-    InlinePass::checkScene(*mpScene, renderData, kInputViewDir);
+    InlinePass::checkScene(*mpScene, renderData);
 
     InlinePass::updateScenePassDefines(pRenderContext, mpComputePass, mpScene, mpSampleGenerator, getShaderDefines(renderData));
     bindShaderData(mpComputePass->getRootVar(), renderData);

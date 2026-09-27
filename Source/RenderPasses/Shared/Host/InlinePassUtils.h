@@ -13,6 +13,34 @@ using namespace Falcor;
  */
 namespace InlinePass
 {
+/// Names of the optional inputs from VBufferRT.
+inline constexpr char kViewDirChannel[] = "viewW";
+inline constexpr char kMotionVectorChannel[] = "mvec";
+
+/// Inputs of the passes whose camera paths start at the primary hits from VBufferRT.
+inline const ChannelList kPrimaryHitInputChannels = {
+    // clang-format off
+    { "vbuffer",        "gVBuffer",     "Visibility buffer in packed format" },
+    { kViewDirChannel,  "gViewW",       "World-space view direction (xyz float format)", true /* optional */ },
+    // clang-format on
+};
+
+/// The same, with the motion vectors that temporal reuse reprojects the history with.
+inline const ChannelList kPrimaryHitAndMotionInputChannels = {
+    // clang-format off
+    { "vbuffer",            "gVBuffer",         "Visibility buffer in packed format" },
+    { kMotionVectorChannel, "gMotionVector",    "Motion vector buffer (float format)", true /* optional */ },
+    { kViewDirChannel,      "gViewW",           "World-space view direction (xyz float format)", true /* optional */ },
+    // clang-format on
+};
+
+/// The radiance output of the path tracers and ReSTIR passes.
+inline const ChannelList kColorOutputChannels = {
+    // clang-format off
+    { "color",          "gOutputColor", "Output color (sum of direct and indirect)", false, ResourceFormat::RGBA32Float },
+    // clang-format on
+};
+
 /// Compute pass for the "main" entry of `shaderFile`, with the scene's shader modules, type conformances and
 /// defines, the sample generator's defines and `defines`. Binds the scene and the sample generator.
 inline ref<ComputePass> createScenePass(
@@ -88,6 +116,24 @@ inline void clearChannels(RenderContext* pRenderContext, const RenderData& rende
             pRenderContext->clearTexture(pTexture.get());
 }
 
+/// setProperties() of a pass with validated options: `parse` reads the properties into `options`; when `validate`
+/// throws, the previous options are restored.
+template<typename Options, typename Parse, typename Validate>
+void applyProperties(Options& options, Parse&& parse, Validate&& validate)
+{
+    const Options previous = options;
+    parse();
+    try
+    {
+        validate(options);
+    }
+    catch (...)
+    {
+        options = previous;
+        throw;
+    }
+}
+
 /// Tells downstream passes (e.g. accumulation) that this pass's output changed.
 inline void flagOptionsChanged(const RenderData& renderData)
 {
@@ -98,12 +144,12 @@ inline void flagOptionsChanged(const RenderData& renderData)
 
 /// Throws on scene changes that need shader recompilation, and warns when depth of field is used without the
 /// view direction input.
-inline void checkScene(const Scene& scene, const RenderData& renderData, const char* viewDirChannel)
+inline void checkScene(const Scene& scene, const RenderData& renderData)
 {
     if (is_set(scene.getUpdates(), IScene::UpdateFlags::RecompileNeeded) ||
         is_set(scene.getUpdates(), IScene::UpdateFlags::GeometryChanged))
         FALCOR_THROW("This render pass does not support scene changes that require shader recompilation.");
-    if (scene.getCamera()->getApertureRadius() > 0.f && renderData[viewDirChannel] == nullptr)
-        logWarning("Depth-of-field requires the '{}' input. Expect incorrect shading.", viewDirChannel);
+    if (scene.getCamera()->getApertureRadius() > 0.f && renderData[kViewDirChannel] == nullptr)
+        logWarning("Depth-of-field requires the '{}' input. Expect incorrect shading.", kViewDirChannel);
 }
 } // namespace InlinePass

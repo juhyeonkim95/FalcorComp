@@ -37,21 +37,8 @@ extern "C" FALCOR_API_EXPORT void registerPlugin(Falcor::PluginRegistry& registr
 namespace
 {
 const char kShaderFile[] = "RenderPasses/CWToFPathTracerInline/CWToFPathTracerInline.cs.slang";
-const char kInputViewDir[] = "viewW";
 const char kUseAntitheticSampling[] = "useAntitheticSampling";
 const char kAntitheticRoundTripCheck[] = "antitheticRoundTripCheck";
-
-const ChannelList kInputChannels = {
-    // clang-format off
-    { "vbuffer",        "gVBuffer",     "Visibility buffer in packed format" },
-    { kInputViewDir,    "gViewW",       "World-space view direction (xyz float format)", true /* optional */ },
-};
-
-const ChannelList kOutputChannels = {
-    // clang-format off
-    { "color",          "gOutputColor", "Output color (sum of direct and indirect)", false, ResourceFormat::RGBA32Float },
-    // clang-format on
-};
 
 } // namespace
 
@@ -107,17 +94,7 @@ Properties CWToFPathTracerInline::getProperties() const
 
 void CWToFPathTracerInline::setProperties(const Properties& props)
 {
-    const auto previous = mOptions;
-    parseProperties(props);
-    try
-    {
-        validateOptions(mOptions);
-    }
-    catch (...)
-    {
-        mOptions = previous;
-        throw;
-    }
+    InlinePass::applyProperties(mOptions, [&] { parseProperties(props); }, validateOptions);
     mOptionsChanged = true;
 }
 
@@ -126,8 +103,8 @@ RenderPassReflection CWToFPathTracerInline::reflect(const CompileData& compileDa
     RenderPassReflection reflector;
 
     // Define our input/output channels.
-    addRenderPassInputs(reflector, kInputChannels);
-    addRenderPassOutputs(reflector, kOutputChannels);
+    addRenderPassInputs(reflector, InlinePass::kPrimaryHitInputChannels);
+    addRenderPassOutputs(reflector, InlinePass::kColorOutputChannels);
 
     return reflector;
 }
@@ -142,8 +119,8 @@ DefineList CWToFPathTracerInline::getShaderDefines(const RenderData& renderData)
     defines.add("ANTITHETIC_ROUND_TRIP_CHECK", mOptions.antitheticRoundTripCheck ? "1" : "0");
 
     // For optional I/O resources, set 'is_valid_<name>' defines to inform the program of which ones it can access.
-    defines.add(getValidResourceDefines(kInputChannels, renderData));
-    defines.add(getValidResourceDefines(kOutputChannels, renderData));
+    defines.add(getValidResourceDefines(InlinePass::kPrimaryHitInputChannels, renderData));
+    defines.add(getValidResourceDefines(InlinePass::kColorOutputChannels, renderData));
     return defines;
 }
 
@@ -156,8 +133,8 @@ void CWToFPathTracerInline::bindShaderData(const ShaderVar& var, const RenderDat
     mOptions.continuousWave.bindShaderData(var["Modulation"]);
     mOptions.shiftMapping.bindShaderData(var["Shiftmap_CB"]);
 
-    InlinePass::bindChannels(var, renderData, kInputChannels);
-    InlinePass::bindChannels(var, renderData, kOutputChannels);
+    InlinePass::bindChannels(var, renderData, InlinePass::kPrimaryHitInputChannels);
+    InlinePass::bindChannels(var, renderData, InlinePass::kColorOutputChannels);
 }
 
 void CWToFPathTracerInline::execute(RenderContext* pRenderContext, const RenderData& renderData)
@@ -170,13 +147,13 @@ void CWToFPathTracerInline::execute(RenderContext* pRenderContext, const RenderD
 
     if (!mpScene)
     {
-        InlinePass::clearChannels(pRenderContext, renderData, kOutputChannels);
+        InlinePass::clearChannels(pRenderContext, renderData, InlinePass::kColorOutputChannels);
         return;
     }
 
     if (!mpComputePass)
         mpComputePass = InlinePass::createScenePass(mpDevice, pRenderContext, mpScene, mpSampleGenerator, kShaderFile, getShaderDefines(renderData));
-    InlinePass::checkScene(*mpScene, renderData, kInputViewDir);
+    InlinePass::checkScene(*mpScene, renderData);
     if (mpScene->getRenderSettings().useEmissiveLights)
         mpScene->getLightCollection(pRenderContext);
 

@@ -46,19 +46,6 @@ extern "C" FALCOR_API_EXPORT void registerPlugin(Falcor::PluginRegistry& registr
 namespace
 {
 const char kShaderFile[] = "RenderPasses/TimeGatedPathTracerInline/TimeGatedPathTracerInline.cs.slang";
-const char kInputViewDir[] = "viewW";
-
-const ChannelList kInputChannels = {
-    // clang-format off
-    { "vbuffer",        "gVBuffer",     "Visibility buffer in packed format" },
-    { kInputViewDir,    "gViewW",       "World-space view direction (xyz float format)", true /* optional */ },
-};
-
-const ChannelList kOutputChannels = {
-    // clang-format off
-    { "color",          "gOutputColor", "Output color (sum of direct and indirect)", false, ResourceFormat::RGBA32Float },
-    // clang-format on
-};
 
 } // namespace
 
@@ -124,8 +111,8 @@ RenderPassReflection TimeGatedPathTracerInline::reflect(const CompileData& compi
     RenderPassReflection reflector;
 
     // Define our input/output channels.
-    addRenderPassInputs(reflector, kInputChannels);
-    addRenderPassOutputs(reflector, kOutputChannels);
+    addRenderPassInputs(reflector, InlinePass::kPrimaryHitInputChannels);
+    addRenderPassOutputs(reflector, InlinePass::kColorOutputChannels);
 
     return reflector;
 }
@@ -142,8 +129,8 @@ DefineList TimeGatedPathTracerInline::getShaderDefines(const RenderData& renderD
     defines.add("ELLIPSOIDAL_DIRECT_MIS", std::to_string((uint32_t)EllipsoidalSamplingMethod::ELLIPSOIDAL_DIRECT_MIS));
 
     // For optional I/O resources, set 'is_valid_<name>' defines to inform the program of which ones it can access.
-    defines.add(getValidResourceDefines(kInputChannels, renderData));
-    defines.add(getValidResourceDefines(kOutputChannels, renderData));
+    defines.add(getValidResourceDefines(InlinePass::kPrimaryHitInputChannels, renderData));
+    defines.add(getValidResourceDefines(InlinePass::kColorOutputChannels, renderData));
     return defines;
 }
 
@@ -158,8 +145,8 @@ void TimeGatedPathTracerInline::bindShaderData(const ShaderVar& var, const Rende
     LaserState::resolve(renderData).bindShaderData(var["CB"]);
     mOptions.timeGate.bindShaderData(var["TimeGate"], mGate);
 
-    InlinePass::bindChannels(var, renderData, kInputChannels);
-    InlinePass::bindChannels(var, renderData, kOutputChannels);
+    InlinePass::bindChannels(var, renderData, InlinePass::kPrimaryHitInputChannels);
+    InlinePass::bindChannels(var, renderData, InlinePass::kColorOutputChannels);
 }
 
 void TimeGatedPathTracerInline::execute(RenderContext* pRenderContext, const RenderData& renderData)
@@ -172,7 +159,7 @@ void TimeGatedPathTracerInline::execute(RenderContext* pRenderContext, const Ren
 
     if (!mpScene)
     {
-        InlinePass::clearChannels(pRenderContext, renderData, kOutputChannels);
+        InlinePass::clearChannels(pRenderContext, renderData, InlinePass::kColorOutputChannels);
         return;
     }
 
@@ -184,7 +171,7 @@ void TimeGatedPathTracerInline::execute(RenderContext* pRenderContext, const Ren
         defines.add(mTriangleSampler.getDefines());
         mpComputePass = InlinePass::createScenePass(mpDevice, pRenderContext, mpScene, mpSampleGenerator, kShaderFile, defines);
     }
-    InlinePass::checkScene(*mpScene, renderData, kInputViewDir);
+    InlinePass::checkScene(*mpScene, renderData);
     if (mpScene->getRenderSettings().useEmissiveLights)
         mpScene->getLightCollection(pRenderContext);
 

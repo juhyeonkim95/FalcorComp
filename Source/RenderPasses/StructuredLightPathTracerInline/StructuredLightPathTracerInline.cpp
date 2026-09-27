@@ -47,7 +47,6 @@ extern "C" FALCOR_API_EXPORT void registerPlugin(Falcor::PluginRegistry& registr
 namespace
 {
 const char kShaderFile[] = "RenderPasses/StructuredLightPathTracerInline/StructuredLightPathTracerInline.cs.slang";
-const char kInputViewDir[] = "viewW";
 const char kSamplingMethod[] = "samplingMethod";
 const char kProjectorSampleCount[] = "projectorSampleCount";
 
@@ -55,18 +54,6 @@ const std::unordered_map<std::string, StructuredLightSamplingMethod> kSamplingMe
     {"bsdf", StructuredLightSamplingMethod::BSDF},
     {"antithetic", StructuredLightSamplingMethod::Antithetic},
     {"projector", StructuredLightSamplingMethod::Projector},
-};
-
-const ChannelList kInputChannels = {
-    // clang-format off
-    { "vbuffer",        "gVBuffer",     "Visibility buffer in packed format" },
-    { kInputViewDir,    "gViewW",       "World-space view direction (xyz float format)", true /* optional */ },
-};
-
-const ChannelList kOutputChannels = {
-    // clang-format off
-    { "color",          "gOutputColor", "Output color (sum of direct and indirect)", false, ResourceFormat::RGBA32Float },
-    // clang-format on
 };
 
 } // namespace
@@ -126,17 +113,7 @@ Properties StructuredLightPathTracerInline::getProperties() const
 
 void StructuredLightPathTracerInline::setProperties(const Properties& props)
 {
-    const auto previous = mOptions;
-    parseProperties(props);
-    try
-    {
-        validateOptions(mOptions);
-    }
-    catch (...)
-    {
-        mOptions = previous;
-        throw;
-    }
+    InlinePass::applyProperties(mOptions, [&] { parseProperties(props); }, validateOptions);
     mOptionsChanged = true;
 }
 
@@ -145,8 +122,8 @@ RenderPassReflection StructuredLightPathTracerInline::reflect(const CompileData&
     RenderPassReflection reflector;
 
     // Define our input/output channels.
-    addRenderPassInputs(reflector, kInputChannels);
-    addRenderPassOutputs(reflector, kOutputChannels);
+    addRenderPassInputs(reflector, InlinePass::kPrimaryHitInputChannels);
+    addRenderPassOutputs(reflector, InlinePass::kColorOutputChannels);
 
     return reflector;
 }
@@ -159,8 +136,8 @@ DefineList StructuredLightPathTracerInline::getShaderDefines(const RenderData& r
     defines.add("SAMPLING_METHOD", std::to_string((uint32_t)mOptions.samplingMethod));
 
     // For optional I/O resources, set 'is_valid_<name>' defines to inform the program of which ones it can access.
-    defines.add(getValidResourceDefines(kInputChannels, renderData));
-    defines.add(getValidResourceDefines(kOutputChannels, renderData));
+    defines.add(getValidResourceDefines(InlinePass::kPrimaryHitInputChannels, renderData));
+    defines.add(getValidResourceDefines(InlinePass::kColorOutputChannels, renderData));
     return defines;
 }
 
@@ -174,8 +151,8 @@ void StructuredLightPathTracerInline::bindShaderData(const ShaderVar& var, const
     if (mOptions.projector.pattern == ProjectorPatternType::Arbitrary)
         mPatternData.bindShaderData(mpDevice, var);
 
-    InlinePass::bindChannels(var, renderData, kInputChannels);
-    InlinePass::bindChannels(var, renderData, kOutputChannels);
+    InlinePass::bindChannels(var, renderData, InlinePass::kPrimaryHitInputChannels);
+    InlinePass::bindChannels(var, renderData, InlinePass::kColorOutputChannels);
 }
 
 void StructuredLightPathTracerInline::execute(RenderContext* pRenderContext, const RenderData& renderData)
@@ -188,13 +165,13 @@ void StructuredLightPathTracerInline::execute(RenderContext* pRenderContext, con
 
     if (!mpScene)
     {
-        InlinePass::clearChannels(pRenderContext, renderData, kOutputChannels);
+        InlinePass::clearChannels(pRenderContext, renderData, InlinePass::kColorOutputChannels);
         return;
     }
 
     if (!mpComputePass)
         mpComputePass = InlinePass::createScenePass(mpDevice, pRenderContext, mpScene, mpSampleGenerator, kShaderFile, getShaderDefines(renderData));
-    InlinePass::checkScene(*mpScene, renderData, kInputViewDir);
+    InlinePass::checkScene(*mpScene, renderData);
     if (mpScene->getRenderSettings().useEmissiveLights)
         mpScene->getLightCollection(pRenderContext);
 

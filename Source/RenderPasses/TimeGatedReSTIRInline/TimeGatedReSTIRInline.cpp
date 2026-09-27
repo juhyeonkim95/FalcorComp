@@ -38,7 +38,6 @@ static void regTimeGatedReSTIRInline(pybind11::module& m)
     pass.def("set_time_gate_info", &TimeGatedReSTIRInline::setTimeGateInfo);
 }
 
-
 extern "C" FALCOR_API_EXPORT void registerPlugin(Falcor::PluginRegistry& registry)
 {
     registry.registerClass<RenderPass, TimeGatedReSTIRInline>();
@@ -51,21 +50,6 @@ const char kShaderFile[] = "RenderPasses/TimeGatedReSTIRInline/InitialSampleGene
 const char kReflectTypesFile[] = "RenderPasses/TimeGatedReSTIRInline/ReflectTypes.cs.slang";
 const char kSpatialReuseFile[] = "RenderPasses/TimeGatedReSTIRInline/SpatialReuse.cs.slang";
 const char kAddDirectFile[] = "RenderPasses/TimeGatedReSTIRInline/AddDirect.cs.slang";
-const char kInputViewDir[] = "viewW";
-const char kInputMotionVectors[] = "mvec";
-
-const ChannelList kInputChannels = {
-    // clang-format off
-    { "vbuffer",        "gVBuffer",     "Visibility buffer in packed format" },
-    { kInputMotionVectors,  "gMotionVector",   "Motion vector buffer (float format)", true /* optional */ },
-    { kInputViewDir,    "gViewW",       "World-space view direction (xyz float format)", true /* optional */ },
-};
-
-const ChannelList kOutputChannels = {
-    // clang-format off
-    { "color",          "gOutputColor", "Output color (sum of direct and indirect)", false, ResourceFormat::RGBA32Float },
-    // clang-format on
-};
 
 const ChannelList kDebugOutputChannels = {
     { "newtonStatistics", "gNewtonStatistics", "Mapping successes, actual successes, attempts, iteration sum", false, ResourceFormat::RGBA32Uint },
@@ -100,8 +84,6 @@ void TimeGatedReSTIRInline::setTimeGateInfo(float timeMin, float timeMax, uint t
     mOptions.timeGate.timeMax = timeMax;
     mOptions.timeGate.timeBin = timeBin;
 }
-
-
 
 void TimeGatedReSTIRInline::parseProperties(const Properties& props)
 {
@@ -173,8 +155,8 @@ RenderPassReflection TimeGatedReSTIRInline::reflect(const CompileData& compileDa
     RenderPassReflection reflector;
 
     // Define our input/output channels.
-    addRenderPassInputs(reflector, kInputChannels);
-    addRenderPassOutputs(reflector, kOutputChannels);
+    addRenderPassInputs(reflector, InlinePass::kPrimaryHitAndMotionInputChannels);
+    addRenderPassOutputs(reflector, InlinePass::kColorOutputChannels);
     if (mOptions.debugNewtonIterations) addRenderPassOutputs(reflector, kDebugOutputChannels);
 
     return reflector;
@@ -211,8 +193,8 @@ DefineList TimeGatedReSTIRInline::getShaderDefines(const RenderData& renderData)
     defines.add("ELLIPSOIDAL_DIRECT_MIS", std::to_string((uint32_t)EllipsoidalSamplingMethod::ELLIPSOIDAL_DIRECT_MIS));
 
     // For optional I/O resources, set 'is_valid_<name>' defines to inform the program of which ones it can access.
-    defines.add(getValidResourceDefines(kInputChannels, renderData));
-    defines.add(getValidResourceDefines(kOutputChannels, renderData));
+    defines.add(getValidResourceDefines(InlinePass::kPrimaryHitAndMotionInputChannels, renderData));
+    defines.add(getValidResourceDefines(InlinePass::kColorOutputChannels, renderData));
     return defines;
 }
 
@@ -252,8 +234,8 @@ void TimeGatedReSTIRInline::bindShaderData(const ShaderVar& var, const RenderDat
     var["TimeGate"]["time_gate_window_rough"] = mOptions.wideGateWindow();
     mOptions.restir.bindShiftMapping(var["Shiftmap_CB"]);
 
-    InlinePass::bindChannels(var, renderData, kInputChannels);
-    InlinePass::bindChannels(var, renderData, kOutputChannels);
+    InlinePass::bindChannels(var, renderData, InlinePass::kPrimaryHitAndMotionInputChannels);
+    InlinePass::bindChannels(var, renderData, InlinePass::kColorOutputChannels);
     if (mOptions.pathTracing.computeDirect)
         var["gDirectColor"] = mpDirectColor;
 
@@ -283,8 +265,8 @@ void TimeGatedReSTIRInline::spatialReuse(RenderContext* pRenderContext, const Re
     var["useBinReuse"] = false; // A time gate has a single bin.
     mOptions.restir.bindSpatialReuse(var);
 
-    InlinePass::bindChannels(var, renderData, kInputChannels);
-    InlinePass::bindChannels(var, renderData, kOutputChannels);
+    InlinePass::bindChannels(var, renderData, InlinePass::kPrimaryHitAndMotionInputChannels);
+    InlinePass::bindChannels(var, renderData, InlinePass::kColorOutputChannels);
     if (mOptions.debugNewtonIterations)
         InlinePass::bindChannels(var, renderData, kDebugOutputChannels);
 
@@ -333,7 +315,7 @@ void TimeGatedReSTIRInline::execute(RenderContext* pRenderContext, const RenderD
     if (!mpScene)
     {
         mReSTIR.temporalHistoryValid = false;
-        InlinePass::clearChannels(pRenderContext, renderData, kOutputChannels);
+        InlinePass::clearChannels(pRenderContext, renderData, InlinePass::kColorOutputChannels);
         if (mOptions.debugNewtonIterations)
             InlinePass::clearChannels(pRenderContext, renderData, kDebugOutputChannels);
         return;
@@ -369,7 +351,7 @@ void TimeGatedReSTIRInline::execute(RenderContext* pRenderContext, const RenderD
     mReSTIR.prepare(mpDevice, mpScene, kReflectTypesFile, getReservoirDefines(), 1, frameDim,
         mOptions.restir.useTemporalReuse, renderData.getTexture("vbuffer")->getFormat());
 
-    InlinePass::checkScene(*mpScene, renderData, kInputViewDir);
+    InlinePass::checkScene(*mpScene, renderData);
     if (mpScene->getRenderSettings().useEmissiveLights)
         mpScene->getLightCollection(pRenderContext);
 

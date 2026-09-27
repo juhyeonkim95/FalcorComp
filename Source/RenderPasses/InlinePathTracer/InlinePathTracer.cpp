@@ -37,19 +37,6 @@ extern "C" FALCOR_API_EXPORT void registerPlugin(Falcor::PluginRegistry& registr
 namespace
 {
 const char kShaderFile[] = "RenderPasses/InlinePathTracer/InlinePathTracer.cs.slang";
-const char kInputViewDir[] = "viewW";
-
-const ChannelList kInputChannels = {
-    // clang-format off
-    { "vbuffer",        "gVBuffer",     "Visibility buffer in packed format" },
-    { kInputViewDir,    "gViewW",       "World-space view direction (xyz float format)", true /* optional */ },
-};
-
-const ChannelList kOutputChannels = {
-    // clang-format off
-    { "color",          "gOutputColor", "Output color (sum of direct and indirect)", false, ResourceFormat::RGBA32Float },
-    // clang-format on
-};
 
 } // namespace
 
@@ -90,8 +77,8 @@ RenderPassReflection InlinePathTracer::reflect(const CompileData& compileData)
     RenderPassReflection reflector;
 
     // Define our input/output channels.
-    addRenderPassInputs(reflector, kInputChannels);
-    addRenderPassOutputs(reflector, kOutputChannels);
+    addRenderPassInputs(reflector, InlinePass::kPrimaryHitInputChannels);
+    addRenderPassOutputs(reflector, InlinePass::kColorOutputChannels);
 
     return reflector;
 }
@@ -103,8 +90,8 @@ DefineList InlinePathTracer::getShaderDefines(const RenderData& renderData) cons
     defines.add(InlinePass::getSceneLightDefines(*mpScene));
 
     // For optional I/O resources, set 'is_valid_<name>' defines to inform the program of which ones it can access.
-    defines.add(getValidResourceDefines(kInputChannels, renderData));
-    defines.add(getValidResourceDefines(kOutputChannels, renderData));
+    defines.add(getValidResourceDefines(InlinePass::kPrimaryHitInputChannels, renderData));
+    defines.add(getValidResourceDefines(InlinePass::kColorOutputChannels, renderData));
     return defines;
 }
 
@@ -115,8 +102,8 @@ void InlinePathTracer::bindShaderData(const ShaderVar& var, const RenderData& re
     var["CB"]["samplesPerPixel"] = mOptions.pathTracing.samplesPerPixel;
     LaserState::resolve(renderData).bindShaderData(var["CB"]);
 
-    InlinePass::bindChannels(var, renderData, kInputChannels);
-    InlinePass::bindChannels(var, renderData, kOutputChannels);
+    InlinePass::bindChannels(var, renderData, InlinePass::kPrimaryHitInputChannels);
+    InlinePass::bindChannels(var, renderData, InlinePass::kColorOutputChannels);
 }
 
 void InlinePathTracer::execute(RenderContext* pRenderContext, const RenderData& renderData)
@@ -129,13 +116,13 @@ void InlinePathTracer::execute(RenderContext* pRenderContext, const RenderData& 
 
     if (!mpScene)
     {
-        InlinePass::clearChannels(pRenderContext, renderData, kOutputChannels);
+        InlinePass::clearChannels(pRenderContext, renderData, InlinePass::kColorOutputChannels);
         return;
     }
 
     if (!mpComputePass)
         mpComputePass = InlinePass::createScenePass(mpDevice, pRenderContext, mpScene, mpSampleGenerator, kShaderFile, getShaderDefines(renderData));
-    InlinePass::checkScene(*mpScene, renderData, kInputViewDir);
+    InlinePass::checkScene(*mpScene, renderData);
 
     InlinePass::updateScenePassDefines(pRenderContext, mpComputePass, mpScene, mpSampleGenerator, getShaderDefines(renderData));
     bindShaderData(mpComputePass->getRootVar(), renderData);
