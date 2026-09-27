@@ -27,8 +27,7 @@ RESTIR = {"samplesPerPixel": 32, "maxBounces": 6, **GATE,
 # 2. Build the render graph: both tracers share the V-buffer and the laser
 graph = testbed.create_render_graph("SplitScreen")
 graph.create_pass("VBuffer", "VBufferRT", {"samplePattern": "Center", "sampleCount": 1})
-graph.create_pass("Laser", "LaserVBufferRT", {
-    "samplePattern": "Center", "sampleCount": 1,
+graph.create_pass("Laser", "LaserLight", {
     "laserPosition": [0.0, 1.7, 6.8], "laserDirection": [0.0, 0.0, -1.0],
     "laserPower": [170.0, 120.0, 40.0], "laserAngle": 0.0,
 })
@@ -37,8 +36,7 @@ graph.create_pass("ReSTIR", "TimeGatedReSTIRInline", RESTIR)
 for tracer in ["PT", "ReSTIR"]:
     graph.add_edge("VBuffer.vbuffer", f"{tracer}.vbuffer")
     graph.add_edge("VBuffer.viewW", f"{tracer}.viewW")
-    graph.add_edge("Laser.vbuffer", f"{tracer}.laservbuffer")
-    graph.add_edge("Laser.viewW", f"{tracer}.laserviewW")
+    graph.add_edge("Laser", tracer)
     # Tone map each side the same way before they are put side by side.
     graph.create_pass(f"ToneMap{tracer}", "ToneMapper", {"autoExposure": False})
     graph.add_edge(f"{tracer}.color", f"ToneMap{tracer}.src")

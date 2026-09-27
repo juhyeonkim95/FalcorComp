@@ -31,7 +31,7 @@ def main():
         camera.target = falcor.float3(target.x, target.y, target.z)
         g = f.create_render_graph('temporal')
         g.create_pass('V', 'VBufferRT', {'samplePattern': 'Center', 'sampleCount': 1})
-        g.create_pass('L', 'LaserVBufferRT', {'laserPosition': [0., 1.7, 6.8], 'laserDirection': [0., 0., -1.],
+        g.create_pass('L', 'LaserLight', {'laserPosition': [0., 1.7, 6.8], 'laserDirection': [0., 0., -1.],
                                               'laserPower': [170., 120., 40.], 'laserAngle': 0.})
         g.create_pass('P', 'TransientHistogramReSTIRInline', {
             'samplesPerPixel': 4, 'timeMin': TIME_RANGE[0], 'timeMax': TIME_RANGE[1], 'timeBin': TIME_RANGE[2],
@@ -40,7 +40,7 @@ def main():
             'shiftmapMethod': 'local_tangent', 'gaugeMode': 'avg_grad',
             'useTemporalReuse': temporal, 'temporalHistoryLength': 20.})
         for a, b in [('V.vbuffer', 'P.vbuffer'), ('V.viewW', 'P.viewW'), ('V.mvec', 'P.mvec'),
-                     ('L.vbuffer', 'P.laservbuffer'), ('L.viewW', 'P.laserviewW')]:
+                     ('L', 'P')]:
             g.add_edge(a, b)
         g.mark_output('P.histogram')
         g.mark_output('P.color')

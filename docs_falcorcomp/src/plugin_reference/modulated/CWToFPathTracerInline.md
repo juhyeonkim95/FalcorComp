@@ -36,7 +36,7 @@ antithetic sampling targets: the constant part of the unsigned weight is an ordi
 image. The output is the estimate itself; it is not divided by anything.
 
 Camera paths start at the primary hits from `VBufferRT`, and every vertex is connected to the light
-from `LaserVBufferRT`. Paths are not cut off by length, because the modulation covers all path
+set on `LaserLight`. Paths are not cut off by length, because the modulation covers all path
 lengths.
 
 ## Parameters
@@ -187,7 +187,7 @@ primal path and the two are no longer similar.
 
 ## Light
 
-The light is set on `LaserVBufferRT`, as for the time-gated passes (see [Laser](#laser)). A CW-ToF
+The light is set on the `LaserLight` pass, as for the time-gated passes (see [Laser](#laser)). A CW-ToF
 camera is usually modeled with a point light at the camera: `isLightSourceLaser = false` and
 `laserCollocated = true`.
 
@@ -203,10 +203,6 @@ camera is usually modeled with a point light at the camera: `isLightSourceLaser 
   - Primary hits, from `VBufferRT`.
 * - `viewW` (input, optional)
   - Primary ray directions, from `VBufferRT`.
-* - `laservbuffer` (input)
-  - Light hit, from `LaserVBufferRT`.
-* - `laserviewW` (input, optional)
-  - Light ray direction, from `LaserVBufferRT`.
 * - `color` (output)
   - CW-ToF measurement $I$, RGBA32Float. With the signed weight it can be negative.
 ```
@@ -214,15 +210,14 @@ camera is usually modeled with a point light at the camera: `isLightSourceLaser 
 ## Example
 
 ```python
-graph.create_pass("Light", "LaserVBufferRT", {"isLightSourceLaser": False, "laserCollocated": True})
+graph.create_pass("Light", "LaserLight", {"isLightSourceLaser": False, "laserCollocated": True})
 graph.create_pass("Tracer", "CWToFPathTracerInline", {
     "samplesPerPixel": 8, "maxBounces": 3, "computeDirect": False,
     "waveform": "cos", "modulationWavelength": 0.01,
 })
 graph.add_edge("VBuffer.vbuffer", "Tracer.vbuffer")
 graph.add_edge("VBuffer.viewW", "Tracer.viewW")
-graph.add_edge("Light.vbuffer", "Tracer.laservbuffer")
-graph.add_edge("Light.viewW", "Tracer.laserviewW")
+graph.add_edge("Light", "Tracer")  # run the light pass first
 ```
 
 See the [CW-ToF tutorial](../../tutorials/cwtof_offline.md) for a complete script.

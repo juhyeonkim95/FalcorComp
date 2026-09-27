@@ -16,9 +16,9 @@ All the tutorials use the same scene and a similar render graph:
 
 - **Scene:** the Cornell box without its area light, so the laser is the only light. The laser
   sits in front of the box at `(0, 1.7, 6.8)` and points into it.
-- **Render graph:** `VBufferRT` finds the camera's primary hits, `LaserVBufferRT` places the
-  laser and finds where its beam hits the scene, and the ToF render pass traces paths from the
-  camera and connects them to the laser spot. The frames are then averaged (`AccumulatePass` or
+- **Render graph:** `VBufferRT` finds the camera's primary hits, `LaserLight` places the laser
+  (connected to the ToF render pass with an execution edge, so that it runs first), and the ToF
+  render pass traces paths from the camera and connects them to the laser spot. The frames are then averaged (`AccumulatePass` or
   `TransientHistogramAccumulatePass`) or shown (`ToneMapper`, `TransientHistogramViewer`).
 
 Each tutorial is a short Python script, explained step by step, with the full script at the end.

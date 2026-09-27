@@ -24,7 +24,8 @@ same file. (The Cornell box is by Benedikt Bitterli, released under
 
 ## 2. Build the render graph
 
-`VBufferRT` finds the primary hits and `LaserVBufferRT` places the laser. The tracer keeps paths
+`VBufferRT` finds the primary hits and `LaserLight` places the laser; the execution edge
+`add_edge("Laser", "Tracer")` (pass names only) makes it run before the tracer. The tracer keeps paths
 whose length lies in a box gate of width `timeGateWindow` centered at `timeMin` (equal to
 `timeMax` for a single gate). `AccumulatePass` averages the frames and `ToneMapper` makes a
 displayable copy.

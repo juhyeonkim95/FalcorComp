@@ -95,8 +95,7 @@ def create_graph(testbed, method, scene, spp_per_frame, spatial, *, statistics=F
         "samplePattern": "Center", "sampleCount": 1, "useAlphaTest": True,
     })
     # A collocated laser follows the camera; the laser pass publishes it for the tracer.
-    graph.create_pass("Laser", "LaserVBufferRT", {
-        "samplePattern": "Center", "sampleCount": 1, "useAlphaTest": True,
+    graph.create_pass("Laser", "LaserLight", {
         "laserPosition": scene.light_position, "laserDirection": scene.light_direction,
         "laserPower": scene.light_power, "laserAngle": scene.light_angle_degrees,
         "laserCollocated": scene.light_collocated, "isLightSourceLaser": scene.is_laser,
@@ -125,7 +124,7 @@ def create_graph(testbed, method, scene, spp_per_frame, spatial, *, statistics=F
     graph.create_pass("Accumulate", "AccumulatePass", {"enabled": True, "precisionMode": "SingleCompensated"})
     for source, target in (
         ("VBuffer.vbuffer", "Tracer.vbuffer"), ("VBuffer.viewW", "Tracer.viewW"),
-        ("Laser.vbuffer", "Tracer.laservbuffer"), ("Laser.viewW", "Tracer.laserviewW"),
+        ("Laser", "Tracer"),
     ):
         graph.add_edge(source, target)
     if (scene_dynamic or use_motion_vectors) and temporal_reuse and method != "pt":

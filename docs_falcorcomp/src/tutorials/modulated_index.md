@@ -31,7 +31,7 @@ with naive sampling at equal rendering time.
 - **Scene:** the Cornell box without its area light, as in the [ToF rendering](index.md)
   tutorials. Download {download}`scene-v4-nolight.pbrt <scenes/cornell-box/scene-v4-nolight.pbrt>`
   and save it as `cornell-box/scene-v4-nolight.pbrt` next to the scripts.
-- **Light:** for CW-ToF, a point light at the camera, set on `LaserVBufferRT`; for structured light,
+- **Light:** for CW-ToF, a point light at the camera, set on `LaserLight`; for structured light,
   a projector next to the camera, set on the render pass.
 - **Extra package:** the scripts save the signed images with matplotlib (`pip install matplotlib`).
 

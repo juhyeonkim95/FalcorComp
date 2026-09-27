@@ -150,11 +150,45 @@ Every camera-path vertex $x$ is connected to the laser spot:
 (laser)=
 ## Laser
 
-The laser is set on `LaserVBufferRT`: its position, direction, power and cone angle
-(`laserAngle`, 0 for a collimated beam), `laserCollocated` to place it at the camera, and
-`isLightSourceLaser`. With `isLightSourceLaser` (the default), the light is the spot the beam
-hits, and the beam length adds to the path length; otherwise it is a point light at the laser
-position.
+The laser is set on a separate `LaserLight` pass, which has no inputs or outputs: every frame it
+publishes the laser, which the ToF passes read. Connect it to them with an execution edge,
+`graph.add_edge("Laser", "Tracer")` (pass names only), so that it runs first; without it, the pass
+warns and uses a default laser.
+
+```{list-table}
+:header-rows: 1
+:widths: 25 10 65
+
+* - Parameter
+  - Type
+  - Description
+* - `laserPosition`
+  - float3
+  - Laser position. (Default: `(0, 0, 0)`)
+* - `laserDirection`
+  - float3
+  - Beam direction (normalized). (Default: `(0, 0, 1)`)
+* - `laserPower`
+  - float3
+  - Laser power, or point-light intensity, per color channel. (Default: `(1, 1, 1)`)
+* - `laserAngle`
+  - float
+  - Half-angle of the beam's cone, in degrees; `0` for a collimated beam. (Default: `90`)
+* - `isLightSourceLaser`
+  - boolean
+  - On: the light is the spot the beam hits, and the beam length adds to the path length. Off:
+    a point light at the laser position. (Default: `true`)
+* - `laserCollocated`
+  - boolean
+  - Place the laser at the camera, aimed at its target, instead of at `laserPosition` and
+    `laserDirection`. (Default: `false`)
+* - `laserVelocity`
+  - float3
+  - Added to the position after every frame. (Default: `(0, 0, 0)`)
+```
+
+`update_laser_info(position, direction)` moves the laser from a script without restarting
+downstream accumulation, for example to move it every frame.
 
 ## Inputs and outputs
 
@@ -168,10 +202,6 @@ position.
   - Primary hits, from `VBufferRT`.
 * - `viewW` (input, optional)
   - Primary ray directions, from `VBufferRT`.
-* - `laservbuffer` (input)
-  - Laser hit, from `LaserVBufferRT`.
-* - `laserviewW` (input, optional)
-  - Laser ray direction, from `LaserVBufferRT`.
 * - `color` (output)
   - Time-gated image $I(t)$, RGBA32Float.
 ```
@@ -185,8 +215,7 @@ graph.create_pass("Tracer", "TimeGatedPathTracerInline", {
 })
 graph.add_edge("VBuffer.vbuffer", "Tracer.vbuffer")
 graph.add_edge("VBuffer.viewW", "Tracer.viewW")
-graph.add_edge("Laser.vbuffer", "Tracer.laservbuffer")
-graph.add_edge("Laser.viewW", "Tracer.laserviewW")
+graph.add_edge("Laser", "Tracer")  # run the laser pass first
 ```
 
 See the [time-gated rendering tutorial](../../tutorials/time_gated_offline.md) for a complete

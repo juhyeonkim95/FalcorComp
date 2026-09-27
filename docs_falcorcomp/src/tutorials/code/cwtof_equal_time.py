@@ -25,16 +25,14 @@ TRACER = {"samplesPerPixel": 8, "maxBounces": 3, "computeDirect": False,
 def create_graph(properties):
     graph = testbed.create_render_graph("CWToF")
     graph.create_pass("VBuffer", "VBufferRT", {"samplePattern": "Center", "sampleCount": 1})
-    graph.create_pass("Light", "LaserVBufferRT", {
-        "samplePattern": "Center", "sampleCount": 1,
+    graph.create_pass("Light", "LaserLight", {
         "isLightSourceLaser": False, "laserCollocated": True, "laserPower": [10.0, 10.0, 10.0],
     })
     graph.create_pass("Tracer", "CWToFPathTracerInline", properties)
     graph.create_pass("Accumulate", "AccumulatePass", {"precisionMode": "SingleCompensated"})
     graph.add_edge("VBuffer.vbuffer", "Tracer.vbuffer")
     graph.add_edge("VBuffer.viewW", "Tracer.viewW")
-    graph.add_edge("Light.vbuffer", "Tracer.laservbuffer")
-    graph.add_edge("Light.viewW", "Tracer.laserviewW")
+    graph.add_edge("Light", "Tracer")
     graph.add_edge("Tracer.color", "Accumulate.input")
     graph.mark_output("Accumulate.output")
     return graph

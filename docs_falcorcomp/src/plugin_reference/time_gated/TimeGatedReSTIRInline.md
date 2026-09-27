@@ -267,7 +267,7 @@ combines both. With `isSceneDynamic`, ellipsoidal sampling supports at most 3 bo
 
 ## Laser
 
-The laser is set on `LaserVBufferRT`, as for the [path tracer](#laser).
+The laser is set on the `LaserLight` pass, as for the [path tracer](#laser).
 
 ## Inputs and outputs
 
@@ -283,10 +283,6 @@ The laser is set on `LaserVBufferRT`, as for the [path tracer](#laser).
   - Primary ray directions, from `VBufferRT`.
 * - `mvec` (input, optional)
   - Motion vectors, from `VBufferRT`, to reproject the temporal history when the camera moves.
-* - `laservbuffer` (input, optional)
-  - Laser hit, from `LaserVBufferRT`.
-* - `laserviewW` (input, optional)
-  - Laser ray direction, from `LaserVBufferRT`.
 * - `color` (output)
   - Time-gated image, RGBA32Float.
 * - `newtonStatistics` (output, with `debugNewtonIterations`)
@@ -308,8 +304,7 @@ graph.create_pass("Tracer", "TimeGatedReSTIRInline", {
 })
 graph.add_edge("VBuffer.vbuffer", "Tracer.vbuffer")
 graph.add_edge("VBuffer.viewW", "Tracer.viewW")
-graph.add_edge("Laser.vbuffer", "Tracer.laservbuffer")
-graph.add_edge("Laser.viewW", "Tracer.laserviewW")
+graph.add_edge("Laser", "Tracer")  # run the laser pass first
 ```
 
 See the [offline](../../tutorials/time_gated_restir_offline.md) and

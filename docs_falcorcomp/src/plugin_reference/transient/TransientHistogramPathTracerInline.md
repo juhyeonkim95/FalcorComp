@@ -151,7 +151,7 @@ the camera moves, a setting changes, or a script calls `reset_histogram()`.
 
 ## Laser
 
-The laser is set on `LaserVBufferRT`, as for the
+The laser is set on the `LaserLight` pass, as for the
 [time-gated path tracer](#laser).
 
 ## Inputs and outputs
@@ -166,10 +166,6 @@ The laser is set on `LaserVBufferRT`, as for the
   - Primary hits, from `VBufferRT`.
 * - `viewW` (input, optional)
   - Primary ray directions, from `VBufferRT`.
-* - `laservbuffer` (input)
-  - Laser hit, from `LaserVBufferRT`.
-* - `laserviewW` (input, optional)
-  - Laser ray direction, from `LaserVBufferRT`.
 * - `histogram` (output)
   - Transient histogram $H$, `width x height x timeBin`. RGBA32Float (the alpha channel is an
     auxiliary weight), or R32Float with `useSingleChannel`.
@@ -190,8 +186,7 @@ graph.create_pass("Tracer", "TransientHistogramPathTracerInline", {
 })
 graph.add_edge("VBuffer.vbuffer", "Tracer.vbuffer")
 graph.add_edge("VBuffer.viewW", "Tracer.viewW")
-graph.add_edge("Laser.vbuffer", "Tracer.laservbuffer")
-graph.add_edge("Laser.viewW", "Tracer.laserviewW")
+graph.add_edge("Laser", "Tracer")  # run the laser pass first
 graph.create_pass("Accumulate", "TransientHistogramAccumulatePass", {})
 graph.add_edge("Tracer.histogram", "Accumulate.input")
 graph.mark_output("Accumulate.output")

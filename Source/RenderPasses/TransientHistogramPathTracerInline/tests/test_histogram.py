@@ -14,7 +14,7 @@ ROOT = Path(__file__).resolve().parents[4]
 def create_graph(testbed, method, single_channel, kde, laser, filter_mode="box", accumulate=False):
     graph = testbed.create_render_graph("histogram_test")
     graph.create_pass("V", "VBufferRT", {"samplePattern": "Center", "sampleCount": 1})
-    graph.create_pass("L", "LaserVBufferRT", {
+    graph.create_pass("L", "LaserLight", {
         "laserPosition": [0., 1.7, 6.8], "laserDirection": [0., 0., -1.],
         "laserPower": [170., 120., 40.], "laserAngle": 0., "isLightSourceLaser": laser,
     })
@@ -25,7 +25,7 @@ def create_graph(testbed, method, single_channel, kde, laser, filter_mode="box",
         "samplesPerPixel": 4, "maxBounces": 3,
     })
     for source, target in [("V.vbuffer", "P.vbuffer"), ("V.viewW", "P.viewW"),
-                           ("L.vbuffer", "P.laservbuffer"), ("L.viewW", "P.laserviewW")]:
+                           ("L", "P")]:
         graph.add_edge(source, target)
     graph.mark_output("P.histogram")
     graph.mark_output("P.color")

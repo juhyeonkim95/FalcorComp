@@ -8,8 +8,7 @@ METHODS = ("pt", "kde", "tri_approx")
 def create_histogram_graph(testbed, scene, method, spp, bins, initial_window_ratio):
     graph = testbed.create_render_graph("histogram_" + method)
     graph.create_pass("VBuffer", "VBufferRT", {"samplePattern": "Center", "sampleCount": 1, "useAlphaTest": True})
-    graph.create_pass("Laser", "LaserVBufferRT", {
-        "samplePattern": "Center", "sampleCount": 1, "useAlphaTest": True,
+    graph.create_pass("Laser", "LaserLight", {
         "laserPosition": scene.light_position, "laserDirection": scene.light_direction,
         "laserPower": scene.light_power, "laserAngle": scene.light_angle_degrees,
         "laserCollocated": False, "isLightSourceLaser": scene.is_laser,
@@ -25,7 +24,7 @@ def create_histogram_graph(testbed, scene, method, spp, bins, initial_window_rat
         "timeMin": scene.gate_min, "timeMax": scene.gate_max, "timeBin": bins,
     })
     for source, target in (("VBuffer.vbuffer", "Tracer.vbuffer"), ("VBuffer.viewW", "Tracer.viewW"),
-                           ("Laser.vbuffer", "Tracer.laservbuffer"), ("Laser.viewW", "Tracer.laserviewW")):
+                           ("Laser", "Tracer")):
         graph.add_edge(source, target)
     graph.mark_output("Tracer.histogram")
     testbed.render_graph = graph

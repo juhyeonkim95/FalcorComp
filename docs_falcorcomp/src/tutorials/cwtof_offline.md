@@ -28,7 +28,8 @@ It uses the same scene file as the other tutorials (see [Modulated light](modula
 
 ## 2. Build the render graph
 
-`VBufferRT` finds the primary hits. `LaserVBufferRT` places the light: with
+`VBufferRT` finds the primary hits. `LaserLight` places the light, and the execution edge
+`add_edge("Light", "Tracer")` makes it run first: with
 `isLightSourceLaser = false` it is a point light, and `laserCollocated` puts it at the camera, as
 in a CW-ToF camera. The tracer's modulation is set by:
 

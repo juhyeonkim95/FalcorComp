@@ -27,8 +27,7 @@ RESTIR = {**PT,
 def create_graph(tracer, properties):
     graph = testbed.create_render_graph(tracer)
     graph.create_pass("VBuffer", "VBufferRT", {"samplePattern": "Center", "sampleCount": 1})
-    graph.create_pass("Laser", "LaserVBufferRT", {
-        "samplePattern": "Center", "sampleCount": 1,
+    graph.create_pass("Laser", "LaserLight", {
         "laserPosition": [0.0, 1.7, 6.8], "laserDirection": [0.0, 0.0, -1.0],
         "laserPower": [170.0, 120.0, 40.0], "laserAngle": 0.0,
     })
@@ -36,8 +35,7 @@ def create_graph(tracer, properties):
     graph.create_pass("Accumulate", "AccumulatePass", {"precisionMode": "SingleCompensated"})
     graph.add_edge("VBuffer.vbuffer", "Tracer.vbuffer")
     graph.add_edge("VBuffer.viewW", "Tracer.viewW")
-    graph.add_edge("Laser.vbuffer", "Tracer.laservbuffer")
-    graph.add_edge("Laser.viewW", "Tracer.laserviewW")
+    graph.add_edge("Laser", "Tracer")
     graph.add_edge("Tracer.color", "Accumulate.input")
     graph.mark_output("Accumulate.output")
     return graph

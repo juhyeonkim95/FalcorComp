@@ -16,9 +16,9 @@ def main():
     def render(iterations, neighbors=3, radius=8., threshold=.25, method='local_tangent', single=True, bin_reuse=False, time_range=(0., 40., 8)):
      g=f.create_render_graph('reuse')
      g.create_pass('V','VBufferRT',{'samplePattern':'Center','sampleCount':1})
-     g.create_pass('L','LaserVBufferRT',{'laserPosition':[0.,1.7,6.8],'laserDirection':[0.,0.,-1.],'laserPower':[170.,120.,40.],'laserAngle':0.})
+     g.create_pass('L','LaserLight',{'laserPosition':[0.,1.7,6.8],'laserDirection':[0.,0.,-1.],'laserPower':[170.,120.,40.],'laserAngle':0.})
      g.create_pass('P','TransientHistogramReSTIRInline',{'samplesPerPixel':8,'timeMin':time_range[0],'timeMax':time_range[1],'timeBin':time_range[2],'timeGateMode':'box','useSingleChannel':single,'maxBounces':4,'spatialReuseIteration':iterations,'spatialReuseNeighborCount':neighbors,'spatialReuseGatherRadius':radius,'specularRoughnessThreshold':threshold,'shiftmapMethod':method,'gaugeMode':'avg_grad','useBinReuse':bin_reuse})
-     for a,b in [('V.vbuffer','P.vbuffer'),('V.viewW','P.viewW'),('L.vbuffer','P.laservbuffer'),('L.viewW','P.laserviewW')]:g.add_edge(a,b)
+     for a,b in [('V.vbuffer','P.vbuffer'),('V.viewW','P.viewW'),('L','P')]:g.add_edge(a,b)
      g.mark_output('P.histogram');g.mark_output('P.color');f.render_graph=g;f.frame()
      a=g.get_output('P.histogram').to_numpy().copy()
      assert np.isfinite(a).all() and a.max()>0
