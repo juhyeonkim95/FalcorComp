@@ -51,7 +51,7 @@ float exponentialTwoSideGate(float v)
 	return abs(v) <= kExpTwoSideGateHalfWidth ? exp(-2.f * abs(v)) / kExpTwoSideGateMass : 0.f;
 }
 
-float getMaxpathLength(float target_distance, bool use_rough = false)
+float getMaxPathLength(float target_distance, bool use_rough = false)
 {
 	float target_time_gate_window = use_rough ? time_gate_window_rough : time_gate_window;
 	switch(time_gate_mode)

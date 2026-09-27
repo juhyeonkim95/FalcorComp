@@ -50,9 +50,9 @@ void inv2(float a,float b,float c,float d,
     m10 = -c * inv; m11 =  a * inv;
 }
 
-// ----------------- gauge_terms (packed Hessians) -----------------
+// ----------------- gaugeTerms (packed Hessians) -----------------
 // Builds: a(η',η),   JpΔ = (∂a/∂xi')^T Δ,   J0Δ = (∂a/∂xi )^T Δ
-void gauge_terms(
+void gaugeTerms(
     GaugeMode mode,
     float2 a_const,
     float2 g0, float2 g1,
@@ -89,7 +89,7 @@ void gauge_terms(
 }
 
 // Constant-offset solver: c is held fixed for the Jacobian.
-NewtonResult solve_xi_prime_newton_det<Chart : IShiftChart>(
+NewtonResult solveShiftNewton<Chart : IShiftChart>(
     inout Chart ops,
     float2 xi, float c,
     GaugeMode mode,
@@ -143,7 +143,7 @@ NewtonResult solve_xi_prime_newton_det<Chart : IShiftChart>(
         R.iters = it + 1;
 
         Delta = e - xi;
-        gauge_terms(mode, a_const, g0, g1, H0, H1, Delta, a, JpDelta, J0Delta);
+        gaugeTerms(mode, a_const, g0, g1, H0, H1, Delta, a, JpDelta, J0Delta);
 
         // Current Residuals
         float F1 = L1 - L0 - c;
@@ -188,7 +188,7 @@ NewtonResult solve_xi_prime_newton_det<Chart : IShiftChart>(
     R.xi_prime = e;
 
     Delta = e - xi;
-    gauge_terms(mode, a_const, g0, g1, H0, H1, Delta, a, JpDelta, J0Delta);
+    gaugeTerms(mode, a_const, g0, g1, H0, H1, Delta, a, JpDelta, J0Delta);
     // Jp rows: [ g1^T ; (a + JpDelta)^T ]
     float a11 = g1.x, a12 = g1.y;
     float b11 = a.x + JpDelta.x, b12 = a.y + JpDelta.y;

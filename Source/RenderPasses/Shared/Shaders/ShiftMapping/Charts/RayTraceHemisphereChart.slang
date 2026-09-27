@@ -39,7 +39,7 @@ export struct RayTraceHemisphereChart:IShiftChart
     }
 
     // --- hemisphere direction (LOCAL) ---
-    static float3 dir_local(float mu, float psi)
+    static float3 dirLocal(float mu, float psi)
     {
         float s_mu = sqrt(max(1.0 - mu*mu, 0.0));
         float cphi = cos(M_2PI * frac(psi)), sphi = sin(M_2PI * frac(psi));
@@ -47,7 +47,7 @@ export struct RayTraceHemisphereChart:IShiftChart
     }
 
     // --- hemisphere direction (LOCAL) and partials wrt (mu, psi) ---
-    static void dir_partials_local(
+    static void dirPartialsLocal(
         float mu, float psi,
         out float3 dL, out float3 dL_mu, out float3 dL_psi,
         out float3 dL_mumu, out float3 dL_mupsi, out float3 dL_psipsi)
@@ -71,7 +71,7 @@ export struct RayTraceHemisphereChart:IShiftChart
     }
 
     // local->world (columns are TBN at p2)
-    float3 to_world(float3 vL) { return vL.x * t2 + vL.y * b2 + vL.z * n2; }
+    float3 toWorld(float3 vL) { return vL.x * t2 + vL.y * b2 + vL.z * n2; }
 
     void directionDerivatives(float2 coordinates,
         out float3 d, out float3 du, out float3 dv,
@@ -81,9 +81,9 @@ export struct RayTraceHemisphereChart:IShiftChart
         if (useCartesianChart)
             CartesianRayChart::derivatives(coordinates, localD, localU, localV, localUU, localUV, localVV);
         else
-            dir_partials_local(coordinates.x, coordinates.y, localD, localU, localV, localUU, localUV, localVV);
-        d = to_world(localD); du = to_world(localU); dv = to_world(localV);
-        duu = to_world(localUU); duv = to_world(localUV); dvv = to_world(localVV);
+            dirPartialsLocal(coordinates.x, coordinates.y, localD, localU, localV, localUU, localUV, localVV);
+        d = toWorld(localD); du = toWorld(localU); dv = toWorld(localV);
+        duu = toWorld(localUU); duv = toWorld(localUV); dvv = toWorld(localVV);
     }
 
     // --- Apply A(v) = (I-u1u1^T)v/d1 + (I-u2u2^T)v/d2 without forming A
@@ -100,8 +100,8 @@ export struct RayTraceHemisphereChart:IShiftChart
         hitT = 0.f;
         if (!validCoordinates(coordinates)) return;
         float2 et = project(coordinates);
-        float3 dL = useCartesianChart ? CartesianRayChart::direction(et) : dir_local(et.x, et.y);
-        float3 d  = to_world(dL); // unit
+        float3 dL = useCartesianChart ? CartesianRayChart::direction(et) : dirLocal(et.x, et.y);
+        float3 d  = toWorld(dL); // unit
 
         Ray ray = Ray(p2o, d, 0.0f, FLT_MAX);
         SceneRayQuery<0> sceneRayQuery;

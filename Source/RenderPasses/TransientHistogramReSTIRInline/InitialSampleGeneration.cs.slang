@@ -112,7 +112,7 @@ float3 tracePath(uint2 pixel, uint2 frameDim)
     ShadingData primary = loadShadingData(primaryHit, cameraPosition, getPrimaryRayDir(pixel, frameDim, gViewW));
     let primaryMaterial = gScene.materials.getMaterialInstance(primary, ExplicitLodTextureSampler(0.f));
     float primaryLength = length(primary.posW - cameraPosition);
-    float maxPathLength = getMaxpathLength(binCenter(tbin - 1));
+    float maxPathLength = getMaxPathLength(binCenter(tbin - 1));
     LaserLightSampler lightSampler = LaserLightSampler(laserOrigin, laserDirection, laserCosAngle, laserPower);
     // Prefix replay must not consume light or reservoir RNG draws.
     SampleGenerator rng = createPixelSampleGenerator(pixel, gFrameCount, kReservoirSampleStream);

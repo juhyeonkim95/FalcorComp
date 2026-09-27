@@ -51,7 +51,7 @@ struct ShiftMappingDebugInfo
 }
 
 // The solver status describes the solve before endpoint/visibility validation.
-void record_shift_solve(NewtonResult result, inout ShiftMappingDebugInfo debugInfo)
+void recordShiftSolve(NewtonResult result, inout ShiftMappingDebugInfo debugInfo)
 {
     debugInfo.iters = result.iters;
     debugInfo.status = uint(result.status);
@@ -60,7 +60,7 @@ void record_shift_solve(NewtonResult result, inout ShiftMappingDebugInfo debugIn
 #endif
 }
 
-HitInfo path_length_aware_shift_mapping(
+HitInfo pathLengthAwareShiftMapping(
     ShadingData x1, // preceding vertex
     HitInfo x2, // vertex to shift
     ShadingData x3, // fixed next vertex (surface or point light)
@@ -88,23 +88,23 @@ HitInfo path_length_aware_shift_mapping(
     }
 
 #if SHIFT_MAPPING_METHOD == SHIFT_MAPPING_NO
-    return path_length_aware_shift_mapping_no(x1, x2, x3, dt, a_const, jacobian, debuginfo, tol);
+    return shiftNone(x1, x2, x3, dt, a_const, jacobian, debuginfo, tol);
 #elif SHIFT_MAPPING_METHOD == SHIFT_MAPPING_LOCAL_TANGENT
-    return path_length_aware_shift_mapping_local_tangent_surface(x1, x2, x3, dt, a_const, jacobian, debuginfo, tol);
+    return shiftLocalTangent(x1, x2, x3, dt, a_const, jacobian, debuginfo, tol);
 #elif SHIFT_MAPPING_METHOD == SHIFT_MAPPING_BARYCENTRIC
-    return path_length_aware_shift_mapping_barycentric_surface(x1, x2, x3, dt, a_const, jacobian, debuginfo, tol);
+    return shiftBarycentric(x1, x2, x3, dt, a_const, jacobian, debuginfo, tol);
 #elif SHIFT_MAPPING_METHOD == SHIFT_MAPPING_RAY_TRACE || SHIFT_MAPPING_METHOD == SHIFT_MAPPING_RAY_TRACE_CHART
-    return path_length_aware_shift_mapping_path_trace_shadowmap(x1, x2, x3, dt, a_const, jacobian, debuginfo, tol);
+    return shiftRayTrace(x1, x2, x3, dt, a_const, jacobian, debuginfo, tol);
 #elif SHIFT_MAPPING_METHOD == SHIFT_MAPPING_AREA_ADAPTIVE
-    return path_length_aware_shift_mapping_adaptive(x1, x2, x3, dt, a_const, jacobian, debuginfo, tol);
+    return shiftAreaAdaptive(x1, x2, x3, dt, a_const, jacobian, debuginfo, tol);
 #elif SHIFT_MAPPING_METHOD == SHIFT_MAPPING_RADIAL
-    return path_length_aware_shift_mapping_radial(x1, x2, x3, dt, jacobian, debuginfo, tol);
+    return shiftRadial(x1, x2, x3, dt, jacobian, debuginfo, tol);
 #endif
     jacobian = 1.0;
     return x2;
 }
 
-float3 shift_ray_origin(ShadingData endpoint, bool isSurface, float3 destination)
+float3 shiftRayOrigin(ShadingData endpoint, bool isSurface, float3 destination)
 {
     if (!isSurface) return endpoint.posW;
     return rayOriginToward(endpoint, destination - endpoint.posW);
@@ -112,9 +112,9 @@ float3 shift_ray_origin(ShadingData endpoint, bool isSurface, float3 destination
 
 // Recover the surface endpoint using a direction and distance computed from the
 // SAME offset origin. There is no fixed world-space endpoint subtraction.
-HitInfo trace_shift_endpoint(ShadingData endpoint, bool isSurface, float3 destination, float tol)
+HitInfo traceShiftEndpoint(ShadingData endpoint, bool isSurface, float3 destination, float tol)
 {
-    float3 origin = shift_ray_origin(endpoint, isSurface, destination);
+    float3 origin = shiftRayOrigin(endpoint, isSurface, destination);
     float3 segment = destination - origin;
     float distance = length(segment);
     if (!(distance > 1e-8f) || !isfinite(distance)) return HitInfo();
@@ -127,7 +127,7 @@ HitInfo trace_shift_endpoint(ShadingData endpoint, bool isSurface, float3 destin
     return hit;
 }
 
-HitInfo path_length_aware_shift_mapping_adaptive(
+HitInfo shiftAreaAdaptive(
     ShadingData x1, // preceding vertex
     HitInfo x2, // vertex to shift
     ShadingData x3, // fixed next vertex (surface or point light)
@@ -143,9 +143,9 @@ HitInfo path_length_aware_shift_mapping_adaptive(
     bool usePlane = gScene.getFaceAreaW(original.instanceID, original.primitiveIndex) > areaThreshold;
     HitInfo hit;
     if (usePlane)
-        hit = path_length_aware_shift_mapping_local_tangent_surface(x1, x2, x3, dt, a_const, jacobian, debuginfo, tol);
+        hit = shiftLocalTangent(x1, x2, x3, dt, a_const, jacobian, debuginfo, tol);
     else
-        hit = path_length_aware_shift_mapping_path_trace_shadowmap(x1, x2, x3, dt, a_const, jacobian, debuginfo, tol);
+        hit = shiftRayTrace(x1, x2, x3, dt, a_const, jacobian, debuginfo, tol);
 
     if (!(jacobian > 0.f) || !hit.isValid()) { jacobian = 0.f; return x2; }
     if (hit.getType() != HitType::Triangle) { jacobian = 0.f; return x2; }
@@ -156,7 +156,7 @@ HitInfo path_length_aware_shift_mapping_adaptive(
     return hit;
 }
 
-HitInfo path_length_aware_shift_mapping_no(
+HitInfo shiftNone(
     ShadingData x1, // preceding vertex
     HitInfo x2, // vertex to shift
     ShadingData x3, // fixed next vertex (surface or point light)
@@ -173,7 +173,7 @@ HitInfo path_length_aware_shift_mapping_no(
     return x2;
 }
 
-HitInfo path_length_aware_shift_mapping_local_tangent_surface(
+HitInfo shiftLocalTangent(
     ShadingData x1, // preceding vertex
     HitInfo x2, // vertex to shift
     ShadingData x3, // fixed next vertex (surface or point light)
@@ -195,8 +195,8 @@ HitInfo path_length_aware_shift_mapping_local_tangent_surface(
 
     LocalPlaneChart ops = LocalPlaneChart(p1, p2, x, tangent, bitangent);
     float2 xi = float2(0, 0);
-    NewtonResult result = solve_xi_prime_newton_det(ops, xi, dt, getShiftGaugeMode(), a_const, gNewtonMaxIteration, tol);
-    record_shift_solve(result, debuginfo);
+    NewtonResult result = solveShiftNewton(ops, xi, dt, getShiftGaugeMode(), a_const, gNewtonMaxIteration, tol);
+    recordShiftSolve(result, debuginfo);
     jacobian = 0.f;
     if (result.status != NewtonResultStatus::SUCCESS) return x2;
 
@@ -204,7 +204,7 @@ HitInfo path_length_aware_shift_mapping_local_tangent_surface(
 #if DEBUG_NEWTON_ITERATIONS
     debuginfo.mappingDistance = float2(length(result.xi_prime - xi), length(x_prime - x));
 #endif
-    HitInfo hit = trace_shift_endpoint(x3, true, x_prime, tol);
+    HitInfo hit = traceShiftEndpoint(x3, true, x_prime, tol);
     if (!hit.isValid()) return x2;
     VertexData shifted = gScene.getVertexData(hit.getTriangleHit());
     if (!(abs(dot(shifted.posW - x, n)) <= tol && dot(shifted.faceNormalW, n) > 0.999999f)) return x2;
@@ -232,7 +232,7 @@ float pathLengthAlong(float3 p1, float3 p2, float3 X, float3 u, out float slope)
     vertex must be the first hit from x3 on the same plane. The jacobian is the area ratio of the polar map
     (r, angle) -> (s, angle), (s / r) * (slope(r) / slope(s)). The gauge settings are not used.
 */
-HitInfo path_length_aware_shift_mapping_radial(
+HitInfo shiftRadial(
     ShadingData x1, // preceding vertex
     HitInfo x2, // vertex to shift
     ShadingData x3, // fixed next vertex (surface or point light)
@@ -309,7 +309,7 @@ HitInfo path_length_aware_shift_mapping_radial(
 
     // Polar map (r, angle) -> (s, angle): dA' / dA = (s / r) * (ds / dr), ds / dr = slope(r) / slope(s).
     float3 shiftedPosition = m + s * u;
-    HitInfo shifted = trace_shift_endpoint(x3, true, shiftedPosition, tol);
+    HitInfo shifted = traceShiftEndpoint(x3, true, shiftedPosition, tol);
     if (!shifted.isValid()) return x2;
     VertexData shiftedVertex = gScene.getVertexData(shifted.getTriangleHit());
     if (!(abs(dot(shiftedVertex.posW - x, n)) <= tol && dot(normalize(shiftedVertex.faceNormalW), n) > 0.999999f))
@@ -323,7 +323,7 @@ HitInfo path_length_aware_shift_mapping_radial(
     return shifted;
 }
 
-HitInfo path_length_aware_shift_mapping_barycentric_surface(
+HitInfo shiftBarycentric(
     ShadingData x1, // preceding vertex
     HitInfo x2, // vertex to shift
     ShadingData x3, // fixed next vertex (surface or point light)
@@ -341,8 +341,8 @@ HitInfo path_length_aware_shift_mapping_barycentric_surface(
     const float3 p1 = x1.posW;
     const float3 p2 = x3.posW;
     BarycentricChart ops = BarycentricChart(p1, p2, triposW[0], triposW[1], triposW[2]);
-    NewtonResult result = solve_xi_prime_newton_det(ops, triHit.barycentrics, dt, getShiftGaugeMode(), a_const, gNewtonMaxIteration, tol);
-    record_shift_solve(result, debuginfo);
+    NewtonResult result = solveShiftNewton(ops, triHit.barycentrics, dt, getShiftGaugeMode(), a_const, gNewtonMaxIteration, tol);
+    recordShiftSolve(result, debuginfo);
     jacobian = 0.f;
     if (result.status != NewtonResultStatus::SUCCESS) return x2;
     float2 bary = result.xi_prime;
@@ -352,7 +352,7 @@ HitInfo path_length_aware_shift_mapping_barycentric_surface(
     // Keep the original strict interior test (triangle edges are excluded).
     if (!(bary.x > 0.f && bary.y > 0.f && bary.x + bary.y < 1.f)) return x2;
 
-    HitInfo hit = trace_shift_endpoint(x3, true, ops.X(bary), tol);
+    HitInfo hit = traceShiftEndpoint(x3, true, ops.X(bary), tol);
     if (!hit.isValid()) return x2;
     TriangleHit traced = hit.getTriangleHit();
     if (traced.instanceID.index != triHit.instanceID.index || traced.primitiveIndex != triHit.primitiveIndex) return x2;
@@ -362,7 +362,7 @@ HitInfo path_length_aware_shift_mapping_barycentric_surface(
     return HitInfo(triHit);
 }
 
-HitInfo path_length_aware_shift_mapping_path_trace_shadowmap(
+HitInfo shiftRayTrace(
     ShadingData x1, // preceding vertex
     HitInfo x2, // vertex to shift
     ShadingData x3, // fixed next vertex (surface or point light)
@@ -398,8 +398,8 @@ HitInfo path_length_aware_shift_mapping_path_trace_shadowmap(
     float2 xi = inverse_sample_hemisphere_preserve_area(local);
 #endif
 
-    NewtonResult result = solve_xi_prime_newton_det(ops, xi, dt, getShiftGaugeMode(), a_const, gNewtonMaxIteration, tol);
-    record_shift_solve(result, debuginfo);
+    NewtonResult result = solveShiftNewton(ops, xi, dt, getShiftGaugeMode(), a_const, gNewtonMaxIteration, tol);
+    recordShiftSolve(result, debuginfo);
     HitInfo new_sample = x2;
 
     if(result.status == NewtonResultStatus::SUCCESS && ops.hit.isValid()){

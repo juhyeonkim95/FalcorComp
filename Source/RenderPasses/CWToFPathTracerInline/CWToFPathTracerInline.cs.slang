@@ -90,7 +90,7 @@ float3 estimateWithAntithetic(ShadingData previous, IMaterialInstance previousMa
     float areaJacobian = 0.f;
     ShiftMappingDebugInfo debugInfo = {};
     float tolerance = max(abs(dt) * gNewtonRelativeTolerance, 1e-6f);
-    HitInfo shiftedHit = path_length_aware_shift_mapping(getLightEndpoint(light), hit, previous, dt, areaJacobian,
+    HitInfo shiftedHit = pathLengthAwareShiftMapping(getLightEndpoint(light), hit, previous, dt, areaJacobian,
         debugInfo, tolerance, sg);
     if (!(areaJacobian > 0.f) || !isfinite(areaJacobian)) return primalEstimate;
     float3 shiftedPosition = gScene.getVertexData(shiftedHit.getTriangleHit()).posW;
@@ -100,7 +100,7 @@ float3 estimateWithAntithetic(ShadingData previous, IMaterialInstance previousMa
     // backward shifts are then exact inverses and one-to-one, as AntitheticMIS needs, even when the Newton solve
     // could land elsewhere (e.g. on another surface with the ray-trace charts).
     float reverseJacobian = 0.f;
-    HitInfo returnedHit = path_length_aware_shift_mapping(getLightEndpoint(light), shiftedHit, previous, -dt,
+    HitInfo returnedHit = pathLengthAwareShiftMapping(getLightEndpoint(light), shiftedHit, previous, -dt,
         reverseJacobian, debugInfo, tolerance, sg);
     if (!(reverseJacobian > 0.f) || !isfinite(reverseJacobian)) return primalEstimate;
     float3 returnedPosition = gScene.getVertexData(returnedHit.getTriangleHit()).posW;

@@ -99,7 +99,7 @@ void submitEllipsoidalCandidate(inout Reservoir reservoir, ReconnectionState rc,
     ShadingData target = ellipsoidal.surface;
     let targetMaterial = gScene.materials.getMaterialInstance(target, ExplicitLodTextureSampler(0.f));
     float targetLength = prefixLength + ellipsoidal.distance * origin.IoR;
-    if (!(targetLength < getMaxpathLength(tcurr))) return;
+    if (!(targetLength < getMaxPathLength(tcurr))) return;
     float techniqueWeight = 1.f;
 #if LIGHT_SAMPLING_METHOD == ELLIPSOIDAL_DIRECT_MIS
     float bsdfPdf = material.evalPdf(origin, ellipsoidal.direction, kUseImportanceSampling);
@@ -246,7 +246,7 @@ float3 tracePath(uint2 pixel, uint2 frameDim)
     const float wideSampleWeight = float(samplesPerPixel) / float(wideCount);
     const float narrowSampleWeight = narrowCount > 0 ? float(samplesPerPixel) / float(narrowCount) : 0.f;
 #else
-    float maxPathLength = getMaxpathLength(tcurr);
+    float maxPathLength = getMaxPathLength(tcurr);
 #endif
     LaserLightSampler lightSampler = LaserLightSampler(laserOrigin, laserDirection, laserCosAngle, laserPower);
     // Preserve separate streams so prefix replay never consumes reservoir/light RNG draws.
@@ -259,7 +259,7 @@ float3 tracePath(uint2 pixel, uint2 frameDim)
         bool useRoughGate = false;
 #if USE_SHRINK_MAPPING
         useRoughGate = sampleIndex >= narrowCount;
-        float maxPathLength = getMaxpathLength(tcurr, useRoughGate);
+        float maxPathLength = getMaxPathLength(tcurr, useRoughGate);
 #endif
         ShadingData surface = primary;
         IMaterialInstance material = primaryMaterial;

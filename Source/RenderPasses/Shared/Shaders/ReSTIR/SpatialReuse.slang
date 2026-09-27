@@ -183,13 +183,13 @@ struct SpatialReuse
 
             // Central -> neighbor: accumulate the central sample's pairwise weight.
             ShiftMappingDebugInfo debugInfo;
-            canonicalWeight += evaluate_canonical_shiftmap_weight(
+            canonicalWeight += evaluateCanonicalShiftWeight(
                 centralReservoir, centralSuffix, centralVertex, neighborReservoir.M, specularRoughnessThreshold,
                 neighborPrimary, neighborMaterial, neighborDepth,
                 neighborGateCenter, gateCenter, sg, debugInfo);
 
             // Neighbor -> central: shift the neighbor sample and stream it into the reservoir.
-            combine_reservoir_with_shiftmapping(
+            combineReservoirWithShiftMapping(
                 destination, neighborReservoir, centralReservoir.M, specularRoughnessThreshold,
                 primary, primaryMaterial, primaryDepth,
                 gateCenter, neighborGateCenter, 1.f, false,

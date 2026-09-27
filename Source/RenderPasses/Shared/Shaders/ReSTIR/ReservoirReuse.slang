@@ -31,7 +31,7 @@ float spatialPairCoefficient(float sourceMass, float sourceTarget,
 #if DEBUG_NEWTON_ITERATIONS
 // Keep counter-only control flow separate from the material/reservoir update.
 // Slang 2024.1.34 can loop in simplifyCFG with this bookkeeping in combine().
-uint4 finalize_reuse_statistics(uint4 stats, float mappingJacobian, float jacobian, float target)
+uint4 finalizeReuseStatistics(uint4 stats, float mappingJacobian, float jacobian, float target)
 {
     if (stats.z == 0)
         stats.x = uint(mappingJacobian > 0.f) & uint(isfinite(mappingJacobian));
@@ -140,7 +140,7 @@ bool shiftToPrefix(Reservoir source, VertexData y, ReconnectionSuffix suffix, fl
     float dt = K * (source.totalPathLength - sourceGate) + targetGate - targetLength;
     float tol = max(abs(dt) * gNewtonRelativeTolerance, 1e-6f);
     float jacobian = 0.f;
-    shifted.hit = path_length_aware_shift_mapping(x1, source.rcVertexHit, suffix.vertex, dt, jacobian, debugInfo, tol, sg);
+    shifted.hit = pathLengthAwareShiftMapping(x1, source.rcVertexHit, suffix.vertex, dt, jacobian, debugInfo, tol, sg);
     shifted.mappingJacobian = jacobian;
     jacobian *= K;
     // A rejected/non-finite shift must have zero support, not NaN weight.
@@ -167,7 +167,7 @@ bool shiftToPrefix(Reservoir source, VertexData y, ReconnectionSuffix suffix, fl
 // Stream `source` (M_other: the mass of the other reservoir in the pair) into `destination` with its pairwise MIS
 // weight. A canonical source keeps its own sample and only evaluates the other pixel's support; any other source
 // is shifted to the destination pixel (prefix ending at x1, gate targetGate).
-void combine_reservoir_with_shiftmapping(
+void combineReservoirWithShiftMapping(
     inout Reservoir destination,
     Reservoir source,
     float M_other,
@@ -260,7 +260,7 @@ void combine_reservoir_with_shiftmapping(
 #endif
     float shiftedTarget = getReservoirWeight(shifted.f);
 #if DEBUG_NEWTON_ITERATIONS
-    debugInfo.newtonStats = finalize_reuse_statistics(
+    debugInfo.newtonStats = finalizeReuseStatistics(
         debugInfo.newtonStats, shifted.mappingJacobian, shifted.jacobian, shiftedTarget);
 #endif
 
@@ -291,7 +291,7 @@ void combine_reservoir_with_shiftmapping(
 
 // Pairwise MIS weight of the canonical sample of `source` against another pixel (mass M_other, prefix ending at x1,
 // gate targetGate). y and suffix are the source's reconnection vertex and suffix (loadReconnectionSuffix).
-float evaluate_canonical_shiftmap_weight(
+float evaluateCanonicalShiftWeight(
     Reservoir source,
     ReconnectionSuffix suffix,
     const VertexData y,
@@ -346,7 +346,7 @@ Reservoir mergeReservoirPair(Reservoir canonical, ReuseDomain canonicalDomain, R
     ShiftMappingDebugInfo debugInfo = {};
 #endif
     // Other -> canonical.
-    combine_reservoir_with_shiftmapping(merged, other, canonical.M, roughnessThreshold,
+    combineReservoirWithShiftMapping(merged, other, canonical.M, roughnessThreshold,
         canonicalDomain.primary, canonicalDomain.material, canonicalDomain.primaryLength,
         canonicalDomain.gate, otherDomain.gate, K, false,
         canonicalDomain.lightPosition, canonicalDomain.lightDirection, rng
@@ -358,7 +358,7 @@ Reservoir mergeReservoirPair(Reservoir canonical, ReuseDomain canonicalDomain, R
 #endif
     );
     // Canonical -> other evaluates competing support, retaining the canonical sample.
-    combine_reservoir_with_shiftmapping(merged, canonical, other.M, roughnessThreshold,
+    combineReservoirWithShiftMapping(merged, canonical, other.M, roughnessThreshold,
         otherDomain.primary, otherDomain.material, otherDomain.primaryLength,
         otherDomain.gate, canonicalDomain.gate, 1.f / K, true,
         otherDomain.lightPosition, otherDomain.lightDirection, rng

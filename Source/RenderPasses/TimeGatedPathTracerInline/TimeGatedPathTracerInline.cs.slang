@@ -67,7 +67,7 @@ float3 tracePath(const uint2 pixel, const uint2 frameDim)
 
         ShadingData sd0 = loadShadingData(hit0, primaryRayOrigin, primaryRayDir);
         IMaterialInstance mi0 = gScene.materials.getMaterialInstance(sd0, ExplicitLodTextureSampler(0.f));
-        float maxPathLength = getMaxpathLength(tcurr);
+        float maxPathLength = getMaxPathLength(tcurr);
         LaserLightSampler lls = LaserLightSampler(laserOrigin, laserDirection, laserCosAngle, laserPower);
 
 
@@ -225,7 +225,7 @@ EllipsoidalEstimate estimateEllipsoidalPath(
     estimate.ellipsePdf = ellipsoidal.pdf;
     if (!(estimate.ellipsePdf > 1e-7f)) return estimate;
     // Match the cutoff that would stop the competing BSDF walk before reaching y.
-    if (prefixLength + ellipsoidal.distance * x.IoR < getMaxpathLength(tcurr))
+    if (prefixLength + ellipsoidal.distance * x.IoR < getMaxPathLength(tcurr))
         estimate.bsdfPdf = material.evalPdf(x, ellipsoidal.direction, kUseImportanceSampling);
 
     float3 firstScatter = material.eval(x, ellipsoidal.direction, sg);
