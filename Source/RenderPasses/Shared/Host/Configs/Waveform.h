@@ -1,7 +1,7 @@
 #pragma once
 #include "ConfigUtils.h"
 
-/// Periodic waveform (WAVEFORM_* in Shared/Shaders/Utils/Waveforms.slang): zero mean, in [-1, 1].
+/// Periodic waveform (WAVEFORM_* in Shared/Shaders/Utils/Waveform.slang): zero mean, in [-1, 1].
 enum class Waveform : uint32_t
 {
     Cos = 0,

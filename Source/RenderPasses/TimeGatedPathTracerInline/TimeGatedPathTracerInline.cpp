@@ -153,7 +153,6 @@ void TimeGatedPathTracerInline::bindShaderData(const ShaderVar& var, const Rende
 
     var["CB"]["gFrameCount"] = mFrameCount;
     var["CB"]["gFrameDim"] = renderData.getDefaultTextureDims();
-    var["CB"]["gPRNGDimension"] = InlinePass::getPRNGDimension(renderData);
     var["CB"]["specularRoughnessThreshold"] = mOptions.ellipsoidalSampling.ellipsoidRoughnessThreshold;
     var["CB"]["samplesPerPixel"] = mOptions.pathTracing.samplesPerPixel;
     LaserState::resolve(renderData).bindShaderData(var["CB"]);
@@ -234,7 +233,7 @@ void TimeGatedPathTracerInline::renderUI(Gui::Widgets& widget)
 void TimeGatedPathTracerInline::setScene(RenderContext* pRenderContext, const ref<Scene>& pScene)
 {
     // Clear data for previous scene.
-    // After changing scene, the raytracing program should to be recreated.
+    // After changing scene, the raytracing program should be recreated.
     mpComputePass = nullptr;
     mTriangleSampler.reset();
     mFrameCount = 0;

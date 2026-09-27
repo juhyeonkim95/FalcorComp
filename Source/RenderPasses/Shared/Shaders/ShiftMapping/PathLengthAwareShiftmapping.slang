@@ -1,4 +1,3 @@
-import RenderPasses.Shared.Shaders.Utils.TimeGate;
 import Utils.Sampling.SampleGenerator;
 import Utils.Math.MathHelpers;
 import Scene.RaytracingInline;
@@ -9,7 +8,6 @@ import RenderPasses.Shared.Shaders.PathLengthNewtonSolver.SurfaceOps.RayTraceHem
 import RenderPasses.Shared.Shaders.PathLengthNewtonSolver.SurfaceOps.CartesianRayChart;
 
 import RenderPasses.Shared.Shaders.PathLengthNewtonSolver.NewtonSolver;
-import Rendering.Lights.EmissiveLightSampler;
 
 #include "Scene/SceneDefines.slangh"
 #include "Utils/Math/MathConstants.slangh"
@@ -25,22 +23,18 @@ import Rendering.Lights.EmissiveLightSampler;
 cbuffer Shiftmap_CB
 {
     float2 gGaugeAxis;
-    uint gShiftMappingMethod;
-    uint gGaugeMode;
     uint gNewtonMaxIteration;
     float gNewtonRelativeTolerance;
-    EmissiveLightSampler emissiveSamplerShiftmap;           ///< Emissive light sampler. Only valid when kUseEmissiveLights == true.
 }
 
-// The render pass specializes the selected gauge, avoiding runtime gauge
-// branches inside every Newton evaluation. Standalone users retain the uniform.
+// The host sets the gauge as a define (ShiftMappingConfig), so the Newton evaluations do not branch on it.
+#ifndef SHIFT_MAPPING_GAUGE_MODE
+#define SHIFT_MAPPING_GAUGE_MODE 0
+#endif
+
 GaugeMode getShiftGaugeMode()
 {
-#ifdef SHIFT_MAPPING_GAUGE_MODE
     return GaugeMode(SHIFT_MAPPING_GAUGE_MODE);
-#else
-    return GaugeMode(gGaugeMode);
-#endif
 }
 
 struct ShiftMapDebugInfo

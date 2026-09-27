@@ -157,7 +157,6 @@ DefineList TransientHistogramPathTracerInline::getShaderDefines(const RenderData
     DefineList defines = mOptions.pathTracing.getDefines();
     defines.add(LaserState::resolve(renderData).getDefines());
     defines.add("USE_KERNEL_DENSITY_ESTIMATION", mOptions.histogram.useKernelDensityEstimation ? "1" : "0");
-    defines.add("ACCUMULATE_HISTOGRAM", mOptions.accumulate ? "1" : "0");
 
     defines.add("LIGHT_SAMPLING_METHOD", std::to_string((uint32_t)mOptions.samplingMethod));
     defines.add("DIRECT_CONNECTION", std::to_string((uint32_t)SamplingMethod::Direct));
@@ -185,7 +184,6 @@ void TransientHistogramPathTracerInline::bindShaderData(const ShaderVar& var, co
     const ref<Texture> pColor = renderData.getTexture("color");
     var["CB"]["gFrameCount"] = mFrameCount;
     var["CB"]["gFrameDim"] = uint2(pColor->getWidth(), pColor->getHeight());
-    var["CB"]["gPRNGDimension"] = InlinePass::getPRNGDimension(renderData);
     var["CB"]["samplesPerPixel"] = mOptions.pathTracing.samplesPerPixel;
     var["CB"]["initialWindowRatio"] = mOptions.histogram.initialWindowRatio;
     LaserState::resolve(renderData).bindShaderData(var["CB"]);
@@ -329,7 +327,7 @@ void TransientHistogramPathTracerInline::renderUI(Gui::Widgets& widget)
 void TransientHistogramPathTracerInline::setScene(RenderContext* pRenderContext, const ref<Scene>& pScene)
 {
     // Clear data for previous scene.
-    // After changing scene, the raytracing program should to be recreated.
+    // After changing scene, the raytracing program should be recreated.
     mpComputePass = nullptr;
     mFrameCount = 0;
     resetHistogram();

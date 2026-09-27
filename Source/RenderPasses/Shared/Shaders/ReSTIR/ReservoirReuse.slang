@@ -318,10 +318,6 @@ float evaluate_canonical_shiftmap_weight(
             f_curr_as_other = 0.0;
         }
 
-        if(length(f_curr_as_other) == 0.0){
-            debugInfo.status = 1;
-        }
-
         float pHat_proxy_curr_as_other = (jacobian == 0.0) ? 0.0 : getReservoirWeight(f_curr_as_other);
         float pHat_proxy_curr_as_curr = getReservoirWeight(curr_reservoir.f);
 

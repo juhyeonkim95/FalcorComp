@@ -9,14 +9,3 @@ cbuffer TransientHistogram
     float tmax;
     float tunit;
 };
-
-bool getPathLengthIndex(float distance, out uint idx, out float residual){
-	if(distance < tmin || distance > tmax){
-		return false; 
-	}
-	float v = (distance - tmin) / tunit;
-	idx = uint(v);
-	idx = clamp(idx, 0, tbin - 1);
-	residual = frac(v);
-	return true;
-}

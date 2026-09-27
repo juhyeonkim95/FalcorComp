@@ -5,12 +5,6 @@ import RenderPasses.Shared.Shaders.Lights.LightConnection;
 #include "Scene/SceneDefines.slangh"
 #include "Utils/Math/MathConstants.slangh"
 
-// Set by the host: 1 when the histogram sums frames (the host clears it only on reset), 0 for one frame per
-// histogram (the host clears it every frame).
-#ifndef ACCUMULATE_HISTOGRAM
-#define ACCUMULATE_HISTOGRAM 0
-#endif
-
 import Utils.Math.MathHelpers;
 import Utils.Geometry.GeometryHelpers;
 import Utils.Sampling.SampleGenerator;
@@ -24,7 +18,6 @@ cbuffer CB
 {
     uint2 gFrameDim;
     uint gFrameCount;    // Frame count since scene was loaded.
-    uint gPRNGDimension; // First available PRNG dimension.
 
     float3 laserOrigin;
     float3 laserDirection;

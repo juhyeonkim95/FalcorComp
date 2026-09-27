@@ -89,24 +89,19 @@ float getMaxpathLength(float target_distance, bool use_rough = false)
  {
 	float target_time_gate_window = use_rough ? time_gate_window_rough : time_gate_window;
 	float v = (distance - target_distance) / (target_time_gate_window);
-	float epsilon = 1e-6;
-	// return 0.5 * (cos(M_2PI * v) + 1.0);
     switch(time_gate_mode)
 	{	
 		case TIME_GATE_ALL:{
 			return 1.0;
 		}
 		case TIME_GATE_BOX:{
-			// return abs(v) < 0.5 - epsilon ? 1.0 : (abs(v) > 0.5 + epsilon) ? 0.0 : ((0.5 - abs(v)) / epsilon + 1) * 0.5;
 			return abs(v) < 0.5 ? 1.0 : 0.0;
 		}
 		case TIME_GATE_TENT:{
 			return max(1.0 - abs(v), 0.0);
 		}
 		case TIME_GATE_COS:{
-			// return 0.5 * (cos(M_2PI * v) + 1.0);
 			return (cos(M_2PI * v));
-			// return (cos(M_2PI * (v + time_gate_window_rough)));
 		}
 		case TIME_GATE_GAUSSIAN:{
 			return gaussianGate(v);

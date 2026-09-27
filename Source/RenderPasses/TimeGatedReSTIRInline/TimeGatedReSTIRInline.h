@@ -40,20 +40,13 @@
 using namespace Falcor;
 
 
-/**
- * Minimal path tracer.
- *
- * This pass implements a minimal brute-force path tracer. It does purposely
- * not use any importance sampling or other variance reduction techniques.
- * The output is unbiased/consistent ground truth images, against which other
- * renderers can be validated.
- *
- * Note that transmission and nested dielectrics are not yet supported.
+/** Time-gated ReSTIR: initial candidates from path tracing, then spatial and temporal reuse of the paths across pixels,
+ * shifted with a path-length-aware shift mapping so that they stay inside the time gate.
  */
 class TimeGatedReSTIRInline : public RenderPass
 {
 public:
-    FALCOR_PLUGIN_CLASS(TimeGatedReSTIRInline, "TimeGatedReSTIRInline", "Minimal path tracer.");
+    FALCOR_PLUGIN_CLASS(TimeGatedReSTIRInline, "TimeGatedReSTIRInline", "Time-gated ReSTIR.");
 
     static ref<TimeGatedReSTIRInline> create(ref<Device> pDevice, const Properties& props)
     {

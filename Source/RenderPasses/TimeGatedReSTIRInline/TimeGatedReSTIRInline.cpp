@@ -34,7 +34,6 @@
 static void regTimeGatedReSTIRInline(pybind11::module& m)
 {
     pybind11::class_<TimeGatedReSTIRInline, RenderPass, ref<TimeGatedReSTIRInline>> pass(m, "TimeGatedReSTIRInline");
-    // pass.def_property("m", &MinimalTimeGatedPathTracer::isEnabled, &MinimalTimeGatedPathTracer::setEnabled);
     pass.def("increment_time_gate_frame", &TimeGatedReSTIRInline::incrementTimeGateFrame);
     pass.def("set_time_gate_info", &TimeGatedReSTIRInline::setTimeGateInfo);
 }
@@ -238,9 +237,7 @@ void TimeGatedReSTIRInline::bindShaderData(const ShaderVar& var, const RenderDat
     var["currReservoirs"] = mReSTIR.currReservoirs;
 
     var["CB"]["gFrameCount"] = mFrameCount;
-    var["CB"]["gRandomSeed"] = mRandomSeed;
     var["CB"]["gFrameDim"] = renderData.getDefaultTextureDims();
-    var["CB"]["gPRNGDimension"] = InlinePass::getPRNGDimension(renderData);
     var["CB"]["specularRoughnessThreshold"] = mOptions.restir.reconnectionRoughnessThreshold;
     var["CB"]["specularRoughnessThresholdEllipsoid"] = mOptions.ellipsoidalSampling.ellipsoidRoughnessThreshold;
     var["CB"]["samplesPerPixel"] = mOptions.pathTracing.samplesPerPixel;
@@ -280,7 +277,6 @@ void TimeGatedReSTIRInline::spatialReuse(RenderContext* pRenderContext, const Re
     auto var = rootVar["CB"]["gSpatialReuse"];
     const uint2 frameDim = renderData.getDefaultTextureDims();
 
-    mTriangleSampler.bindShaderData(rootVar["Shiftmap_CB"]["emissiveSamplerShiftmap"]);
     var["gFrameCount"] = mFrameCount;
     var["gFrameDim"] = frameDim;
     var["neighborOffsets"] = mReSTIR.neighborOffsets;

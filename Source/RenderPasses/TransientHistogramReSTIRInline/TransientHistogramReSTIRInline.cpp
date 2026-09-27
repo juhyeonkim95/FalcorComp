@@ -32,7 +32,6 @@
 static void regTransientHistogramReSTIRInline(pybind11::module& m)
 {
     pybind11::class_<TransientHistogramReSTIRInline, RenderPass, ref<TransientHistogramReSTIRInline>> pass(m, "TransientHistogramReSTIRInline");
-    // pass.def_property("m", &MinimalTimeGatedPathTracer::isEnabled, &MinimalTimeGatedPathTracer::setEnabled);
     pass.def("reset_histogram", &TransientHistogramReSTIRInline::resetHistogram);
 }
 
@@ -191,9 +190,7 @@ void TransientHistogramReSTIRInline::bindShaderData(const ShaderVar& var, const 
     var["currReservoirs"] = mReSTIR.currReservoirs;
 
     var["CB"]["gFrameCount"] = mFrameCount;
-    var["CB"]["gRandomSeed"] = mRandomSeed;
     var["CB"]["gFrameDim"] = renderData.getDefaultTextureDims();
-    var["CB"]["gPRNGDimension"] = InlinePass::getPRNGDimension(renderData);
     var["CB"]["specularRoughnessThreshold"] = mOptions.restir.reconnectionRoughnessThreshold;
     var["CB"]["samplesPerPixel"] = mOptions.pathTracing.samplesPerPixel;
     var["CB"]["gTemporalHistoryLength"] = mOptions.restir.temporalHistoryLength;

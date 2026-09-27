@@ -29,7 +29,7 @@ cbuffer ProjectorPatternCB
     float gPatternSign;  // -1 inverts the pattern.
     uint gUnsignedModulation; // Show 0.5 p + 0.5 instead of p.
 
-    uint gWaveform;      // Periodic: WAVEFORM_* (Waveforms.slang).
+    uint gWaveform;      // Periodic: WAVEFORM_* (Waveform.slang).
     float gWavelength;   // Periodic: period in uv units.
     float gPhase;        // Periodic: offset in periods, subtracted as for CW-ToF: w(coord / wavelength - phase).
 

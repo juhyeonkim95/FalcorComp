@@ -88,7 +88,7 @@ void gauge_terms(
     J0Delta = float2(0.0, 0.0) - 0.5 * Hmul(H0, RDel);
 }
 
-// Restored constant-offset solver: c is held fixed for the Jacobian.
+// Constant-offset solver: c is held fixed for the Jacobian.
 NewtonResult solve_xi_prime_newton_det<SurfaceOps : ISurfaceOps>(
     inout SurfaceOps ops,
     float2 xi, float c,
@@ -110,7 +110,6 @@ NewtonResult solve_xi_prime_newton_det<SurfaceOps : ISurfaceOps>(
 
     // Start eval (fixed during solve)
     float  L0; float2 g0; float3 H0;
-    // ops.update(xi);
     if(!ops.eval(xi, L0, g0, H0)){
         R.status = NewtonResultStatus::INVALID_POINT; return R;
     }
@@ -129,8 +128,6 @@ NewtonResult solve_xi_prime_newton_det<SurfaceOps : ISurfaceOps>(
     float n2 = max(dot(dir, dir), 1e-20);
     dir *= rsqrt(n2); // normalize
 
-    // float g0dir = dot(g0, dir);
-    // float s0 = (abs(g0dir) > epsDir) ? (c / g0dir) : 0.0;
     float2 e = xi; //ops.project(xi + s0 * dir);
 
     float  L1 = L0; float2 g1 = g0; float3 H1 = H0;
@@ -144,7 +141,6 @@ NewtonResult solve_xi_prime_newton_det<SurfaceOps : ISurfaceOps>(
     for (int it = 0; it < maxIters; ++it)
     {
         R.iters = it + 1;
-        // ops.update(e);
 
         Delta = e - xi;
         gauge_terms(mode, a_const, g0, g1, H0, H1, Delta, a, JpDelta, J0Delta);
@@ -159,7 +155,6 @@ NewtonResult solve_xi_prime_newton_det<SurfaceOps : ISurfaceOps>(
 
         inv2(a11, a12, b11, b12, inv00, inv01, inv10, inv11, detJp);
         if (abs(detJp) < epsDet) { R.status = NewtonResultStatus::SINGULAR; R.detJ = 0.0; return R; }
-        // if (abs(F1) < tol && abs(F2) < tol) {success = true; break;}
 
         // Δη' = - Jp^{-1} F
         float rhs1 = -F1, rhs2 = -F2;
@@ -188,14 +183,6 @@ NewtonResult solve_xi_prime_newton_det<SurfaceOps : ISurfaceOps>(
         }
 
 
-        // Delta = e - xi;
-        // gauge_terms(mode, a_const, g0, g1, H0, H1, Delta, a, JpDelta, J0Delta);
-        // if(!update_eta || F1_try > F1){
-        //     beta *= 0.5f;
-        // } else {
-        //     e = e_try;
-        // }
-        // e = ops.project(e + float2(dx, dy));
     }
     // Final point
     R.xi_prime = e;

@@ -16,7 +16,6 @@ cbuffer CB
 {
     uint2 gFrameDim;
     uint gFrameCount;    // Frame count since scene was loaded.
-    uint gPRNGDimension; // Host-bound interface field; dimension offset is not yet consumed.
 
     float3 laserOrigin;
     float3 laserDirection;

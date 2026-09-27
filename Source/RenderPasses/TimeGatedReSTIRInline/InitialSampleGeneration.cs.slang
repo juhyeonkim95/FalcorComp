@@ -30,9 +30,7 @@ cbuffer CB
 {
     uint2 gFrameDim;
     uint gFrameCount;    // Frame count since scene was loaded.
-    uint gRandomSeed;    // Frame count since scene was loaded.
 
-    uint gPRNGDimension; // First available PRNG dimension.
     uint samplesPerPixel;
     float specularRoughnessThreshold;
     float specularRoughnessThresholdEllipsoid;

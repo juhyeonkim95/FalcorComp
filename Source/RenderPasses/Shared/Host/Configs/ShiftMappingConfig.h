@@ -86,8 +86,6 @@ struct ShiftMappingConfig
     void bindShaderData(const ShaderVar& shiftmapVar) const
     {
         shiftmapVar["gGaugeAxis"] = gaugeAxis;
-        shiftmapVar["gGaugeMode"] = uint(gaugeMode);
-        shiftmapVar["gShiftMappingMethod"] = uint(shiftmapMethod);
         shiftmapVar["gNewtonMaxIteration"] = newtonMaxIteration;
         shiftmapVar["gNewtonRelativeTolerance"] = newtonRelativeTolerance;
     }

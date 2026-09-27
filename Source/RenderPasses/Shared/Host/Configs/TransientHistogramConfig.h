@@ -107,7 +107,7 @@ struct TransientHistogramConfig
         }
         const bool kde = allowKernelDensityEstimation && useKernelDensityEstimation;
 
-        // Kernels implemented by the histogram filters in TransientUtils.
+        // Kernels implemented by the histogram filters in TimeGate.slang.
         static const Gui::DropdownList kBinFilterList = {
             {(uint32_t)TimeGateMode::BOX, "Box"},
             {(uint32_t)TimeGateMode::TENT, "Tent"},

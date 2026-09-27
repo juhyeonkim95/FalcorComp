@@ -8,8 +8,8 @@
 
 using namespace Falcor;
 
-/** Helpers shared by the inline ray tracing render passes (time-gated and transient histogram path tracers
- * and ReSTIR).
+/** Helpers shared by the inline ray tracing render passes: the ToF path tracers and ReSTIR passes (time-gated,
+ * transient histogram, CW-ToF) and the structured-light path tracer.
  */
 namespace InlinePass
 {
@@ -94,13 +94,6 @@ inline void flagOptionsChanged(const RenderData& renderData)
     auto& dict = renderData.getDictionary();
     auto flags = dict.getValue(kRenderPassRefreshFlags, RenderPassRefreshFlags::None);
     dict[Falcor::kRenderPassRefreshFlags] = flags | Falcor::RenderPassRefreshFlags::RenderOptionsChanged;
-}
-
-/// First PRNG dimension left free by upstream passes (e.g. depth of field in the V-buffer).
-inline uint getPRNGDimension(const RenderData& renderData)
-{
-    auto& dict = renderData.getDictionary();
-    return dict.keyExists(kRenderPassPRNGDimension) ? dict[kRenderPassPRNGDimension] : 0u;
 }
 
 /// Throws on scene changes that need shader recompilation, and warns when depth of field is used without the

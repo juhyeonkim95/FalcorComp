@@ -168,7 +168,6 @@ void StructuredLightPathTracerInline::bindShaderData(const ShaderVar& var, const
 {
     var["CB"]["gFrameCount"] = mFrameCount;
     var["CB"]["gFrameDim"] = renderData.getDefaultTextureDims();
-    var["CB"]["gPRNGDimension"] = InlinePass::getPRNGDimension(renderData);
     var["CB"]["samplesPerPixel"] = mOptions.pathTracing.samplesPerPixel;
     var["CB"]["gProjectorSampleCount"] = mOptions.projectorSampleCount;
     mOptions.projector.bindShaderData(var);
@@ -260,7 +259,7 @@ void StructuredLightPathTracerInline::renderUI(Gui::Widgets& widget)
 void StructuredLightPathTracerInline::setScene(RenderContext* pRenderContext, const ref<Scene>& pScene)
 {
     // Clear data for previous scene.
-    // After changing scene, the raytracing program should to be recreated.
+    // After changing scene, the raytracing program should be recreated.
     mpComputePass = nullptr;
     mFrameCount = 0;
     mOptionsChanged = true;
