@@ -5,6 +5,7 @@
 import Scene.RaytracingInline;
 import Utils.Sampling.SampleGenerator;
 import RenderPasses.Shared.Shaders.Utils.LoadShadingData;
+import RenderPasses.Shared.Shaders.Utils.RayUtils;
 
 cbuffer CB
 {
@@ -30,12 +31,6 @@ RWTexture2D<float4> gOutput;
 
 #define is_valid(name) (is_valid_##name != 0)
 
-float3 getPrimaryRayDir(uint2 pixel)
-{
-    if (is_valid(gViewW))
-        return -gViewW[pixel].xyz;
-    return gScene.camera.computeRayPinhole(pixel, gFrameDim).dir;
-}
 
 // Light the laser puts on the surface seen in `pixel`, as seen from the camera (not time gated).
 float3 laserSpot(uint2 pixel)
@@ -43,7 +38,7 @@ float3 laserSpot(uint2 pixel)
     HitInfo hit = HitInfo(gVBuffer[pixel]);
     if (!hit.isValid())
         return float3(0.f);
-    ShadingData sd = loadShadingData(hit, gScene.camera.getPosition(), getPrimaryRayDir(pixel));
+    ShadingData sd = loadShadingData(hit, gScene.camera.getPosition(), getPrimaryRayDir(pixel, gFrameDim, gViewW));
     let material = gScene.materials.getMaterialInstance(sd, ExplicitLodTextureSampler(0.f));
     SampleGenerator sg = SampleGenerator(pixel, gFrameCount);
     float3 toLaser = laserOrigin - sd.posW;
@@ -90,7 +85,7 @@ float lengthWhereNonPositive(float a, float b, float c, float lo, float hi)
 float lengthInCone(uint2 pixel)
 {
     float3 origin = gScene.camera.getPosition();
-    float3 dir = normalize(getPrimaryRayDir(pixel));
+    float3 dir = normalize(getPrimaryRayDir(pixel, gFrameDim, gViewW));
     HitInfo hit = HitInfo(gVBuffer[pixel]);
     float tSurface = hit.isValid() ? length(loadShadingData(hit, origin, dir).posW - origin) : FLT_MAX;
 

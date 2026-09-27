@@ -24,6 +24,7 @@ import RenderPasses.Shared.Shaders.Lights.LaserLightSampler;
 import RenderPasses.Shared.Shaders.Lights.LightConnection;
 import RenderPasses.Shared.Shaders.Lights.EllipsoidalSampling;
 import RenderPasses.Shared.Shaders.Utils.SingleChannel;
+import RenderPasses.Shared.Shaders.Utils.RayUtils;
 
 
 cbuffer CB
@@ -83,14 +84,6 @@ EmissiveLightSampler emissiveSampler;
 static const bool kUseImportanceSampling = USE_IMPORTANCE_SAMPLING;
 static const bool kUseEnvBackground = USE_ENV_BACKGROUND;
 
-float3 getPrimaryRayDir(uint2 pixel, uint2 frameDim)
-{
-#if is_valid_gViewW
-    return -gViewW[pixel].xyz;
-#else
-    return gScene.camera.computeRayPinhole(pixel, frameDim).dir;
-#endif
-}
 
 #if LIGHT_SAMPLING_METHOD != DIRECT_CONNECTION
 // A terminal ellipse branch inserts one surface, leaving the replayable BSDF walk
@@ -270,7 +263,7 @@ Reservoir reuseTemporalHistory(Reservoir fresh, uint2 pixel, ShadingData primary
 float3 evalPrimaryDirect(uint2 pixel, ShadingData primary, IMaterialInstance primaryMaterial, float primaryLength)
 {
     LaserLightSampler lightSampler = LaserLightSampler(laserOrigin, laserDirection, laserCosAngle, laserPower);
-    SampleGenerator sg = SampleGenerator(pixel, gFrameCount + 7919);
+    SampleGenerator sg = createPixelSampleGenerator(pixel, gFrameCount, kDirectSampleStream);
     float3 direct = 0.f;
     for (uint i = 0; i < samplesPerPixel; ++i)
     {
@@ -297,7 +290,7 @@ float3 tracePath(uint2 pixel, uint2 frameDim)
 {
     uint index = pixel.y * frameDim.x + pixel.x;
     HitInfo primaryHit = HitInfo(gVBuffer[pixel]);
-    float3 primaryDirection = getPrimaryRayDir(pixel, frameDim);
+    float3 primaryDirection = getPrimaryRayDir(pixel, frameDim, gViewW);
     Reservoir reservoir = Reservoir();
     if (!primaryHit.isValid())
     {
@@ -327,9 +320,9 @@ float3 tracePath(uint2 pixel, uint2 frameDim)
 #endif
     LaserLightSampler lightSampler = LaserLightSampler(laserOrigin, laserDirection, laserCosAngle, laserPower);
     // Preserve separate streams so prefix replay never consumes reservoir/light RNG draws.
-    SampleGenerator rng = SampleGenerator(pixel, gFrameCount);
-    SampleGenerator bsdfRng = SampleGenerator(pixel, gFrameCount + 151);
-    SampleGenerator lightRng = SampleGenerator(pixel, gFrameCount + 5713);
+    SampleGenerator rng = createPixelSampleGenerator(pixel, gFrameCount, kReservoirSampleStream);
+    SampleGenerator bsdfRng = createPixelSampleGenerator(pixel, gFrameCount, kPathSampleStream);
+    SampleGenerator lightRng = createPixelSampleGenerator(pixel, gFrameCount, kLightSampleStream);
 
     for (uint sampleIndex = 0; sampleIndex < samplesPerPixel; ++sampleIndex)
     {

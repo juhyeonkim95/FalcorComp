@@ -11,6 +11,7 @@ import Utils.Geometry.GeometryHelpers;
 import Utils.Sampling.SampleGenerator;
 import Rendering.Lights.LightHelpers;
 import RenderPasses.Shared.Shaders.Utils.TimeGate;
+import RenderPasses.Shared.Shaders.Utils.RayUtils;
 import Utils.Geometry.EllipsoidIntersection;
 import Rendering.Lights.EmissiveLightSampler;
 import Rendering.Lights.EmissiveLightSamplerHelpers;
@@ -42,43 +43,12 @@ RWTexture2D<float4> gOutputColor;
 EmissiveLightSampler emissiveSampler; // Triangle-selection hierarchy for ellipsoidal connections.
 
 // Static configuration based on defines set from the host.
-#define is_valid(name) (is_valid_##name != 0)
 static const uint kMaxBounces = MAX_BOUNCES;
 static const bool kComputeDirect = COMPUTE_DIRECT;
 static const bool kUseImportanceSampling = USE_IMPORTANCE_SAMPLING;
 static const bool kUseEnvBackground = USE_ENV_BACKGROUND;
-static const bool kUseAlphaTest = USE_ALPHA_TEST;
 
 static const float3 kDefaultBackgroundColor = float3(0, 0, 0);
-static const float kRayTMax = FLT_MAX;
-
-
-HitInfo traceRay(const float3 origin, const float3 dir, out float hitT)
-{
-    Ray ray = Ray(origin, dir, 0.0, kRayTMax);
-    SceneRayQuery<kUseAlphaTest> sceneRayQuery;
-    return sceneRayQuery.traceRay(ray, hitT);
-}
-
-
-/**
- * Returns the primary ray's direction.
- */
-float3 getPrimaryRayDir(uint2 launchIndex, uint2 launchDim, const Camera camera)
-{
-    if (is_valid(gViewW))
-    {
-        // If we have the view vector bound as a buffer, just fetch it. No need to compute anything.
-        return -gViewW[launchIndex].xyz;
-    }
-    else
-    {
-        // Compute the view vector. This must exactly match what the G-buffer pass is doing (jitter etc.).
-        // Note that we do not take depth-of-field into account as it would require exactly matching the
-        // sample generator between the passes, which is error prone. The host side will issue a warning instead.
-        return camera.computeRayPinhole(launchIndex, launchDim).dir;
-    }
-}
 
 
 // Trace camera paths and connect them to a sampled laser endpoint.
@@ -87,13 +57,13 @@ float3 tracePath(const uint2 pixel, const uint2 frameDim)
     float3 outColor = float3(0.f);
 
     const float3 primaryRayOrigin = gScene.camera.getPosition();
-    const float3 primaryRayDir = getPrimaryRayDir(pixel, frameDim, gScene.camera);
+    const float3 primaryRayDir = getPrimaryRayDir(pixel, frameDim, gViewW);
 
     const HitInfo hit0 = HitInfo(gVBuffer[pixel]);
 
     if (hit0.isValid())
     {
-        SampleGenerator sg = SampleGenerator(pixel, gFrameCount + 151);
+        SampleGenerator sg = createPixelSampleGenerator(pixel, gFrameCount, kPathSampleStream);
 
         ShadingData sd0 = loadShadingData(hit0, primaryRayOrigin, primaryRayDir);
         IMaterialInstance mi0 = gScene.materials.getMaterialInstance(sd0, ExplicitLodTextureSampler(0.f));

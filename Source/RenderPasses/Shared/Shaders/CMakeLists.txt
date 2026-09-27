@@ -2,6 +2,7 @@
 # so they are copied to the shader output directory with their folders kept.
 set(shared_shaders
     Utils/LoadShadingData.slang
+    Utils/RayUtils.slang
     Utils/SingleChannel.slang
     Utils/TimeGate.slang
     Utils/TransientHistogram.slang

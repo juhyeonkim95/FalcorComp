@@ -5,6 +5,7 @@
 import Utils.Sampling.SampleGenerator;
 import Scene.RaytracingInline;
 import RenderPasses.Shared.Shaders.Lights.LaserLightSampler;
+import RenderPasses.Shared.Shaders.Utils.RayUtils;
 
 // Offset each surface endpoint toward the open segment. The point-light endpoint
 // has no surface to offset. BSDFs and path lengths still use unmodified positions.
@@ -13,10 +14,10 @@ bool checkLightVisibility(ShadingData surface, LightSample light)
     if (!light.valid) return false;
     float3 segment = light.posW() - surface.posW;
     if (!(dot(segment, segment) > 0.f)) return false;
-    float3 origin = surface.computeRayOrigin(dot(surface.getOrientedFaceNormal(), segment) >= 0.f);
+    float3 origin = rayOriginToward(surface, segment);
     float3 endpoint = light.posW();
 #if IS_LIGHT_SOURCE_LASER
-    endpoint = light.sd.computeRayOrigin(dot(light.getOrientedFaceNormal(), -segment) >= 0.f);
+    endpoint = rayOriginToward(light.sd, -segment);
 #endif
     float3 offsetSegment = endpoint - origin;
     if (!(dot(offsetSegment, segment) > 0.f)) return false;

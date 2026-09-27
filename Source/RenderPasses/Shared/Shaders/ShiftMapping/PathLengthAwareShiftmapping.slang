@@ -8,6 +8,7 @@ import RenderPasses.Shared.Shaders.PathLengthNewtonSolver.SurfaceOps.RayTraceHem
 import RenderPasses.Shared.Shaders.PathLengthNewtonSolver.SurfaceOps.CartesianRayChart;
 
 import RenderPasses.Shared.Shaders.PathLengthNewtonSolver.NewtonSolver;
+import RenderPasses.Shared.Shaders.Utils.RayUtils;
 
 #include "Scene/SceneDefines.slangh"
 #include "Utils/Math/MathConstants.slangh"
@@ -106,7 +107,7 @@ HitInfo path_length_aware_shift_mapping(
 float3 shift_ray_origin(ShadingData endpoint, bool isSurface, float3 destination)
 {
     if (!isSurface) return endpoint.posW;
-    return endpoint.computeRayOrigin(dot(endpoint.getOrientedFaceNormal(), destination - endpoint.posW) >= 0.f);
+    return rayOriginToward(endpoint, destination - endpoint.posW);
 }
 
 // Recover the surface endpoint using a direction and distance computed from the

@@ -9,6 +9,7 @@ import RenderPasses.Shared.Shaders.ReSTIR.Reservoirs;
 import RenderPasses.Shared.Shaders.Utils.LoadShadingData;
 import RenderPasses.Shared.Shaders.Lights.LaserLightSampler;
 import RenderPasses.Shared.Shaders.Lights.LightConnection;
+import RenderPasses.Shared.Shaders.Utils.RayUtils;
 
 float3 getPHat3(
     const ShadingData sd1,
@@ -74,8 +75,8 @@ bool checkVisibility(const ShadingData source, const ShadingData target)
 {
     float3 direction = target.posW - source.posW;
     // Offset each surface toward the other endpoint, including transmission connections.
-    float3 origin = source.computeRayOrigin(dot(source.getOrientedFaceNormal(), direction) >= 0.f);
-    float3 endpoint = target.computeRayOrigin(dot(target.getOrientedFaceNormal(), -direction) >= 0.f);
+    float3 origin = rayOriginToward(source, direction);
+    float3 endpoint = rayOriginToward(target, -direction);
     float3 segment = endpoint - origin;
     float distance = length(segment);
     if (!(distance > 0.f) || isinf(distance) || !(dot(segment, direction) > 0.f)) return false;

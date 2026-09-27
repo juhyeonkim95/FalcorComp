@@ -19,6 +19,7 @@ import Rendering.Lights.EmissiveLightSamplerHelpers;
 import Scene.RaytracingInline;
 import RenderPasses.Shared.Shaders.Utils.LoadShadingData;
 import RenderPasses.Shared.Shaders.Lights.LaserLightSampler;
+import RenderPasses.Shared.Shaders.Utils.RayUtils;
 
 // The x -> y segment of the ellipsoidal technique.
 struct EllipsoidalSample
@@ -124,7 +125,7 @@ bool sampleEllipsoid(ShadingData x, float prefixLength, LightSample light, float
     float3 segment = ellipseSample.p - x.posW;
     if (!(dot(segment, segment) > 0.f)) return false;
     sample.direction = normalize(segment);
-    float3 rayOrigin = x.computeRayOrigin(dot(x.getOrientedFaceNormal(), sample.direction) >= 0.f);
+    float3 rayOrigin = rayOriginToward(x, sample.direction);
     float3 visibilitySegment = ellipseSample.p - rayOrigin;
     if (!(dot(visibilitySegment, segment) > 0.f)) return false;
     SceneRayQuery<USE_ALPHA_TEST> query;

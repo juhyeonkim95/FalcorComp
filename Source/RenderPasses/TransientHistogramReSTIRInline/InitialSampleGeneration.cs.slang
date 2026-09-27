@@ -17,6 +17,7 @@ import RenderPasses.Shared.Shaders.Lights.LaserLightSampler;
 import RenderPasses.Shared.Shaders.Lights.LightConnection;
 import RenderPasses.Shared.Shaders.ReSTIR.PathReconstruction;
 import RenderPasses.Shared.Shaders.ReSTIR.InitialCandidates;
+import RenderPasses.Shared.Shaders.Utils.RayUtils;
 #if USE_TEMPORAL_REUSE
 import RenderPasses.Shared.Shaders.ReSTIR.ReservoirReuse;
 import RenderPasses.Shared.Shaders.ShiftMapping.PathLengthAwareShiftmapping;
@@ -72,14 +73,6 @@ RWTexture3D<float4> gTransientHistogram;
 // TimeGateMode::BOX; macros in imported Slang modules are not exported.
 static const uint kTimeGateBox = 1;
 
-float3 getPrimaryRayDir(uint2 pixel, uint2 frameDim)
-{
-#if is_valid_gViewW
-    return -gViewW[pixel].xyz;
-#else
-    return gScene.camera.computeRayPinhole(pixel, frameDim).dir;
-#endif
-}
 
 // The same completed path is a candidate for every gate it overlaps.
 // Box bins are disjoint, so that common case updates only one reservoir.
@@ -185,15 +178,15 @@ float3 tracePath(uint2 pixel, uint2 frameDim)
     if (!primaryHit.isValid()) return 0.f;
 
     float3 cameraPosition = gScene.camera.getPosition();
-    ShadingData primary = loadShadingData(primaryHit, cameraPosition, getPrimaryRayDir(pixel, frameDim));
+    ShadingData primary = loadShadingData(primaryHit, cameraPosition, getPrimaryRayDir(pixel, frameDim, gViewW));
     let primaryMaterial = gScene.materials.getMaterialInstance(primary, ExplicitLodTextureSampler(0.f));
     float primaryLength = length(primary.posW - cameraPosition);
     float maxPathLength = getMaxpathLength(tmin + (float(tbin) - 0.5f) * tunit);
     LaserLightSampler lightSampler = LaserLightSampler(laserOrigin, laserDirection, laserCosAngle, laserPower);
     // Prefix replay must not consume light or reservoir RNG draws.
-    SampleGenerator rng = SampleGenerator(pixel, gFrameCount);
-    SampleGenerator bsdfRng = SampleGenerator(pixel, gFrameCount + 151);
-    SampleGenerator lightRng = SampleGenerator(pixel, gFrameCount + 5713);
+    SampleGenerator rng = createPixelSampleGenerator(pixel, gFrameCount, kReservoirSampleStream);
+    SampleGenerator bsdfRng = createPixelSampleGenerator(pixel, gFrameCount, kPathSampleStream);
+    SampleGenerator lightRng = createPixelSampleGenerator(pixel, gFrameCount, kLightSampleStream);
 
     for (uint sampleIndex = 0; sampleIndex < samplesPerPixel; ++sampleIndex)
     {

@@ -12,6 +12,7 @@ import Rendering.Lights.LightHelpers;
 import Utils.Color.ColorHelpers;
 import RenderPasses.Shared.Shaders.Utils.TimeGate;
 import RenderPasses.Shared.Shaders.Utils.TransientHistogram;
+import RenderPasses.Shared.Shaders.Utils.RayUtils;
 import Scene.RaytracingInline;
 
 cbuffer CB
@@ -43,40 +44,9 @@ RWTexture3D<float4> gTransientHistogram;
 #endif
 
 // Static configuration based on defines set from the host.
-#define is_valid(name) (is_valid_##name != 0)
 static const uint kMaxBounces = MAX_BOUNCES;
 static const bool kComputeDirect = COMPUTE_DIRECT;
 static const bool kUseImportanceSampling = USE_IMPORTANCE_SAMPLING;
-static const bool kUseAlphaTest = USE_ALPHA_TEST;
-
-static const float kRayTMax = FLT_MAX;
-
-HitInfo traceRay(const float3 origin, const float3 dir, out float hitT)
-{
-    Ray ray = Ray(origin, dir, 0.0, kRayTMax);
-    SceneRayQuery<kUseAlphaTest> sceneRayQuery;
-    return sceneRayQuery.traceRay(ray, hitT);
-}
-
-
-/**
- * Returns the primary ray's direction.
- */
-float3 getPrimaryRayDir(uint2 launchIndex, uint2 launchDim, const Camera camera)
-{
-    if (is_valid(gViewW))
-    {
-        // If we have the view vector bound as a buffer, just fetch it. No need to compute anything.
-        return -gViewW[launchIndex].xyz;
-    }
-    else
-    {
-        // Compute the view vector. This must exactly match what the G-buffer pass is doing (jitter etc.).
-        // Note that we do not take depth-of-field into account as it would require exactly matching the
-        // sample generator between the passes, which is error prone. The host side will issue a warning instead.
-        return camera.computeRayPinhole(launchIndex, launchDim).dir;
-    }
-}
 
 
 // Histogram values are radiance density per unit path length, summed across frames.
@@ -124,8 +94,8 @@ float3 tracePath(const uint2 pixel, const uint2 frameDim)
     HitInfo primaryHit = HitInfo(gVBuffer[pixel]);
     if (!primaryHit.isValid()) return float3(0.f);
     float3 cameraOrigin = gScene.camera.getPosition();
-    ShadingData primary = loadShadingData(primaryHit, cameraOrigin, getPrimaryRayDir(pixel, frameDim, gScene.camera));
-    SampleGenerator sg = SampleGenerator(pixel, gFrameCount + 151);
+    ShadingData primary = loadShadingData(primaryHit, cameraOrigin, getPrimaryRayDir(pixel, frameDim, gViewW));
+    SampleGenerator sg = createPixelSampleGenerator(pixel, gFrameCount, kPathSampleStream);
     LaserLightSampler lightSampler = LaserLightSampler(laserOrigin, laserDirection, laserCosAngle, laserPower);
     float3 radiance = 0.f;
     // Preserve the existing per-frame progressive KDE bandwidth schedule.
@@ -239,10 +209,10 @@ float3 tracePathTriangleApprox(const uint2 pixel, const uint2 frameDim)
     HitInfo primaryHit = HitInfo(gVBuffer[pixel]);
     if (!primaryHit.isValid()) return float3(0.f);
     float3 cameraOrigin = gScene.camera.getPosition();
-    ShadingData primary = loadShadingData(primaryHit, cameraOrigin, getPrimaryRayDir(pixel, frameDim, gScene.camera));
+    ShadingData primary = loadShadingData(primaryHit, cameraOrigin, getPrimaryRayDir(pixel, frameDim, gViewW));
     IMaterialInstance primaryMaterial = gScene.materials.getMaterialInstance(primary, ExplicitLodTextureSampler(0.f));
     float primaryLength = length(primary.posW - cameraOrigin);
-    SampleGenerator sg = SampleGenerator(pixel, gFrameCount + 151);
+    SampleGenerator sg = createPixelSampleGenerator(pixel, gFrameCount, kPathSampleStream);
 
     // Preserve the approximation's collimated-laser assumption.
     LaserLightSampler sampler = LaserLightSampler(laserOrigin, laserDirection, 1.f, laserPower);
@@ -263,7 +233,7 @@ float3 tracePathTriangleApprox(const uint2 pixel, const uint2 frameDim)
         float3 direction = normalize(toCenter);
         if (abs(dot(direction, primary.getOrientedFaceNormal())) < 1e-5f) continue;
         float hitT;
-        float3 origin = primary.computeRayOrigin(dot(primary.getOrientedFaceNormal(), direction) >= 0.f);
+        float3 origin = rayOriginToward(primary, direction);
         HitInfo centerHit = traceRay(origin, direction, hitT);
         if (!centerHit.isValid() || centerHit.getType() != HitType::Triangle) continue;
         ShadingData centerSurface = loadShadingData(centerHit, origin, direction);

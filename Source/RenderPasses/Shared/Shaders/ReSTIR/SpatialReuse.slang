@@ -12,6 +12,7 @@ import RenderPasses.Shared.Shaders.ReSTIR.PathReconstruction;
 import RenderPasses.Shared.Shaders.ReSTIR.ReservoirReuse;
 import RenderPasses.Shared.Shaders.Utils.LoadShadingData;
 import RenderPasses.Shared.Shaders.ShiftMapping.PathLengthAwareShiftmapping;
+import RenderPasses.Shared.Shaders.Utils.RayUtils;
 
 cbuffer Laser_CB
 {
@@ -50,16 +51,6 @@ struct SpatialReuse
     RWTexture2D<uint4> gNewtonStatistics;
     RWTexture2D<float2> gMappingDistance;
 #endif
-
-    /// Direction of the camera's primary ray through `pixel`: the optional viewW input, or a pinhole ray.
-    float3 getPrimaryRayDir(int2 pixel)
-    {
-#if is_valid_gViewW
-        return -gViewW[pixel].xyz;
-#else
-        return gScene.camera.computeRayPinhole(uint2(pixel), gFrameDim).dir;
-#endif
-    }
 
     uint getLinearizedPixel(uint2 pixel)
     {
@@ -133,7 +124,7 @@ struct SpatialReuse
         }
 
         float3 cameraOrigin = gScene.camera.getPosition();
-        ShadingData primary = loadShadingData(primaryHit, cameraOrigin, getPrimaryRayDir(pixel));
+        ShadingData primary = loadShadingData(primaryHit, cameraOrigin, getPrimaryRayDir(pixel, gFrameDim, gViewW));
         IMaterialInstance primaryMaterial = gScene.materials.getMaterialInstance(primary, ExplicitLodTextureSampler(0.f));
         float primaryDepth = length(primary.posW - cameraOrigin);
 
@@ -187,7 +178,7 @@ struct SpatialReuse
 
                 HitInfo neighborHit = HitInfo(gVBuffer[neighborPixel]);
                 if (!neighborHit.isValid()) continue;
-                neighborPrimary = loadShadingData(neighborHit, cameraOrigin, getPrimaryRayDir(neighborPixel));
+                neighborPrimary = loadShadingData(neighborHit, cameraOrigin, getPrimaryRayDir(uint2(neighborPixel), gFrameDim, gViewW));
                 neighborDepth = length(neighborPrimary.posW - cameraOrigin);
                 if (!isValidGeometry(primary, neighborPrimary, primaryDepth, neighborDepth)) continue;
                 neighborMaterial = gScene.materials.getMaterialInstance(neighborPrimary, ExplicitLodTextureSampler(0.f));
