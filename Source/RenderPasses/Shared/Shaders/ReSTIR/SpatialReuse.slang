@@ -51,6 +51,16 @@ struct SpatialReuse
     RWTexture2D<float2> gMappingDistance;
 #endif
 
+    /// Direction of the camera's primary ray through `pixel`: the optional viewW input, or a pinhole ray.
+    float3 getPrimaryRayDir(int2 pixel)
+    {
+#if is_valid_gViewW
+        return -gViewW[pixel].xyz;
+#else
+        return gScene.camera.computeRayPinhole(uint2(pixel), gFrameDim).dir;
+#endif
+    }
+
     uint getLinearizedPixel(uint2 pixel)
     {
         return pixel.y * gFrameDim.x + pixel.x;
@@ -123,7 +133,7 @@ struct SpatialReuse
         }
 
         float3 cameraOrigin = gScene.camera.getPosition();
-        ShadingData primary = loadShadingData(primaryHit, cameraOrigin, -gViewW[pixel].xyz);
+        ShadingData primary = loadShadingData(primaryHit, cameraOrigin, getPrimaryRayDir(pixel));
         IMaterialInstance primaryMaterial = gScene.materials.getMaterialInstance(primary, ExplicitLodTextureSampler(0.f));
         float primaryDepth = length(primary.posW - cameraOrigin);
 
@@ -177,7 +187,7 @@ struct SpatialReuse
 
                 HitInfo neighborHit = HitInfo(gVBuffer[neighborPixel]);
                 if (!neighborHit.isValid()) continue;
-                neighborPrimary = loadShadingData(neighborHit, cameraOrigin, -gViewW[neighborPixel].xyz);
+                neighborPrimary = loadShadingData(neighborHit, cameraOrigin, getPrimaryRayDir(neighborPixel));
                 neighborDepth = length(neighborPrimary.posW - cameraOrigin);
                 if (!isValidGeometry(primary, neighborPrimary, primaryDepth, neighborDepth)) continue;
                 neighborMaterial = gScene.materials.getMaterialInstance(neighborPrimary, ExplicitLodTextureSampler(0.f));

@@ -84,7 +84,7 @@ the image plane is lit uniformly.
 * - `patternPhase`
   - float
   - `periodic`: offset, in periods. The pattern at coordinate $c$ along the axis is
-    $w(c / \lambda + \phi)$. (Default: `0`)
+    $w(c / \lambda - \phi)$, as for CW-ToF. (Default: `0`)
 * - `patternBits`
   - integer
   - `gray`, `xor`: the pattern has $2^\text{bits}$ columns. (Default: `10`)

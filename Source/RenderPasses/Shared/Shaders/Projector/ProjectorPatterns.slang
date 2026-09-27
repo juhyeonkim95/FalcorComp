@@ -31,7 +31,7 @@ cbuffer ProjectorPatternCB
 
     uint gWaveform;      // Periodic: WAVEFORM_* (Waveforms.slang).
     float gWavelength;   // Periodic: period in uv units.
-    float gPhase;        // Periodic: offset in periods.
+    float gPhase;        // Periodic: offset in periods, subtracted as for CW-ToF: w(coord / wavelength - phase).
 
     uint gPatternBits;   // Gray, XOR: 2^bits columns.
     uint gPatternBit;    // Gray, XOR: bit shown, 0 = finest.
@@ -108,7 +108,7 @@ struct ConstantPattern : IProjectorPattern
 struct PeriodicPattern : IProjectorPattern
 {
     /// Position in the pattern, in periods.
-    float periods(float2 uv) { return axisCoord(uv) / gWavelength + gPhase; }
+    float periods(float2 uv) { return axisCoord(uv) / gWavelength - gPhase; }
 
     float eval(float2 uv) { return evalWaveform(gWaveform, periods(uv)); }
 

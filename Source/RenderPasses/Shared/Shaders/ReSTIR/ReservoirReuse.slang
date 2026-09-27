@@ -177,7 +177,7 @@ void combine_reservoir_with_shiftmapping(
     float targetLength = other_d01 + length(other_x1.posW - v_curr.posW)
         + length(v_curr.posW - curr_x3.posW) + curr_d34;
     float dt = K * (curr_reservoir.totalPathLength - curr_t) + other_t - targetLength;
-    float tol = max(abs(dt) * 0.01f, 1e-6f);
+    float tol = max(abs(dt) * gNewtonRelativeTolerance, 1e-6f);
     HitInfo y_curr_as_other = path_length_aware_shift_mapping(
         other_x1, curr_reservoir.rcVertexHit, curr_x3, dt, jacobian, debugInfo, tol, sg);
 #if DEBUG_NEWTON_ITERATIONS
@@ -290,7 +290,7 @@ float evaluate_canonical_shiftmap_weight(
         float targetLength = other_d01 + length(other_x1.posW - v_curr.posW)
             + length(v_curr.posW - curr_x3.posW) + curr_reservoir.rcNextVertexPathLength;
         float dt = (curr_reservoir.totalPathLength - curr_t) + other_t - targetLength;
-        float tol = max(abs(dt) * 0.01f, 1e-6f);
+        float tol = max(abs(dt) * gNewtonRelativeTolerance, 1e-6f);
         HitInfo y_curr_as_other = path_length_aware_shift_mapping(
             other_x1, curr_reservoir.rcVertexHit, curr_x3, dt, jacobian, debugInfo, tol, sg);
         jacobian = select(isfinite(jacobian), max(jacobian, 0.f), 0.f);
