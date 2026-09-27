@@ -73,8 +73,9 @@ void combineUnsupportedShift(inout Reservoir destination, Reservoir source, bool
     }
 }
 
-// The part of a reservoir's path after its reconnection vertex y: the next vertex x3 (a surface, or the point light
-// at `lightPosition`), the optical length after x3 and the light arriving at x3.
+// Path notation as in Reservoir: camera -> ... -> a -> x -> y -> ... -> light, with x the reconnection vertex.
+// The suffix of a reservoir's path: the vertex y after x (a surface, or the point light at `lightPosition`), the
+// optical length after y and the light arriving at y.
 struct ReconnectionSuffix
 {
     ShadingData vertex;
@@ -108,7 +109,7 @@ ReconnectionSuffix loadReconnectionSuffix(Reservoir reservoir, float3 lightPosit
     return suffix;
 }
 
-// A source path moved onto a target pixel's camera prefix: the shifted reconnection vertex, its target function f
+// A source path moved onto a target pixel's camera prefix: the shifted reconnection vertex x, its target function f
 // (zero without support) and the area Jacobian.
 struct ShiftedPath
 {
@@ -120,61 +121,65 @@ struct ShiftedPath
     float totalPathLength;
 };
 
-// Shift the reconnection vertex y of `source` (gate sourceGate) to the prefix of another pixel, ending at x1 (gate
-// targetGate), keeping the suffix. K scales the path length offset from the gate center (gate-width ratio).
-// Returns false if the prefix cannot be replayed there.
-bool shiftToPrefix(Reservoir source, VertexData y, ReconnectionSuffix suffix, float sourceGate,
-    ShadingData x1, IMaterialInstance x1Material, float d01, float targetGate, float K, float roughnessThreshold,
-    inout SampleGenerator sg, inout ShiftMappingDebugInfo debugInfo, out ShiftedPath shifted)
+// Shift the reconnection vertex x of `source` (gate sourceGate) to the camera prefix of another pixel (primary hit
+// `primary` at optical length primaryLength, gate targetGate), keeping the suffix. K scales the path length offset
+// from the gate center (gate-width ratio). Returns false if the prefix cannot be replayed there.
+bool shiftToPrefix(Reservoir source, VertexData x, ReconnectionSuffix suffix, float sourceGate,
+    ShadingData primary, IMaterialInstance primaryMaterial, float primaryLength, float targetGate, float K,
+    float roughnessThreshold, inout SampleGenerator sg, inout ShiftMappingDebugInfo debugInfo, out ShiftedPath shifted)
 {
-    // Replay the camera prefix in the target pixel.
+    // Replay the camera prefix in the target pixel, from its primary hit to a.
+    ShadingData a = primary;
+    IMaterialInstance aMaterial = primaryMaterial;
+    float prefixLength = primaryLength;
     float3 prefixThroughput = float3(1.f);
-    if (!reconstructPrefix(source.rcVertexBounce, source.initRandomSeed, x1, x1Material, d01, prefixThroughput,
+    if (!reconstructPrefix(source.rcVertexBounce, source.initRandomSeed, a, aMaterial, prefixLength, prefixThroughput,
             roughnessThreshold))
     {
         shifted.jacobian = 0.f;
         return false;
     }
 
-    float targetLength = d01 + length(x1.posW - y.posW) + length(y.posW - suffix.vertex.posW) + suffix.length;
+    float targetLength = prefixLength + length(a.posW - x.posW) + length(x.posW - suffix.vertex.posW) + suffix.length;
     float dt = K * (source.totalPathLength - sourceGate) + targetGate - targetLength;
     float tol = max(abs(dt) * gNewtonRelativeTolerance, 1e-6f);
     float jacobian = 0.f;
-    shifted.hit = pathLengthAwareShiftMapping(x1, source.rcVertexHit, suffix.vertex, dt, jacobian, debugInfo, tol, sg);
+    shifted.hit = pathLengthAwareShiftMapping(a, source.rcVertexHit, suffix.vertex, dt, jacobian, debugInfo, tol, sg);
     shifted.mappingJacobian = jacobian;
     jacobian *= K;
     // A rejected/non-finite shift must have zero support, not NaN weight.
     jacobian = select(isfinite(jacobian), max(jacobian, 0.f), 0.f);
 
     float3 shiftedPosition = gScene.getVertexData(shifted.hit.getTriangleHit()).posW;
-    shifted.vertex = loadShadingData(shifted.hit, x1.posW, normalize(shiftedPosition - x1.posW));
-    shifted.totalPathLength = d01 + length(x1.posW - shiftedPosition) + length(shiftedPosition - suffix.vertex.posW)
-        + suffix.length;
+    shifted.vertex = loadShadingData(shifted.hit, a.posW, normalize(shiftedPosition - a.posW));
+    shifted.totalPathLength = prefixLength + length(a.posW - shiftedPosition)
+        + length(shiftedPosition - suffix.vertex.posW) + suffix.length;
 
-    // A moved y must still qualify as a reconnection vertex.
+    // A moved x must still qualify as a reconnection vertex.
     let shiftedMaterial = gScene.materials.getMaterialInstance(shifted.vertex, ExplicitLodTextureSampler(0.f));
     jacobian *= float(shiftedMaterial.getProperties(shifted.vertex).roughness > roughnessThreshold);
     shifted.jacobian = jacobian;
 
-    shifted.f = prefixThroughput * getPHat3(x1, x1Material, shifted.vertex, suffix.vertex, suffix.material,
-        d01, suffix.length, targetGate, suffix.irradiance, sg, suffix.isSurface, K, source.rcNextVertexBounce > 0);
-    shifted.f *= checkVisibility(x1, shifted.vertex);
+    shifted.f = prefixThroughput * evalReconnectionTarget(a, aMaterial, shifted.vertex, suffix.vertex, suffix.material,
+        prefixLength, suffix.length, targetGate, suffix.irradiance, sg, suffix.isSurface, K,
+        source.rcNextVertexBounce > 0);
+    shifted.f *= checkVisibility(a, shifted.vertex);
     if (source.rcVertexBounce == 0 || jacobian == 0.f)
         shifted.f = 0.f;
     return true;
 }
 
-// Stream `source` (M_other: the mass of the other reservoir in the pair) into `destination` with its pairwise MIS
+// Stream `source` (otherMass: the mass of the other reservoir in the pair) into `destination` with its pairwise MIS
 // weight. A canonical source keeps its own sample and only evaluates the other pixel's support; any other source
-// is shifted to the destination pixel (prefix ending at x1, gate targetGate).
+// is shifted to the destination pixel (primary hit `primary`, gate targetGate).
 void combineReservoirWithShiftMapping(
     inout Reservoir destination,
     Reservoir source,
-    float M_other,
+    float otherMass,
     float roughnessThreshold,
-    ShadingData x1,
-    IMaterialInstance x1Material,
-    float d01,
+    ShadingData primary,
+    IMaterialInstance primaryMaterial,
+    float primaryLength,
     const float targetGate,
     const float sourceGate,
     const float K,
@@ -233,12 +238,12 @@ void combineReservoirWithShiftMapping(
         }
     }
 #endif
-    VertexData y = gScene.getVertexData(source.rcVertexHit.getTriangleHit());
+    VertexData x = gScene.getVertexData(source.rcVertexHit.getTriangleHit());
     ReconnectionSuffix suffix = loadReconnectionSuffix(suffixSource, lightPosition, lightDirection);
 
     ShiftedPath shifted;
-    if (!shiftToPrefix(source, y, suffix, sourceGate, x1, x1Material, d01, targetGate, K, roughnessThreshold,
-            sg, debugInfo, shifted))
+    if (!shiftToPrefix(source, x, suffix, sourceGate, primary, primaryMaterial, primaryLength, targetGate, K,
+            roughnessThreshold, sg, debugInfo, shifted))
     {
         combineUnsupportedShift(destination, source, isCanonical, sg);
         return;
@@ -251,7 +256,8 @@ void combineReservoirWithShiftMapping(
         else
         {
             SampleGenerator lightRng = SampleGenerator(suffixSource.lightRandomSeed);
-            LaserLightSampler sampler = LaserLightSampler(lightPosition, lightDirection, targetLightCosAngle, targetLightPower);
+            LaserLightSampler sampler =
+                LaserLightSampler(lightPosition, lightDirection, targetLightCosAngle, targetLightPower);
             LightSample light = {};
             sampler.generateLightSample(lightRng, light);
             shifted.f *= light.valid ? float(checkLightVisibility(shifted.vertex, light)) : 0.f;
@@ -265,7 +271,7 @@ void combineReservoirWithShiftMapping(
 #endif
 
     float sourceTarget = getReservoirWeight(source.f);
-    float misWeight = spatialPairCoefficient(source.M, sourceTarget, M_other, shiftedTarget, shifted.jacobian);
+    float misWeight = spatialPairCoefficient(source.M, sourceTarget, otherMass, shiftedTarget, shifted.jacobian);
 
     if (isCanonical)
     {
@@ -289,17 +295,17 @@ void combineReservoirWithShiftMapping(
     }
 }
 
-// Pairwise MIS weight of the canonical sample of `source` against another pixel (mass M_other, prefix ending at x1,
-// gate targetGate). y and suffix are the source's reconnection vertex and suffix (loadReconnectionSuffix).
+// Pairwise MIS weight of the canonical sample of `source` against another pixel (mass otherMass, primary hit
+// `primary`, gate targetGate). x and suffix are the source's reconnection vertex and suffix (loadReconnectionSuffix).
 float evaluateCanonicalShiftWeight(
     Reservoir source,
     ReconnectionSuffix suffix,
-    const VertexData y,
-    float M_other,
+    const VertexData x,
+    float otherMass,
     float roughnessThreshold,
-    ShadingData x1,
-    IMaterialInstance x1Material,
-    float d01,
+    ShadingData primary,
+    IMaterialInstance primaryMaterial,
+    float primaryLength,
     const float targetGate,
     const float sourceGate,
     inout SampleGenerator sg,
@@ -313,11 +319,11 @@ float evaluateCanonicalShiftWeight(
         return 0.f;
 
     ShiftedPath shifted;
-    if (!shiftToPrefix(source, y, suffix, sourceGate, x1, x1Material, d01, targetGate, 1.f, roughnessThreshold,
-            sg, debugInfo, shifted))
+    if (!shiftToPrefix(source, x, suffix, sourceGate, primary, primaryMaterial, primaryLength, targetGate, 1.f,
+            roughnessThreshold, sg, debugInfo, shifted))
         return 1.f;
     return spatialPairCoefficient(source.M, getReservoirWeight(source.f),
-        M_other, getReservoirWeight(shifted.f), shifted.jacobian);
+        otherMass, getReservoirWeight(shifted.f), shifted.jacobian);
 }
 
 // One side of a pairwise merge: its camera prefix (primary hit and optical length to it), gate center, and the
@@ -335,8 +341,8 @@ struct ReuseDomain
 };
 
 // Pairwise MIS merge of a canonical reservoir with another one. K is the canonical/other gate-width ratio (the
-// shift to the canonical domain maps L to gate + K (L - otherGate)). With updateLight (dynamic scenes), each shifted suffix is
-// re-lit with its target domain's light. Both reservoirs must have W set; the result has W set.
+// shift to the canonical domain maps L to gate + K (L - otherGate)). With updateLight (dynamic scenes), each
+// shifted suffix is re-lit with its target domain's light. Both reservoirs must have W set; the result has W set.
 Reservoir mergeReservoirPair(Reservoir canonical, ReuseDomain canonicalDomain, Reservoir other, ReuseDomain otherDomain,
     float K, bool updateLight, float roughnessThreshold, inout SampleGenerator rng)
 {

@@ -11,63 +11,62 @@ import RenderPasses.Shared.Shaders.Lights.LaserLightSampler;
 import RenderPasses.Shared.Shaders.Lights.LightConnection;
 import RenderPasses.Shared.Shaders.Utils.RayUtils;
 
-float3 getPHat3(
-    const ShadingData sd1,
-    const IMaterialInstance mi1,
-    const ShadingData sd2,
-    const ShadingData sd3,
-    const IMaterialInstance mi3,
-    const float d01,
-    const float d34,
-    const float target_dist,
+// Path notation as in Reservoir: camera -> ... -> a -> x -> y -> ... -> light, with x the reconnection vertex.
+// Target function of a path through a -> x -> y: the BSDFs at a, x and y, the inverse squared distances of a-x and
+// x-y, the cosine at x, the suffix payload `irradiance`, and the time gate at gateCenter for the optical length
+// prefixLength + |x - a| + |y - x| + suffixLength. Visibility and the camera prefix throughput are not included.
+// y is the point light if !yIsSurface; yIsSampledSurface: generation sampled y from x (a surface).
+float3 evalReconnectionTarget(
+    const ShadingData a,
+    const IMaterialInstance aMaterial,
+    const ShadingData x,
+    const ShadingData y,
+    const IMaterialInstance yMaterial,
+    const float prefixLength,
+    const float suffixLength,
+    const float gateCenter,
     const float3 irradiance,
     inout SampleGenerator sg,
-    bool isMi3valid=true,
+    bool yIsSurface = true,
     const float K = 1.0,
     bool yIsSampledSurface = false
 ){
-    let mi2 = gScene.materials.getMaterialInstance(sd2, ExplicitLodTextureSampler(0));
+    let xMaterial = gScene.materials.getMaterialInstance(x, ExplicitLodTextureSampler(0));
 
-    const float3 p1 = sd1.posW;
-    const float3 p2 = sd2.posW;
-    const float3 p3 = sd3.posW;
-
-    const float3 n2 = sd2.getOrientedFaceNormal();
-
-    const float3 l12 = p2 - p1;
-    const float3 l32 = p2 - p3;
-    const float3 v12 = normalize(l12);
-    const float3 v32 = normalize(l32);
-    float3 f1 = mi1.eval(sd1, v12, sg);
-    float3 f2 = mi2.eval(sd2, -v32, sg);
-    float3 f3;
-    if(isMi3valid){
-        f3 = mi3.eval(sd3, v32, sg);
+    const float3 ax = x.posW - a.posW;
+    const float3 yx = x.posW - y.posW;
+    const float3 wax = normalize(ax);
+    const float3 wyx = normalize(yx);
+    float3 fa = aMaterial.eval(a, wax, sg);
+    float3 fx = xMaterial.eval(x, -wyx, sg);
+    float3 fy;
+    if (yIsSurface)
+    {
+        fy = yMaterial.eval(y, wyx, sg);
         if (yIsSampledSurface)
         {
             // Generation converts the x->y PDF with y's geometric normal.
             // Reciprocal BSDF evaluation includes its shading cosine instead.
-            float shadingCosine = abs(dot(mi3.getProperties(sd3).guideNormal, v32));
-            float geometricCosine = max(dot(sd3.getOrientedFaceNormal(), v32), 0.f);
+            float shadingCosine = abs(dot(yMaterial.getProperties(y).guideNormal, wyx));
+            float geometricCosine = max(dot(y.getOrientedFaceNormal(), wyx), 0.f);
             if (!(shadingCosine > 0.f)) return float3(0.f);
-            f3 = (f3 / shadingCosine) * geometricCosine;
+            fy = (fy / shadingCosine) * geometricCosine;
         }
-    } else {
-        f3 = dot(sd3.getOrientedFaceNormal(), v32) > 0.0 ? float3(1.0) : float3(0.0);
     }
+    else
+        fy = dot(y.getOrientedFaceNormal(), wyx) > 0.0 ? float3(1.0) : float3(0.0);
 
-    float n21 = max(dot(n2, -v12), 0.0);
-    if(n21 < 1e-6)
+    float cosX = max(dot(x.getOrientedFaceNormal(), -wax), 0.0);
+    if (cosX < 1e-6)
         return float3(0.0);
 
-    float G12 = max(dot(l12, l12), kMinLightDistSqr);
-    float G23 = max(dot(l32, l32), kMinLightDistSqr);
+    float distSqrAX = max(dot(ax, ax), kMinLightDistSqr);
+    float distSqrXY = max(dot(yx, yx), kMinLightDistSqr);
 
-    float3 f = f1 * f2 * f3 * n21 / (G12 * G23) * irradiance;
+    float3 f = fa * fx * fy * cosX / (distSqrAX * distSqrXY) * irradiance;
     if (any(isinf(f) || isnan(f))) f = 0.f;
-    float distance = d01 + length(p2 - p1) + length(p3 - p2) + d34;
-    f *= pathLengthImportance(distance, target_dist, K > 1);
-
+    float distance = prefixLength + length(x.posW - a.posW) + length(y.posW - x.posW) + suffixLength;
+    f *= pathLengthImportance(distance, gateCenter, K > 1);
     return f;
 }
 
@@ -85,37 +84,41 @@ bool checkVisibility(const ShadingData source, const ShadingData target)
     return sceneRayQuery.traceVisibilityRay(visibilityRay);
 }
 
+// Replay the camera prefix of a path whose reconnection vertex x is at depth targetBounce (primary hit: depth 0) from
+// another pixel's primary hit `a`, with the BSDF samples of the path (initRandomSeed). On success, `a` is the vertex
+// before x, prefixLength the optical length up to it and prefixThroughput the BSDF weights. Fails if the replayed
+// path would have chosen another reconnection vertex, or if `a` does not qualify for reconnection.
 bool reconstructPrefix(
     uint targetBounce, uint initRandomSeed,
-    inout ShadingData x1, inout IMaterialInstance x1_mi,
-    inout float d01, inout float3 prefixThroughput,
+    inout ShadingData a, inout IMaterialInstance aMaterial,
+    inout float prefixLength, inout float3 prefixThroughput,
     float roughnessThreshold = 0.25f)
 {
     SampleGenerator rng = SampleGenerator(initRandomSeed);
     for (uint depth = 1; depth < targetBounce; ++depth)
     {
-        bool previousDiffuse = x1_mi.getProperties(x1).roughness > roughnessThreshold;
+        bool previousDiffuse = aMaterial.getProperties(a).roughness > roughnessThreshold;
         BSDFSample bs = {};
-        if (!x1_mi.sample(x1, rng, bs, USE_IMPORTANCE_SAMPLING != 0))
+        if (!aMaterial.sample(a, rng, bs, USE_IMPORTANCE_SAMPLING != 0))
         {
             prefixThroughput = 0.f;
             return false;
         }
         prefixThroughput *= bs.weight;
-        Ray ray = Ray(x1.computeRayOrigin(!bs.isLobe(LobeType::Transmission)), bs.wo, 0.f, FLT_MAX);
+        Ray ray = Ray(a.computeRayOrigin(!bs.isLobe(LobeType::Transmission)), bs.wo, 0.f, FLT_MAX);
         SceneRayQuery<0> query;
         float hitT;
         HitInfo hit = query.traceRay(ray, hitT);
         if (!hit.isValid()) { prefixThroughput = 0.f; return false; }
-        float3 previousPosition = x1.posW;
-        float segmentIoR = x1.IoR;
-        x1 = loadShadingData(hit, ray.origin, ray.dir);
-        x1_mi = gScene.materials.getMaterialInstance(x1, ExplicitLodTextureSampler(0.f));
-        float segmentLength = length(x1.posW - previousPosition);
-        d01 += segmentLength * segmentIoR;
+        float3 previousPosition = a.posW;
+        float segmentIoR = a.IoR;
+        a = loadShadingData(hit, ray.origin, ray.dir);
+        aMaterial = gScene.materials.getMaterialInstance(a, ExplicitLodTextureSampler(0.f));
+        float segmentLength = length(a.posW - previousPosition);
+        prefixLength += segmentLength * segmentIoR;
         if (previousDiffuse)
         {
-            if (x1_mi.getProperties(x1).roughness > roughnessThreshold)
+            if (aMaterial.getProperties(a).roughness > roughnessThreshold)
             {
                 if (segmentLength > 0.f)
                 {
@@ -125,7 +128,7 @@ bool reconstructPrefix(
             }
         }
     }
-    if (!(x1_mi.getProperties(x1).roughness > roughnessThreshold))
+    if (!(aMaterial.getProperties(a).roughness > roughnessThreshold))
     {
         prefixThroughput = 0.f;
         return false;
