@@ -10,6 +10,10 @@ cbuffer CB
 RWTexture3D<HistogramTexel> gTransientHistogram;
 
 // Identical spatial RIS steps to the time-gated pass, applied to each bin.
+// Bins outer, neighbors inner (resampleGate reloads the primary hits for every bin). This is faster than looping
+// over neighbors outside and bins inside: the destination reservoir and the central suffix stay in registers for one
+// bin, instead of a read-modify-write of every bin's reservoir in memory per neighbor and a reload of the central
+// suffix per (neighbor, bin). The primary-hit loads cost little next to the shifts.
 [numthreads(16, 16, 1)]
 void main(uint3 dispatchThreadId: SV_DispatchThreadID)
 {
