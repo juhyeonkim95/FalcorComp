@@ -119,7 +119,7 @@ void submitEllipsoidalCandidate(inout Reservoir reservoir, ReconnectionState rc,
         ellipsoidal.distance > gReconnectionMinDistance;
     float suffixDirectionWeight = 0.f;
     if (rc.postBounce == 2) suffixDirectionWeight = shadingCosine(origin, material, ellipsoidal.direction) / ellipsoidal.pdf;
-    rc.recordHit(ellipsoidal.hit, target, proposal, targetDepth, eligible, ellipsoidal.distance, origin.IoR,
+    rc.recordHit(ellipsoidal.hit, target, origin.posW, proposal, targetDepth, eligible, ellipsoidal.distance, origin.IoR,
         suffixDirectionWeight, 0);
     LightConnection connection = evaluateLightConnection(target, targetMaterial, light, rng);
     float totalLength = targetLength + connection.distance + light.laserT;
@@ -332,7 +332,7 @@ float3 tracePath(uint2 pixel, uint2 frameDim)
             pathLength += segmentLength * segmentIoR;
             if (!(pathLength < maxPathLength)) break;
             bool currentDiffuse = material.getProperties(surface).roughness > gReconnectionRoughnessThreshold;
-            rc.recordHit(hit, surface, sample, depth, previousDiffuse && currentDiffuse && segmentLength > gReconnectionMinDistance,
+            rc.recordHit(hit, surface, previousPosition, sample, depth, previousDiffuse && currentDiffuse && segmentLength > gReconnectionMinDistance,
                 segmentLength, segmentIoR, suffixDirectionWeight, sampleSeed);
 
             LightSample light = {};

@@ -28,14 +28,15 @@ struct ReconnectionState
 #if IS_SCENE_DYNAMIC
     float3 yRayDirection; // Original incoming camera-walk ray at y, preserved through reuse.
 #endif
+    float3 aPosition;           // a, the vertex before x.
     float areaPdf;              // p_A(a->x), then p_A(a->x) * p_A(x->y).
     float3 suffixThroughput;    // cosine_y/pdf_y, then sampled weights at z and beyond.
     float suffixLength;        // y->...->current surface; excludes current->light.
 
-    // surface is the hit at the end of the segment; segmentIoR is the IoR of the
+    // surface is the hit at the end of the segment, which starts at previousPosition; segmentIoR is the IoR of the
     // surface the segment leaves, which scales its optical length.
     [mutating]
-    void recordHit(HitInfo hit, ShadingData surface, BSDFSample sample, uint depth,
+    void recordHit(HitInfo hit, ShadingData surface, float3 previousPosition, BSDFSample sample, uint depth,
         bool eligible, float segmentLength, float segmentIoR, float suffixDirectionWeight, uint sampleSeed)
     {
         float opticalLength = segmentLength * segmentIoR;
@@ -45,6 +46,7 @@ struct ReconnectionState
             {
                 bounce = depth;
                 xHit = hit;
+                aPosition = previousPosition;
                 float cosine = max(dot(surface.getOrientedFaceNormal(), -sample.wo), 0.f);
                 areaPdf = sample.pdf * cosine / max(segmentLength * segmentLength, kMinLightDistSqr);
             }
@@ -98,6 +100,7 @@ void submitCandidate(inout Reservoir reservoir, ReconnectionState rc,
     if (rc.bounce == 0) return; // Reconnection fields are unused for this local-only sample.
 
     reservoir.rcVertexHit = rc.xHit;
+    reservoir.rcPrevVertexPosition = rc.aPosition;
     reservoir.initRandomSeed = rc.prefixSeed;
     reservoir.rcNextVertexBounce = rc.postBounce;
     if (rc.postBounce == 0)

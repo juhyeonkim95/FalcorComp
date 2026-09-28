@@ -88,9 +88,15 @@ void gaugeTerms(
     J0Delta = float2(0.0, 0.0) - 0.5 * Hmul(H0, RDel);
 }
 
-// Constant-offset solver: c is held fixed for the Jacobian.
+// Solves ell_t(xi') = ell_t(xi) + c with the gauge a . (xi' - xi) = 0, where ell_t is ops's path length. c comes from
+// the source path's own length ell_s (sourceOps, same chart with the source's endpoints), so the map is
+// ell_t(xi') = K ell_s(xi) + C: the gauge and the source rows of the Jacobian (d/dxi) use ell_s's gradient g_s and
+// Hessian H_s at xi. The avg_grad gauge a = R (g_s(xi) + g_t(xi')) / 2 is then the same for the reverse shift, whose
+// solution is xi again. Without a distinct source, g_s = g_t (the single-length solve).
 NewtonResult solveShiftNewton<Chart : IShiftChart>(
     inout Chart ops,
+    Chart sourceOps,
+    bool distinctSource,
     float2 xi, float c,
     GaugeMode mode,
     float2 a_const,          // used iff CONSTANT_A
@@ -113,9 +119,16 @@ NewtonResult solveShiftNewton<Chart : IShiftChart>(
     if(!ops.eval(xi, L0, g0, H0)){
         R.status = NewtonResultStatus::InvalidPoint; return R;
     }
+    // Source length at the start: g0/H0 below are the source's gradient and Hessian.
+    float2 gt0 = g0; float3 Ht0 = H0;
+    if (distinctSource)
+    {
+        float Ls;
+        if (!sourceOps.eval(xi, Ls, g0, H0)) { R.status = NewtonResultStatus::InvalidPoint; return R; }
+    }
 
-    // no need to search
-    if (abs(c) <= tol)
+    // no need to search (a distinct source needs the Jacobian of its map even where xi' = xi)
+    if (abs(c) <= tol && !distinctSource)
     {
         R.xi_prime = xi;
         R.detJ = 1.0;
@@ -130,15 +143,16 @@ NewtonResult solveShiftNewton<Chart : IShiftChart>(
 
     float2 e = xi; //ops.project(xi + s0 * dir);
 
-    float  L1 = L0; float2 g1 = g0; float3 H1 = H0;
+    float  L1 = L0; float2 g1 = gt0; float3 H1 = Ht0;
     float2 a, JpDelta, J0Delta;
     float2 Delta;
     float inv00, inv01, inv10, inv11, detJp;
-    bool success = false;
+    // With a distinct source and c ~ 0, xi' = xi already solves both equations; only the Jacobian is needed.
+    bool success = abs(c) <= tol;
     float beta = 1.0f;
 
     // --- Newton iterations using only Jp = ∂F/∂η' ---
-    for (int it = 0; it < maxIters; ++it)
+    for (int it = 0; it < maxIters && !success; ++it)
     {
         R.iters = it + 1;
 

@@ -45,6 +45,9 @@ struct Reservoir
 
     // Surface hit identifying x, the first vertex passing the reconnection eligibility test.
     HitInfo rcVertexHit;
+    // Position of a, the vertex before x on this reservoir's camera prefix. The shift mapping needs the source
+    // path's own a (its path-length gradient at x), which differs from the target pixel's replayed a.
+    float3 rcPrevVertexPosition;
     // Surface hit identifying y. For x -> light, stores ls.hit instead;
     // a laser endpoint has a surface hit, while a point-light endpoint has an invalid hit.
     HitInfo rcNextVertexHit;
@@ -119,6 +122,7 @@ struct Reservoir
         this.rcNextVertexIrradiance = float3(0.0);
         this.rcNextVertexPathLength = 0.0;
         this.rcVertexBounce = 0;
+        this.rcPrevVertexPosition = float3(0.f);
         this.totalPathLength = 0;
         this.rcNextVertexBounce = 0;
     }

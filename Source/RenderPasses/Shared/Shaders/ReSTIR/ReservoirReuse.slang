@@ -51,6 +51,7 @@ void copyReconnectionPayload(inout Reservoir destination, const Reservoir source
     destination.rcVertexBounce = source.rcVertexBounce;
     destination.initRandomSeed = source.initRandomSeed;
     destination.rcNextVertexBounce = source.rcNextVertexBounce;
+    destination.rcPrevVertexPosition = source.rcPrevVertexPosition;
 #if IS_SCENE_DYNAMIC
     destination.rcNextVertexRandomSeed = source.rcNextVertexRandomSeed;
     destination.rcNextVertexRayDirection = source.rcNextVertexRayDirection;
@@ -115,6 +116,7 @@ struct ShiftedPath
 {
     HitInfo hit;
     ShadingData vertex;
+    float3 prefixEnd; // a on the target prefix.
     float3 f;
     float jacobian;
     float mappingJacobian; // Jacobian of the shift mapping alone (debug statistics).
@@ -122,11 +124,13 @@ struct ShiftedPath
 };
 
 // Shift the reconnection vertex x of `source` (gate sourceGate) to the camera prefix of another pixel (primary hit
-// `primary` at optical length primaryLength, gate targetGate), keeping the suffix. K scales the path length offset
-// from the gate center (gate-width ratio). Returns false if the prefix cannot be replayed there.
-bool shiftToPrefix(Reservoir source, VertexData x, ReconnectionSuffix suffix, float sourceGate,
-    ShadingData primary, IMaterialInstance primaryMaterial, float primaryLength, float targetGate, float K,
-    ReconnectionCriteria criteria, inout SampleGenerator sg, inout ShiftMappingDebugInfo debugInfo, out ShiftedPath shifted)
+// `primary` at optical length primaryLength, gate targetGate), keeping the suffix. The shift uses the source path's
+// own endpoints of x: its stored a (rcPrevVertexPosition) and sourceNextPosition (its y). K scales the path length
+// offset from the gate center (gate-width ratio). Returns false if the prefix cannot be replayed there.
+bool shiftToPrefix(Reservoir source, VertexData x, ReconnectionSuffix suffix, float3 sourceNextPosition,
+    float sourceGate, ShadingData primary, IMaterialInstance primaryMaterial, float primaryLength, float targetGate,
+    float K, ReconnectionCriteria criteria, inout SampleGenerator sg, inout ShiftMappingDebugInfo debugInfo,
+    out ShiftedPath shifted)
 {
     // Replay the camera prefix in the target pixel, from its primary hit to a.
     ShadingData a = primary;
@@ -144,7 +148,10 @@ bool shiftToPrefix(Reservoir source, VertexData x, ReconnectionSuffix suffix, fl
     float dt = K * (source.totalPathLength - sourceGate) + targetGate - targetLength;
     float tol = max(abs(dt) * gNewtonRelativeTolerance, 1e-6f);
     float jacobian = 0.f;
-    shifted.hit = pathLengthAwareShiftMapping(a, source.rcVertexHit, suffix.vertex, dt, jacobian, debugInfo, tol, sg);
+    ShiftSource shiftSource = makeShiftSource(source.rcPrevVertexPosition, sourceNextPosition, a, suffix.vertex);
+    shifted.hit = pathLengthAwareShiftMapping(a, source.rcVertexHit, suffix.vertex, shiftSource, dt, jacobian, debugInfo,
+        tol, sg);
+    shifted.prefixEnd = a.posW;
     shifted.mappingJacobian = jacobian;
     jacobian *= K;
     // A rejected/non-finite shift must have zero support, not NaN weight.
@@ -242,9 +249,16 @@ void combineReservoirWithShiftMapping(
     VertexData x = gScene.getVertexData(source.rcVertexHit.getTriangleHit());
     ReconnectionSuffix suffix = loadReconnectionSuffix(suffixSource, lightPosition, lightDirection);
 
+    float3 sourceNextPosition = suffix.vertex.posW;
+#if IS_SCENE_DYNAMIC
+    // A re-lit suffix may start at another y; the source path's own y is its original next vertex. (A point-light
+    // endpoint is taken at the target frame's light.)
+    if (updateLight && source.rcNextVertexHit.isValid())
+        sourceNextPosition = gScene.getVertexData(source.rcNextVertexHit.getTriangleHit()).posW;
+#endif
     ShiftedPath shifted;
-    if (!shiftToPrefix(source, x, suffix, sourceGate, primary, primaryMaterial, primaryLength, targetGate, K,
-            criteria, sg, debugInfo, shifted))
+    if (!shiftToPrefix(source, x, suffix, sourceNextPosition, sourceGate, primary, primaryMaterial, primaryLength,
+            targetGate, K, criteria, sg, debugInfo, shifted))
     {
         combineUnsupportedShift(destination, source, isCanonical, sg);
         return;
@@ -291,6 +305,7 @@ void combineReservoirWithShiftMapping(
         {
             copyReconnectionPayload(destination, suffixSource);
             destination.rcVertexHit = shifted.hit;
+            destination.rcPrevVertexPosition = shifted.prefixEnd;
             destination.totalPathLength = shifted.totalPathLength;
         }
     }
@@ -320,8 +335,8 @@ float evaluateCanonicalShiftWeight(
         return 0.f;
 
     ShiftedPath shifted;
-    if (!shiftToPrefix(source, x, suffix, sourceGate, primary, primaryMaterial, primaryLength, targetGate, 1.f,
-            criteria, sg, debugInfo, shifted))
+    if (!shiftToPrefix(source, x, suffix, suffix.vertex.posW, sourceGate, primary, primaryMaterial, primaryLength,
+            targetGate, 1.f, criteria, sg, debugInfo, shifted))
         return 1.f;
     return spatialPairCoefficient(source.M, getReservoirWeight(source.f),
         otherMass, getReservoirWeight(shifted.f), shifted.jacobian);

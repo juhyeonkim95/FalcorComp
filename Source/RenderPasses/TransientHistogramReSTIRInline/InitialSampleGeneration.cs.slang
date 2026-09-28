@@ -171,7 +171,7 @@ float3 tracePath(uint2 pixel, uint2 frameDim)
             // Match time-gated generation and shared prefix replay.
             pathLength += segmentLength * segmentIoR;
             bool currentDiffuse = material.getProperties(surface).roughness > gReconnectionRoughnessThreshold;
-            rc.recordHit(hit, surface, sample, depth + 1,
+            rc.recordHit(hit, surface, previousPosition, sample, depth + 1,
                 previousDiffuse && currentDiffuse && segmentLength > gReconnectionMinDistance,
                 segmentLength, segmentIoR, suffixDirectionWeight, sampleSeed);
         }
