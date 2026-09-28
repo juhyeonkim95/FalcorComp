@@ -217,8 +217,8 @@ NewtonResult solveShiftNewton<Chart : IShiftChart>(
     if (abs(detJp) < 1e-20) { R.status = (R.status != 0 ? R.status : NewtonResultStatus::Singular); R.detJ = 0.0; }
     else                    { R.detJ = abs(detJ0 / detJp); }
 
-    // reject too large jacobian change
-    if (R.detJ >= 10.0 || R.detJ < 0.1) R.status = (NewtonResultStatus::NoConverge);
     if (R.iters >= maxIters) R.status = (success ? NewtonResultStatus::Success : NewtonResultStatus::NoConverge);
+    // Reject too large a Jacobian change (after the iteration check, which must not restore Success).
+    if (R.detJ >= 10.0 || R.detJ < 0.1) R.status = (NewtonResultStatus::NoConverge);
     return R;
 }
