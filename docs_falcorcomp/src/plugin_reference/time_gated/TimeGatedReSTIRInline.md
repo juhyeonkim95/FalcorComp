@@ -153,7 +153,8 @@ Shift mapping:
   - Maximum Newton iterations per shift. (Default: `5`)
 * - `NewtonRelativeTolerance`
   - float
-  - Accepted and stored, but currently has no effect. (Default: `0.01`)
+  - Solver tolerance on the path length, relative to the shift. Looser solves leave the forward and reverse shifts
+    slightly inconsistent, which biases reuse. (Default: `0.0002`)
 ```
 
 Other:

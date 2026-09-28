@@ -45,7 +45,7 @@ struct ShiftMappingConfig
     GaugeMode gaugeMode = GaugeMode::Constant;
     float2 gaugeAxis = float2(1, 0);
     uint newtonMaxIteration = 5;
-    float newtonRelativeTolerance = 0.01f;
+    float newtonRelativeTolerance = 2e-4f; ///< Relative to the path length change; looser solves bias reuse.
 
     bool parse(const std::string& key, const Properties::ConstValue& value)
     {
