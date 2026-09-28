@@ -32,11 +32,11 @@ run_scene() {
 }
 
 # Scene, gate width, budget mode (frames/spp/seconds), checkpoints.
-# run_scene cornell_box 0.01 frames 1 2 4 8 16 32
-# run_scene veach_ajar 0.01 frames 1 2 4 8 16 32
-# run_scene kitchen 0.01 frames 1 2 4 8 16 32
+run_scene cornell_box 0.01 frames 1 2 4 8 16 32
+run_scene veach_ajar 0.01 frames 1 2 4 8 16 32
+run_scene kitchen 0.01 frames 1 2 4 8 16 32
 # run_scene bistro 0.05 frames 4 8 16 32 64 128
 # For time budgets, replace a scene's line, e.g.:
-run_scene cornell_box 0.01 seconds 1 2 4 8
-run_scene veach_ajar 0.01 seconds 1 2 4 8
-run_scene kitchen 0.01 seconds 2 4 8 16
+# run_scene cornell_box 0.01 seconds 1 2 4 8
+# run_scene veach_ajar 0.01 seconds 1 2 4 8
+# run_scene kitchen 0.01 seconds 2 4 8 16

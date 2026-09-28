@@ -7,10 +7,10 @@ source "$release_dir/output_paths.sh"
 # Gate, camera/light motion, and resolution remain in scenes/exp7/<scene>.json.
 scenes=(
     # cornell_box
-    # veach_ajar
-    classroom
-    bedroom
-    nlos_v2
+    veach_ajar
+    # classroom
+    # bedroom
+    # nlos_v2
 )
 output_dir="$OUTPUT_PATH/exp7_online_rendering_equal_time"
 
@@ -41,7 +41,7 @@ for scene in "${scenes[@]}"; do
             temporal_history_length=10
             iterations=1
             neighbors=3
-            reference_spp=32768
+            reference_spp=131072
             fps=30
             calibration_runs=3
             timing_tolerance=0.05
