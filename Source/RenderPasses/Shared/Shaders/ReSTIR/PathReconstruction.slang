@@ -84,6 +84,17 @@ bool checkVisibility(const ShadingData source, const ShadingData target)
     return sceneRayQuery.traceVisibilityRay(visibilityRay);
 }
 
+// When x can be a reconnection vertex: the segment a -> x joins two vertices rougher than roughnessThreshold and is
+// longer than minDistance. Very short segments make the target (1 / |a - x|^2) and the shift nearly singular.
+struct ReconnectionCriteria
+{
+    float roughnessThreshold;
+    float minDistance;
+
+    bool isRough(float roughness) { return roughness > roughnessThreshold; }
+    bool isLongEnough(float segmentLength) { return segmentLength > minDistance; }
+};
+
 // Replay the camera prefix of a path whose reconnection vertex x is at depth targetBounce (primary hit: depth 0) from
 // another pixel's primary hit `a`, with the BSDF samples of the path (initRandomSeed). On success, `a` is the vertex
 // before x, prefixLength the optical length up to it and prefixThroughput the BSDF weights. Fails if the replayed
@@ -92,12 +103,12 @@ bool reconstructPrefix(
     uint targetBounce, uint initRandomSeed,
     inout ShadingData a, inout IMaterialInstance aMaterial,
     inout float prefixLength, inout float3 prefixThroughput,
-    float roughnessThreshold = 0.25f)
+    ReconnectionCriteria criteria)
 {
     SampleGenerator rng = SampleGenerator(initRandomSeed);
     for (uint depth = 1; depth < targetBounce; ++depth)
     {
-        bool previousDiffuse = aMaterial.getProperties(a).roughness > roughnessThreshold;
+        bool previousDiffuse = criteria.isRough(aMaterial.getProperties(a).roughness);
         BSDFSample bs = {};
         if (!aMaterial.sample(a, rng, bs, USE_IMPORTANCE_SAMPLING != 0))
         {
@@ -118,9 +129,9 @@ bool reconstructPrefix(
         prefixLength += segmentLength * segmentIoR;
         if (previousDiffuse)
         {
-            if (aMaterial.getProperties(a).roughness > roughnessThreshold)
+            if (criteria.isRough(aMaterial.getProperties(a).roughness))
             {
-                if (segmentLength > 0.f)
+                if (criteria.isLongEnough(segmentLength))
                 {
                     prefixThroughput = 0.f;
                     return false; // Generation would choose an earlier reconnection vertex.
@@ -128,7 +139,7 @@ bool reconstructPrefix(
             }
         }
     }
-    if (!(aMaterial.getProperties(a).roughness > roughnessThreshold))
+    if (!(criteria.isRough(aMaterial.getProperties(a).roughness)))
     {
         prefixThroughput = 0.f;
         return false;

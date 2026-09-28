@@ -19,6 +19,7 @@ struct PathLengthAwareReSTIRConfig
 
     ShiftMappingConfig shiftMapping;
     float reconnectionRoughnessThreshold = 0.25f; ///< Both vertices of a reconnection segment must be rougher.
+    float reconnectionMinDistance = 0.f;          ///< A reconnection segment must be longer (scene units).
 
     bool parse(const std::string& key, const Properties::ConstValue& value)
     {
@@ -36,6 +37,8 @@ struct PathLengthAwareReSTIRConfig
             temporalHistoryLength = value;
         else if (key == "reconnectionRoughnessThreshold")
             reconnectionRoughnessThreshold = value;
+        else if (key == "reconnectionMinDistance")
+            reconnectionMinDistance = value;
         else
             return false;
         return true;
@@ -50,6 +53,7 @@ struct PathLengthAwareReSTIRConfig
         props["temporalHistoryLength"] = temporalHistoryLength;
         shiftMapping.serialize(props);
         props["reconnectionRoughnessThreshold"] = reconnectionRoughnessThreshold;
+        props["reconnectionMinDistance"] = reconnectionMinDistance;
     }
 
     /// SHIFT_MAPPING_METHOD, SHIFT_MAPPING_GAUGE_MODE and USE_TEMPORAL_REUSE.
@@ -72,6 +76,7 @@ struct PathLengthAwareReSTIRConfig
         spatialVar["neighborCount"] = spatialReuseNeighborCount;
         spatialVar["gatherRadius"] = spatialReuseGatherRadius;
         spatialVar["reconnectionRoughnessThreshold"] = reconnectionRoughnessThreshold;
+        spatialVar["reconnectionMinDistance"] = reconnectionMinDistance;
     }
 
     /// Spatial and temporal reuse. `temporalNote` is appended to the Temporal reuse tooltip.
@@ -111,6 +116,9 @@ struct PathLengthAwareReSTIRConfig
             {
                 bool dirty = group.var("Reconnection roughness threshold", reconnectionRoughnessThreshold, 0.f, 1.f);
                 group.tooltip("A path can reconnect at a segment only if both of its vertices are rougher than this.", true);
+                dirty |= group.var("Reconnection min distance", reconnectionMinDistance, 0.f, 1000.f);
+                group.tooltip("A path can reconnect at a segment only if it is longer than this. Very short segments "
+                              "make the shifted target and Jacobian nearly singular.", true);
                 return dirty;
             });
     }

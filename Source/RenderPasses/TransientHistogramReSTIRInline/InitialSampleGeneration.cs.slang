@@ -31,6 +31,7 @@ cbuffer CB
     
     uint gSamplesPerPixel;
     float gReconnectionRoughnessThreshold;
+    float gReconnectionMinDistance;
     float gTemporalHistoryLength;
 #if USE_TEMPORAL_REUSE
     bool gTemporalHistoryValid;
@@ -38,6 +39,12 @@ cbuffer CB
 #endif
 }
 
+
+ReconnectionCriteria getReconnectionCriteria()
+{
+    ReconnectionCriteria criteria = { gReconnectionRoughnessThreshold, gReconnectionMinDistance };
+    return criteria;
+}
 
 // Inputs
 Texture2D<PackedHitInfo> gVBuffer;
@@ -165,7 +172,7 @@ float3 tracePath(uint2 pixel, uint2 frameDim)
             pathLength += segmentLength * segmentIoR;
             bool currentDiffuse = material.getProperties(surface).roughness > gReconnectionRoughnessThreshold;
             rc.recordHit(hit, surface, sample, depth + 1,
-                previousDiffuse && currentDiffuse && segmentLength > 0.f,
+                previousDiffuse && currentDiffuse && segmentLength > gReconnectionMinDistance,
                 segmentLength, segmentIoR, suffixDirectionWeight, sampleSeed);
         }
     }
@@ -202,7 +209,7 @@ float3 tracePath(uint2 pixel, uint2 frameDim)
                 ReuseDomain last = { history.primary, previousMaterial, history.primaryLength, gateCenter, gLaserOrigin,
                     gLaserDirection, gLaserPower, gLaserCosAngle };
                 reservoir = mergeReservoirPair(reservoir, current, previous, last, 1.f, false,
-                    gReconnectionRoughnessThreshold, rng);
+                    getReconnectionCriteria(), rng);
             }
         }
 #endif

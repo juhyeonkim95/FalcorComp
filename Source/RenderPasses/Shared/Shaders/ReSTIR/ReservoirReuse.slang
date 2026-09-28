@@ -126,7 +126,7 @@ struct ShiftedPath
 // from the gate center (gate-width ratio). Returns false if the prefix cannot be replayed there.
 bool shiftToPrefix(Reservoir source, VertexData x, ReconnectionSuffix suffix, float sourceGate,
     ShadingData primary, IMaterialInstance primaryMaterial, float primaryLength, float targetGate, float K,
-    float roughnessThreshold, inout SampleGenerator sg, inout ShiftMappingDebugInfo debugInfo, out ShiftedPath shifted)
+    ReconnectionCriteria criteria, inout SampleGenerator sg, inout ShiftMappingDebugInfo debugInfo, out ShiftedPath shifted)
 {
     // Replay the camera prefix in the target pixel, from its primary hit to a.
     ShadingData a = primary;
@@ -134,7 +134,7 @@ bool shiftToPrefix(Reservoir source, VertexData x, ReconnectionSuffix suffix, fl
     float prefixLength = primaryLength;
     float3 prefixThroughput = float3(1.f);
     if (!reconstructPrefix(source.rcVertexBounce, source.initRandomSeed, a, aMaterial, prefixLength, prefixThroughput,
-            roughnessThreshold))
+            criteria))
     {
         shifted.jacobian = 0.f;
         return false;
@@ -157,7 +157,8 @@ bool shiftToPrefix(Reservoir source, VertexData x, ReconnectionSuffix suffix, fl
 
     // A moved x must still qualify as a reconnection vertex.
     let shiftedMaterial = gScene.materials.getMaterialInstance(shifted.vertex, ExplicitLodTextureSampler(0.f));
-    jacobian *= float(shiftedMaterial.getProperties(shifted.vertex).roughness > roughnessThreshold);
+    jacobian *= float(criteria.isRough(shiftedMaterial.getProperties(shifted.vertex).roughness) &&
+        criteria.isLongEnough(length(shiftedPosition - a.posW)));
     shifted.jacobian = jacobian;
 
     shifted.f = prefixThroughput * evalReconnectionTarget(a, aMaterial, shifted.vertex, suffix.vertex, suffix.material,
@@ -176,7 +177,7 @@ void combineReservoirWithShiftMapping(
     inout Reservoir destination,
     Reservoir source,
     float otherMass,
-    float roughnessThreshold,
+    ReconnectionCriteria criteria,
     ShadingData primary,
     IMaterialInstance primaryMaterial,
     float primaryLength,
@@ -243,7 +244,7 @@ void combineReservoirWithShiftMapping(
 
     ShiftedPath shifted;
     if (!shiftToPrefix(source, x, suffix, sourceGate, primary, primaryMaterial, primaryLength, targetGate, K,
-            roughnessThreshold, sg, debugInfo, shifted))
+            criteria, sg, debugInfo, shifted))
     {
         combineUnsupportedShift(destination, source, isCanonical, sg);
         return;
@@ -302,7 +303,7 @@ float evaluateCanonicalShiftWeight(
     ReconnectionSuffix suffix,
     const VertexData x,
     float otherMass,
-    float roughnessThreshold,
+    ReconnectionCriteria criteria,
     ShadingData primary,
     IMaterialInstance primaryMaterial,
     float primaryLength,
@@ -320,7 +321,7 @@ float evaluateCanonicalShiftWeight(
 
     ShiftedPath shifted;
     if (!shiftToPrefix(source, x, suffix, sourceGate, primary, primaryMaterial, primaryLength, targetGate, 1.f,
-            roughnessThreshold, sg, debugInfo, shifted))
+            criteria, sg, debugInfo, shifted))
         return 1.f;
     return spatialPairCoefficient(source.M, getReservoirWeight(source.f),
         otherMass, getReservoirWeight(shifted.f), shifted.jacobian);
@@ -344,7 +345,7 @@ struct ReuseDomain
 // shift to the canonical domain maps L to gate + K (L - otherGate)). With updateLight (dynamic scenes), each
 // shifted suffix is re-lit with its target domain's light. Both reservoirs must have W set; the result has W set.
 Reservoir mergeReservoirPair(Reservoir canonical, ReuseDomain canonicalDomain, Reservoir other, ReuseDomain otherDomain,
-    float K, bool updateLight, float roughnessThreshold, inout SampleGenerator rng)
+    float K, bool updateLight, ReconnectionCriteria criteria, inout SampleGenerator rng)
 {
     Reservoir merged = Reservoir();
 #if DEBUG_NEWTON_ITERATIONS
@@ -352,7 +353,7 @@ Reservoir mergeReservoirPair(Reservoir canonical, ReuseDomain canonicalDomain, R
     ShiftMappingDebugInfo debugInfo = {};
 #endif
     // Other -> canonical.
-    combineReservoirWithShiftMapping(merged, other, canonical.M, roughnessThreshold,
+    combineReservoirWithShiftMapping(merged, other, canonical.M, criteria,
         canonicalDomain.primary, canonicalDomain.material, canonicalDomain.primaryLength,
         canonicalDomain.gate, otherDomain.gate, K, false,
         canonicalDomain.lightPosition, canonicalDomain.lightDirection, rng
@@ -364,7 +365,7 @@ Reservoir mergeReservoirPair(Reservoir canonical, ReuseDomain canonicalDomain, R
 #endif
     );
     // Canonical -> other evaluates competing support, retaining the canonical sample.
-    combineReservoirWithShiftMapping(merged, canonical, other.M, roughnessThreshold,
+    combineReservoirWithShiftMapping(merged, canonical, other.M, criteria,
         otherDomain.primary, otherDomain.material, otherDomain.primaryLength,
         otherDomain.gate, canonicalDomain.gate, 1.f / K, true,
         otherDomain.lightPosition, otherDomain.lightDirection, rng

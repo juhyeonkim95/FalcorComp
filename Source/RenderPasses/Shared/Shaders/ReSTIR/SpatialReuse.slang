@@ -25,6 +25,7 @@ struct SpatialReuse
     Texture1D<float2> neighborOffsets;
     uint neighborCount;
     float reconnectionRoughnessThreshold;
+    float reconnectionMinDistance;
     float gatherRadius;
     bool useBinReuse; // Histogram only: bin centers are binCenter(bin).
 
@@ -44,6 +45,12 @@ struct SpatialReuse
     RWTexture2D<uint4> gNewtonStatistics;
     RWTexture2D<float2> gMappingDistance;
 #endif
+
+    ReconnectionCriteria getReconnectionCriteria()
+    {
+        ReconnectionCriteria criteria = { reconnectionRoughnessThreshold, reconnectionMinDistance };
+        return criteria;
+    }
 
     uint getLinearizedPixel(uint2 pixel)
     {
@@ -177,13 +184,13 @@ struct SpatialReuse
             // Central -> neighbor: accumulate the central sample's pairwise weight.
             ShiftMappingDebugInfo debugInfo;
             canonicalWeight += evaluateCanonicalShiftWeight(
-                centralReservoir, centralSuffix, centralVertex, neighborReservoir.M, reconnectionRoughnessThreshold,
+                centralReservoir, centralSuffix, centralVertex, neighborReservoir.M, getReconnectionCriteria(),
                 neighborPrimary, neighborMaterial, neighborDepth,
                 neighborGateCenter, gateCenter, sg, debugInfo);
 
             // Neighbor -> central: shift the neighbor sample and stream it into the reservoir.
             combineReservoirWithShiftMapping(
-                destination, neighborReservoir, centralReservoir.M, reconnectionRoughnessThreshold,
+                destination, neighborReservoir, centralReservoir.M, getReconnectionCriteria(),
                 primary, primaryMaterial, primaryDepth,
                 gateCenter, neighborGateCenter, 1.f, false,
                 gLaserOrigin, gLaserDirection, sg

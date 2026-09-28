@@ -162,6 +162,7 @@ void TransientHistogramReSTIRInline::bindShaderData(const ShaderVar& var, const 
     var["CB"]["gFrameCount"] = mFrameCount;
     var["CB"]["gFrameDim"] = renderData.getDefaultTextureDims();
     var["CB"]["gReconnectionRoughnessThreshold"] = mOptions.restir.reconnectionRoughnessThreshold;
+    var["CB"]["gReconnectionMinDistance"] = mOptions.restir.reconnectionMinDistance;
     var["CB"]["gSamplesPerPixel"] = mOptions.pathTracing.samplesPerPixel;
     var["CB"]["gTemporalHistoryLength"] = mOptions.restir.temporalHistoryLength;
     mLaser.bindShaderData(var["Laser"]);

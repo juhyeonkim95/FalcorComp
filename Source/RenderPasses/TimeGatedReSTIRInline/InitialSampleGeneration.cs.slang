@@ -35,6 +35,7 @@ cbuffer CB
 
     uint gSamplesPerPixel;
     float gReconnectionRoughnessThreshold;
+    float gReconnectionMinDistance;
     float gEllipsoidRoughnessThreshold;
     float gTemporalHistoryLength;
     float gRoughTimeGateSampleRatio; // Shrink mapping: fraction of the paths traced with the wide gate, in [0, 1].
@@ -55,6 +56,12 @@ cbuffer PreviousLaser
 }
 #endif
 
+
+ReconnectionCriteria getReconnectionCriteria()
+{
+    ReconnectionCriteria criteria = { gReconnectionRoughnessThreshold, gReconnectionMinDistance };
+    return criteria;
+}
 
 // Inputs
 Texture2D<PackedHitInfo> gVBuffer;
@@ -108,7 +115,8 @@ void submitEllipsoidalCandidate(inout Reservoir reservoir, ReconnectionState rc,
     proposal.pdf = ellipsoidal.pdf;
     proposal.weight = material.eval(origin, ellipsoidal.direction, rng) / ellipsoidal.pdf;
     bool eligible = material.getProperties(origin).roughness > gReconnectionRoughnessThreshold &&
-        targetMaterial.getProperties(target).roughness > gReconnectionRoughnessThreshold;
+        targetMaterial.getProperties(target).roughness > gReconnectionRoughnessThreshold &&
+        ellipsoidal.distance > gReconnectionMinDistance;
     float suffixDirectionWeight = 0.f;
     if (rc.postBounce == 2) suffixDirectionWeight = shadingCosine(origin, material, ellipsoidal.direction) / ellipsoidal.pdf;
     rc.recordHit(ellipsoidal.hit, target, proposal, targetDepth, eligible, ellipsoidal.distance, origin.IoR,
@@ -141,7 +149,7 @@ Reservoir mergeGateReservoirs(Reservoir narrow, Reservoir wide, uint narrowCount
     // A failed expansion or no-RC path retains the full narrow contribution.
     ReuseDomain domain = { primary, primaryMaterial, primaryLength, gTimeCenter, gLaserOrigin, gLaserDirection, gLaserPower,
         gLaserCosAngle };
-    return mergeReservoirPair(narrow, domain, wide, domain, K, false, gReconnectionRoughnessThreshold, rng);
+    return mergeReservoirPair(narrow, domain, wide, domain, K, false, getReconnectionCriteria(), rng);
 }
 #endif
 
@@ -181,7 +189,7 @@ Reservoir reuseTemporalHistory(Reservoir fresh, uint2 pixel, ShadingData primary
     ReuseDomain last = { history.primary, previousMaterial, history.primaryLength, gPreviousTimeCenter, gLaserOrigin,
         gLaserDirection, gLaserPower, gLaserCosAngle };
 #endif
-    return mergeReservoirPair(fresh, current, previous, last, 1.f, true, gReconnectionRoughnessThreshold, rng);
+    return mergeReservoirPair(fresh, current, previous, last, 1.f, true, getReconnectionCriteria(), rng);
 }
 #endif
 
@@ -324,7 +332,7 @@ float3 tracePath(uint2 pixel, uint2 frameDim)
             pathLength += segmentLength * segmentIoR;
             if (!(pathLength < maxPathLength)) break;
             bool currentDiffuse = material.getProperties(surface).roughness > gReconnectionRoughnessThreshold;
-            rc.recordHit(hit, surface, sample, depth, previousDiffuse && currentDiffuse && segmentLength > 0.f,
+            rc.recordHit(hit, surface, sample, depth, previousDiffuse && currentDiffuse && segmentLength > gReconnectionMinDistance,
                 segmentLength, segmentIoR, suffixDirectionWeight, sampleSeed);
 
             LightSample light = {};
