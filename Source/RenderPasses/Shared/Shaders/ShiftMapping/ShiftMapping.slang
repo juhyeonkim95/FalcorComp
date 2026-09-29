@@ -51,24 +51,28 @@ struct ShiftMappingDebugInfo
 #endif
 }
 
-// The source path's endpoints around the moved vertex: p1 = a_s (preceding vertex) and next = y_s (next vertex,
-// p2 = its position). When the source path comes from another pixel or frame, its path length |a_s - X| + |y_s - X|
-// differs from the target's, and so do its gradient and Hessian at the source point, which the gauge and the
-// Jacobian use. A chart built from y (directions from y) is a different function for the source and the target when
-// y_s differs from y_t (a re-lit suffix in a dynamic scene); charts built from x's plane or triangle never differ.
+// The source path's endpoints around the moved vertex: p1 = a_s (preceding vertex) and p2 = y_s (next vertex; its ray
+// origin and oriented normal build the ray chart from y_s). When the source path comes from another pixel or frame,
+// its path length |a_s - X| + |y_s - X| differs from the target's, and so do its gradient and Hessian at the source
+// point, which the gauge and the Jacobian use. A chart built from y (directions from y) is a different function for
+// the source and the target when y_s differs from y_t (a re-lit suffix in a dynamic scene); charts built from x's
+// plane or triangle never differ.
 struct ShiftSource
 {
     float3 p1;
     float3 p2;
-    ShadingData next;
+    float3 nextOrigin; // y_s's ray origin (computeRayOrigin)
+    float3 nextNormal; // y_s's oriented face normal
     bool distinct;     // (a_s, y_s) differ from (a_t, y_t); false: the single-length solve.
     bool distinctNext; // y_s differs from y_t (position or oriented normal): charts built from y differ.
 };
 
 ShiftSource makeShiftSource(float3 p1, ShadingData next, ShadingData x1, ShadingData x3)
 {
-    bool distinctNext = any(next.posW != x3.posW) || any(next.getOrientedFaceNormal() != x3.getOrientedFaceNormal());
-    ShiftSource source = { p1, next.posW, next, any(p1 != x1.posW) || distinctNext, distinctNext };
+    float3 nextNormal = next.getOrientedFaceNormal();
+    bool distinctNext = any(next.posW != x3.posW) || any(nextNormal != x3.getOrientedFaceNormal());
+    ShiftSource source = { p1, next.posW, next.computeRayOrigin(), nextNormal, any(p1 != x1.posW) || distinctNext,
+        distinctNext };
     return source;
 }
 
@@ -95,12 +99,12 @@ HitInfo pathLengthAwareShiftMapping(
     ShiftSource source,
     ShiftLengthCondition condition,
     out float jacobian,
-    out VertexData shiftedVertex, // the returned hit's vertex data
+    out VertexData shiftedVertex, // the returned hit's vertex data; zero-initialized when the shift fails
     inout ShiftMappingDebugInfo debuginfo,
     inout SampleGenerator sg
 )
 {
-    shiftedVertex = v2;
+    shiftedVertex = {};
     // Invalid reconnection vertex.
     if(!x2.isValid()){
         jacobian = 0.0;
@@ -114,6 +118,7 @@ HitInfo pathLengthAwareShiftMapping(
     // Identity shortcut: only valid when the source and target lengths are the same function of x2.
     if(abs(dt) < tol && !source.distinct){
         jacobian = 1.0;
+        shiftedVertex = v2;
         return x2;
     }
     float2 a_const = gGaugeAxis;
@@ -123,6 +128,7 @@ HitInfo pathLengthAwareShiftMapping(
     }
 
 #if SHIFT_MAPPING_METHOD == SHIFT_MAPPING_NO
+    shiftedVertex = v2;
     return shiftNone(x2, jacobian, debuginfo);
 #elif SHIFT_MAPPING_METHOD == SHIFT_MAPPING_LOCAL_TANGENT
     return shiftLocalTangent(x1, x2, v2, x3, source, condition, a_const, jacobian, shiftedVertex, debuginfo, tol);
@@ -136,6 +142,7 @@ HitInfo pathLengthAwareShiftMapping(
     return shiftRadial(x1, x2, v2, x3, source, condition, jacobian, shiftedVertex, debuginfo, tol);
 #endif
     jacobian = 1.0;
+    shiftedVertex = v2;
     return x2;
 }
 
@@ -143,7 +150,7 @@ HitInfo pathLengthAwareShiftMapping(
 HitInfo pathLengthAwareShiftMapping(ShadingData x1, HitInfo x2, VertexData v2, ShadingData x3, float dt,
     out float jacobian, out VertexData shiftedVertex, inout ShiftMappingDebugInfo debuginfo, inout SampleGenerator sg)
 {
-    ShiftSource source = { x1.posW, x3.posW, x3, false, false };
+    ShiftSource source = { x1.posW, x3.posW, float3(0.f), float3(0.f), false, false };
     return pathLengthAwareShiftMapping(x1, x2, v2, x3, source, makeLengthOffset(dt), jacobian, shiftedVertex, debuginfo,
         sg);
 }
@@ -182,12 +189,12 @@ HitInfo shiftAreaAdaptive(
     ShiftLengthCondition condition,
     float2 a_const,
     out float jacobian,
-    out VertexData shiftedVertex, // the returned hit's vertex data
+    out VertexData shiftedVertex, // the returned hit's vertex data; zero-initialized when the shift fails
     inout ShiftMappingDebugInfo debuginfo,
     float tol=1e-7
 )
 {
-    shiftedVertex = v2;
+    shiftedVertex = {};
     const float areaThreshold = 0.01f;
     TriangleHit original = x2.getTriangleHit();
     bool usePlane = gScene.getFaceAreaW(original.instanceID, original.primitiveIndex) > areaThreshold;
@@ -197,12 +204,12 @@ HitInfo shiftAreaAdaptive(
     else
         hit = shiftRayTrace(x1, x2, v2, x3, source, condition, a_const, jacobian, shiftedVertex, debuginfo, tol);
 
-    if (!(jacobian > 0.f) || !hit.isValid()) { jacobian = 0.f; shiftedVertex = v2; return x2; }
-    if (hit.getType() != HitType::Triangle) { jacobian = 0.f; shiftedVertex = v2; return x2; }
+    if (!(jacobian > 0.f) || !hit.isValid()) { jacobian = 0.f; shiftedVertex = {}; return x2; }
+    if (hit.getType() != HitType::Triangle) { jacobian = 0.f; shiftedVertex = {}; return x2; }
     TriangleHit shifted = hit.getTriangleHit();
     bool shiftedUsesPlane = gScene.getFaceAreaW(shifted.instanceID, shifted.primitiveIndex) > areaThreshold;
     // Both endpoints must select the same surface operation.
-    if (shiftedUsesPlane != usePlane) { jacobian = 0.f; shiftedVertex = v2; return x2; }
+    if (shiftedUsesPlane != usePlane) { jacobian = 0.f; shiftedVertex = {}; return x2; }
     return hit;
 }
 
@@ -223,12 +230,12 @@ HitInfo shiftLocalTangent(
     ShiftLengthCondition condition,
     float2 a_const,
     out float jacobian,
-    out VertexData shiftedVertex, // the returned hit's vertex data
+    out VertexData shiftedVertex, // the returned hit's vertex data; zero-initialized when the shift fails
     inout ShiftMappingDebugInfo debuginfo,
     float tol=1e-7
 )
 {
-    shiftedVertex = v2;
+    shiftedVertex = {};
     const float3 p1 = x1.posW;
     const float3 p2 = x3.posW;
     float3 x = v2.posW;
@@ -336,12 +343,12 @@ HitInfo shiftRadial(
     ShiftSource source,
     ShiftLengthCondition condition,
     out float jacobian,
-    out VertexData shiftedVertex, // the returned hit's vertex data
+    out VertexData shiftedVertex, // the returned hit's vertex data; zero-initialized when the shift fails
     inout ShiftMappingDebugInfo debuginfo,
     float tol=1e-7
 )
 {
-    shiftedVertex = v2;
+    shiftedVertex = {};
     jacobian = 0.f;
     debuginfo.iters = 0;
     debuginfo.status = uint(NewtonResultStatus::NoConverge);
@@ -464,12 +471,12 @@ HitInfo shiftBarycentric(
     ShiftLengthCondition condition,
     float2 a_const,
     out float jacobian,
-    out VertexData shiftedVertex, // the returned hit's vertex data
+    out VertexData shiftedVertex, // the returned hit's vertex data; zero-initialized when the shift fails
     inout ShiftMappingDebugInfo debuginfo,
     float tol=1e-7
 )
 {
-    shiftedVertex = v2;
+    shiftedVertex = {};
     TriangleHit triHit = x2.getTriangleHit();
     float3 triposW[3];
     gScene.getVertexPositionsW(triHit.instanceID, triHit.primitiveIndex, triposW);
@@ -512,12 +519,12 @@ HitInfo shiftRayTrace(
     ShiftLengthCondition condition,
     float2 a_const,
     out float jacobian,
-    out VertexData shiftedVertex, // the returned hit's vertex data
+    out VertexData shiftedVertex, // the returned hit's vertex data; zero-initialized when the shift fails
     inout ShiftMappingDebugInfo debuginfo,
     float tol=1e-7
 )
 {
-    shiftedVertex = v2;
+    shiftedVertex = {};
     const float3 p1 = x1.posW;
     const float3 p2 = x3.posW;
     float3 x = v2.posW;
@@ -533,8 +540,8 @@ HitInfo shiftRayTrace(
     // Source chart: directions from the source path's y. It is the target chart unless y moved (re-lit suffix); then
     // xi is the source vertex in the source chart, and the solver traces the target chart's start point X_t(xi).
     bool separateCharts = source.distinctNext;
-    const float3 p2os = separateCharts ? source.next.computeRayOrigin() : p2o;
-    float3 n2s = separateCharts ? source.next.getOrientedFaceNormal() : n2;
+    const float3 p2os = separateCharts ? source.nextOrigin : p2o;
+    float3 n2s = separateCharts ? source.nextNormal : n2;
     float3 b2s = separateCharts ? perp_stark_onb(n2s) : b2;
     float3 t2s = separateCharts ? cross(b2s, n2s) : t2;
     RayTraceHemisphereChart sourceOps = RayTraceHemisphereChart(source.p1, source.p2, p2os, t2s, b2s, n2s);

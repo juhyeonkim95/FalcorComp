@@ -160,6 +160,14 @@ bool shiftToPrefix(Reservoir source, VertexData x, ReconnectionSuffix suffix, Sh
     jacobian *= K;
     // A rejected/non-finite shift must have zero support, not NaN weight.
     jacobian = select(isfinite(jacobian), max(jacobian, 0.f), 0.f);
+    if (jacobian == 0.f)
+    {
+        // No support: skip the moved path's evaluation (and its visibility ray). shifted.vertex is left unset.
+        shifted.jacobian = 0.f;
+        shifted.f = 0.f;
+        shifted.totalPathLength = source.totalPathLength;
+        return true;
+    }
 
     float3 shiftedPosition = shiftedData.posW;
     shifted.vertex = loadShadingData(shifted.hit.getTriangleHit(), shiftedData, normalize(shiftedPosition - a.posW));
@@ -278,7 +286,7 @@ void combineReservoirWithShiftMapping(
         return;
     }
 #if IS_SCENE_DYNAMIC
-    if (updateLight)
+    if (updateLight && shifted.jacobian > 0.f)
     {
         if (suffixSource.rcNextVertexBounce > 0)
             shifted.f *= checkVisibility(shifted.vertex, suffix.vertex);
