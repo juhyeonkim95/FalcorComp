@@ -47,3 +47,6 @@
 
 # Local files kept out of the repository
 /temp/
+
+# Reference code (ReSTIR PT), kept locally only
+/ReSTIR_PT-master/
