@@ -15,7 +15,7 @@ void main(uint3 tid : SV_DispatchThreadID)
     u = float2(.08182081f, .28834974f);
     float L0; float2 g0; float3 H0;
     ops.eval(u, L0, g0, H0);
-    NewtonResult result = solveShiftNewton(ops, ops, false, false, 0.f, u, .33747132f, GaugeMode::OrthoAvgGrad,
+    NewtonResult result = solveShiftNewton(ops, ops, false, false, makeLengthOffset(.33747132f), u, GaugeMode::OrthoAvgGrad,
         float2(0.f, 1.f), 5, .003374713f);
     float L1; float2 g1; float3 H1;
     ops.eval(result.xi_prime, L1, g1, H1);
@@ -25,12 +25,12 @@ void main(uint3 tid : SV_DispatchThreadID)
 
     LocalPlaneChart singular = LocalPlaneChart(float3(0.f, 0.f, 1.f), float3(0.f, 0.f, 2.f),
         float3(0.f), float3(1.f, 0.f, 0.f), float3(0.f, 1.f, 0.f));
-    result = solveShiftNewton(singular, singular, false, false, 0.f, float2(0.f), .1f, GaugeMode::OrthoAvgGrad,
+    result = solveShiftNewton(singular, singular, false, false, makeLengthOffset(.1f), float2(0.f), GaugeMode::OrthoAvgGrad,
         float2(0.f, 1.f), 5, 1e-6f);
     results[1] = float4(float(result.status), result.detJ, 0.f, 0.f);
 
     // Exhausted iterations must not be reported as success.
-    result = solveShiftNewton(ops, ops, false, false, 0.f, u, .33747132f, GaugeMode::OrthoAvgGrad,
+    result = solveShiftNewton(ops, ops, false, false, makeLengthOffset(.33747132f), u, GaugeMode::OrthoAvgGrad,
         float2(0.f, 1.f), 1, 1e-6f);
     results[2] = float4(float(result.status), result.detJ, 0.f, 0.f);
 
@@ -49,14 +49,14 @@ void main(uint3 tid : SV_DispatchThreadID)
         target.eval(x0, Lt, g, H); source.eval(x0, Ls, g, H);
         float C = Lt - Ls + .01f; // a small shift, as in temporal/spatial reuse
         float tol = 1e-6f;
-        // c(xi) = ell_s(xi) + C - ell_t(xi): the offset the reuse code computes at the source point.
+        // The condition ell_t(xi') = ell_s(xi) + C (K = 1, g_t - g_s + rest_s - rest_t = C).
         float2 xs[5] = { x0, x0 + float2(1e-3f, 0.f), x0 - float2(1e-3f, 0.f), x0 + float2(0.f, 1e-3f), x0 - float2(0.f, 1e-3f) };
         float2 xp[5]; float detJ = 0.f; uint status = 0;
         for (uint j = 0; j < 5; ++j)
         {
             target.eval(xs[j], Lt, g, H); source.eval(xs[j], Ls, g, H);
             LocalPlaneChart t = target;
-            NewtonResult r = solveShiftNewton(t, source, true, false, 0.f, xs[j], Ls + C - Lt, GaugeMode::OrthoAvgGrad, float2(0.f, 1.f), 20, tol);
+            NewtonResult r = solveShiftNewton(t, source, true, false, makeLengthOffset(C), xs[j], GaugeMode::OrthoAvgGrad, float2(0.f, 1.f), 20, tol);
             xp[j] = r.xi_prime;
             if (j == 0) { detJ = r.detJ; status = uint(r.status); }
         }
@@ -65,12 +65,12 @@ void main(uint3 tid : SV_DispatchThreadID)
         // Reverse: from xi' on the target prefix back to the source prefix.
         target.eval(xp[0], Lt, g, H); source.eval(xp[0], Ls, g, H);
         LocalPlaneChart s2 = source;
-        NewtonResult back = solveShiftNewton(s2, target, true, false, 0.f, xp[0], Lt - C - Ls, GaugeMode::OrthoAvgGrad, float2(0.f, 1.f), 20, tol);
+        NewtonResult back = solveShiftNewton(s2, target, true, false, makeLengthOffset(-C), xp[0], GaugeMode::OrthoAvgGrad, float2(0.f, 1.f), 20, tol);
         results[4 + k] = float4(detJ, detFD, length(back.xi_prime - x0), float(status));
-        // Old Jacobian on the same map: source gradient replaced by the target's.
+        // Old Jacobian on the same map: source gradient replaced by the target's (ell_t(xi') = ell_t(x0) + Ls + C - Lt).
         LocalPlaneChart t2 = target;
         target.eval(x0, Lt, g, H); source.eval(x0, Ls, g, H);
-        NewtonResult old = solveShiftNewton(t2, target, false, false, 0.f, x0, Ls + C - Lt, GaugeMode::OrthoAvgGrad, float2(0.f, 1.f), 20, tol);
+        NewtonResult old = solveShiftNewton(t2, target, false, false, makeLengthOffset(Ls + C - Lt), x0, GaugeMode::OrthoAvgGrad, float2(0.f, 1.f), 20, tol);
         results[8 + k] = float4(old.detJ, detFD, length(old.xi_prime - xp[0]), float(old.status));
     }
 
@@ -97,7 +97,7 @@ void main(uint3 tid : SV_DispatchThreadID)
         {
             source.eval(xs[j], Ls, g, H);
             LocalPlaneChart t = target;
-            NewtonResult r = solveShiftNewton(t, source, true, true, Ls + C, xs[j], 0.f, GaugeMode::OrthoAvgGrad,
+            NewtonResult r = solveShiftNewton(t, source, true, true, makeLengthOffset(C), xs[j], GaugeMode::OrthoAvgGrad,
                 float2(0.f, 1.f), 20, 1e-6f);
             xw[j] = target.X(r.xi_prime);
             if (j == 0) { detJ = r.detJ; status = uint(r.status); xp0 = r.xi_prime; }
@@ -107,7 +107,7 @@ void main(uint3 tid : SV_DispatchThreadID)
         // Reverse: from x' in the target chart back to the source chart.
         float Lt1; target.eval(xp0, Lt1, g, H);
         LocalPlaneChart s2 = source;
-        NewtonResult back = solveShiftNewton(s2, target, true, true, Lt1 - C, xp0, 0.f, GaugeMode::OrthoAvgGrad,
+        NewtonResult back = solveShiftNewton(s2, target, true, true, makeLengthOffset(-C), xp0, GaugeMode::OrthoAvgGrad,
             float2(0.f, 1.f), 20, 1e-6f);
         results[12 + k] = float4(detJ * rhoT / rhoS, areaFD, length(back.xi_prime - x0), float(status));
     }

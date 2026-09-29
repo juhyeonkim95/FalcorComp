@@ -12,6 +12,7 @@ import RenderPasses.Shared.Shaders.Lights.LightConnection;
 
 import RenderPasses.Shared.Shaders.ReSTIR.PathReconstruction;
 import RenderPasses.Shared.Shaders.ShiftMapping.ShiftMapping;
+import RenderPasses.Shared.Shaders.ShiftMapping.NewtonSolver;
 
 // Balanced ratios with scaled mass, target and Jacobian factors. No logs and
 // no reciprocal of a tiny target are needed; all products here are <= 1.
@@ -144,13 +145,15 @@ bool shiftToPrefix(Reservoir source, VertexData x, ReconnectionSuffix suffix, Sh
         return false;
     }
 
-    float targetLength = prefixLength + length(a.posW - x.posW) + length(x.posW - suffix.vertex.posW) + suffix.length;
-    float dt = K * (source.totalPathLength - sourceGate) + targetGate - targetLength;
-    float tol = max(abs(dt) * gNewtonRelativeTolerance, 1e-6f);
+    // Each path's length besides its two segments at x: the source's prefix up to a_s and suffix from y_s (from its
+    // stored total), and the target's prefix up to a plus the suffix from y.
+    float sourceRest = source.totalPathLength - length(source.rcPrevVertexPosition - x.posW)
+        - length(x.posW - sourceNext.posW);
+    ShiftLengthCondition condition = { K, sourceGate, targetGate, sourceRest, prefixLength + suffix.length };
     float jacobian = 0.f;
     ShiftSource shiftSource = makeShiftSource(source.rcPrevVertexPosition, sourceNext, a, suffix.vertex);
-    shifted.hit = pathLengthAwareShiftMapping(a, source.rcVertexHit, suffix.vertex, shiftSource, dt, jacobian, debugInfo,
-        tol, sg);
+    shifted.hit = pathLengthAwareShiftMapping(a, source.rcVertexHit, suffix.vertex, shiftSource, condition, jacobian,
+        debugInfo, sg);
     shifted.prefixEnd = a.posW;
     shifted.mappingJacobian = jacobian;
     jacobian *= K;

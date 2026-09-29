@@ -82,18 +82,19 @@ void recordShiftSolve(NewtonResult result, inout ShiftMappingDebugInfo debugInfo
 #endif
 }
 
-// Moves x2 so that the target path (x1 -> x2 -> x3) is dt longer than the target path through the unmoved x2, i.e.
-// ell_t(x2') = ell_t(x2) + dt. dt comes from the source path's own length, so with source endpoints that differ from
-// the target's (source), the map is ell_t(x2') = K ell_s(x2) + C and its Jacobian uses the source's gradient.
+// Moves the source path's vertex x2 to x2' on the target path (x1 -> x2' -> x3) so that the target path meets the
+// source path's length condition (ShiftLengthCondition):
+//     ell_t(x2') = K (ell_s(x2) + rest_s - g_s) + g_t - rest_t,
+// with ell_s(x2) = |source.p1 - x2| + |source.p2 - x2| and ell_t(x2') = |x1 - x2'| + |x3 - x2'|. With source endpoints
+// that differ from the target's, the Jacobian uses the source length's gradient at x2.
 HitInfo pathLengthAwareShiftMapping(
     ShadingData x1, // preceding vertex of the target path
     HitInfo x2, // vertex to shift
     ShadingData x3, // fixed next vertex (surface or point light) of the target path
     ShiftSource source,
-    float dt,
+    ShiftLengthCondition condition,
     out float jacobian,
     inout ShiftMappingDebugInfo debuginfo,
-    float tol,
     inout SampleGenerator sg
 )
 {
@@ -102,6 +103,11 @@ HitInfo pathLengthAwareShiftMapping(
         jacobian = 0.0;
         return x2;
     }
+    // dt: how much the target path through the unmoved x2 must change, ell_t(x2') - ell_t(x2). It sets the tolerance.
+    float3 x = gScene.getVertexData(x2.getTriangleHit()).posW;
+    float dt = condition.targetLength(length(source.p1 - x) + length(source.p2 - x))
+        - (length(x1.posW - x) + length(x3.posW - x));
+    float tol = max(abs(dt) * gNewtonRelativeTolerance, 1e-6f);
     // Identity shortcut: only valid when the source and target lengths are the same function of x2.
     if(abs(dt) < tol && !source.distinct){
         jacobian = 1.0;
@@ -114,28 +120,28 @@ HitInfo pathLengthAwareShiftMapping(
     }
 
 #if SHIFT_MAPPING_METHOD == SHIFT_MAPPING_NO
-    return shiftNone(x1, x2, x3, dt, a_const, jacobian, debuginfo, tol);
+    return shiftNone(x2, jacobian, debuginfo);
 #elif SHIFT_MAPPING_METHOD == SHIFT_MAPPING_LOCAL_TANGENT
-    return shiftLocalTangent(x1, x2, x3, source, dt, a_const, jacobian, debuginfo, tol);
+    return shiftLocalTangent(x1, x2, x3, source, condition, a_const, jacobian, debuginfo, tol);
 #elif SHIFT_MAPPING_METHOD == SHIFT_MAPPING_BARYCENTRIC
-    return shiftBarycentric(x1, x2, x3, source, dt, a_const, jacobian, debuginfo, tol);
+    return shiftBarycentric(x1, x2, x3, source, condition, a_const, jacobian, debuginfo, tol);
 #elif SHIFT_MAPPING_METHOD == SHIFT_MAPPING_RAY_TRACE || SHIFT_MAPPING_METHOD == SHIFT_MAPPING_RAY_TRACE_CHART
-    return shiftRayTrace(x1, x2, x3, source, dt, a_const, jacobian, debuginfo, tol);
+    return shiftRayTrace(x1, x2, x3, source, condition, a_const, jacobian, debuginfo, tol);
 #elif SHIFT_MAPPING_METHOD == SHIFT_MAPPING_AREA_ADAPTIVE
-    return shiftAreaAdaptive(x1, x2, x3, source, dt, a_const, jacobian, debuginfo, tol);
+    return shiftAreaAdaptive(x1, x2, x3, source, condition, a_const, jacobian, debuginfo, tol);
 #elif SHIFT_MAPPING_METHOD == SHIFT_MAPPING_RADIAL
-    return shiftRadial(x1, x2, x3, source, dt, jacobian, debuginfo, tol);
+    return shiftRadial(x1, x2, x3, source, condition, jacobian, debuginfo, tol);
 #endif
     jacobian = 1.0;
     return x2;
 }
 
-// Same source and target endpoints (e.g. antithetic sampling at one vertex, or reuse within one pixel).
+// Same source and target endpoints, with a fixed length change: ell(x2') = ell(x2) + dt (e.g. antithetic sampling).
 HitInfo pathLengthAwareShiftMapping(ShadingData x1, HitInfo x2, ShadingData x3, float dt, out float jacobian,
-    inout ShiftMappingDebugInfo debuginfo, float tol, inout SampleGenerator sg)
+    inout ShiftMappingDebugInfo debuginfo, inout SampleGenerator sg)
 {
     ShiftSource source = { x1.posW, x3.posW, x3, false, false };
-    return pathLengthAwareShiftMapping(x1, x2, x3, source, dt, jacobian, debuginfo, tol, sg);
+    return pathLengthAwareShiftMapping(x1, x2, x3, source, makeLengthOffset(dt), jacobian, debuginfo, sg);
 }
 
 float3 shiftRayOrigin(ShadingData endpoint, bool isSurface, float3 destination)
@@ -166,7 +172,7 @@ HitInfo shiftAreaAdaptive(
     HitInfo x2, // vertex to shift
     ShadingData x3, // fixed next vertex (surface or point light)
     ShiftSource source,
-    float dt,
+    ShiftLengthCondition condition,
     float2 a_const,
     out float jacobian,
     inout ShiftMappingDebugInfo debuginfo,
@@ -178,9 +184,9 @@ HitInfo shiftAreaAdaptive(
     bool usePlane = gScene.getFaceAreaW(original.instanceID, original.primitiveIndex) > areaThreshold;
     HitInfo hit;
     if (usePlane)
-        hit = shiftLocalTangent(x1, x2, x3, source, dt, a_const, jacobian, debuginfo, tol);
+        hit = shiftLocalTangent(x1, x2, x3, source, condition, a_const, jacobian, debuginfo, tol);
     else
-        hit = shiftRayTrace(x1, x2, x3, source, dt, a_const, jacobian, debuginfo, tol);
+        hit = shiftRayTrace(x1, x2, x3, source, condition, a_const, jacobian, debuginfo, tol);
 
     if (!(jacobian > 0.f) || !hit.isValid()) { jacobian = 0.f; return x2; }
     if (hit.getType() != HitType::Triangle) { jacobian = 0.f; return x2; }
@@ -191,16 +197,7 @@ HitInfo shiftAreaAdaptive(
     return hit;
 }
 
-HitInfo shiftNone(
-    ShadingData x1, // preceding vertex
-    HitInfo x2, // vertex to shift
-    ShadingData x3, // fixed next vertex (surface or point light)
-    float dt,
-    float2 a_const,
-    out float jacobian,
-    inout ShiftMappingDebugInfo debuginfo,
-    float tol=1e-7
-)
+HitInfo shiftNone(HitInfo x2, out float jacobian, inout ShiftMappingDebugInfo debuginfo)
 {
     debuginfo.iters = 0;
     debuginfo.status = 0;
@@ -213,7 +210,7 @@ HitInfo shiftLocalTangent(
     HitInfo x2, // vertex to shift
     ShadingData x3, // fixed next vertex (surface or point light)
     ShiftSource source,
-    float dt,
+    ShiftLengthCondition condition,
     float2 a_const,
     out float jacobian,
     inout ShiftMappingDebugInfo debuginfo,
@@ -233,7 +230,7 @@ HitInfo shiftLocalTangent(
     LocalPlaneChart sourceOps = LocalPlaneChart(source.p1, source.p2, x, tangent, bitangent);
     float2 xi = float2(0, 0);
     // The plane chart depends only on x's plane, so it is the same function for the source and the target.
-    NewtonResult result = solveShiftNewton(ops, sourceOps, source.distinct, false, 0.f, xi, dt, getShiftGaugeMode(),
+    NewtonResult result = solveShiftNewton(ops, sourceOps, source.distinct, false, condition, xi, getShiftGaugeMode(),
         a_const, gNewtonMaxIteration, tol);
     recordShiftSolve(result, debuginfo);
     jacobian = 0.f;
@@ -308,14 +305,15 @@ bool solveRadial(float3 p1, float3 p2, float3 m, float3 u, float target, float s
 }
 
 /** Radial shift: moves x2's vertex along the ray from m, the minimum of the path length |p1 - X| + |p2 - X| on the
-    vertex's plane, until the path length changes by dt. The path length increases along every ray from m, so the
-    target has one solution on the ray (a 1D Newton search with bisection), and the +dt and -dt shifts are exact
-    inverses: the partner lies on the same ray, and m depends only on the plane and the two fixed vertices. m is
-    where the segment p1 -> p2 crosses the plane, with p2 mirrored when both are on the same side. The shifted
-    vertex must be the first hit from x3 on the same plane. The jacobian is the area ratio of the polar map
-    (r, angle) -> (s, angle), (s / r) * (slope(r) / slope(s)). The gauge settings are not used.
+    vertex's plane, until the path length meets the length condition (a change dt with the same endpoints). The path
+    length increases along every ray from m, so the target has one solution on the ray (a 1D Newton search with
+    bisection), and the +dt and -dt shifts are exact inverses: the partner lies on the same ray, and m depends only on
+    the plane and the two fixed vertices. m is where the segment p1 -> p2 crosses the plane, with p2 mirrored when
+    both are on the same side. The shifted vertex must be the first hit from x3 on the same plane. The jacobian is the
+    area ratio of the polar map (r, angle) -> (s, angle), (s / r) * (slope(r) / slope(s)). The gauge settings are not
+    used.
     With a distinct source, the angle is kept about each path's own minimum: x = m_s + r u and x' = m_t + s u with
-    ell_t(x') = ell_t(x) + dt (= K ell_s(x) + C), slope(r) the source length's slope, slope(s) the target's; the reverse
+    ell_t(x') = condition.targetLength(ell_s(x)), slope(r) the source length's slope, slope(s) the target's; the reverse
     shift then maps x' back to x.
 */
 HitInfo shiftRadial(
@@ -323,7 +321,7 @@ HitInfo shiftRadial(
     HitInfo x2, // vertex to shift
     ShadingData x3, // fixed next vertex (surface or point light)
     ShiftSource source,
-    float dt,
+    ShiftLengthCondition condition,
     out float jacobian,
     inout ShiftMappingDebugInfo debuginfo,
     float tol=1e-7
@@ -350,9 +348,8 @@ HitInfo shiftRadial(
         float r = length(offset);
         if (!(r > 1e-6f)) return x2;
         float3 u = offset / r;
-        float slopeSource, slopeTarget;
-        pathLengthAlong(source.p1, source.p2, x, u, slopeSource);
-        float target = pathLengthAlong(p1, p2, x, u, slopeTarget) + dt;
+        float slopeSource;
+        float target = condition.targetLength(pathLengthAlong(source.p1, source.p2, x, u, slopeSource));
         if (!(slopeSource > 0.f)) return x2;
         float s, slope;
         if (!solveRadial(p1, p2, mt, u, target, r, tol, debuginfo, s, slope)) return x2;
@@ -388,7 +385,9 @@ HitInfo shiftRadial(
     float3 u = offset / r;
 
     float slopeStart;
-    float target = pathLengthAlong(p1, p2, m + r * u, u, slopeStart) + dt;
+    float startLength = pathLengthAlong(p1, p2, m + r * u, u, slopeStart);
+    float target = condition.targetLength(startLength);
+    float dt = target - startLength;
     if (!(slopeStart > 0.f)) return x2;
 
     // Bracket the root on the ray, then refine with Newton, falling back to bisection.
@@ -445,7 +444,7 @@ HitInfo shiftBarycentric(
     HitInfo x2, // vertex to shift
     ShadingData x3, // fixed next vertex (surface or point light)
     ShiftSource source,
-    float dt,
+    ShiftLengthCondition condition,
     float2 a_const,
     out float jacobian,
     inout ShiftMappingDebugInfo debuginfo,
@@ -461,7 +460,7 @@ HitInfo shiftBarycentric(
     BarycentricChart ops = BarycentricChart(p1, p2, triposW[0], triposW[1], triposW[2]);
     BarycentricChart sourceOps = BarycentricChart(source.p1, source.p2, triposW[0], triposW[1], triposW[2]);
     // The barycentric chart depends only on x's triangle (x' must stay on it): the same for source and target.
-    NewtonResult result = solveShiftNewton(ops, sourceOps, source.distinct, false, 0.f, triHit.barycentrics, dt,
+    NewtonResult result = solveShiftNewton(ops, sourceOps, source.distinct, false, condition, triHit.barycentrics,
         getShiftGaugeMode(), a_const, gNewtonMaxIteration, tol);
     recordShiftSolve(result, debuginfo);
     jacobian = 0.f;
@@ -488,7 +487,7 @@ HitInfo shiftRayTrace(
     HitInfo x2, // vertex to shift
     ShadingData x3, // fixed next vertex (surface or point light)
     ShiftSource source,
-    float dt,
+    ShiftLengthCondition condition,
     float2 a_const,
     out float jacobian,
     inout ShiftMappingDebugInfo debuginfo,
@@ -536,9 +535,7 @@ HitInfo shiftRayTrace(
     float2 xi = inverse_sample_hemisphere_preserve_area(local);
 #endif
 
-    // With separate charts the target length at the source vertex is not the chart's start value; pass the target.
-    float targetValue = length(p1 - x) + length(p2 - x) + dt;
-    NewtonResult result = solveShiftNewton(ops, sourceOps, source.distinct, separateCharts, targetValue, xi, dt,
+    NewtonResult result = solveShiftNewton(ops, sourceOps, source.distinct, separateCharts, condition, xi,
         getShiftGaugeMode(), a_const, gNewtonMaxIteration, tol);
     recordShiftSolve(result, debuginfo);
     HitInfo new_sample = x2;
