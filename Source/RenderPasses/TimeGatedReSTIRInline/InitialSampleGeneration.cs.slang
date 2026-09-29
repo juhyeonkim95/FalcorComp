@@ -121,9 +121,11 @@ void submitEllipsoidalCandidate(inout Reservoir reservoir, ReconnectionState rc,
     if (rc.postBounce == 2) suffixDirectionWeight = shadingCosine(origin, material, ellipsoidal.direction) / ellipsoidal.pdf;
     rc.recordHit(ellipsoidal.hit, target, origin.posW, proposal, targetDepth, eligible, ellipsoidal.distance, origin.IoR,
         suffixDirectionWeight, 0);
-    LightConnection connection = evaluateLightConnection(target, targetMaterial, light, rng);
+    bool connected;
+    LightConnection connection = connectToLight(target, light, connected);
     float totalLength = targetLength + connection.distance + light.laserT;
     float gate = pathLengthImportance(totalLength, gTimeCenter);
+    if (connected && gate != 0.f) shadeLightConnection(connection, target, targetMaterial, light, rng);
     submitCandidate(reservoir, rc, target, targetMaterial, light, connection, totalLength, gate,
         throughput * proposal.weight, techniqueWeight, gSamplesPerPixel, lightSeed, false, rng);
 }
@@ -206,8 +208,10 @@ float3 evalPrimaryDirect(uint2 pixel, ShadingData primary, IMaterialInstance pri
         LightSample light = {};
         lightSampler.generateLightSample(sg, light);
         if (!light.valid) continue;
-        LightConnection connection = evaluateLightConnection(primary, primaryMaterial, light, sg);
+        bool connected;
+        LightConnection connection = connectToLight(primary, light, connected);
         float gate = pathLengthImportance(primaryLength + connection.distance + light.laserT, gTimeCenter);
+        if (connected && gate != 0.f) shadeLightConnection(connection, primary, primaryMaterial, light, sg);
         direct += connection.bsdfCosine * connection.incidentRadiance * gate;
     }
     direct /= float(gSamplesPerPixel) * gTimeGateWindow;

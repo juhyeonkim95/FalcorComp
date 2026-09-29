@@ -87,8 +87,11 @@ float3 tracePath(const uint2 pixel, const uint2 frameDim)
                 // sample light
                 LightSample ls = {};
                 lls.generateLightSample(sg, ls);
-                LightConnection connection = evaluateLightConnection(sd, mi, ls, sg);
+                bool connected;
+                LightConnection connection = connectToLight(sd, ls, connected);
                 float gate = pathLengthImportance(pathLength + connection.distance + ls.laserT, gTimeCenter);
+                // Outside the gate the connection contributes zero: skip its visibility ray and BSDF.
+                if (connected && gate != 0.f) shadeLightConnection(connection, sd, mi, ls, sg);
                 result += throughput * (connection.bsdfCosine * connection.incidentRadiance * gate);
             }
 #if LIGHT_SAMPLING_METHOD == DIRECT_CONNECTION
@@ -115,8 +118,11 @@ float3 tracePath(const uint2 pixel, const uint2 frameDim)
                     // sample light
                     LightSample ls = {};
                     lls.generateLightSample(sg, ls);
-                    LightConnection connection = evaluateLightConnection(sd, mi, ls, sg);
+                    bool connected;
+                    LightConnection connection = connectToLight(sd, ls, connected);
                     float gate = pathLengthImportance(pathLength + connection.distance + ls.laserT, gTimeCenter);
+                    // Outside the gate the connection contributes zero: skip its visibility ray and BSDF.
+                    if (connected && gate != 0.f) shadeLightConnection(connection, sd, mi, ls, sg);
                     result += throughput * (connection.bsdfCosine * connection.incidentRadiance * gate);
                 }
             }
@@ -151,8 +157,10 @@ float3 tracePath(const uint2 pixel, const uint2 frameDim)
                         LIGHT_SAMPLING_METHOD == ELLIPSOIDAL_DIRECT_MIS);
                     if (weight > 0.f)
                     {
-                        LightConnection connection = evaluateLightConnection(sd, mi, ls, sg);
+                        bool connected;
+                        LightConnection connection = connectToLight(sd, ls, connected);
                         float gate = pathLengthImportance(pathLength + connection.distance + ls.laserT, gTimeCenter);
+                        if (connected && gate != 0.f) shadeLightConnection(connection, sd, mi, ls, sg);
                         result += throughput * weight * (connection.bsdfCosine * connection.incidentRadiance * gate);
                     }
                 }
@@ -227,8 +235,10 @@ EllipsoidalEstimate estimateEllipsoidalPath(
     float3 firstScatter = material.eval(x, ellipsoidal.direction, sg);
     // sampleEllipsoid() traced x -> y; this connection traces y -> light and is
     // zero when occluded. Together the two checks cover the full x -> y -> light path.
-    LightConnection connection = evaluateLightConnection(y, yMaterial, light, sg);
+    bool connected;
+    LightConnection connection = connectToLight(y, light, connected);
     float gate = pathLengthImportance(prefixLength + ellipsoidal.distance * x.IoR + connection.distance + light.laserT, gTimeCenter);
+    if (connected && gate != 0.f) shadeLightConnection(connection, y, yMaterial, light, sg);
     estimate.radiance = (firstScatter / estimate.ellipsePdf) *
         (connection.bsdfCosine * connection.incidentRadiance * gate);
     return estimate;
