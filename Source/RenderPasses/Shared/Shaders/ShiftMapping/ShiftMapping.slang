@@ -90,21 +90,24 @@ void recordShiftSolve(NewtonResult result, inout ShiftMappingDebugInfo debugInfo
 HitInfo pathLengthAwareShiftMapping(
     ShadingData x1, // preceding vertex of the target path
     HitInfo x2, // vertex to shift
+    VertexData v2, // x2's vertex data
     ShadingData x3, // fixed next vertex (surface or point light) of the target path
     ShiftSource source,
     ShiftLengthCondition condition,
     out float jacobian,
+    out VertexData shiftedVertex, // the returned hit's vertex data
     inout ShiftMappingDebugInfo debuginfo,
     inout SampleGenerator sg
 )
 {
+    shiftedVertex = v2;
     // Invalid reconnection vertex.
     if(!x2.isValid()){
         jacobian = 0.0;
         return x2;
     }
     // dt: how much the target path through the unmoved x2 must change, ell_t(x2') - ell_t(x2). It sets the tolerance.
-    float3 x = gScene.getVertexData(x2.getTriangleHit()).posW;
+    float3 x = v2.posW;
     float dt = condition.targetLength(length(source.p1 - x) + length(source.p2 - x))
         - (length(x1.posW - x) + length(x3.posW - x));
     float tol = max(abs(dt) * gNewtonRelativeTolerance, 1e-6f);
@@ -122,26 +125,27 @@ HitInfo pathLengthAwareShiftMapping(
 #if SHIFT_MAPPING_METHOD == SHIFT_MAPPING_NO
     return shiftNone(x2, jacobian, debuginfo);
 #elif SHIFT_MAPPING_METHOD == SHIFT_MAPPING_LOCAL_TANGENT
-    return shiftLocalTangent(x1, x2, x3, source, condition, a_const, jacobian, debuginfo, tol);
+    return shiftLocalTangent(x1, x2, v2, x3, source, condition, a_const, jacobian, shiftedVertex, debuginfo, tol);
 #elif SHIFT_MAPPING_METHOD == SHIFT_MAPPING_BARYCENTRIC
-    return shiftBarycentric(x1, x2, x3, source, condition, a_const, jacobian, debuginfo, tol);
+    return shiftBarycentric(x1, x2, v2, x3, source, condition, a_const, jacobian, shiftedVertex, debuginfo, tol);
 #elif SHIFT_MAPPING_METHOD == SHIFT_MAPPING_RAY_TRACE || SHIFT_MAPPING_METHOD == SHIFT_MAPPING_RAY_TRACE_CHART
-    return shiftRayTrace(x1, x2, x3, source, condition, a_const, jacobian, debuginfo, tol);
+    return shiftRayTrace(x1, x2, v2, x3, source, condition, a_const, jacobian, shiftedVertex, debuginfo, tol);
 #elif SHIFT_MAPPING_METHOD == SHIFT_MAPPING_AREA_ADAPTIVE
-    return shiftAreaAdaptive(x1, x2, x3, source, condition, a_const, jacobian, debuginfo, tol);
+    return shiftAreaAdaptive(x1, x2, v2, x3, source, condition, a_const, jacobian, shiftedVertex, debuginfo, tol);
 #elif SHIFT_MAPPING_METHOD == SHIFT_MAPPING_RADIAL
-    return shiftRadial(x1, x2, x3, source, condition, jacobian, debuginfo, tol);
+    return shiftRadial(x1, x2, v2, x3, source, condition, jacobian, shiftedVertex, debuginfo, tol);
 #endif
     jacobian = 1.0;
     return x2;
 }
 
 // Same source and target endpoints, with a fixed length change: ell(x2') = ell(x2) + dt (e.g. antithetic sampling).
-HitInfo pathLengthAwareShiftMapping(ShadingData x1, HitInfo x2, ShadingData x3, float dt, out float jacobian,
-    inout ShiftMappingDebugInfo debuginfo, inout SampleGenerator sg)
+HitInfo pathLengthAwareShiftMapping(ShadingData x1, HitInfo x2, VertexData v2, ShadingData x3, float dt,
+    out float jacobian, out VertexData shiftedVertex, inout ShiftMappingDebugInfo debuginfo, inout SampleGenerator sg)
 {
     ShiftSource source = { x1.posW, x3.posW, x3, false, false };
-    return pathLengthAwareShiftMapping(x1, x2, x3, source, makeLengthOffset(dt), jacobian, debuginfo, sg);
+    return pathLengthAwareShiftMapping(x1, x2, v2, x3, source, makeLengthOffset(dt), jacobian, shiftedVertex, debuginfo,
+        sg);
 }
 
 float3 shiftRayOrigin(ShadingData endpoint, bool isSurface, float3 destination)
@@ -152,8 +156,9 @@ float3 shiftRayOrigin(ShadingData endpoint, bool isSurface, float3 destination)
 
 // Recover the surface endpoint using a direction and distance computed from the
 // SAME offset origin. There is no fixed world-space endpoint subtraction.
-HitInfo traceShiftEndpoint(ShadingData endpoint, bool isSurface, float3 destination, float tol)
+HitInfo traceShiftEndpoint(ShadingData endpoint, bool isSurface, float3 destination, float tol, out VertexData vertex)
 {
+    vertex = {};
     float3 origin = shiftRayOrigin(endpoint, isSurface, destination);
     float3 segment = destination - origin;
     float distance = length(segment);
@@ -163,37 +168,41 @@ HitInfo traceShiftEndpoint(ShadingData endpoint, bool isSurface, float3 destinat
     HitInfo hit = query.traceRay(Ray(origin, segment / distance, 0.f, distance + 4.f * tol), hitT);
     if (!hit.isValid()) return HitInfo();
     if (hit.getType() != HitType::Triangle) return HitInfo();
-    if (length(gScene.getVertexData(hit.getTriangleHit()).posW - destination) > 4.f * tol) return HitInfo();
+    vertex = gScene.getVertexData(hit.getTriangleHit());
+    if (length(vertex.posW - destination) > 4.f * tol) return HitInfo();
     return hit;
 }
 
 HitInfo shiftAreaAdaptive(
     ShadingData x1, // preceding vertex
     HitInfo x2, // vertex to shift
+    VertexData v2, // x2's vertex data
     ShadingData x3, // fixed next vertex (surface or point light)
     ShiftSource source,
     ShiftLengthCondition condition,
     float2 a_const,
     out float jacobian,
+    out VertexData shiftedVertex, // the returned hit's vertex data
     inout ShiftMappingDebugInfo debuginfo,
     float tol=1e-7
 )
 {
+    shiftedVertex = v2;
     const float areaThreshold = 0.01f;
     TriangleHit original = x2.getTriangleHit();
     bool usePlane = gScene.getFaceAreaW(original.instanceID, original.primitiveIndex) > areaThreshold;
     HitInfo hit;
     if (usePlane)
-        hit = shiftLocalTangent(x1, x2, x3, source, condition, a_const, jacobian, debuginfo, tol);
+        hit = shiftLocalTangent(x1, x2, v2, x3, source, condition, a_const, jacobian, shiftedVertex, debuginfo, tol);
     else
-        hit = shiftRayTrace(x1, x2, x3, source, condition, a_const, jacobian, debuginfo, tol);
+        hit = shiftRayTrace(x1, x2, v2, x3, source, condition, a_const, jacobian, shiftedVertex, debuginfo, tol);
 
-    if (!(jacobian > 0.f) || !hit.isValid()) { jacobian = 0.f; return x2; }
-    if (hit.getType() != HitType::Triangle) { jacobian = 0.f; return x2; }
+    if (!(jacobian > 0.f) || !hit.isValid()) { jacobian = 0.f; shiftedVertex = v2; return x2; }
+    if (hit.getType() != HitType::Triangle) { jacobian = 0.f; shiftedVertex = v2; return x2; }
     TriangleHit shifted = hit.getTriangleHit();
     bool shiftedUsesPlane = gScene.getFaceAreaW(shifted.instanceID, shifted.primitiveIndex) > areaThreshold;
     // Both endpoints must select the same surface operation.
-    if (shiftedUsesPlane != usePlane) { jacobian = 0.f; return x2; }
+    if (shiftedUsesPlane != usePlane) { jacobian = 0.f; shiftedVertex = v2; return x2; }
     return hit;
 }
 
@@ -208,16 +217,18 @@ HitInfo shiftNone(HitInfo x2, out float jacobian, inout ShiftMappingDebugInfo de
 HitInfo shiftLocalTangent(
     ShadingData x1, // preceding vertex
     HitInfo x2, // vertex to shift
+    VertexData v2, // x2's vertex data
     ShadingData x3, // fixed next vertex (surface or point light)
     ShiftSource source,
     ShiftLengthCondition condition,
     float2 a_const,
     out float jacobian,
+    out VertexData shiftedVertex, // the returned hit's vertex data
     inout ShiftMappingDebugInfo debuginfo,
     float tol=1e-7
 )
 {
-    VertexData v2 = gScene.getVertexData(x2.getTriangleHit());
+    shiftedVertex = v2;
     const float3 p1 = x1.posW;
     const float3 p2 = x3.posW;
     float3 x = v2.posW;
@@ -240,12 +251,13 @@ HitInfo shiftLocalTangent(
 #if DEBUG_NEWTON_ITERATIONS
     debuginfo.mappingDistance = float2(length(result.xi_prime - xi), length(x_prime - x));
 #endif
-    HitInfo hit = traceShiftEndpoint(x3, true, x_prime, tol);
+    VertexData traced;
+    HitInfo hit = traceShiftEndpoint(x3, true, x_prime, tol, traced);
     if (!hit.isValid()) return x2;
-    VertexData shifted = gScene.getVertexData(hit.getTriangleHit());
-    if (!(abs(dot(shifted.posW - x, n)) <= tol && dot(shifted.faceNormalW, n) > 0.999999f)) return x2;
+    if (!(abs(dot(traced.posW - x, n)) <= tol && dot(traced.faceNormalW, n) > 0.999999f)) return x2;
 
     jacobian = result.detJ;
+    shiftedVertex = traced;
     return hit;
 }
 
@@ -319,23 +331,25 @@ bool solveRadial(float3 p1, float3 p2, float3 m, float3 u, float target, float s
 HitInfo shiftRadial(
     ShadingData x1, // preceding vertex
     HitInfo x2, // vertex to shift
+    VertexData v2, // x2's vertex data
     ShadingData x3, // fixed next vertex (surface or point light)
     ShiftSource source,
     ShiftLengthCondition condition,
     out float jacobian,
+    out VertexData shiftedVertex, // the returned hit's vertex data
     inout ShiftMappingDebugInfo debuginfo,
     float tol=1e-7
 )
 {
+    shiftedVertex = v2;
     jacobian = 0.f;
     debuginfo.iters = 0;
     debuginfo.status = uint(NewtonResultStatus::NoConverge);
 #if DEBUG_NEWTON_ITERATIONS
     debuginfo.newtonStats = uint4(0, 0, 1, 0);
 #endif
-    VertexData vertex = gScene.getVertexData(x2.getTriangleHit());
-    float3 n = normalize(vertex.faceNormalW);
-    float3 x = vertex.posW;
+    float3 n = normalize(v2.faceNormalW);
+    float3 x = v2.posW;
     float3 p1 = x1.posW;
     float3 p2 = x3.posW;
 
@@ -354,11 +368,12 @@ HitInfo shiftRadial(
         float s, slope;
         if (!solveRadial(p1, p2, mt, u, target, r, tol, debuginfo, s, slope)) return x2;
         float3 shiftedPosition = mt + s * u;
-        HitInfo shifted = traceShiftEndpoint(x3, true, shiftedPosition, tol);
+        VertexData traced;
+        HitInfo shifted = traceShiftEndpoint(x3, true, shiftedPosition, tol, traced);
         if (!shifted.isValid()) return x2;
-        VertexData shiftedVertex = gScene.getVertexData(shifted.getTriangleHit());
-        if (!(abs(dot(shiftedVertex.posW - x, n)) <= tol && dot(normalize(shiftedVertex.faceNormalW), n) > 0.999999f))
+        if (!(abs(dot(traced.posW - x, n)) <= tol && dot(normalize(traced.faceNormalW), n) > 0.999999f))
             return x2;
+        shiftedVertex = traced;
         jacobian = (s / r) * (slopeSource / slope);
         debuginfo.status = uint(NewtonResultStatus::Success);
 #if DEBUG_NEWTON_ITERATIONS
@@ -425,11 +440,12 @@ HitInfo shiftRadial(
 
     // Polar map (r, angle) -> (s, angle): dA' / dA = (s / r) * (ds / dr), ds / dr = slope(r) / slope(s).
     float3 shiftedPosition = m + s * u;
-    HitInfo shifted = traceShiftEndpoint(x3, true, shiftedPosition, tol);
+    VertexData traced;
+    HitInfo shifted = traceShiftEndpoint(x3, true, shiftedPosition, tol, traced);
     if (!shifted.isValid()) return x2;
-    VertexData shiftedVertex = gScene.getVertexData(shifted.getTriangleHit());
-    if (!(abs(dot(shiftedVertex.posW - x, n)) <= tol && dot(normalize(shiftedVertex.faceNormalW), n) > 0.999999f))
+    if (!(abs(dot(traced.posW - x, n)) <= tol && dot(normalize(traced.faceNormalW), n) > 0.999999f))
         return x2;
+    shiftedVertex = traced;
     jacobian = (s / r) * (slopeStart / slope);
     debuginfo.status = uint(NewtonResultStatus::Success);
 #if DEBUG_NEWTON_ITERATIONS
@@ -442,15 +458,18 @@ HitInfo shiftRadial(
 HitInfo shiftBarycentric(
     ShadingData x1, // preceding vertex
     HitInfo x2, // vertex to shift
+    VertexData v2, // x2's vertex data
     ShadingData x3, // fixed next vertex (surface or point light)
     ShiftSource source,
     ShiftLengthCondition condition,
     float2 a_const,
     out float jacobian,
+    out VertexData shiftedVertex, // the returned hit's vertex data
     inout ShiftMappingDebugInfo debuginfo,
     float tol=1e-7
 )
 {
+    shiftedVertex = v2;
     TriangleHit triHit = x2.getTriangleHit();
     float3 triposW[3];
     gScene.getVertexPositionsW(triHit.instanceID, triHit.primitiveIndex, triposW);
@@ -472,29 +491,33 @@ HitInfo shiftBarycentric(
     // Keep the original strict interior test (triangle edges are excluded).
     if (!(bary.x > 0.f && bary.y > 0.f && bary.x + bary.y < 1.f)) return x2;
 
-    HitInfo hit = traceShiftEndpoint(x3, true, ops.X(bary), tol);
+    VertexData tracedVertex;
+    HitInfo hit = traceShiftEndpoint(x3, true, ops.X(bary), tol, tracedVertex);
     if (!hit.isValid()) return x2;
     TriangleHit traced = hit.getTriangleHit();
     if (traced.instanceID.index != triHit.instanceID.index || traced.primitiveIndex != triHit.primitiveIndex) return x2;
 
     jacobian = result.detJ;
     triHit.barycentrics = bary;
+    shiftedVertex = gScene.getVertexData(triHit);
     return HitInfo(triHit);
 }
 
 HitInfo shiftRayTrace(
     ShadingData x1, // preceding vertex
     HitInfo x2, // vertex to shift
+    VertexData v2, // x2's vertex data
     ShadingData x3, // fixed next vertex (surface or point light)
     ShiftSource source,
     ShiftLengthCondition condition,
     float2 a_const,
     out float jacobian,
+    out VertexData shiftedVertex, // the returned hit's vertex data
     inout ShiftMappingDebugInfo debuginfo,
     float tol=1e-7
 )
 {
-    VertexData v2 = gScene.getVertexData(x2.getTriangleHit());
+    shiftedVertex = v2;
     const float3 p1 = x1.posW;
     const float3 p2 = x3.posW;
     float3 x = v2.posW;
@@ -549,6 +572,7 @@ HitInfo shiftRayTrace(
     if(result.status == NewtonResultStatus::Success && ops.hit.isValid()){
         new_sample = ops.hit;
         VertexData vnew = gScene.getVertexData(new_sample.getTriangleHit());
+        shiftedVertex = vnew;
 #if DEBUG_NEWTON_ITERATIONS
         debuginfo.mappingDistance = float2(length(result.xi_prime - xi), length(vnew.posW - x));
 #endif

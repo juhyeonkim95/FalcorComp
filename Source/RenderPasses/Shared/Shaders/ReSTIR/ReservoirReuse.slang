@@ -152,16 +152,17 @@ bool shiftToPrefix(Reservoir source, VertexData x, ReconnectionSuffix suffix, Sh
     ShiftLengthCondition condition = { K, sourceGate, targetGate, sourceRest, prefixLength + suffix.length };
     float jacobian = 0.f;
     ShiftSource shiftSource = makeShiftSource(source.rcPrevVertexPosition, sourceNext, a, suffix.vertex);
-    shifted.hit = pathLengthAwareShiftMapping(a, source.rcVertexHit, suffix.vertex, shiftSource, condition, jacobian,
-        debugInfo, sg);
+    VertexData shiftedData;
+    shifted.hit = pathLengthAwareShiftMapping(a, source.rcVertexHit, x, suffix.vertex, shiftSource, condition,
+        jacobian, shiftedData, debugInfo, sg);
     shifted.prefixEnd = a.posW;
     shifted.mappingJacobian = jacobian;
     jacobian *= K;
     // A rejected/non-finite shift must have zero support, not NaN weight.
     jacobian = select(isfinite(jacobian), max(jacobian, 0.f), 0.f);
 
-    float3 shiftedPosition = gScene.getVertexData(shifted.hit.getTriangleHit()).posW;
-    shifted.vertex = loadShadingData(shifted.hit, a.posW, normalize(shiftedPosition - a.posW));
+    float3 shiftedPosition = shiftedData.posW;
+    shifted.vertex = loadShadingData(shifted.hit.getTriangleHit(), shiftedData, normalize(shiftedPosition - a.posW));
     shifted.totalPathLength = prefixLength + length(a.posW - shiftedPosition)
         + length(shiftedPosition - suffix.vertex.posW) + suffix.length;
 

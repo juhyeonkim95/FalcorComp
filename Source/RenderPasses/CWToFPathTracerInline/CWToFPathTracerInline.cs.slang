@@ -85,20 +85,22 @@ float3 estimateWithAntithetic(ShadingData previous, IMaterialInstance previousMa
     // from `previous` would be. The light endpoint stays fixed.
     float areaJacobian = 0.f;
     ShiftMappingDebugInfo debugInfo = {};
-    HitInfo shiftedHit = pathLengthAwareShiftMapping(getLightEndpoint(light), hit, previous, dt, areaJacobian,
-        debugInfo, sg);
+    VertexData shiftedVertex;
+    HitInfo shiftedHit = pathLengthAwareShiftMapping(getLightEndpoint(light), hit,
+        gScene.getVertexData(hit.getTriangleHit()), previous, dt, areaJacobian, shiftedVertex, debugInfo, sg);
     if (!(areaJacobian > 0.f) || !isfinite(areaJacobian)) return primalEstimate;
-    float3 shiftedPosition = gScene.getVertexData(shiftedHit.getTriangleHit()).posW;
+    float3 shiftedPosition = shiftedVertex.posW;
 
 #if ANTITHETIC_ROUND_TRIP_CHECK
     // Keep the shift only if shifting the partner back (-dt) returns to `surface`. Where it is kept, the forward and
     // backward shifts are then exact inverses and one-to-one, as AntitheticMIS needs, even when the Newton solve
     // could land elsewhere (e.g. on another surface with the ray-trace charts).
     float reverseJacobian = 0.f;
-    HitInfo returnedHit = pathLengthAwareShiftMapping(getLightEndpoint(light), shiftedHit, previous, -dt,
-        reverseJacobian, debugInfo, sg);
+    VertexData returnedVertex;
+    pathLengthAwareShiftMapping(getLightEndpoint(light), shiftedHit, shiftedVertex, previous, -dt, reverseJacobian,
+        returnedVertex, debugInfo, sg);
     if (!(reverseJacobian > 0.f) || !isfinite(reverseJacobian)) return primalEstimate;
-    float3 returnedPosition = gScene.getVertexData(returnedHit.getTriangleHit()).posW;
+    float3 returnedPosition = returnedVertex.posW;
     if (length(returnedPosition - surface.posW) > kRoundTripTolerance * length(shiftedPosition - surface.posW))
         return primalEstimate;
 #endif
@@ -106,7 +108,7 @@ float3 estimateWithAntithetic(ShadingData previous, IMaterialInstance previousMa
     float3 toShifted = shiftedPosition - previous.posW;
     float shiftedDistance = length(toShifted);
     float3 shiftedDir = toShifted / shiftedDistance;
-    ShadingData shifted = loadShadingData(shiftedHit, previous.posW, shiftedDir);
+    ShadingData shifted = loadShadingData(shiftedHit.getTriangleHit(), shiftedVertex, shiftedDir);
     let shiftedMaterial = gScene.materials.getMaterialInstance(shifted, ExplicitLodTextureSampler(0.f));
 
     // Area Jacobian -> solid angle at `previous`: |dw_a / dw| = (G_a / G) * |dA_a / dA|, G = cos / distance^2.
