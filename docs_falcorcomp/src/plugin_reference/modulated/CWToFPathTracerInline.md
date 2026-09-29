@@ -120,6 +120,10 @@ Antithetic shift mapping (used with `useAntitheticSampling`):
 * - `NewtonRelativeTolerance`
   - float
   - Solver tolerance on the path length, relative to the shift. (Default: `0.002`)
+* - `rayChartMaxDisplacement`
+  - float
+  - `ray_trace`, `ray_trace_chart` and `area_adaptive` only: rejects shifts that move the vertex farther than this in
+    chart coordinates, where the reverse shift may not return to the original vertex. `0` disables. (Default: `0`)
 * - `antitheticRoundTripCheck`
   - boolean
   - Keep a partner only if shifting it back returns to the starting vertex. This makes the

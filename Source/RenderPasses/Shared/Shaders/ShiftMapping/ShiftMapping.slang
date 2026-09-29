@@ -26,6 +26,7 @@ cbuffer ShiftMappingCB
     float2 gGaugeAxis;
     uint gNewtonMaxIteration;
     float gNewtonRelativeTolerance;
+    float gRayChartMaxDisplacement; // 0 disables; see shiftRayTrace.
 }
 
 // The host sets the gauge as a define (ShiftMappingConfig), so the Newton evaluations do not branch on it.
@@ -542,6 +543,12 @@ HitInfo shiftRayTrace(
     recordShiftSolve(result, debuginfo);
     HitInfo new_sample = x2;
 
+    // The gauge system can have several roots when the vertex moves far in a ray chart, and the reverse solve may then
+    // converge to another one, so the shift is not its own inverse there. |xi' - xi| is the same for the reverse shift
+    // (it compares the raw coordinates of the two charts), so the rejection is symmetric. It removes most such pairs,
+    // with no guarantee that every accepted shift returns.
+    if (gRayChartMaxDisplacement > 0.f && length(result.xi_prime - xi) > gRayChartMaxDisplacement)
+        result.status = NewtonResultStatus::NoConverge;
     if(result.status == NewtonResultStatus::Success && ops.hit.isValid()){
         new_sample = ops.hit;
         VertexData vnew = gScene.getVertexData(new_sample.getTriangleHit());

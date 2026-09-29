@@ -155,6 +155,12 @@ Shift mapping:
   - float
   - Solver tolerance on the path length, relative to the shift. Looser solves leave the forward and reverse shifts
     slightly inconsistent, which biases reuse. (Default: `0.0002`)
+* - `rayChartMaxDisplacement`
+  - float
+  - `ray_trace`, `ray_trace_chart` and `area_adaptive` only: rejects shifts that move the vertex farther than this in
+    chart coordinates. Large moves can make the reverse shift converge to a different vertex, which biases reuse.
+    Small caps (`0.01` for `ray_trace`, `0.02`-`0.05` for `ray_trace_chart`) remove that bias but reject many shifts,
+    which raises the variance. `0` disables. (Default: `0`)
 ```
 
 Other:

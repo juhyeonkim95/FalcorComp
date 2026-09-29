@@ -46,6 +46,9 @@ struct ShiftMappingConfig
     float2 gaugeAxis = float2(1, 0);
     uint newtonMaxIteration = 5;
     float newtonRelativeTolerance = 2e-4f; ///< Relative to the path length change; looser solves bias reuse.
+    /// Ray charts only: rejects shifts that move the vertex farther than this in chart coordinates (0 disables).
+    /// The gauge system can have several roots for large moves, so the reverse solve may not return; see ShiftMapping.slang.
+    float rayChartMaxDisplacement = 0.f;
 
     bool parse(const std::string& key, const Properties::ConstValue& value)
     {
@@ -59,6 +62,8 @@ struct ShiftMappingConfig
             newtonMaxIteration = value;
         else if (key == "NewtonRelativeTolerance")
             newtonRelativeTolerance = value;
+        else if (key == "rayChartMaxDisplacement")
+            rayChartMaxDisplacement = value;
         else
             return false;
         return true;
@@ -71,6 +76,7 @@ struct ShiftMappingConfig
         props["gaugeAxis"] = gaugeAxis;
         props["NewtonMaxIteration"] = newtonMaxIteration;
         props["NewtonRelativeTolerance"] = newtonRelativeTolerance;
+        props["rayChartMaxDisplacement"] = rayChartMaxDisplacement;
     }
 
     /// SHIFT_MAPPING_METHOD and SHIFT_MAPPING_GAUGE_MODE.
@@ -88,6 +94,7 @@ struct ShiftMappingConfig
         shiftmapVar["gGaugeAxis"] = gaugeAxis;
         shiftmapVar["gNewtonMaxIteration"] = newtonMaxIteration;
         shiftmapVar["gNewtonRelativeTolerance"] = newtonRelativeTolerance;
+        shiftmapVar["gRayChartMaxDisplacement"] = rayChartMaxDisplacement;
     }
 
     /// Shift method (with `methodTooltip`), gauge and Newton solve. `extraUI` is drawn after the method.
@@ -138,6 +145,13 @@ struct ShiftMappingConfig
 
             dirty |= widget.var("Newton iterations", newtonMaxIteration, 1u, 64u);
             widget.tooltip("Maximum Newton iterations per shift.", true);
+
+            if (shiftmapMethod == ShiftMappingMethod::RayTrace || shiftmapMethod == ShiftMappingMethod::RayTraceChart ||
+                shiftmapMethod == ShiftMappingMethod::AreaAdaptive)
+            {
+                dirty |= widget.var("Ray chart max displacement", rayChartMaxDisplacement, 0.f, 1.f);
+                widget.tooltip("Rejects ray-chart shifts that move farther than this in chart coordinates; 0 disables.", true);
+            }
         }
         return dirty;
     }
