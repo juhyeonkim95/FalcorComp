@@ -141,8 +141,13 @@ float3 tracePath(uint2 pixel, uint2 frameDim)
                 LightSample light = {};
                 uint lightSeed = lightRng.getCurrentSeed();
                 lightSampler.generateLightSample(lightRng, light);
-                LightConnection connection = evaluateLightConnection(surface, material, light, rng);
+                bool connected;
+                LightConnection connection = connectToLight(surface, light, connected);
                 float totalLength = pathLength + connection.distance + light.laserT;
+                // Box bins drop candidates outside [gTimeMin, gTimeMax) unevaluated: skip their visibility ray and
+                // BSDF evaluation.
+                bool inRange = gTimeGateMode != kTimeGateBox || (totalLength >= gTimeMin && totalLength < gTimeMax);
+                if (connected && inRange) shadeLightConnection(connection, surface, material, light, rng);
                 submitHistogramCandidate(pixelIndex, rc, surface, material, light, connection, totalLength,
                     throughput, lightSeed, rng);
             }

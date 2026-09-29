@@ -338,9 +338,13 @@ float3 tracePath(uint2 pixel, uint2 frameDim)
             LightSample light = {};
             uint lightSeed = lightRng.getCurrentSeed();
             lightSampler.generateLightSample(lightRng, light);
-            LightConnection connection = evaluateLightConnection(surface, material, light, rng);
+            bool connected;
+            LightConnection connection = connectToLight(surface, light, connected);
             float totalLength = pathLength + connection.distance + light.laserT;
             float gate = pathLengthImportance(totalLength, gTimeCenter, useRoughGate);
+            // Outside the gate the candidate contributes zero: skip its visibility ray and BSDF evaluation. It is
+            // still submitted (M and the reservoir's random draws are unchanged).
+            if (connected && gate != 0.f) shadeLightConnection(connection, surface, material, light, rng);
             float techniqueWeight = 1.f;
 #if LIGHT_SAMPLING_METHOD != DIRECT_CONNECTION
             techniqueWeight = evalBsdfTechniqueWeight(previous, surface, hit, light, gTimeCenter, emissiveSampler,
