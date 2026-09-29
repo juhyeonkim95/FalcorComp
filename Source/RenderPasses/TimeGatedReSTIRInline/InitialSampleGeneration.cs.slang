@@ -369,6 +369,10 @@ float3 tracePath(uint2 pixel, uint2 frameDim)
 #if USE_SHRINK_MAPPING
     reservoir = mergeGateReservoirs(reservoir, wideReservoir, narrowCount, wideCount,
         primary, primaryMaterial, primaryLength, rng);
+#else
+    // Reuse weighs reservoirs by M (pairwise MIS confidence), which must be the number of camera paths, not the number
+    // of candidates submitted along them: that count varies with each path and correlates with the selected sample.
+    reservoir.M = float(gSamplesPerPixel);
 #endif
     reservoir.finalizeW();
 #if USE_TEMPORAL_REUSE
