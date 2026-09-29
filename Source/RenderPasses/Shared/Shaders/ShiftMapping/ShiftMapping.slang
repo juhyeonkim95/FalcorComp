@@ -539,13 +539,8 @@ HitInfo shiftRayTrace(
     float3 t2s = separateCharts ? cross(b2s, n2s) : t2;
     RayTraceHemisphereChart sourceOps = RayTraceHemisphereChart(source.p1, source.p2, p2os, t2s, b2s, n2s);
     // x is the first hit from the source's y toward it: the sampled segment x - y_s is unoccluded.
-    sourceOps.hit = x2;
-    sourceOps.hitT = length(x - p2os);
-    if (!separateCharts)
-    {
-        ops.hit = x2;
-        ops.hitT = sourceOps.hitT;
-    }
+    sourceOps.setHit(x2, v2, length(x - p2os));
+    if (!separateCharts) ops.setHit(x2, v2, sourceOps.hitT);
 
     float3 dir = normalize(x - p2os);
     float3 local = float3(dot(t2s, dir), dot(b2s, dir), dot(n2s, dir));
