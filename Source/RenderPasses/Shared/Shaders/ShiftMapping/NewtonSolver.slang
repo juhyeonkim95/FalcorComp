@@ -88,15 +88,23 @@ void gaugeTerms(
     J0Delta = float2(0.0, 0.0) - 0.5 * Hmul(H0, RDel);
 }
 
-// Solves ell_t(xi') = ell_t(xi) + c with the gauge a . (xi' - xi) = 0, where ell_t is ops's path length. c comes from
-// the source path's own length ell_s (sourceOps, same chart with the source's endpoints), so the map is
-// ell_t(xi') = K ell_s(xi) + C: the gauge and the source rows of the Jacobian (d/dxi) use ell_s's gradient g_s and
-// Hessian H_s at xi. The avg_grad gauge a = R (g_s(xi) + g_t(xi')) / 2 is then the same for the reverse shift, whose
-// solution is xi again. Without a distinct source, g_s = g_t (the single-length solve).
+// Solves ell_t(xi') = K ell_s(xi) + C with the gauge a . (xi' - xi) = 0. xi is the source vertex in sourceOps's
+// coordinates (sourceOps evaluates the source path's length ell_s and its state represents the source vertex); xi' is
+// in ops's coordinates (the target length ell_t). The gauge compares the raw coordinates, and the avg_grad gauge
+// a = R (g_s(xi) + g_t(xi')) / 2 is symmetric under swapping the roles, so the reverse shift (charts and lengths
+// swapped) has the same solutions: it returns to xi for any pair of charts. The source rows of the Jacobian (d/dxi)
+// use ell_s's gradient g_s and Hessian H_s at xi.
+//   - traceStart = false: ops's state at xi already represents the source vertex (both charts are the same function),
+//     so ell_t(xi) is the target length there and the equation is ell_t(xi') = ell_t(xi) + c.
+//   - traceStart = true: the charts differ; ops's start point X_t(xi) is another surface point, traced here, and the
+//     equation is ell_t(xi') = targetValue (= ell_t at the source vertex + c).
+// Without a distinct source (distinctSource = false), g_s = g_t: the single-length solve.
 NewtonResult solveShiftNewton<Chart : IShiftChart>(
     inout Chart ops,
     Chart sourceOps,
     bool distinctSource,
+    bool traceStart,
+    float targetValue,
     float2 xi, float c,
     GaugeMode mode,
     float2 a_const,          // used iff CONSTANT_A
@@ -116,6 +124,7 @@ NewtonResult solveShiftNewton<Chart : IShiftChart>(
 
     // Start eval (fixed during solve)
     float  L0; float2 g0; float3 H0;
+    if (traceStart) ops.update(xi);
     if(!ops.eval(xi, L0, g0, H0)){
         R.status = NewtonResultStatus::InvalidPoint; return R;
     }
@@ -148,7 +157,7 @@ NewtonResult solveShiftNewton<Chart : IShiftChart>(
     float2 Delta;
     float inv00, inv01, inv10, inv11, detJp;
     // With a distinct source and c ~ 0, xi' = xi already solves both equations; only the Jacobian is needed.
-    bool success = abs(c) <= tol;
+    bool success = abs(traceStart ? L0 - targetValue : c) <= tol;
     float beta = 1.0f;
 
     // --- Newton iterations using only Jp = ∂F/∂η' ---
@@ -160,7 +169,7 @@ NewtonResult solveShiftNewton<Chart : IShiftChart>(
         gaugeTerms(mode, a_const, g0, g1, H0, H1, Delta, a, JpDelta, J0Delta);
 
         // Current Residuals
-        float F1 = L1 - L0 - c;
+        float F1 = traceStart ? L1 - targetValue : L1 - L0 - c;
         float F2 = dot(a, Delta);
 
         // Jp rows: [ g1^T ; (a + JpDelta)^T ]
@@ -180,7 +189,7 @@ NewtonResult solveShiftNewton<Chart : IShiftChart>(
         const float2 e_try = ops.project(float2(e.x + beta*dx, e.y + beta*dy) );
         ops.update(e_try);
         bool update_eta = ops.eval(e_try, L_try, g_try, H_try);
-        float F1_try = L_try - L0 - c;
+        float F1_try = traceStart ? L_try - targetValue : L_try - L0 - c;
 
         if(!update_eta || (abs(F1_try) > abs(F1))){
             beta *= 0.5f;

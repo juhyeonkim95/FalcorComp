@@ -12,14 +12,14 @@ def main():
     testbed = falcor.Testbed(create_window=False)
     device = testbed.device
     output = device.create_structured_buffer(
-        struct_size=16, element_count=12,
+        struct_size=16, element_count=16,
         bind_flags=falcor.ResourceBindFlags.ShaderResource | falcor.ResourceBindFlags.UnorderedAccess,
     )
     compute = falcor.ComputePass(device, file=Path(__file__).with_name("NewtonSolverTests.cs.slang"), cs_entry="main")
     compute.globals.results = output
     compute.execute(threads_x=1)
     device.wait()
-    rows = output.to_numpy().view(np.float32).reshape(12, 4)
+    rows = output.to_numpy().view(np.float32).reshape(16, 4)
     assert np.isfinite(rows).all(), rows
     # The restored solver only checks the length residual: report the gauge
     # residual separately rather than claiming the paired-solver guarantees.
@@ -38,6 +38,14 @@ def main():
         assert status == 0, rows[4 + k]
         assert abs(detJ / detFD - 1) < 2e-3, rows[4 + k]
         assert back < 1e-4, rows[4 + k]
+    # Separate, non-conformal source and target charts: the area Jacobian matches finite differences of the surface map,
+    # and the reverse shift (charts swapped) returns to the source point.
+    for k in range(4):
+        area, areaFD, back, status = rows[12 + k]
+        print(f"separate charts {k}: area J {area:.5f}, finite difference {areaFD:.5f}, reverse error {back:.1e}")
+        assert status == 0, rows[12 + k]
+        assert abs(area / areaFD - 1) < 2e-3, rows[12 + k]
+        assert back < 1e-4, rows[12 + k]
     print("Active Newton solver checks passed; gauge residual is diagnostic only.")
 
 

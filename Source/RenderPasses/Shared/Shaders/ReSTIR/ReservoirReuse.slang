@@ -125,9 +125,9 @@ struct ShiftedPath
 
 // Shift the reconnection vertex x of `source` (gate sourceGate) to the camera prefix of another pixel (primary hit
 // `primary` at optical length primaryLength, gate targetGate), keeping the suffix. The shift uses the source path's
-// own endpoints of x: its stored a (rcPrevVertexPosition) and sourceNextPosition (its y). K scales the path length
+// own endpoints of x: its stored a (rcPrevVertexPosition) and sourceNext (its y). K scales the path length
 // offset from the gate center (gate-width ratio). Returns false if the prefix cannot be replayed there.
-bool shiftToPrefix(Reservoir source, VertexData x, ReconnectionSuffix suffix, float3 sourceNextPosition,
+bool shiftToPrefix(Reservoir source, VertexData x, ReconnectionSuffix suffix, ShadingData sourceNext,
     float sourceGate, ShadingData primary, IMaterialInstance primaryMaterial, float primaryLength, float targetGate,
     float K, ReconnectionCriteria criteria, inout SampleGenerator sg, inout ShiftMappingDebugInfo debugInfo,
     out ShiftedPath shifted)
@@ -148,7 +148,7 @@ bool shiftToPrefix(Reservoir source, VertexData x, ReconnectionSuffix suffix, fl
     float dt = K * (source.totalPathLength - sourceGate) + targetGate - targetLength;
     float tol = max(abs(dt) * gNewtonRelativeTolerance, 1e-6f);
     float jacobian = 0.f;
-    ShiftSource shiftSource = makeShiftSource(source.rcPrevVertexPosition, sourceNextPosition, a, suffix.vertex);
+    ShiftSource shiftSource = makeShiftSource(source.rcPrevVertexPosition, sourceNext, a, suffix.vertex);
     shifted.hit = pathLengthAwareShiftMapping(a, source.rcVertexHit, suffix.vertex, shiftSource, dt, jacobian, debugInfo,
         tol, sg);
     shifted.prefixEnd = a.posW;
@@ -200,6 +200,7 @@ void combineReservoirWithShiftMapping(
 #endif
 #if IS_SCENE_DYNAMIC
     , bool updateLight = false, float3 targetLightPower = float3(0.f), float targetLightCosAngle = 0.f
+    , float3 sourceLightPosition = float3(0.f), float3 sourceLightDirection = float3(0.f)
 #endif
 ){
 #if DEBUG_NEWTON_ITERATIONS
@@ -249,15 +250,24 @@ void combineReservoirWithShiftMapping(
     VertexData x = gScene.getVertexData(source.rcVertexHit.getTriangleHit());
     ReconnectionSuffix suffix = loadReconnectionSuffix(suffixSource, lightPosition, lightDirection);
 
-    float3 sourceNextPosition = suffix.vertex.posW;
+    // The source path's own y. A re-lit suffix may start at another y (a moved light); then the source's y is its
+    // original next vertex, or the source frame's light for a point-light endpoint.
+    ShadingData sourceNext = suffix.vertex;
 #if IS_SCENE_DYNAMIC
-    // A re-lit suffix may start at another y; the source path's own y is its original next vertex. (A point-light
-    // endpoint is taken at the target frame's light.)
-    if (updateLight && source.rcNextVertexHit.isValid())
-        sourceNextPosition = gScene.getVertexData(source.rcNextVertexHit.getTriangleHit()).posW;
+    if (updateLight)
+    {
+        if (source.rcNextVertexHit.isValid())
+            sourceNext = loadShadingData(source.rcNextVertexHit, float3(0.f), source.rcNextVertexWi);
+        else
+        {
+            sourceNext.posW = sourceLightPosition;
+            sourceNext.frontFacing = true;
+            sourceNext.faceN = sourceLightDirection;
+        }
+    }
 #endif
     ShiftedPath shifted;
-    if (!shiftToPrefix(source, x, suffix, sourceNextPosition, sourceGate, primary, primaryMaterial, primaryLength,
+    if (!shiftToPrefix(source, x, suffix, sourceNext, sourceGate, primary, primaryMaterial, primaryLength,
             targetGate, K, criteria, sg, debugInfo, shifted))
     {
         combineUnsupportedShift(destination, source, isCanonical, sg);
@@ -335,7 +345,7 @@ float evaluateCanonicalShiftWeight(
         return 0.f;
 
     ShiftedPath shifted;
-    if (!shiftToPrefix(source, x, suffix, suffix.vertex.posW, sourceGate, primary, primaryMaterial, primaryLength,
+    if (!shiftToPrefix(source, x, suffix, suffix.vertex, sourceGate, primary, primaryMaterial, primaryLength,
             targetGate, 1.f, criteria, sg, debugInfo, shifted))
         return 1.f;
     return spatialPairCoefficient(source.M, getReservoirWeight(source.f),
@@ -376,7 +386,8 @@ Reservoir mergeReservoirPair(Reservoir canonical, ReuseDomain canonicalDomain, R
         , debugInfo
 #endif
 #if IS_SCENE_DYNAMIC
-        , updateLight, canonicalDomain.lightPower, canonicalDomain.lightCosAngle
+        , updateLight, canonicalDomain.lightPower, canonicalDomain.lightCosAngle, otherDomain.lightPosition,
+        otherDomain.lightDirection
 #endif
     );
     // Canonical -> other evaluates competing support, retaining the canonical sample.
@@ -388,7 +399,8 @@ Reservoir mergeReservoirPair(Reservoir canonical, ReuseDomain canonicalDomain, R
         , debugInfo
 #endif
 #if IS_SCENE_DYNAMIC
-        , updateLight, otherDomain.lightPower, otherDomain.lightCosAngle
+        , updateLight, otherDomain.lightPower, otherDomain.lightCosAngle, canonicalDomain.lightPosition,
+        canonicalDomain.lightDirection
 #endif
     );
     // The canonical no-RC branch copies only f and its flag; keep the selected length too.
