@@ -179,13 +179,17 @@ bool shiftToPrefix(Reservoir source, VertexData x, ReconnectionSuffix suffix, Sh
     jacobian *= float(criteria.isRough(shiftedMaterial.getProperties(shifted.vertex).roughness) &&
         criteria.isLongEnough(length(shiftedPosition - a.posW)));
     shifted.jacobian = jacobian;
+    if (source.rcVertexBounce == 0 || jacobian == 0.f)
+    {
+        shifted.f = 0.f;
+        return true;
+    }
 
     shifted.f = prefixThroughput * evalReconnectionTarget(a, aMaterial, shifted.vertex, suffix.vertex, suffix.material,
         prefixLength, suffix.length, targetGate, suffix.irradiance, sg, suffix.isSurface, K,
         source.rcNextVertexBounce > 0);
-    shifted.f *= checkVisibility(a, shifted.vertex);
-    if (source.rcVertexBounce == 0 || jacobian == 0.f)
-        shifted.f = 0.f;
+    // A zero target (e.g. outside the gate) needs no visibility ray.
+    if (any(shifted.f != 0.f)) shifted.f *= checkVisibility(a, shifted.vertex);
     return true;
 }
 

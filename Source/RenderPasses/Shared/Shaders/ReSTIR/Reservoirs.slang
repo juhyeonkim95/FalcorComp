@@ -23,6 +23,43 @@ struct Reservoir
     // x is the reconnection vertex; y is the next vertex toward the light.
     // When rcVertexBounce == 0, reconnection fields below are unused and may be stale.
 
+    // Fields come in 16-byte blocks: the HitInfos (uint4), each float3 with a 4-byte scalar, then the target and the
+    // scalars. The buffer layout then has no padding (also with a scalar target) and loads stay aligned.
+
+    // Surface hit identifying x, the first vertex passing the reconnection eligibility test.
+    HitInfo rcVertexHit;
+    // Surface hit identifying y. For x -> light, stores ls.hit instead;
+    // a laser endpoint has a surface hit, while a point-light endpoint has an invalid hit.
+    HitInfo rcNextVertexHit;
+
+    // Position of a, the vertex before x on this reservoir's camera prefix. The shift mapping needs the source
+    // path's own a (its path-length gradient at x), which differs from the target pixel's replayed a.
+    float3 rcPrevVertexPosition;
+    // Camera-walk depth of x: primary surface is depth 0, first secondary hit is depth 1.
+    // Zero is the sentinel for a candidate with no reconnectable vertex.
+    uint rcVertexBounce;
+
+    // Light propagation direction INTO y from the suffix: normalize(y - z).
+    // Opposite to the outward direction from y toward its incoming light.
+    // For y -> light: normalize(y - light); for a light endpoint: ls.dir
+    // (laser propagation direction, or a dummy direction for a point light).
+    float3 rcNextVertexWi;
+    // BSDF RNG state before this camera path's first BSDF sample; used to replay its prefix.
+    // Does not contain the separate reservoir-selection or light-sampling RNG state.
+    uint initRandomSeed;
+
+    // Suffix payload for this reservoir's frame, excluding y's BSDF, camera-prefix throughput, and time gate.
+    // This is a weighted incoming-light contribution, NOT raw incoming radiance:
+    // y -> light: Li(y) * incident shading cosine.
+    // y -> z -> ... -> light: estimated Li(y) * incident shading cosine / original solid-angle pdf(y -> z).
+    // This PDF is the BSDF or ellipse density, according to how that edge was sampled.
+    // The Li estimate includes later sampled BSDF weights and final light visibility.
+    // If y is the light endpoint: ls.Li (source payload).
+    float3 rcNextVertexIrradiance;
+    // Number of camera-walk edges after x before the final direct light connection.
+    // 0: x -> light; 1: x -> y -> light; 2: x -> y -> z -> light; etc.
+    uint rcNextVertexBounce;
+
     // Selected target contribution (RGB, or red for scalar histograms), including the time gate.
     // During initial generation: path MC contribution (before technique MIS) * p_A for reconnectable paths,
     // where p_A contains the actual proposal area PDFs for a -> x and surface x -> y.
@@ -42,49 +79,17 @@ struct Reservoir
     // Final normalization: wSum / getReservoirWeight(f), or zero for a zero target.
     // The selected reservoir estimates RGB contribution as W * f.
     float W;
-
-    // Surface hit identifying x, the first vertex passing the reconnection eligibility test.
-    HitInfo rcVertexHit;
-    // Position of a, the vertex before x on this reservoir's camera prefix. The shift mapping needs the source
-    // path's own a (its path-length gradient at x), which differs from the target pixel's replayed a.
-    float3 rcPrevVertexPosition;
-    // Surface hit identifying y. For x -> light, stores ls.hit instead;
-    // a laser endpoint has a surface hit, while a point-light endpoint has an invalid hit.
-    HitInfo rcNextVertexHit;
-    // Light propagation direction INTO y from the suffix: normalize(y - z).
-    // Opposite to the outward direction from y toward its incoming light.
-    // For y -> light: normalize(y - light); for a light endpoint: ls.dir
-    // (laser propagation direction, or a dummy direction for a point light).
-    float3 rcNextVertexWi;
-    // Suffix payload for this reservoir's frame, excluding y's BSDF, camera-prefix throughput, and time gate.
-    // This is a weighted incoming-light contribution, NOT raw incoming radiance:
-    // y -> light: Li(y) * incident shading cosine.
-    // y -> z -> ... -> light: estimated Li(y) * incident shading cosine / original solid-angle pdf(y -> z).
-    // This PDF is the BSDF or ellipse density, according to how that edge was sampled.
-    // The Li estimate includes later sampled BSDF weights and final light visibility.
-    // If y is the light endpoint: ls.Li (source payload).
-    float3 rcNextVertexIrradiance;
     // Suffix path length from y to the source, excluding the camera prefix and x -> y.
     // Includes the laser endpoint -> source distance; for a light endpoint, equals ls.laserT.
     float rcNextVertexPathLength;
     // Full candidate camera -> source path length used to evaluate the time gate.
     float totalPathLength;
 
-    // Camera-walk depth of x: primary surface is depth 0, first secondary hit is depth 1.
-    // Zero is the sentinel for a candidate with no reconnectable vertex.
-    uint rcVertexBounce;
-    // BSDF RNG state before this camera path's first BSDF sample; used to replay its prefix.
-    // Does not contain the separate reservoir-selection or light-sampling RNG state.
-    uint initRandomSeed;
-
-    // Number of camera-walk edges after x before the final direct light connection.
-    // 0: x -> light; 1: x -> y -> light; 2: x -> y -> z -> light; etc.
-    uint rcNextVertexBounce;
     #if IS_SCENE_DYNAMIC
-    // BSDF RNG state immediately before sampling y -> z; assigned only when that edge exists.
-    uint rcNextVertexRandomSeed;
     // Original ray arriving at y when y->z was sampled. Reconnection may later move x.
     float3 rcNextVertexRayDirection;
+    // BSDF RNG state immediately before sampling y -> z; assigned only when that edge exists.
+    uint rcNextVertexRandomSeed;
     // Light RNG state immediately before generating this candidate's final light sample.
     uint lightRandomSeed;
     #endif

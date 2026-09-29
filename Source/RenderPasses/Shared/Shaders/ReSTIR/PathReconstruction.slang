@@ -31,6 +31,10 @@ float3 evalReconnectionTarget(
     const float K = 1.0,
     bool yIsSampledSurface = false
 ){
+    // The gate first: outside it the target is zero, and the BSDFs need not be evaluated.
+    float distance = prefixLength + length(x.posW - a.posW) + length(y.posW - x.posW) + suffixLength;
+    float gate = pathLengthImportance(distance, gateCenter, K > 1);
+    if (gate == 0.f) return float3(0.f);
     let xMaterial = gScene.materials.getMaterialInstance(x, ExplicitLodTextureSampler(0));
 
     const float3 ax = x.posW - a.posW;
@@ -65,8 +69,7 @@ float3 evalReconnectionTarget(
 
     float3 f = fa * fx * fy * cosX / (distSqrAX * distSqrXY) * irradiance;
     if (any(isinf(f) || isnan(f))) f = 0.f;
-    float distance = prefixLength + length(x.posW - a.posW) + length(y.posW - x.posW) + suffixLength;
-    f *= pathLengthImportance(distance, gateCenter, K > 1);
+    f *= gate;
     return f;
 }
 
