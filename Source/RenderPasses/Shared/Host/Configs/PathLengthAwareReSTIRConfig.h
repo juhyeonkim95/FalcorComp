@@ -253,6 +253,36 @@ public:
         }
     }
 
+    /// Spatial reuse split into two passes per iteration (SPATIAL_REUSE_PAIRS): `pPairPass` with `pairsPerPixel`
+    /// threads per pixel along x (a candidate each), then the resampling pass `pPass`. Both get the reservoirs and the
+    /// same seed.
+    void runSpatialReuse(
+        RenderContext* pRenderContext,
+        const ref<ComputePass>& pPairPass,
+        const ShaderVar& pairVar,
+        uint pairsPerPixel,
+        const ref<ComputePass>& pPass,
+        const ShaderVar& spatialVar,
+        uint iterations,
+        uint& randomSeed,
+        uint2 frameDim
+    )
+    {
+        for (uint iteration = 0; iteration < iterations; iteration++)
+        {
+            std::swap(currReservoirs, prevReservoirs);
+            for (const ShaderVar* var : {&pairVar, &spatialVar})
+            {
+                (*var)["gRandomSeed"] = randomSeed;
+                (*var)["prevReservoirs"] = prevReservoirs;
+                (*var)["currReservoirs"] = currReservoirs;
+            }
+            randomSeed++;
+            pPairPass->execute(pRenderContext, {frameDim.x * pairsPerPixel, frameDim.y, 1});
+            pPass->execute(pRenderContext, {frameDim.x, frameDim.y, 1});
+        }
+    }
+
     /// The final reservoirs become the next frame's history, which stays valid with temporal reuse and a pinhole
     /// camera; keeps the V-buffer and camera position it refers to.
     void endFrame(RenderContext* pRenderContext, bool useTemporalReuse, const Scene& scene, const ref<Texture>& pVBuffer)

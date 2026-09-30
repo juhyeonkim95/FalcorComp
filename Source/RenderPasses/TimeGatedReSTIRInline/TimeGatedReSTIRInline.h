@@ -71,6 +71,11 @@ public:
 private:
     void parseProperties(const Properties& props);
     void bindShaderData(const ShaderVar& var, const RenderData& renderData);
+    /// Binds the spatial reuse constants and resources of `pass` (the resampling or the pair pass).
+    void bindSpatialReuse(const ref<ComputePass>& pass, const RenderData& renderData);
+    /// Spatial reuse runs as two passes per iteration (pair shifts, then resampling) unless the Newton debug outputs are
+    /// on, which only the single-pass kernel writes.
+    bool useSpatialReusePairs() const { return !mOptions.debugNewtonIterations; }
     DefineList getShaderDefines(const RenderData& renderData) const;
     /// Shrink mapping's wide-gate path fraction, clamped to [0, 1]; the host and the shader derive the wide path
     /// count from it the same way.
@@ -115,6 +120,9 @@ private:
 
     ref<ComputePass> mpComputePass;      ///< Initial candidates (and temporal reuse).
     ref<ComputePass> mpSpatialReusePass;
+    /// With SPATIAL_REUSE_PAIRS, the first pass of each spatial reuse iteration: one shift per thread into mpSpatialPairs.
+    ref<ComputePass> mpSpatialReusePairsPass;
+    ref<Buffer> mpSpatialPairs;          ///< One record per pixel and spatial candidate (SPATIAL_REUSE_PAIRS).
     ref<ComputePass> mpAddDirectPass;    ///< Adds the primary-hit direct lighting to the output (computeDirect).
     ref<Texture> mpDirectColor;          ///< Primary-hit direct lighting, kept out of the reservoirs (computeDirect).
 };
