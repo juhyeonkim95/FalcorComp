@@ -344,8 +344,14 @@ public:
                     (*var)["pairFirstBin"] = firstBin;
                     (*var)["pairBinCount"] = bins;
                 }
-                pPairPass->execute(pRenderContext, {frameDim.x * pairsPerPixel, frameDim.y, bins});
-                pPass->execute(pRenderContext, {frameDim.x, frameDim.y, 1});
+                {
+                    FALCOR_PROFILE(pRenderContext, "pairs");
+                    pPairPass->execute(pRenderContext, {frameDim.x * pairsPerPixel, frameDim.y, bins});
+                }
+                {
+                    FALCOR_PROFILE(pRenderContext, "resample");
+                    pPass->execute(pRenderContext, {frameDim.x, frameDim.y, 1});
+                }
             }
         }
     }
