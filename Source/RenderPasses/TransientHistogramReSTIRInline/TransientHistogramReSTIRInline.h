@@ -122,7 +122,7 @@ private:
 
     ref<ComputePass> mpComputePass;      ///< Initial candidates (and temporal reuse), written to the histogram.
     /// With TEMPORAL_REUSE_PAIRS, the temporal reuse after initial generation: the merge shifts of one pixel and bin per
-    /// thread, then the merges (entry points of the initial generation shader).
+    /// thread (TemporalReusePairs.cs.slang), then the merges (TemporalReuse.cs.slang).
     ref<ComputePass> mpTemporalPairsPass;
     ref<ComputePass> mpTemporalResamplePass;
     ref<Buffer> mpTemporalRandomState; ///< Each pixel's reservoir random state after initial generation.

@@ -1,0 +1,165 @@
+// Shared by the histogram ReSTIR kernels (initial generation, and the two-pass temporal reuse): their constants,
+// resources and reservoir helpers. Included by each kernel, so that one binding (bindShaderData) serves all.
+#pragma once
+#include "Scene/SceneDefines.slangh"
+#include "Utils/Math/MathConstants.slangh"
+
+import Utils.Math.MathHelpers;
+import Utils.Geometry.GeometryHelpers;
+import Utils.Sampling.SampleGenerator;
+import Rendering.Lights.LightHelpers;
+import Utils.Color.ColorHelpers;
+import RenderPasses.Shared.Shaders.Utils.TimeGate;
+import RenderPasses.Shared.Shaders.Utils.TransientHistogram;
+import Scene.RaytracingInline;
+import RenderPasses.Shared.Shaders.ReSTIR.Reservoirs;
+
+import RenderPasses.Shared.Shaders.Utils.LoadShadingData;
+import RenderPasses.Shared.Shaders.Lights.LaserLightSampler;
+import RenderPasses.Shared.Shaders.Lights.LightConnection;
+import RenderPasses.Shared.Shaders.ReSTIR.PathReconstruction;
+import RenderPasses.Shared.Shaders.ReSTIR.InitialCandidates;
+import RenderPasses.Shared.Shaders.Utils.RayUtils;
+#if USE_TEMPORAL_REUSE
+import RenderPasses.Shared.Shaders.ReSTIR.ReservoirReuse;
+import RenderPasses.Shared.Shaders.ReSTIR.TemporalReuse;
+#endif
+#if TEMPORAL_REUSE_PAIRS
+import RenderPasses.Shared.Shaders.ShiftMapping.ShiftMapping;
+#endif
+import RenderPasses.Shared.Shaders.Lights.Laser;
+
+
+cbuffer CB
+{
+    uint2 gFrameDim;
+    uint gFrameCount;    // Frame count since scene was loaded.
+    
+    uint gSamplesPerPixel;
+    float gReconnectionRoughnessThreshold;
+    float gReconnectionMinDistance;
+    float gTemporalHistoryLength;
+#if USE_TEMPORAL_REUSE
+    bool gTemporalHistoryValid;
+    float3 gPreviousCameraPosition;
+#endif
+#if TEMPORAL_REUSE_PAIRS
+    uint gPairFirstBin; // Chunk of bins of the two-pass temporal reuse.
+    uint gPairBinCount;
+#endif
+}
+
+
+ReconnectionCriteria getReconnectionCriteria()
+{
+    ReconnectionCriteria criteria = { gReconnectionRoughnessThreshold, gReconnectionMinDistance };
+    return criteria;
+}
+
+// Inputs
+Texture2D<PackedHitInfo> gVBuffer;
+Texture2D<float4> gViewW; // Optional
+Texture2D<float2> gMotionVector; // Optional
+#if USE_TEMPORAL_REUSE
+Texture2D<PackedHitInfo> gTemporalVBuffer;
+#endif
+
+
+// Reservoir Struct
+StructuredBuffer<Reservoir> gPrevReservoirs; // Last frame's final reservoirs (temporal reuse).
+RWStructuredBuffer<Reservoir> gCurrReservoirs;
+#if RESERVOIR_SUMMARIES
+// W and M of each reservoir: only reservoirs with W != 0 are stored after finalization (loadSummarizedReservoir).
+StructuredBuffer<float2> gPrevSummaries;
+RWStructuredBuffer<float2> gCurrSummaries;
+#endif
+
+#if TEMPORAL_REUSE_PAIRS
+// Two-pass temporal reuse: the pairs of the current chunk of bins (ordered bin, pixel), and each pixel's reservoir
+// random state after path tracing, which the merges continue.
+RWStructuredBuffer<ReusePair> gTemporalPairs;
+RWStructuredBuffer<uint> gTemporalRandomState;
+#endif
+
+// Outputs
+RWTexture2D<float4> gOutputColor;
+
+RWTexture3D<HistogramTexel> gTransientHistogram;
+
+// Finalized reservoirs, with their summaries if RESERVOIR_SUMMARIES (then an empty reservoir is not stored).
+Reservoir loadPrevReservoir(uint index)
+{
+#if RESERVOIR_SUMMARIES
+    return loadSummarizedReservoir(gPrevReservoirs, gPrevSummaries, index);
+#else
+    return gPrevReservoirs[index];
+#endif
+}
+
+Reservoir loadCurrReservoir(uint index)
+{
+#if RESERVOIR_SUMMARIES
+    return loadSummarizedReservoir(gCurrReservoirs, gCurrSummaries, index);
+#else
+    return gCurrReservoirs[index];
+#endif
+}
+
+// W and M of a finalized reservoir.
+float2 getPrevSummary(uint index)
+{
+#if RESERVOIR_SUMMARIES
+    return gPrevSummaries[index];
+#else
+    return float2(gPrevReservoirs[index].W, gPrevReservoirs[index].M);
+#endif
+}
+
+float2 getCurrSummary(uint index)
+{
+#if RESERVOIR_SUMMARIES
+    return gCurrSummaries[index];
+#else
+    return float2(gCurrReservoirs[index].W, gCurrReservoirs[index].M);
+#endif
+}
+
+void storeReservoir(uint index, Reservoir reservoir)
+{
+#if RESERVOIR_SUMMARIES
+    storeSummarizedReservoir(gCurrReservoirs, gCurrSummaries, index, reservoir);
+#else
+    gCurrReservoirs[index] = reservoir;
+#endif
+}
+
+#if USE_TEMPORAL_REUSE
+// Geometry and the light are static, so only the camera (and hence the camera prefix) differs between frames; the gate
+// center of a bin is the same in both frames. The history of `pixel`, if temporal reuse applies this frame.
+TemporalHistory getTemporalHistory(uint2 pixel)
+{
+    TemporalHistory history = {};
+    if (gTemporalHistoryValid && gTemporalHistoryLength != 0.f)
+        history = findTemporalHistory(pixel, gFrameDim, gMotionVector, gTemporalVBuffer, gPreviousCameraPosition);
+    return history;
+}
+#endif
+
+#if TEMPORAL_REUSE_PAIRS
+uint getTemporalPairIndex(uint pixelIndex, uint bin)
+{
+    return (bin - gPairFirstBin) * gFrameDim.x * gFrameDim.y + pixelIndex;
+}
+
+float getHistoryMass(float2 previousSummary)
+{
+    return temporalHistoryMass(previousSummary.y, gTemporalHistoryLength, gSamplesPerPixel);
+}
+
+// An empty reservoir and empty history (most bins without reuse): both contribute only their mass, and the pair has no
+// record.
+bool isEmptyTemporalPair(float2 currentSummary, float2 previousSummary)
+{
+    return currentSummary.x == 0.f && previousSummary.x == 0.f;
+}
+#endif

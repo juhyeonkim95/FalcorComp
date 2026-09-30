@@ -44,6 +44,8 @@ extern "C" FALCOR_API_EXPORT void registerPlugin(Falcor::PluginRegistry& registr
 namespace
 {
 const char kShaderFile[] = "RenderPasses/TransientHistogramReSTIRInline/InitialSampleGeneration.cs.slang";
+const char kTemporalReuseFile[] = "RenderPasses/TransientHistogramReSTIRInline/TemporalReuse.cs.slang";
+const char kTemporalReusePairsFile[] = "RenderPasses/TransientHistogramReSTIRInline/TemporalReusePairs.cs.slang";
 const char kSpatialReuseFile[] = "RenderPasses/TransientHistogramReSTIRInline/SpatialReuse.cs.slang";
 const char kSpatialReusePairsFile[] = "RenderPasses/TransientHistogramReSTIRInline/SpatialReusePairs.cs.slang";
 
@@ -348,10 +350,10 @@ void TransientHistogramReSTIRInline::execute(RenderContext* pRenderContext, cons
     if (useTemporalReusePairs() && !mpTemporalPairsPass)
     {
         const DefineList defines = getShaderDefines(renderData);
-        mpTemporalPairsPass = InlinePass::createScenePass(mpDevice, pRenderContext, mpScene, mpSampleGenerator, kShaderFile,
-            defines, "temporalPairs");
-        mpTemporalResamplePass = InlinePass::createScenePass(mpDevice, pRenderContext, mpScene, mpSampleGenerator,
-            kShaderFile, defines, "temporalResample");
+        mpTemporalPairsPass =
+            InlinePass::createScenePass(mpDevice, pRenderContext, mpScene, mpSampleGenerator, kTemporalReusePairsFile, defines);
+        mpTemporalResamplePass =
+            InlinePass::createScenePass(mpDevice, pRenderContext, mpScene, mpSampleGenerator, kTemporalReuseFile, defines);
     }
     const uint2 frameDim = renderData.getDefaultTextureDims();
     mReSTIR.prepare(mpDevice, mpScene, mpSampleGenerator, mOptions.pathTracing, false, mOptions.histogram.timeBin, frameDim,
