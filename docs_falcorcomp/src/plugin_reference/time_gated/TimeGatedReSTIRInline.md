@@ -104,6 +104,12 @@ Reuse:
 * - `spatialReuseGatherRadius`
   - float
   - Radius, in pixels, within which the neighbors are chosen. (Default: `10`)
+* - `spatialReuseTwoPass`
+  - boolean
+  - Run each spatial round as two passes (every candidate's shifts in its own thread, then the
+    resampling), which is faster with a length-aware shift. `false` runs the single-pass kernel;
+    the results are the same. The shift `no` and `debugNewtonIterations` always use the single
+    pass. (Default: `true`)
 * - `useTemporalReuse`
   - boolean
   - Resample the previous frame's reservoir, reprojected with motion vectors when the `mvec`

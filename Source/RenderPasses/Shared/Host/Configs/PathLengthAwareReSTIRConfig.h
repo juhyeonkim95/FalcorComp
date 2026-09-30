@@ -15,6 +15,9 @@ struct PathLengthAwareReSTIRConfig
     uint spatialReuseIteration = 1;
     uint spatialReuseNeighborCount = 5;
     float spatialReuseGatherRadius = 10.0f; ///< Pixels.
+    /// Spatial reuse as two passes per iteration (one candidate's shifts per thread, then resampling); false runs the
+    /// single-pass kernel. Same results either way; the shift `no` always uses the single pass.
+    bool spatialReuseTwoPass = true;
     bool useTemporalReuse = false;
     float temporalHistoryLength = 20.0f;    ///< History cap in frames of samples; 0 ignores it, negative is uncapped.
 
@@ -32,6 +35,8 @@ struct PathLengthAwareReSTIRConfig
             spatialReuseNeighborCount = value;
         else if (key == "spatialReuseGatherRadius")
             spatialReuseGatherRadius = value;
+        else if (key == "spatialReuseTwoPass")
+            spatialReuseTwoPass = value;
         else if (key == "useTemporalReuse")
             useTemporalReuse = value;
         else if (key == "temporalHistoryLength")
@@ -50,6 +55,7 @@ struct PathLengthAwareReSTIRConfig
         props["spatialReuseIteration"] = spatialReuseIteration;
         props["spatialReuseNeighborCount"] = spatialReuseNeighborCount;
         props["spatialReuseGatherRadius"] = spatialReuseGatherRadius;
+        props["spatialReuseTwoPass"] = spatialReuseTwoPass;
         props["useTemporalReuse"] = useTemporalReuse;
         props["temporalHistoryLength"] = temporalHistoryLength;
         shiftMapping.serialize(props);
@@ -92,6 +98,11 @@ struct PathLengthAwareReSTIRConfig
 
         dirty |= widget.var("Spatial radius (px)", spatialReuseGatherRadius, 1.f, 128.f);
         widget.tooltip("Radius, in pixels, within which spatial neighbors are chosen.", true);
+
+        dirty |= widget.checkbox("Two-pass spatial reuse", spatialReuseTwoPass);
+        widget.tooltip("Compute each candidate's shifts in its own thread, then resample in a second pass: faster with "
+                       "a length-aware shift (lower register use). Off runs the single-pass kernel. The results are "
+                       "the same; the shift None always uses the single pass.", true);
 
         dirty |= widget.checkbox("Temporal reuse", useTemporalReuse);
         widget.tooltip("Resample the previous frame's reservoir (reprojected with motion vectors when the mvec input "

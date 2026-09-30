@@ -73,12 +73,12 @@ private:
     void bindShaderData(const ShaderVar& var, const RenderData& renderData);
     /// Binds the spatial reuse constants and resources of `pass` (the resampling or the pair pass).
     void bindSpatialReuse(const ref<ComputePass>& pass, const RenderData& renderData);
-    /// Spatial reuse runs as two passes per iteration (pair shifts, then resampling) unless the Newton debug outputs are
-    /// on, which only the single-pass kernel writes, or the shift is `no`: without shift work, the extra pass and
-    /// its records cost more than the occupancy gains.
+    /// Spatial reuse runs as two passes per iteration (pair shifts, then resampling) when spatialReuseTwoPass is set,
+    /// unless the Newton debug outputs are on, which only the single-pass kernel writes, or the shift is `no`: without
+    /// shift work, the extra pass and its records cost more than the occupancy gains.
     bool useSpatialReusePairs() const
     {
-        return !mOptions.debugNewtonIterations &&
+        return mOptions.restir.spatialReuseTwoPass && !mOptions.debugNewtonIterations &&
                mOptions.restir.shiftMapping.shiftmapMethod != ShiftMappingMethod::Identity;
     }
     DefineList getShaderDefines(const RenderData& renderData) const;
