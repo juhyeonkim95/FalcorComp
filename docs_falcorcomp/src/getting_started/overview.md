@@ -12,6 +12,15 @@ installed as a Python package and driven from Python scripts.
 
 ## What it renders
 
+```{image} images/overview_outputs.jpg
+:alt: The Cornell box as a standard image, a time-gated image, a transient histogram, a CW-ToF measurement and a structured-light measurement
+:align: center
+```
+
+The Cornell box rendered with falcorcomp, from left to right: a standard image (no time gating), a time-gated
+image, a transient histogram (16 of its 64 bins, in reading order), and CW-ToF and structured-light measurements
+(with the modulation in $[0, 1]$), with the settings of the [tutorials](../tutorials/index.md).
+
 Time-of-flight (ToF): a laser lights the scene, and the measurement depends on the total length of
 each light path (laser -> scene -> camera), which sets its arrival time.
 
