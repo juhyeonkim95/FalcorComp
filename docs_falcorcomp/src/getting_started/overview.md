@@ -6,9 +6,9 @@ general-purpose renderer: it provides render passes that simulate *active sensin
 light the scene themselves and measure what comes back, such as time-of-flight cameras and
 structured light.
 
-All renderers run on the GPU with hardware ray tracing, fast enough for interactive, real-time
-simulation as well as for offline rendering. falcorcomp is installed as a Python package and
-driven from Python scripts.
+falcorcomp is **performance-oriented**: all renderers run on the GPU with hardware ray tracing,
+fast enough for interactive, real-time simulation as well as for offline rendering. falcorcomp is
+installed as a Python package and driven from Python scripts.
 
 ## What it renders
 
