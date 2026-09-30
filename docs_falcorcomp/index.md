@@ -20,13 +20,6 @@ src/getting_started/installation
 :caption: Tutorials
 
 src/tutorials/index
-```
-
-```{toctree}
-:hidden:
-:maxdepth: 1
-:caption: Modulated light
-
 src/tutorials/modulated_index
 ```
 
