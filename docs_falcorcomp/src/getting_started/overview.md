@@ -6,9 +6,27 @@ general-purpose renderer: it provides render passes that simulate *active sensin
 light the scene themselves and measure what comes back, such as time-of-flight cameras and
 structured light.
 
-All renderers run on the GPU with hardware ray tracing, fast enough for interactive, real-time
-simulation as well as for offline rendering. falcorcomp is installed as a Python package and
-driven from Python scripts.
+falcorcomp is installed as a Python package and driven from Python scripts.
+
+## Performance first
+
+falcorcomp is **performance-oriented**. Its purpose is to make these simulations fast enough to
+run *interactively and in real time*, not only offline:
+
+- **GPU only.** Every renderer runs entirely on the GPU, with hardware ray tracing (inline ray
+  queries on RTX GPUs, through Vulkan on Linux and Direct3D 12 on Windows).
+- **Real-time frame rates.** On an NVIDIA GeForce RTX 3090, a time-gated image of the Cornell box
+  at 1024 x 1024 renders in about 40 ms per frame with ReSTIR's spatial and temporal reuse, and a
+  64-bin transient histogram at 256 x 256 in about 44 ms per frame (see the
+  [online ReSTIR tutorials](../tutorials/restir_index.md)).
+- **Algorithms that do more with each frame.** ReSTIR reuses paths across pixels and frames, and
+  antithetic sampling cancels the noise of modulated light, so a short frame time still gives a
+  usable image.
+- **Measured, not assumed.** The tutorials compare the renderers at *equal rendering time* against
+  references, so the speed-quality trade-off of each method is shown with numbers.
+
+The same render passes also serve offline rendering, where frames are averaged into a converged
+image.
 
 ## What it renders
 
