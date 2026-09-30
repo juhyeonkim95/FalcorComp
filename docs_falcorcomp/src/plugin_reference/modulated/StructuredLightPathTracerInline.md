@@ -123,11 +123,12 @@ The patterns and their antithetic maps (see [Antithetic sampling](#structured-li
   - One bit of the Gray code of the column, $\pm 1$.
   - Swap the halves of each block of $2^{\text{bit}+1}$ columns.
 * - `xor`
-  - A Gray bit XORed with the base bit (Gupta et al. 2011).
+  - A Gray bit XORed with the base bit (Gupta et al. 2011); the Gray bit alone when `patternBit`
+    is not above `patternBaseBit`.
   - Swap the halves of each block of $2^{\text{base}+1}$ columns.
 * - `checkerboard`
   - Binary checkerboard.
-  - One cell left, right, down or up, with equal probability.
+  - One cell left, right, down or up, with equal probability, wrapping around.
 * - `arbitrary`
   - A binary code set from Python, one value per column.
   - A column matching or interval mapping set with it.
@@ -148,8 +149,10 @@ tracer.set_pattern_data(values, interval_ids=ids, intervals=intervals)
   `(srcStart, srcEnd, dstStart, dstEnd)`, in columns: the interval is mapped linearly onto another
   one, which must map back onto it.
 
-Give the matching or the intervals, or neither (no antithetic partner). `set_pattern_data` warns
-when the map does not map back onto itself, which makes antithetic sampling biased.
+Give the matching or the intervals, or neither (no antithetic partner), not both. `set_pattern_data`
+warns when the matching is not symmetric or does not pair opposite values, or when the intervals do
+not map back onto themselves, which makes antithetic sampling biased or ineffective. Rendering with
+`pattern = arbitrary` before `set_pattern_data` is called raises an error.
 
 ## Sampling
 
@@ -178,22 +181,25 @@ when the map does not map back onto itself, which makes antithetic sampling bias
   - `projector` only: projector samples per camera-path vertex. (Default: `1`)
 * - `useImportanceSampling`
   - boolean
-  - Importance-sample the BSDF when extending the camera path. (Default: `true`)
+  - Importance-sample the BSDF when extending the camera path; otherwise use the material's
+    reference sampler (cosine-weighted for standard materials). (Default: `true`)
 ```
 
 The `projector` method has high variance where the sampled vertex falls close to the camera-path
 vertex (for example in corners), because it is not combined with BSDF sampling; it is mainly a
-baseline for comparisons.
+baseline for comparisons. Its connections are one-sided: they do not pass through the
+camera-path vertex or the sampled vertex by transmission.
 
 (structured-light-antithetic)=
 ## Antithetic sampling
 
 With a fine pattern, the pattern changes sign many times across the vertices a pixel's paths light,
 so independent samples mostly cancel and the estimate is noisy. With `samplingMethod = antithetic`,
-every BSDF-sampled vertex $y$ (after the primary hit) gets a partner $y'$: the pattern's antithetic
-map sends $y$'s projector coordinates $\xi$ to $\xi'$, where the pattern has the opposite sign, and
-$y'$ is where the projector ray through $\xi'$ hits the scene. The two contributions are combined
-with multiple importance sampling (balance heuristic), with the Jacobian
+every BSDF-sampled vertex $y$ (after the primary hit, and not sampled from a delta lobe) gets a
+partner $y'$: the pattern's antithetic map sends $y$'s projector coordinates $\xi$ to $\xi'$, where
+the pattern has the opposite sign, and $y'$ is where the projector ray through $\xi'$ hits the
+scene. The two contributions are combined with multiple importance sampling (balance heuristic),
+with the Jacobian
 
 $$
 \left|\frac{\mathrm{d}\omega'}{\mathrm{d}\omega}\right| =
@@ -227,6 +233,7 @@ or for neither; otherwise the primal sample is used alone, which keeps the estim
   - Primary ray directions, from `VBufferRT`.
 * - `color` (output)
   - Structured-light measurement $I$, RGBA32Float. With the signed pattern it can be negative.
+    Pixels without a primary hit show the environment map if the scene has one, black otherwise.
 ```
 
 The output options `computeDirect` (default `true` here), `useSingleChannel`, `singleChannel` and

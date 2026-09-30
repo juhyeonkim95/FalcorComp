@@ -52,11 +52,13 @@ Initial sampling, the candidate paths each pixel starts from in every frame:
   - Description
 * - `samplesPerPixel`
   - integer
-  - Candidate paths per pixel in each frame. (Default: `128`)
+  - Camera paths traced per pixel in each frame; every connection to the laser spot along them is
+    a candidate. (Default: `128`)
 * - `maxBounces`
   - integer
-  - Maximum number of surface vertices on a candidate path, counting the primary hit. The
-    primary hit itself is not connected to the laser spot. (Default: `3`)
+  - Maximum number of surface vertices on a candidate path, counting the primary hit and any
+    vertex inserted by an ellipsoidal connection. The primary hit itself is not connected to the
+    laser spot. (Default: `3`)
 * - `samplingMethod`
   - string
   - How a candidate path's vertices are connected to the laser spot: `direct`, `ellipsoidal` or
@@ -82,8 +84,8 @@ Initial sampling, the candidate paths each pixel starts from in every frame:
   - Width of the wider gate. 0 uses 10 x `timeGateWindow`. (Default: `0`)
 * - `roughTimeGateSampleRatio`
   - float
-  - Fraction of the candidate paths traced with the wider gate; the others use the gate itself.
-    (Default: `1`)
+  - Fraction of the camera paths traced with the wider gate, clamped to [0, 1]; the others use the
+    gate itself. (Default: `1`)
 ```
 
 Reuse:
@@ -139,28 +141,32 @@ Shift mapping:
 * - `shiftmapMethod`
   - string
   - The chart on which the reconnection vertex is moved: `no` (naive reuse: the vertex stays
-    fixed), `local_tangent`, `barycentric`, `ray_trace`, `area_adaptive` or `ray_trace_chart`.
-    See [Shift mapping](#restir-shift-mapping). (Default: `no`)
+    fixed), `local_tangent`, `barycentric`, `ray_trace`, `area_adaptive`, `ray_trace_chart` or
+    `radial`. See [Shift mapping](#restir-shift-mapping). (Default: `no`)
 * - `reconnectionRoughnessThreshold`
   - float
   - A path can reconnect at a segment only if both of its vertices are rougher than this.
     (Default: `0.25`)
+* - `reconnectionMinDistance`
+  - float
+  - A path can reconnect at a segment only if it is longer than this, in scene units. Very short
+    segments make the shift nearly singular. (Default: `0`)
 * - `gaugeMode`
   - string
-  - The direction the Newton solve keeps fixed: `constant` (along `gaugeAxis`), `grad`
-    (orthogonal to the path-length gradient at the start) or `avg_grad` (orthogonal to the
-    average gradient). (Default: `constant`)
+  - Fixes the direction the path-length constraint leaves free. `constant`: the vertex moves
+    orthogonally to `gaugeAxis`; `grad`: along the path-length gradient at the start; `avg_grad`:
+    along the average of the gradients at both ends. `radial` ignores it. (Default: `constant`)
 * - `gaugeAxis`
   - float pair
   - Chart-space axis for `constant`. `[0, 0]` picks a random axis for every shift.
     (Default: `[1, 0]`)
 * - `NewtonMaxIteration`
   - integer
-  - Maximum Newton iterations per shift. (Default: `5`)
+  - Maximum Newton iterations per shift. `radial` does not use it. (Default: `5`)
 * - `NewtonRelativeTolerance`
   - float
-  - Solver tolerance on the path length, relative to the shift. Looser solves leave the forward and reverse shifts
-    slightly inconsistent, which biases reuse. (Default: `0.0002`)
+  - Tolerance of the shift solve on the path length, relative to the path-length change of the shift. Looser
+    solves leave the forward and reverse shifts slightly inconsistent, which biases reuse. (Default: `0.0002`)
 * - `rayChartMaxDisplacement`
   - float
   - `ray_trace`, `ray_trace_chart` and `area_adaptive` only: rejects shifts that move the vertex farther than this in
@@ -206,14 +212,15 @@ The reservoirs resample by the luminance of the path contribution, or by the cha
 (restir-every-frame)=
 ## Every frame
 
-1. **Initial sampling.** Every pixel traces `samplesPerPixel` candidate paths from its primary
-   hit, connects them to the laser spot as the path tracer does, and keeps one of them in its
-   reservoir, chosen in proportion to its contribution through the gate.
+1. **Initial sampling.** Every pixel traces `samplesPerPixel` paths from its primary hit,
+   connects their vertices to the laser spot as the path tracer does, and keeps one of these
+   candidates in its reservoir, chosen in proportion to its contribution through the gate.
 2. **Temporal reuse** (with `useTemporalReuse`). The pixel resamples its reservoir from the
    previous frame, shifted to the current gate.
 3. **Spatial reuse**, `spatialReuseIteration` rounds. The pixel resamples the reservoirs of
    `spatialReuseNeighborCount` random pixels within `spatialReuseGatherRadius`, each shifted to
-   this pixel.
+   this pixel. Neighbors without a primary hit, or whose primary hit differs too much in normal or
+   depth, are skipped.
 4. **Output.** The pixel's reservoir gives its estimate of the time-gated image.
 5. **Primary-hit direct** (with `computeDirect`). The path camera -> primary hit -> laser spot is
    evaluated in step 1 on its own, kept out of the reservoirs, and added to the output after the last
@@ -229,29 +236,32 @@ noise.
 Reusing a path at another pixel changes its first segments (a different primary hit, and possibly
 a different gate), so its length changes too. The shift keeps the rest of the path and moves the
 *reconnection vertex*, the first vertex where the path may reconnect (a segment whose two
-vertices are both rougher than `reconnectionRoughnessThreshold`), so that the shifted path has the
-length it needs. The move is a Newton solve on a 2D chart around that vertex, chosen by
-`shiftmapMethod`; the path-length constraint fixes only one direction, and `gaugeMode` fixes the
-other. With `no`, the vertex is not moved, so the shifted path often no longer fits the gate.
+vertices are both rougher than `reconnectionRoughnessThreshold` and that is longer than
+`reconnectionMinDistance`), so that the shifted path has the length it needs. The move is a Newton
+solve on a 2D chart around that vertex, chosen by `shiftmapMethod`; the path-length constraint
+fixes only one direction, and `gaugeMode` fixes the other. `radial` instead moves the vertex along
+the ray, in the vertex's plane, from the point where the path length is shortest (a 1D search), so
+it needs no gauge. With `no`, the vertex is not moved, so the shifted path often no longer fits
+the gate.
 
 `local_tangent` with `avg_grad` is a good starting point, and is what the tutorials use.
 
 ## Moving the gate
 
-With `shiftGate`, the gate moves to the next center after every frame. Temporal reuse keeps its
-history and shifts the previous frame's paths to the new gate. The move also flags the render
-graph, which restarts downstream accumulation.
+With `shiftGate` and `timeMax` above `timeMin`, the gate moves to the next center after every
+frame. Temporal reuse keeps its history and shifts the previous frame's paths to the new gate. The
+move also flags the render graph, which restarts downstream accumulation.
 
 From a script, `set_time_gate_info(timeMin, timeMax, timeBin)` sets the gate range, and
 `increment_time_gate_frame()` advances the gate index. Both keep the temporal history, and
 neither restarts downstream accumulation; reset an `AccumulatePass` yourself if you use one.
-Changing an option in the UI discards the history.
+Changing an option in the UI or with `set_properties()` discards the history.
 
 ## When the history is discarded
 
 The temporal history is discarded, and the next frame starts from its own samples only, when:
 
-- an option changes in the UI,
+- an option changes in the UI or with `set_properties()`,
 - the scene changes in any way other than camera motion (without `isSceneDynamic`, a laser change
   counts too),
 - the frame size changes, or
@@ -264,7 +274,8 @@ With `useShrinkMapping`, `direct` sampling and a `box` or `tent` gate, a fractio
 `roughTimeGateSampleRatio` of the candidate paths is traced against a wider gate,
 `timeGateWindowRough` (10 x `timeGateWindow` unless set), and shrunk into the gate with the
 path-length shift. This finds candidates for very narrow gates that direct sampling rarely hits.
-It has no effect when the wider gate is not wider than `timeGateWindow`.
+It has no effect when the wider gate is not wider than `timeGateWindow`, or when
+`roughTimeGateSampleRatio` x `samplesPerPixel` is below 1.
 
 With a fraction of 1, every candidate uses the wider gate, and paths whose shift fails are lost:
 in a test on the Cornell box (0.01 gate), the image was about 7 % darker than the reference. A
@@ -293,7 +304,7 @@ The laser is set on the `LaserLight` pass, as for the [path tracer](#laser).
 * - `vbuffer` (input)
   - Primary hits, from `VBufferRT`.
 * - `viewW` (input, optional)
-  - Primary ray directions, from `VBufferRT`.
+  - Primary ray directions, from `VBufferRT`. Needed for depth of field.
 * - `mvec` (input, optional)
   - Motion vectors, from `VBufferRT`, to reproject the temporal history when the camera moves.
 * - `color` (output)

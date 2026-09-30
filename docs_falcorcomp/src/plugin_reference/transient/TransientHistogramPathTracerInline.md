@@ -41,7 +41,8 @@ Histogram:
 * - `histogramFilter`
   - string
   - The bin filter: `box` or `tent`; with kernel density estimation, the kernel: `box`, `tent`,
-    `gaussian`, `epanechnikov` or `perlin`. See [Filters](#filters). (Default: `box`)
+    `gaussian`, `epanechnikov` or `perlin`. Ignored by `tri_approx`. See [Filters](#filters).
+    (Default: `box`)
 * - `useKernelDensityEstimation`
   - boolean
   - Spread each path over the bins with a kernel instead of a bin filter. `direct` only.
@@ -67,7 +68,7 @@ Sampling:
 * - `maxBounces`
   - integer
   - Maximum number of surface vertices on a camera path, counting the primary hit. Each vertex
-    is connected to the laser spot. (Default: `3`)
+    is connected to the laser spot (the primary hit only with `computeDirect`). (Default: `3`)
 * - `samplingMethod`
   - string
   - `direct` or `tri_approx`. See [Sampling methods](#sampling-methods). (Default: `direct`)
@@ -95,7 +96,7 @@ Output:
 * - `useSingleChannel`
   - boolean
   - Store one channel per bin, chosen by `singleChannel`, which quarters the histogram's memory.
-    (Default: `false`)
+    The `color` output stays RGB. (Default: `false`)
 * - `singleChannel`
   - string
   - The channel kept by `useSingleChannel`: `luminance`, `red`, `green` or `blue`.
@@ -136,7 +137,8 @@ pass.
 With `accumulate`, the histogram is the *sum* of the frames rendered since the last reset, which
 is much cheaper than a separate accumulation pass for large histograms. Divide it by the number
 of frames to get the mean; `TransientHistogramViewer` does this on its own. The sum restarts when
-the camera moves, a setting changes, or a script calls `reset_histogram()`.
+the camera moves, the scene changes, a setting of this pass or an upstream pass (e.g. the laser)
+changes, or a script calls `reset_histogram()`.
 
 (sampling-methods)=
 ## Sampling methods
@@ -146,8 +148,9 @@ the camera moves, a setting changes, or a script calls `reset_histogram()`.
 - `tri_approx`: a deterministic approximation of the paths primary hit -> one scene triangle ->
   laser spot, integrated over every triangle of the scene (a single intermediate bounce). It
   tests visibility at triangle centers and interpolates the path length linearly over each
-  triangle, so it is biased; `samplesPerPixel` and `maxBounces` do not apply. It assumes a
-  collimated laser.
+  triangle, so it is biased; `samplesPerPixel`, `maxBounces`, `computeDirect`,
+  `useImportanceSampling`, `histogramFilter` and kernel density estimation do not apply. It
+  assumes a collimated laser.
 
 ## Laser
 
@@ -170,7 +173,8 @@ The laser is set on the `LaserLight` pass, as for the
   - Transient histogram $H$, `width x height x timeBin`. RGBA32Float (the alpha channel is an
     auxiliary weight), or R32Float with `useSingleChannel`.
 * - `color` (output)
-  - Radiance of the frame, summed over all path lengths the camera paths reach, RGBA32Float.
+  - Radiance of the frame, summed over all path lengths the camera paths reach (with `tri_approx`,
+    over the histogram's range), RGBA32Float.
 ```
 
 The pass also publishes the histogram's range and the number of summed frames to the render

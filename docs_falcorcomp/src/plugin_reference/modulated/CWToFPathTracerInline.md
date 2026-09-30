@@ -52,8 +52,8 @@ Modulation:
   - Description
 * - `modulationWavelength`
   - float
-  - Modulation wavelength $\lambda$: the optical path length of one period, in scene units.
-    (Default: `1`)
+  - Modulation wavelength $\lambda$: the optical path length of one period, in scene units. Must be
+    greater than zero. (Default: `1`)
 * - `phase`
   - float
   - Sensor phase offset $\phi$, in periods (`0.25` is 90 degrees). (Default: `0`)
@@ -76,7 +76,7 @@ Sampling:
   - Description
 * - `samplesPerPixel`
   - integer
-  - Camera paths traced per pixel in each frame. (Default: `128`)
+  - Camera paths traced per pixel in each frame. Must be greater than zero. (Default: `128`)
 * - `maxBounces`
   - integer
   - Maximum number of surface vertices on a camera path, counting the primary hit. Each vertex is
@@ -108,9 +108,10 @@ Antithetic shift mapping (used with `useAntitheticSampling`):
     itself (no variance reduction). (Default: `radial`)
 * - `gaugeMode`
   - string
-  - Newton-based methods only: the direction left free by the one path-length constraint:
-    `constant` (a fixed chart axis, `gaugeAxis`), `grad` or `avg_grad` (the average of the
-    gradients at both ends). (Default: `avg_grad`)
+  - Newton-based methods only: fixes the direction left free by the one path-length constraint.
+    `constant`: the vertex moves orthogonally to the chart axis `gaugeAxis`; `grad`: along the
+    path-length gradient at the start; `avg_grad`: along the average of the gradients at both ends.
+    (Default: `avg_grad`)
 * - `gaugeAxis`
   - float2
   - Chart axis of the `constant` gauge; `(0, 0)` picks a random axis per shift. (Default: `(1, 0)`)
@@ -119,16 +120,19 @@ Antithetic shift mapping (used with `useAntitheticSampling`):
   - Newton-based methods only: maximum Newton iterations per shift. (Default: `5`)
 * - `NewtonRelativeTolerance`
   - float
-  - Solver tolerance on the path length, relative to the shift. (Default: `0.002`)
+  - Tolerance of the shift solve on the path length, relative to the path-length change of the shift
+    (at least `1e-6`). Also used by `radial`. (Default: `0.002`)
 * - `rayChartMaxDisplacement`
   - float
-  - `ray_trace`, `ray_trace_chart` and `area_adaptive` only: rejects shifts that move the vertex farther than this in
-    chart coordinates, where the reverse shift may not return to the original vertex. `0` disables. (Default: `0`)
+  - `ray_trace`, `ray_trace_chart`, and `area_adaptive` on faces of area at most `0.01` (which it
+    shifts with the ray chart) only: rejects shifts that move the vertex farther than this in chart
+    coordinates, where the reverse shift may not return to the original vertex. `0` disables.
+    (Default: `0`)
 * - `antitheticRoundTripCheck`
   - boolean
-  - Keep a partner only if shifting it back returns to the starting vertex. This makes the
-    Newton-based methods unbiased, at the cost of a second shift; `radial` does not need it.
-    (Default: `false`)
+  - Keep a partner only if shifting it back returns to the starting vertex (within 1% of the shift
+    distance). This makes the Newton-based methods unbiased, at the cost of a second shift;
+    `radial` does not need it. (Default: `false`)
 ```
 
 Output:
@@ -208,7 +212,9 @@ camera is usually modeled with a point light at the camera: `isLightSourceLaser 
 * - `viewW` (input, optional)
   - Primary ray directions, from `VBufferRT`.
 * - `color` (output)
-  - CW-ToF measurement $I$, RGBA32Float. With the signed weight it can be negative.
+  - CW-ToF measurement $I$, RGBA32Float. With the signed weight it can be negative. Pixels with no
+    primary hit are black, or show the unmodulated environment map when the scene uses it as
+    background.
 ```
 
 ## Example
