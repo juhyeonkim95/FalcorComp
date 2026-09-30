@@ -276,6 +276,93 @@ void streamIncomingCandidate(inout Reservoir destination, IncomingCandidate cand
     }
 }
 
+// What the canonical source of a pairwise merge contributes with a static suffix: only its mass (no sample), its
+// sample without a reconnection vertex (which the other domain cannot have), or its sample with the pairwise MIS
+// weight against the other domain (weight as if alone when the shift there fails). evaluateCanonicalCandidate computes
+// it and streamCanonicalCandidate adds it to a reservoir, so the two can run in separate passes.
+static const uint kCanonicalMassOnly = 0;
+static const uint kCanonicalLocalSample = 1;
+static const uint kCanonicalSample = 2;
+struct CanonicalCandidate
+{
+    float weight; // RIS weight: pairwise MIS coefficient * target * source W.
+    uint kind;    // kCanonicalMassOnly, kCanonicalLocalSample or kCanonicalSample.
+};
+
+// Evaluate the canonical `source` against the other domain (otherMass: the other reservoir's mass; primary hit
+// `primary`, gate targetGate) by shifting its path there.
+CanonicalCandidate evaluateCanonicalCandidate(
+    Reservoir source,
+    float otherMass,
+    ReconnectionCriteria criteria,
+    ShadingData primary,
+    IMaterialInstance primaryMaterial,
+    float primaryLength,
+    const float targetGate,
+    const float sourceGate,
+    const float K,
+    float3 lightPosition,  // The point light, when the suffix ends there.
+    float3 lightDirection,
+    inout SampleGenerator sg,
+    inout ShiftMappingDebugInfo debugInfo
+)
+{
+#if DEBUG_NEWTON_ITERATIONS
+    debugInfo.newtonStats = uint4(0);
+    debugInfo.mappingDistance = float2(0.f);
+#endif
+    CanonicalCandidate candidate = {};
+    candidate.kind = kCanonicalMassOnly;
+    if (source.W == 0.f) return candidate;
+    float sourceTarget = getReservoirWeight(source.f);
+    if (source.W > 0 && source.rcVertexBounce == 0)
+    {
+        candidate.kind = kCanonicalLocalSample;
+        candidate.weight = sourceTarget * source.W;
+        return candidate;
+    }
+
+    VertexData x = gScene.getVertexData(source.rcVertexHit.getTriangleHit());
+    ReconnectionSuffix suffix = loadReconnectionSuffix(source, lightPosition, lightDirection);
+    candidate.kind = kCanonicalSample;
+    ShiftedPath shifted;
+    if (!shiftToPrefix(source, x, suffix, suffix.vertex, sourceGate, primary, primaryMaterial, primaryLength,
+            targetGate, K, criteria, sg, debugInfo, shifted))
+    {
+        candidate.weight = sourceTarget * source.W;
+        return candidate;
+    }
+    float shiftedTarget = getReservoirWeight(shifted.f);
+#if DEBUG_NEWTON_ITERATIONS
+    debugInfo.newtonStats = finalizeReuseStatistics(
+        debugInfo.newtonStats, shifted.mappingJacobian, shifted.jacobian, shiftedTarget);
+#endif
+    float misWeight = spatialPairCoefficient(source.M, sourceTarget, otherMass, shiftedTarget, shifted.jacobian);
+    candidate.weight = misWeight * sourceTarget * source.W;
+    return candidate;
+}
+
+// Stream the canonical `source` (with its candidate from evaluateCanonicalCandidate) into `destination`. A sample
+// without a reconnection vertex carries only its target f and the flag.
+void streamCanonicalCandidate(inout Reservoir destination, CanonicalCandidate candidate, Reservoir source,
+    inout SampleGenerator sg)
+{
+    if (candidate.kind == kCanonicalMassOnly)
+    {
+        destination.M += source.M;
+        return;
+    }
+    if (!destination.update(source.f, candidate.weight, source.M, sg)) return;
+    if (candidate.kind == kCanonicalLocalSample)
+    {
+        destination.rcVertexBounce = 0;
+        return;
+    }
+    copyReconnectionPayload(destination, source);
+    destination.rcVertexHit = source.rcVertexHit;
+    destination.totalPathLength = source.totalPathLength;
+}
+
 // Stream `source` (otherMass: the mass of the other reservoir in the pair) into `destination` with its pairwise MIS
 // weight. A canonical source keeps its own sample and only evaluates the other pixel's support; any other source
 // is shifted to the destination pixel (primary hit `primary`, gate targetGate).
@@ -309,15 +396,23 @@ void combineReservoirWithShiftMapping(
     ShiftMappingDebugInfo debugInfo;
 #endif
 
+    // A static suffix: evaluate and stream the candidate. Re-lit suffixes (updateLight) are handled below.
 #if IS_SCENE_DYNAMIC
-    if (!isCanonical && !updateLight)
-#else
-    if (!isCanonical)
+    if (!updateLight)
 #endif
     {
-        IncomingCandidate candidate = evaluateIncomingCandidate(source, otherMass, criteria, primary, primaryMaterial,
-            primaryLength, targetGate, sourceGate, K, lightPosition, lightDirection, sg, debugInfo);
-        streamIncomingCandidate(destination, candidate, source, sg);
+        if (isCanonical)
+        {
+            CanonicalCandidate candidate = evaluateCanonicalCandidate(source, otherMass, criteria, primary,
+                primaryMaterial, primaryLength, targetGate, sourceGate, K, lightPosition, lightDirection, sg, debugInfo);
+            streamCanonicalCandidate(destination, candidate, source, sg);
+        }
+        else
+        {
+            IncomingCandidate candidate = evaluateIncomingCandidate(source, otherMass, criteria, primary,
+                primaryMaterial, primaryLength, targetGate, sourceGate, K, lightPosition, lightDirection, sg, debugInfo);
+            streamIncomingCandidate(destination, candidate, source, sg);
+        }
         return;
     }
 
