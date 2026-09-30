@@ -60,6 +60,7 @@ const ChannelList kHistogramOutputChannelSingle = {
 };
 
 const char kUseBinReuse[] = "useBinReuse";
+const char kSkipEmptyReservoirs[] = "skipEmptyReservoirs";
 const char kRandomSeed[] = "randomSeed";
 } // namespace
 
@@ -86,6 +87,8 @@ void TransientHistogramReSTIRInline::parseProperties(const Properties& props)
             continue;
         if (key == kUseBinReuse)
             mOptions.useBinReuse = value;
+        else if (key == kSkipEmptyReservoirs)
+            mOptions.skipEmptyReservoirs = value;
         else if (key == kRandomSeed)
             mRandomSeed = value;
         else
@@ -100,6 +103,7 @@ Properties TransientHistogramReSTIRInline::getProperties() const
     mOptions.pathTracing.serialize(props);
     mOptions.restir.serialize(props);
     props[kUseBinReuse] = mOptions.useBinReuse;
+    props[kSkipEmptyReservoirs] = mOptions.skipEmptyReservoirs;
     props[kRandomSeed] = mRandomSeed;
     return props;
 }
@@ -135,7 +139,7 @@ DefineList TransientHistogramReSTIRInline::getShaderDefines(const RenderData& re
     defines.add(mOptions.restir.getDefines());
     defines.add(PathLengthAwareReSTIRResources::getReservoirDefines(mOptions.pathTracing, false));
     defines.add("SPATIAL_REUSE_PAIRS", useSpatialReusePairs() ? "1" : "0");
-    defines.add("RESERVOIR_SUMMARIES", "1");
+    defines.add("RESERVOIR_SUMMARIES", mOptions.skipEmptyReservoirs ? "1" : "0");
 
     // For optional I/O resources, set 'is_valid_<name>' defines to inform the program of which ones it can access.
     defines.add(getValidResourceDefines(InlinePass::kPrimaryHitAndMotionInputChannels, renderData));
@@ -161,8 +165,11 @@ void TransientHistogramReSTIRInline::bindShaderData(const ShaderVar& var, const 
 {
     var["gPrevReservoirs"] = mReSTIR.prevReservoirs;
     var["gCurrReservoirs"] = mReSTIR.currReservoirs;
-    var["gPrevSummaries"] = mReSTIR.prevSummaries;
-    var["gCurrSummaries"] = mReSTIR.currSummaries;
+    if (mReSTIR.prevSummaries)
+    {
+        var["gPrevSummaries"] = mReSTIR.prevSummaries;
+        var["gCurrSummaries"] = mReSTIR.currSummaries;
+    }
 
     var["CB"]["gFrameCount"] = mFrameCount;
     var["CB"]["gFrameDim"] = renderData.getDefaultTextureDims();
@@ -284,7 +291,7 @@ void TransientHistogramReSTIRInline::execute(RenderContext* pRenderContext, cons
     }
     const uint2 frameDim = renderData.getDefaultTextureDims();
     mReSTIR.prepare(mpDevice, mpScene, mpSampleGenerator, mOptions.pathTracing, false, mOptions.histogram.timeBin, frameDim,
-        mOptions.restir.useTemporalReuse, renderData.getTexture("vbuffer")->getFormat(), true);
+        mOptions.restir.useTemporalReuse, renderData.getTexture("vbuffer")->getFormat(), mOptions.skipEmptyReservoirs);
 
     InlinePass::checkScene(*mpScene, renderData);
     if (mpScene->getRenderSettings().useEmissiveLights)
@@ -322,6 +329,11 @@ void TransientHistogramReSTIRInline::renderUI(Gui::Widgets& widget)
 
         dirty |= group.checkbox("Reuse adjacent bins", mOptions.useBinReuse);
         group.tooltip("Each spatial reuse iteration also resamples bins j-1 and j+1 of the same pixel.", true);
+
+        dirty |= group.checkbox("Skip empty reservoirs", mOptions.skipEmptyReservoirs);
+        group.tooltip("Store only the reservoirs of bins holding a sample, plus every bin's W and M in a small buffer. "
+                      "Faster while most bins are empty (initial sampling, first spatial iteration); little gain once "
+                      "temporal or repeated spatial reuse fills the bins. The results are the same.", true);
     }
 
     if (auto group = widget.group("Shift mapping", true))

@@ -58,9 +58,11 @@ Texture2D<PackedHitInfo> gTemporalVBuffer;
 // Reservoir Struct
 StructuredBuffer<Reservoir> gPrevReservoirs; // Last frame's final reservoirs (temporal reuse).
 RWStructuredBuffer<Reservoir> gCurrReservoirs;
+#if RESERVOIR_SUMMARIES
 // W and M of each reservoir: only reservoirs with W != 0 are stored after finalization (loadSummarizedReservoir).
 StructuredBuffer<float2> gPrevSummaries;
 RWStructuredBuffer<float2> gCurrSummaries;
+#endif
 
 // Outputs
 RWTexture2D<float4> gOutputColor;
@@ -71,6 +73,25 @@ RWTexture3D<HistogramTexel> gTransientHistogram;
 // TimeGateMode::Box; macros in imported Slang modules are not exported.
 static const uint kTimeGateBox = 1;
 
+
+// Finalized reservoirs, with their summaries if RESERVOIR_SUMMARIES (then an empty reservoir is not stored).
+Reservoir loadPrevReservoir(uint index)
+{
+#if RESERVOIR_SUMMARIES
+    return loadSummarizedReservoir(gPrevReservoirs, gPrevSummaries, index);
+#else
+    return gPrevReservoirs[index];
+#endif
+}
+
+void storeReservoir(uint index, Reservoir reservoir)
+{
+#if RESERVOIR_SUMMARIES
+    storeSummarizedReservoir(gCurrReservoirs, gCurrSummaries, index, reservoir);
+#else
+    gCurrReservoirs[index] = reservoir;
+#endif
+}
 
 // Which of the first 64 bins of a pixel have received a candidate this frame, so that their reservoirs are in memory.
 // The other bins start as empty reservoirs in registers instead of being cleared in memory first (most bins never get a
@@ -125,13 +146,13 @@ float3 tracePath(uint2 pixel, uint2 frameDim)
     {
         for (uint bin = 0; bin < gTimeBin; ++bin)
         {
-            storeSummarizedReservoir(gCurrReservoirs, gCurrSummaries, pixelIndex * gTimeBin + bin, Reservoir());
+            storeReservoir(pixelIndex * gTimeBin + bin, Reservoir());
             gTransientHistogram[uint3(pixel, bin)] = 0.f;
         }
         return 0.f;
     }
-    // The finalization below stores every bin (its summary, and its reservoir if not empty) and histogram texel; only
-    // bins past the mask need a clear, for candidate submission.
+    // The finalization below stores every bin's reservoir (storeReservoir) and histogram texel; only bins past the mask
+    // need a clear, for candidate submission.
     TouchedBins touched = {};
     for (uint bin = 64; bin < gTimeBin; ++bin)
         gCurrReservoirs[pixelIndex * gTimeBin + bin] = Reservoir();
@@ -232,7 +253,7 @@ float3 tracePath(uint2 pixel, uint2 frameDim)
 #if USE_TEMPORAL_REUSE
         if (history.valid)
         {
-            Reservoir previous = loadSummarizedReservoir(gPrevReservoirs, gPrevSummaries, history.pixelIndex * gTimeBin + bin);
+            Reservoir previous = loadPrevReservoir(history.pixelIndex * gTimeBin + bin);
             previous.M = temporalHistoryMass(previous.M, gTemporalHistoryLength, gSamplesPerPixel);
             if (previous.M > 0.f)
             {
@@ -246,7 +267,7 @@ float3 tracePath(uint2 pixel, uint2 frameDim)
             }
         }
 #endif
-        storeSummarizedReservoir(gCurrReservoirs, gCurrSummaries, index, reservoir);
+        storeReservoir(index, reservoir);
         float3 radiance = reservoir.W * reservoir.f;
         integratedRadiance += radiance;
         gTransientHistogram[uint3(pixel, bin)] = toHistogramTexel(radiance / gBinWidth);

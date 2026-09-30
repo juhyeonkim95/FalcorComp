@@ -88,6 +88,8 @@ private:
         PathTracingConfig pathTracing;
         PathLengthAwareReSTIRConfig restir;
         bool useBinReuse = false; ///< Add adjacent bins of the same pixel as spatial reuse candidates.
+        /// Store only non-empty reservoirs, with every reservoir's W and M in a compact buffer (RESERVOIR_SUMMARIES).
+        bool skipEmptyReservoirs = true;
     };
     Options mOptions;
 
