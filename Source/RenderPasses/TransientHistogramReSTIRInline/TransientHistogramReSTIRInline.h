@@ -70,6 +70,14 @@ private:
     const ChannelList& histogramChannels() const;
     void bindTimeGate(const ShaderVar& var) const;
     void spatialReuse(RenderContext* pRenderContext, const RenderData& renderData);
+    /// Binds the spatial reuse constants and resources of `pass` (the resampling or the pair pass).
+    void bindSpatialReuse(const ref<ComputePass>& pass, const RenderData& renderData);
+    /// Spatial reuse runs as two passes per iteration and chunk of bins (pair shifts, then resampling) unless the shift
+    /// is `no`: without shift work, the extra pass and its records cost more than the occupancy gains.
+    bool useSpatialReusePairs() const
+    {
+        return mOptions.restir.shiftMapping.shiftmapMethod != ShiftMappingMethod::Identity;
+    }
 
     /// User settings, composed of shared configs (Shared/Host/Configs) plus this pass's own.
     struct Options
@@ -96,4 +104,6 @@ private:
 
     ref<ComputePass> mpComputePass;      ///< Initial candidates (and temporal reuse), written to the histogram.
     ref<ComputePass> mpSpatialReusePass;
+    /// With SPATIAL_REUSE_PAIRS, the first pass of each spatial reuse iteration: one candidate's shifts per thread.
+    ref<ComputePass> mpSpatialReusePairsPass;
 };

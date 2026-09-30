@@ -16,5 +16,5 @@ void main(uint3 dispatchThreadId: SV_DispatchThreadID)
     uint candidates = gSpatialReuse.getMaxCandidateCount();
     uint2 pixel = uint2(dispatchThreadId.x / candidates, dispatchThreadId.y);
     if (any(pixel >= gSpatialReuse.gFrameDim)) return;
-    gSpatialReuse.evaluatePair(pixel, 1, 0, gTimeCenter, dispatchThreadId.x % candidates);
+    gSpatialReuse.evaluatePair(pixel, 1, 0, dispatchThreadId.x % candidates, false);
 }

@@ -5,6 +5,7 @@ target_sources(TransientHistogramReSTIRInline PRIVATE
     TransientHistogramReSTIRInline.h
     InitialSampleGeneration.cs.slang
     SpatialReuse.cs.slang
+    SpatialReusePairs.cs.slang
 )
 
 target_copy_shaders(TransientHistogramReSTIRInline RenderPasses/TransientHistogramReSTIRInline)

@@ -261,7 +261,10 @@ void TimeGatedReSTIRInline::bindSpatialReuse(const ref<ComputePass>& pass, const
     mLaser.bindShaderData(rootVar["Laser"]);
     mOptions.restir.bindShiftMapping(rootVar["ShiftMappingCB"]);
     if (useSpatialReusePairs())
-        var["pairs"] = mpSpatialPairs;
+    {
+        var["pairs"] = mReSTIR.spatialPairs;
+        var["pairCandidateValid"] = mReSTIR.spatialCandidateValid;
+    }
 }
 
 void TimeGatedReSTIRInline::spatialReuse(RenderContext* pRenderContext, const RenderData& renderData)
@@ -273,12 +276,8 @@ void TimeGatedReSTIRInline::spatialReuse(RenderContext* pRenderContext, const Re
     if (useSpatialReusePairs())
     {
         InlinePass::updateScenePassDefines(pRenderContext, mpSpatialReusePairsPass, mpScene, mpSampleGenerator, defines);
-        const uint32_t pairCount = std::max(frameDim.x * frameDim.y * candidateCount, 1u);
-        if (!mpSpatialPairs || mpSpatialPairs->getElementCount() != pairCount)
-            mpSpatialPairs = mpDevice->createStructuredBuffer(
-                mpSpatialReusePairsPass->getRootVar()["CB"]["gSpatialReuse"]["pairs"], pairCount,
-                ResourceBindFlags::ShaderResource | ResourceBindFlags::UnorderedAccess, MemoryType::DeviceLocal, nullptr,
-                false);
+        mReSTIR.preparePairs(mpDevice, mpSpatialReusePairsPass->getRootVar()["CB"]["gSpatialReuse"], frameDim,
+            candidateCount, mOptions.restir.spatialReuseNeighborCount, 1);
         bindSpatialReuse(mpSpatialReusePairsPass, renderData);
     }
     bindSpatialReuse(mpSpatialReusePass, renderData);
@@ -295,7 +294,7 @@ void TimeGatedReSTIRInline::spatialReuse(RenderContext* pRenderContext, const Re
     if (useSpatialReusePairs())
         mReSTIR.runSpatialReuse(pRenderContext, mpSpatialReusePairsPass,
             mpSpatialReusePairsPass->getRootVar()["CB"]["gSpatialReuse"], candidateCount, mpSpatialReusePass, var,
-            mOptions.restir.spatialReuseIteration, mRandomSeed, frameDim);
+            mOptions.restir.spatialReuseIteration, mRandomSeed, frameDim, 1, 1);
     else
         mReSTIR.runSpatialReuse(pRenderContext, mpSpatialReusePass, var, mOptions.restir.spatialReuseIteration, mRandomSeed, frameDim);
 }

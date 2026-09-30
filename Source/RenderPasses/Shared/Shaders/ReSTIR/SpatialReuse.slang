@@ -6,10 +6,10 @@
 // paths are shifted by one bin width with the path-length-aware shift mapping.
 //
 // resampleGate does one reservoir's whole reuse in one thread. With SPATIAL_REUSE_PAIRS, a reuse iteration is two
-// passes instead: evaluatePair computes one shift per thread (a candidate's incoming shift, or the central sample's
-// canonical shift against it) into a SpatialReusePair, and resampleFromPairs streams those records into the reservoir
-// with the same random draws. A thread then holds one shift rather than the whole neighbor loop, which keeps the
-// shift's register use from limiting the kernel's occupancy.
+// passes instead (per chunk of bins): evaluatePair computes one candidate's shifts at one bin per thread (the central
+// sample's canonical shift against it and its incoming shift) into a SpatialReusePair, and resampleFromPairs streams
+// those records into each reservoir with the same random draws. A thread then holds one candidate rather than the
+// whole neighbor loop, which keeps the shifts' register use from limiting the kernel's occupancy.
 import Utils.Sampling.SampleGenerator;
 import RenderPasses.Shared.Shaders.Utils.TimeGate;
 import RenderPasses.Shared.Shaders.Utils.TransientHistogram;
@@ -23,8 +23,7 @@ import RenderPasses.Shared.Shaders.Lights.Laser;
 
 // One reuse candidate of a reservoir (SPATIAL_REUSE_PAIRS): the incoming shift of the candidate's sample (an
 // IncomingCandidate, with the candidate reservoir's M) and the canonical pairwise coefficient of the central sample
-// against the candidate. 64 bytes; the other fields are unset when the candidate does not exist.
-static const uint kPairInvalid = 2; // Not a candidate (outside the screen, no primary hit, dissimilar geometry).
+// against the candidate. 64 bytes. Only valid, non-empty pairs (isEmptyPair) have a record.
 struct SpatialReusePair
 {
     HitInfo hit;
@@ -34,7 +33,7 @@ struct SpatialReusePair
     float totalPathLength;
     float canonical;
     float sourceM;
-    uint status; // IncomingCandidate kind (kIncomingMassOnly, kIncomingSample) or kPairInvalid.
+    uint status; // IncomingCandidate kind (kIncomingMassOnly, kIncomingSample).
 };
 
 struct SpatialReuse
@@ -68,9 +67,15 @@ struct SpatialReuse
     RWTexture2D<float2> gMappingDistance;
 #endif
 #if SPATIAL_REUSE_PAIRS
-    // getMaxCandidateCount() records per reservoir, candidate-major: the threads of a warp (neighboring pixels, same
-    // candidate) access consecutive records.
+    // Records of the bins [pairFirstBin, pairFirstBin + pairBinCount) (a chunk; a time gate has the single bin 0),
+    // getMaxCandidateCount() per pixel and bin, ordered candidate, bin, pixel: the threads of a warp (neighboring
+    // pixels, same candidate) access consecutive records.
     RWStructuredBuffer<SpatialReusePair> pairs;
+    // Whether each spatial neighbor (neighborCount per pixel, ordered candidate, pixel) is a candidate; it does not
+    // depend on the bin, so evaluatePair records it at the chunk's first bin.
+    RWStructuredBuffer<uint> pairCandidateValid;
+    uint pairFirstBin;
+    uint pairBinCount;
 #endif
 
     ReconnectionCriteria getReconnectionCriteria()
@@ -293,31 +298,105 @@ struct SpatialReuse
     }
 
 #if SPATIAL_REUSE_PAIRS
-    uint getPairIndex(uint binCount, uint reservoirIndex, uint i)
+    uint getPairIndex(uint linearPixel, uint bin, uint i)
     {
-        return i * gFrameDim.x * gFrameDim.y * binCount + reservoirIndex;
+        return (i * pairBinCount + (bin - pairFirstBin)) * gFrameDim.x * gFrameDim.y + linearPixel;
     }
 
-    // The shifts of reservoir (pixel, bin)'s candidate i, as resampleGate computes them: whether the candidate exists,
-    // the central sample's canonical shift against it, and the candidate's incoming shift.
-    void evaluatePair(uint2 pixel, uint binCount, uint bin, float gateCenter, uint i)
+    uint getCandidateValidIndex(uint linearPixel, uint i)
+    {
+        return i * gFrameDim.x * gFrameDim.y + linearPixel;
+    }
+
+    // An empty central sample and an empty candidate reservoir (most histogram bins): the canonical coefficient is zero
+    // and the candidate contributes only its mass, so the pair needs no shift and no record.
+    bool isEmptyPair(uint reservoirIndex, uint neighborReservoirIndex)
+    {
+        return !(prevReservoirs[reservoirIndex].W > 0) && prevReservoirs[neighborReservoirIndex].W == 0.f;
+    }
+
+    // Both shifts of candidate i at one bin, as resampleGate computes them: the central sample's canonical coefficient
+    // against the candidate, and the candidate's incoming shift (with the candidate reservoir's M).
+    SpatialReusePair evaluateCandidateShifts(uint reservoirIndex, uint neighborReservoirIndex, uint candidateCount,
+        ShadingData primary, IMaterialInstance primaryMaterial, float primaryDepth, float gateCenter,
+        ShadingData neighborPrimary, IMaterialInstance neighborMaterial, float neighborDepth, float neighborGateCenter,
+        inout SampleGenerator sg)
+    {
+        // Empty reservoirs (most histogram bins) need only W and M: the canonical coefficient of an empty central
+        // sample is zero, and an empty candidate contributes only its mass. Load the full reservoirs only otherwise.
+        const float centralMass = prevReservoirs[reservoirIndex].M / candidateCount;
+        const float neighborM = prevReservoirs[neighborReservoirIndex].M;
+        ShiftMappingDebugInfo debugInfo;
+        SpatialReusePair pair = {};
+        pair.sourceM = neighborM;
+        pair.status = kIncomingMassOnly;
+        if (prevReservoirs[reservoirIndex].W > 0)
+        {
+            Reservoir centralReservoir = prevReservoirs[reservoirIndex];
+            centralReservoir.M = centralMass;
+            // A no-RC sample has no valid reconnection payload; its pair weight is one.
+            ReconnectionSuffix centralSuffix;
+            VertexData centralVertex;
+            if (centralReservoir.rcVertexBounce > 0)
+            {
+                centralSuffix = loadReconnectionSuffix(centralReservoir, gLaserOrigin, gLaserDirection);
+                centralVertex = gScene.getVertexData(centralReservoir.rcVertexHit.getTriangleHit());
+            }
+            pair.canonical = evaluateCanonicalShiftWeight(
+                centralReservoir, centralSuffix, centralVertex, neighborM, getReconnectionCriteria(),
+                neighborPrimary, neighborMaterial, neighborDepth, neighborGateCenter, gateCenter, sg, debugInfo);
+        }
+        if (prevReservoirs[neighborReservoirIndex].W != 0.f)
+        {
+            IncomingCandidate incoming = evaluateIncomingCandidate(prevReservoirs[neighborReservoirIndex], centralMass,
+                getReconnectionCriteria(), primary, primaryMaterial, primaryDepth, gateCenter, neighborGateCenter, 1.f,
+                gLaserOrigin, gLaserDirection, sg, debugInfo);
+            pair.hit = incoming.hit;
+            pair.f = incoming.f;
+            pair.weight = incoming.weight;
+            pair.prefixEnd = incoming.prefixEnd;
+            pair.totalPathLength = incoming.totalPathLength;
+            pair.status = incoming.kind;
+        }
+        return pair;
+    }
+
+    // The pair record of pixel's candidate i at `bin` (in the current chunk). Bin centers are binCenter(bin) with
+    // useBinCenters (histogram), else gTimeCenter (a time gate). One bin per thread keeps the thread's live state (and
+    // registers) small.
+    void evaluatePair(uint2 pixel, uint binCount, uint bin, uint i, bool useBinCenters)
     {
         uint candidateCount = getCandidateCount(binCount, bin);
-        if (i >= candidateCount) return;
+        if (i >= candidateCount) return; // An adjacent bin that does not exist at this bin; never read.
         HitInfo primaryHit = HitInfo(gVBuffer[pixel]);
         if (!primaryHit.isValid()) return;
-        uint reservoirIndex = getLinearizedPixel(pixel) * binCount + bin;
+        uint linearPixel = getLinearizedPixel(pixel);
+        uint reservoirIndex = linearPixel * binCount + bin;
 
-        float3 cameraOrigin = gScene.camera.getPosition();
-        ShadingData primary = loadShadingData(primaryHit, cameraOrigin, getPrimaryRayDir(pixel, gFrameDim, gViewW));
-        IMaterialInstance primaryMaterial = gScene.materials.getMaterialInstance(primary, ExplicitLodTextureSampler(0.f));
-        float primaryDepth = length(primary.posW - cameraOrigin);
-
-        // The shifts draw no random numbers; the generator only picks the neighbors, as in resampleGate.
+        // As resampleGate: the generator picks the neighbors; the shifts draw no random numbers.
         SampleGenerator sg = SampleGenerator(pixel, gRandomSeed);
         uint startIndex = sampleNext1D(sg) * kNeighborOffsetCount;
         int2 neighborPixel;
         uint neighborBin;
+        getCandidate(pixel, bin, startIndex, i, neighborPixel, neighborBin);
+
+        // Adjacent bins are always candidates. A spatial neighbor's validity is recorded once per chunk; other threads
+        // skip empty pairs before loading anything.
+        const bool recordValidity = i < neighborCount && bin == pairFirstBin;
+        if (!isValidScreenRegion(neighborPixel))
+        {
+            if (recordValidity) pairCandidateValid[getCandidateValidIndex(linearPixel, i)] = 0;
+            return;
+        }
+        uint neighborReservoirIndex = getLinearizedPixel(neighborPixel) * binCount + neighborBin;
+        const bool empty = isEmptyPair(reservoirIndex, neighborReservoirIndex);
+        if (empty && !recordValidity) return;
+
+        float gateCenter = useBinCenters ? binCenter(bin) : gTimeCenter;
+        float3 cameraOrigin = gScene.camera.getPosition();
+        ShadingData primary = loadShadingData(primaryHit, cameraOrigin, getPrimaryRayDir(pixel, gFrameDim, gViewW));
+        IMaterialInstance primaryMaterial = gScene.materials.getMaterialInstance(primary, ExplicitLodTextureSampler(0.f));
+        float primaryDepth = length(primary.posW - cameraOrigin);
         float neighborGateCenter;
         ShadingData neighborPrimary;
         IMaterialInstance neighborMaterial;
@@ -325,45 +404,15 @@ struct SpatialReuse
         bool valid = selectCandidate(pixel, bin, gateCenter, startIndex, i, primary, primaryMaterial, primaryDepth,
             cameraOrigin, neighborPixel, neighborBin, neighborGateCenter, neighborPrimary, neighborMaterial,
             neighborDepth);
-        uint pairIndex = getPairIndex(binCount, reservoirIndex, i);
-        if (!valid)
-        {
-            pairs[pairIndex].status = kPairInvalid;
-            return;
-        }
-
-        Reservoir neighborReservoir = prevReservoirs[getLinearizedPixel(neighborPixel) * binCount + neighborBin];
-        Reservoir centralReservoir = prevReservoirs[reservoirIndex];
-        centralReservoir.M /= candidateCount;
-        ShiftMappingDebugInfo debugInfo;
-        SpatialReusePair pair = {};
-        {
-            // A no-RC sample has no valid reconnection payload; its pair weight is one.
-            ReconnectionSuffix centralSuffix;
-            VertexData centralVertex;
-            if (centralReservoir.W > 0 && centralReservoir.rcVertexBounce > 0)
-            {
-                centralSuffix = loadReconnectionSuffix(centralReservoir, gLaserOrigin, gLaserDirection);
-                centralVertex = gScene.getVertexData(centralReservoir.rcVertexHit.getTriangleHit());
-            }
-            pair.canonical = evaluateCanonicalShiftWeight(
-                centralReservoir, centralSuffix, centralVertex, neighborReservoir.M, getReconnectionCriteria(),
-                neighborPrimary, neighborMaterial, neighborDepth, neighborGateCenter, gateCenter, sg, debugInfo);
-        }
-        IncomingCandidate incoming = evaluateIncomingCandidate(neighborReservoir, centralReservoir.M,
-            getReconnectionCriteria(), primary, primaryMaterial, primaryDepth, gateCenter, neighborGateCenter, 1.f,
-            gLaserOrigin, gLaserDirection, sg, debugInfo);
-        pair.hit = incoming.hit;
-        pair.f = incoming.f;
-        pair.weight = incoming.weight;
-        pair.prefixEnd = incoming.prefixEnd;
-        pair.totalPathLength = incoming.totalPathLength;
-        pair.sourceM = neighborReservoir.M;
-        pair.status = incoming.kind;
-        pairs[pairIndex] = pair;
+        if (recordValidity) pairCandidateValid[getCandidateValidIndex(linearPixel, i)] = uint(valid);
+        if (!valid || empty) return;
+        pairs[getPairIndex(linearPixel, bin, i)] = evaluateCandidateShifts(reservoirIndex, neighborReservoirIndex,
+            candidateCount, primary, primaryMaterial, primaryDepth, gateCenter, neighborPrimary, neighborMaterial,
+            neighborDepth, neighborGateCenter, sg);
     }
 
-    // resampleGate from the pair records of evaluatePair: stores the reservoir and returns W * f.
+    // resampleGate from the pair records of evaluatePair (bin in the current chunk): stores the reservoir and returns
+    // W * f.
     float3 resampleFromPairs(uint2 pixel, uint binCount, uint bin, float gateCenter)
     {
         uint reservoirIndex = getLinearizedPixel(pixel) * binCount + bin;
@@ -388,11 +437,22 @@ struct SpatialReuse
         float canonicalWeight = 1.f;
         Reservoir destination;
         centralReservoir.M /= candidateCount;
+        uint linearPixel = getLinearizedPixel(pixel);
         for (uint i = 0; i < candidateCount; ++i)
         {
-            SpatialReusePair pair = pairs[getPairIndex(binCount, reservoirIndex, i)];
-            if (pair.status == kPairInvalid) continue;
+            if (i < neighborCount && pairCandidateValid[getCandidateValidIndex(linearPixel, i)] == 0) continue;
             validNeighborCount++;
+            int2 neighborPixel;
+            uint neighborBin;
+            getCandidate(pixel, bin, startIndex, i, neighborPixel, neighborBin);
+            uint neighborReservoirIndex = getLinearizedPixel(neighborPixel) * binCount + neighborBin;
+            // An empty pair has no record: a zero canonical coefficient, and the candidate's mass.
+            if (isEmptyPair(reservoirIndex, neighborReservoirIndex))
+            {
+                destination.M += prevReservoirs[neighborReservoirIndex].M;
+                continue;
+            }
+            SpatialReusePair pair = pairs[getPairIndex(linearPixel, bin, i)];
             canonicalWeight += pair.canonical;
             // As streamIncomingCandidate, reading the candidate's reservoir only for the payload of a selected sample.
             if (pair.status == kIncomingMassOnly)
@@ -402,11 +462,7 @@ struct SpatialReuse
             }
             if (destination.update(pair.f, pair.weight, pair.sourceM, sg))
             {
-                int2 neighborPixel;
-                uint neighborBin;
-                getCandidate(pixel, bin, startIndex, i, neighborPixel, neighborBin);
-                copyReconnectionPayload(destination,
-                    prevReservoirs[getLinearizedPixel(neighborPixel) * binCount + neighborBin]);
+                copyReconnectionPayload(destination, prevReservoirs[neighborReservoirIndex]);
                 destination.rcVertexHit = pair.hit;
                 destination.rcPrevVertexPosition = pair.prefixEnd;
                 destination.totalPathLength = pair.totalPathLength;

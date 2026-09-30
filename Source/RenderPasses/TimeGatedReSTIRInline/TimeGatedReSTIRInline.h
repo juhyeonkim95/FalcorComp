@@ -125,9 +125,8 @@ private:
 
     ref<ComputePass> mpComputePass;      ///< Initial candidates (and temporal reuse).
     ref<ComputePass> mpSpatialReusePass;
-    /// With SPATIAL_REUSE_PAIRS, the first pass of each spatial reuse iteration: one shift per thread into mpSpatialPairs.
+    /// With SPATIAL_REUSE_PAIRS, the first pass of each spatial reuse iteration: one candidate's shifts per thread.
     ref<ComputePass> mpSpatialReusePairsPass;
-    ref<Buffer> mpSpatialPairs;          ///< One record per pixel and spatial candidate (SPATIAL_REUSE_PAIRS).
     ref<ComputePass> mpAddDirectPass;    ///< Adds the primary-hit direct lighting to the output (computeDirect).
     ref<Texture> mpDirectColor;          ///< Primary-hit direct lighting, kept out of the reservoirs (computeDirect).
 };

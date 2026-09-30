@@ -45,6 +45,7 @@ namespace
 {
 const char kShaderFile[] = "RenderPasses/TransientHistogramReSTIRInline/InitialSampleGeneration.cs.slang";
 const char kSpatialReuseFile[] = "RenderPasses/TransientHistogramReSTIRInline/SpatialReuse.cs.slang";
+const char kSpatialReusePairsFile[] = "RenderPasses/TransientHistogramReSTIRInline/SpatialReusePairs.cs.slang";
 
 const ChannelList kHistogramOutputChannelsRGB = {
     // clang-format off
@@ -133,6 +134,7 @@ DefineList TransientHistogramReSTIRInline::getShaderDefines(const RenderData& re
     defines.add(InlinePass::getSceneLightDefines(*mpScene));
     defines.add(mOptions.restir.getDefines());
     defines.add(PathLengthAwareReSTIRResources::getReservoirDefines(mOptions.pathTracing, false));
+    defines.add("SPATIAL_REUSE_PAIRS", useSpatialReusePairs() ? "1" : "0");
 
     // For optional I/O resources, set 'is_valid_<name>' defines to inform the program of which ones it can access.
     defines.add(getValidResourceDefines(InlinePass::kPrimaryHitAndMotionInputChannels, renderData));
@@ -182,10 +184,9 @@ void TransientHistogramReSTIRInline::bindShaderData(const ShaderVar& var, const 
     InlinePass::bindChannels(var, renderData, histogramChannels());
 }
 
-void TransientHistogramReSTIRInline::spatialReuse(RenderContext* pRenderContext, const RenderData& renderData)
+void TransientHistogramReSTIRInline::bindSpatialReuse(const ref<ComputePass>& pass, const RenderData& renderData)
 {
-    InlinePass::updateScenePassDefines(pRenderContext, mpSpatialReusePass, mpScene, mpSampleGenerator, getShaderDefines(renderData));
-    auto rootVar = mpSpatialReusePass->getRootVar();
+    auto rootVar = pass->getRootVar();
     auto var = rootVar["CB"]["gSpatialReuse"];
     const uint2 frameDim = renderData.getDefaultTextureDims();
 
@@ -197,14 +198,44 @@ void TransientHistogramReSTIRInline::spatialReuse(RenderContext* pRenderContext,
 
     InlinePass::bindChannels(var, renderData, InlinePass::kPrimaryHitAndMotionInputChannels);
     InlinePass::bindChannels(var, renderData, InlinePass::kColorOutputChannels);
-    // The histogram is a pass-level global, outside the shared SpatialReuse struct.
-    InlinePass::bindChannels(rootVar, renderData, histogramChannels());
+    // The histogram is a pass-level global, outside the shared SpatialReuse struct; only the resampling pass writes it.
+    if (pass == mpSpatialReusePass)
+        InlinePass::bindChannels(rootVar, renderData, histogramChannels());
 
     bindTimeGate(rootVar);
     mLaser.bindShaderData(rootVar["Laser"]);
     mOptions.restir.bindShiftMapping(rootVar["ShiftMappingCB"]);
+    if (useSpatialReusePairs())
+    {
+        var["pairs"] = mReSTIR.spatialPairs;
+        var["pairCandidateValid"] = mReSTIR.spatialCandidateValid;
+    }
+}
 
-    mReSTIR.runSpatialReuse(pRenderContext, mpSpatialReusePass, var, mOptions.restir.spatialReuseIteration, mRandomSeed, frameDim);
+void TransientHistogramReSTIRInline::spatialReuse(RenderContext* pRenderContext, const RenderData& renderData)
+{
+    const uint2 frameDim = renderData.getDefaultTextureDims();
+    const DefineList defines = getShaderDefines(renderData);
+    InlinePass::updateScenePassDefines(pRenderContext, mpSpatialReusePass, mpScene, mpSampleGenerator, defines);
+    const uint candidateCount = mOptions.restir.spatialReuseNeighborCount + (mOptions.useBinReuse ? 2 : 0);
+    const uint binCount = mOptions.histogram.timeBin;
+    uint chunkBins = binCount;
+    if (useSpatialReusePairs())
+    {
+        InlinePass::updateScenePassDefines(pRenderContext, mpSpatialReusePairsPass, mpScene, mpSampleGenerator, defines);
+        chunkBins = mReSTIR.preparePairs(mpDevice, mpSpatialReusePairsPass->getRootVar()["CB"]["gSpatialReuse"],
+            frameDim, candidateCount, mOptions.restir.spatialReuseNeighborCount, binCount);
+        bindSpatialReuse(mpSpatialReusePairsPass, renderData);
+    }
+    bindSpatialReuse(mpSpatialReusePass, renderData);
+
+    auto var = mpSpatialReusePass->getRootVar()["CB"]["gSpatialReuse"];
+    if (useSpatialReusePairs())
+        mReSTIR.runSpatialReuse(pRenderContext, mpSpatialReusePairsPass,
+            mpSpatialReusePairsPass->getRootVar()["CB"]["gSpatialReuse"], candidateCount, mpSpatialReusePass, var,
+            mOptions.restir.spatialReuseIteration, mRandomSeed, frameDim, binCount, chunkBins);
+    else
+        mReSTIR.runSpatialReuse(pRenderContext, mpSpatialReusePass, var, mOptions.restir.spatialReuseIteration, mRandomSeed, frameDim);
 }
 
 void TransientHistogramReSTIRInline::execute(RenderContext* pRenderContext, const RenderData& renderData)
@@ -241,6 +272,12 @@ void TransientHistogramReSTIRInline::execute(RenderContext* pRenderContext, cons
         DefineList defines = getShaderDefines(renderData);
         defines.add("NEIGHBOR_OFFSET_COUNT", std::to_string(PathLengthAwareReSTIRResources::kNeighborOffsetCount));
         mpSpatialReusePass = InlinePass::createScenePass(mpDevice, pRenderContext, mpScene, mpSampleGenerator, kSpatialReuseFile, defines);
+    }
+    if (useSpatialReusePairs() && !mpSpatialReusePairsPass)
+    {
+        DefineList defines = getShaderDefines(renderData);
+        defines.add("NEIGHBOR_OFFSET_COUNT", std::to_string(PathLengthAwareReSTIRResources::kNeighborOffsetCount));
+        mpSpatialReusePairsPass = InlinePass::createScenePass(mpDevice, pRenderContext, mpScene, mpSampleGenerator, kSpatialReusePairsFile, defines);
     }
     const uint2 frameDim = renderData.getDefaultTextureDims();
     mReSTIR.prepare(mpDevice, mpScene, mpSampleGenerator, mOptions.pathTracing, false, mOptions.histogram.timeBin, frameDim,
@@ -306,6 +343,7 @@ void TransientHistogramReSTIRInline::setScene(RenderContext* pRenderContext, con
     // The programs and the reservoir type depend on the scene.
     mpComputePass = nullptr;
     mpSpatialReusePass = nullptr;
+    mpSpatialReusePairsPass = nullptr;
     mReSTIR.resetScene();
     mFrameCount = 0;
     mpScene = pScene;
