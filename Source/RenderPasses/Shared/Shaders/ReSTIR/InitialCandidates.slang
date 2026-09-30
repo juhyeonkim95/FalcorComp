@@ -80,7 +80,8 @@ struct ReconnectionState
 // contribution, the area target, and the RIS selection weight distinct.
 // rejectEmptyCandidates skips zero/non-finite candidates entirely, so they
 // neither count toward M nor consume a reservoir RNG draw.
-void submitCandidate(inout Reservoir reservoir, ReconnectionState rc,
+// Returns whether the candidate was selected (and its path stored in the reservoir).
+bool submitCandidate(inout Reservoir reservoir, ReconnectionState rc,
     ShadingData surface, IMaterialInstance material, LightSample light,
     LightConnection connection, float totalLength, float gate, float3 throughput,
     float techniqueWeight, uint samplesPerPixel, uint lightSeed, bool rejectEmptyCandidates,
@@ -92,12 +93,12 @@ void submitCandidate(inout Reservoir reservoir, ReconnectionState rc,
     // MIS changes selection/W, never the stored physical target or suffix payload.
     float selectionWeight = getReservoirWeight(contribution) * techniqueWeight / float(samplesPerPixel);
     if (rejectEmptyCandidates && (!(selectionWeight > 0.f) || !isfinite(selectionWeight) ||
-        !all(isfinite(target)) || !(getReservoirWeight(target) > 0.f))) return;
-    if (!reservoir.update(target, selectionWeight, 1, rng)) return;
+        !all(isfinite(target)) || !(getReservoirWeight(target) > 0.f))) return false;
+    if (!reservoir.update(target, selectionWeight, 1, rng)) return false;
 
     reservoir.totalPathLength = totalLength;
     reservoir.rcVertexBounce = rc.bounce;
-    if (rc.bounce == 0) return; // Reconnection fields are unused for this local-only sample.
+    if (rc.bounce == 0) return true; // Reconnection fields are unused for this local-only sample.
 
     reservoir.rcVertexHit = rc.xHit;
     reservoir.rcPrevVertexPosition = rc.aPosition;
@@ -136,4 +137,5 @@ void submitCandidate(inout Reservoir reservoir, ReconnectionState rc,
     reservoir.rcNextVertexRandomSeed = rc.suffixSeed;
     reservoir.lightRandomSeed = lightSeed;
 #endif
+    return true;
 }

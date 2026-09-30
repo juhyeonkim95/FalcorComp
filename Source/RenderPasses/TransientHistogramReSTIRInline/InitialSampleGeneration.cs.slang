@@ -184,10 +184,18 @@ void submitHistogramCandidate(uint pixelIndex, ReconnectionState rc, ShadingData
         float gate = gTimeGateMode == kTimeGateBox ? 1.f : pathLengthImportance(totalLength, center);
         if (!(gate > 0.f)) continue;
         uint index = pixelIndex * gTimeBin + bin;
-        Reservoir reservoir = touched.inMemory(bin) ? gCurrReservoirs[index] : Reservoir();
-        submitCandidate(reservoir, rc, surface, material, light, connection, totalLength, gate,
-            throughput, 1.f, gSamplesPerPixel, lightSeed, true, rng);
-        gCurrReservoirs[index] = reservoir;
+        // Selection needs only wSum: the stored reservoir is rewritten only if the candidate is selected. M is set at
+        // finalization, and a selection sets every field in use.
+        Reservoir reservoir = Reservoir();
+        const float previousWeightSum = touched.inMemory(bin) ? gCurrReservoirs[index].wSum : 0.f;
+        reservoir.wSum = previousWeightSum;
+        if (submitCandidate(reservoir, rc, surface, material, light, connection, totalLength, gate,
+                throughput, 1.f, gSamplesPerPixel, lightSeed, true, rng))
+            gCurrReservoirs[index] = reservoir;
+        else if (reservoir.wSum != previousWeightSum)
+            gCurrReservoirs[index].wSum = reservoir.wSum;
+        else
+            continue; // Rejected: nothing to store.
         touched.add(bin);
     }
 }
