@@ -21,6 +21,10 @@ import RenderPasses.Shared.Shaders.ShiftMapping.ShiftMapping;
 import RenderPasses.Shared.Shaders.Utils.RayUtils;
 import RenderPasses.Shared.Shaders.Lights.Laser;
 
+#ifndef RESERVOIR_SUMMARIES
+#define RESERVOIR_SUMMARIES 0
+#endif
+
 // One reuse candidate of a reservoir (SPATIAL_REUSE_PAIRS): the incoming shift of the candidate's sample (an
 // IncomingCandidate, with the candidate reservoir's M) and the canonical pairwise coefficient of the central sample
 // against the candidate. 64 bytes. Only valid, non-empty pairs (isEmptyPair) have a record.
@@ -61,6 +65,11 @@ struct SpatialReuse
 
     StructuredBuffer<Reservoir> prevReservoirs;
     RWStructuredBuffer<Reservoir> currReservoirs;
+#if RESERVOIR_SUMMARIES
+    // W and M of each reservoir; a reservoir with W == 0 is not stored (loadSummarizedReservoir).
+    StructuredBuffer<float2> prevSummaries;
+    RWStructuredBuffer<float2> currSummaries;
+#endif
     RWTexture2D<float4> gOutputColor;
 #if DEBUG_NEWTON_ITERATIONS
     RWTexture2D<uint4> gNewtonStatistics;
@@ -82,6 +91,44 @@ struct SpatialReuse
     {
         ReconnectionCriteria criteria = { reconnectionRoughnessThreshold, reconnectionMinDistance };
         return criteria;
+    }
+
+    // Reservoir accesses: with RESERVOIR_SUMMARIES, W and M come from the summaries and only non-empty reservoirs are
+    // stored.
+    Reservoir loadPrevReservoir(uint index)
+    {
+#if RESERVOIR_SUMMARIES
+        return loadSummarizedReservoir(prevReservoirs, prevSummaries, index);
+#else
+        return prevReservoirs[index];
+#endif
+    }
+
+    float getPrevW(uint index)
+    {
+#if RESERVOIR_SUMMARIES
+        return prevSummaries[index].x;
+#else
+        return prevReservoirs[index].W;
+#endif
+    }
+
+    float getPrevM(uint index)
+    {
+#if RESERVOIR_SUMMARIES
+        return prevSummaries[index].y;
+#else
+        return prevReservoirs[index].M;
+#endif
+    }
+
+    void storeReservoir(uint index, Reservoir reservoir)
+    {
+#if RESERVOIR_SUMMARIES
+        storeSummarizedReservoir(currReservoirs, currSummaries, index, reservoir);
+#else
+        currReservoirs[index] = reservoir;
+#endif
     }
 
     uint getLinearizedPixel(uint2 pixel)
@@ -191,7 +238,7 @@ struct SpatialReuse
 
         destination.finalizeW();
         destination.W /= validNeighborCount + 1;
-        currReservoirs[reservoirIndex] = destination;
+        storeReservoir(reservoirIndex, destination);
 
         float3 color = float3(destination.W * destination.f);
         if (any(isinf(color) || isnan(color))) color = 0.f;
@@ -214,16 +261,16 @@ struct SpatialReuse
         HitInfo primaryHit = HitInfo(gVBuffer[pixel]);
         if (!primaryHit.isValid())
         {
-            currReservoirs[reservoirIndex] = Reservoir();
+            storeReservoir(reservoirIndex, Reservoir());
             return float3(0.f);
         }
 
-        Reservoir centralReservoir = prevReservoirs[reservoirIndex];
+        Reservoir centralReservoir = loadPrevReservoir(reservoirIndex);
         // Spatial neighbors first, then adjacent bins; the RNG order of spatial-only reuse is unchanged.
         uint candidateCount = getCandidateCount(binCount, bin);
         if (candidateCount == 0)
         {
-            currReservoirs[reservoirIndex] = centralReservoir;
+            storeReservoir(reservoirIndex, centralReservoir);
             return float3(centralReservoir.W * centralReservoir.f);
         }
 
@@ -267,7 +314,7 @@ struct SpatialReuse
 
             // Count geometric neighbors even if their reservoir or shift has no support.
             validNeighborCount++;
-            Reservoir neighborReservoir = prevReservoirs[getLinearizedPixel(neighborPixel) * binCount + neighborBin];
+            Reservoir neighborReservoir = loadPrevReservoir(getLinearizedPixel(neighborPixel) * binCount + neighborBin);
 
             // Central -> neighbor: accumulate the central sample's pairwise weight.
             ShiftMappingDebugInfo debugInfo;
@@ -312,7 +359,7 @@ struct SpatialReuse
     // and the candidate contributes only its mass, so the pair needs no shift and no record.
     bool isEmptyPair(uint reservoirIndex, uint neighborReservoirIndex)
     {
-        return !(prevReservoirs[reservoirIndex].W > 0) && prevReservoirs[neighborReservoirIndex].W == 0.f;
+        return !(getPrevW(reservoirIndex) > 0) && getPrevW(neighborReservoirIndex) == 0.f;
     }
 
     // Both shifts of candidate i at one bin, as resampleGate computes them: the central sample's canonical coefficient
@@ -324,15 +371,15 @@ struct SpatialReuse
     {
         // Empty reservoirs (most histogram bins) need only W and M: the canonical coefficient of an empty central
         // sample is zero, and an empty candidate contributes only its mass. Load the full reservoirs only otherwise.
-        const float centralMass = prevReservoirs[reservoirIndex].M / candidateCount;
-        const float neighborM = prevReservoirs[neighborReservoirIndex].M;
+        const float centralMass = getPrevM(reservoirIndex) / candidateCount;
+        const float neighborM = getPrevM(neighborReservoirIndex);
         ShiftMappingDebugInfo debugInfo;
         SpatialReusePair pair = {};
         pair.sourceM = neighborM;
         pair.status = kIncomingMassOnly;
-        if (prevReservoirs[reservoirIndex].W > 0)
+        if (getPrevW(reservoirIndex) > 0)
         {
-            Reservoir centralReservoir = prevReservoirs[reservoirIndex];
+            Reservoir centralReservoir = loadPrevReservoir(reservoirIndex);
             centralReservoir.M = centralMass;
             // A no-RC sample has no valid reconnection payload; its pair weight is one.
             ReconnectionSuffix centralSuffix;
@@ -346,9 +393,9 @@ struct SpatialReuse
                 centralReservoir, centralSuffix, centralVertex, neighborM, getReconnectionCriteria(),
                 neighborPrimary, neighborMaterial, neighborDepth, neighborGateCenter, gateCenter, sg, debugInfo);
         }
-        if (prevReservoirs[neighborReservoirIndex].W != 0.f)
+        if (getPrevW(neighborReservoirIndex) != 0.f)
         {
-            IncomingCandidate incoming = evaluateIncomingCandidate(prevReservoirs[neighborReservoirIndex], centralMass,
+            IncomingCandidate incoming = evaluateIncomingCandidate(loadPrevReservoir(neighborReservoirIndex), centralMass,
                 getReconnectionCriteria(), primary, primaryMaterial, primaryDepth, gateCenter, neighborGateCenter, 1.f,
                 gLaserOrigin, gLaserDirection, sg, debugInfo);
             pair.hit = incoming.hit;
@@ -419,15 +466,15 @@ struct SpatialReuse
         HitInfo primaryHit = HitInfo(gVBuffer[pixel]);
         if (!primaryHit.isValid())
         {
-            currReservoirs[reservoirIndex] = Reservoir();
+            storeReservoir(reservoirIndex, Reservoir());
             return float3(0.f);
         }
 
-        Reservoir centralReservoir = prevReservoirs[reservoirIndex];
+        Reservoir centralReservoir = loadPrevReservoir(reservoirIndex);
         uint candidateCount = getCandidateCount(binCount, bin);
         if (candidateCount == 0)
         {
-            currReservoirs[reservoirIndex] = centralReservoir;
+            storeReservoir(reservoirIndex, centralReservoir);
             return float3(centralReservoir.W * centralReservoir.f);
         }
 
@@ -449,7 +496,7 @@ struct SpatialReuse
             // An empty pair has no record: a zero canonical coefficient, and the candidate's mass.
             if (isEmptyPair(reservoirIndex, neighborReservoirIndex))
             {
-                destination.M += prevReservoirs[neighborReservoirIndex].M;
+                destination.M += getPrevM(neighborReservoirIndex);
                 continue;
             }
             SpatialReusePair pair = pairs[getPairIndex(linearPixel, bin, i)];
@@ -462,7 +509,7 @@ struct SpatialReuse
             }
             if (destination.update(pair.f, pair.weight, pair.sourceM, sg))
             {
-                copyReconnectionPayload(destination, prevReservoirs[neighborReservoirIndex]);
+                copyReconnectionPayload(destination, loadPrevReservoir(neighborReservoirIndex));
                 destination.rcVertexHit = pair.hit;
                 destination.rcPrevVertexPosition = pair.prefixEnd;
                 destination.totalPathLength = pair.totalPathLength;

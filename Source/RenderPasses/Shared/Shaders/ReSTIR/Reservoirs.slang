@@ -133,3 +133,22 @@ struct Reservoir
     }
 };
 
+
+// Reservoir summaries (RESERVOIR_SUMMARIES, the histogram pass): each reservoir's W and M in a compact buffer beside
+// the reservoirs. The full reservoir is stored only when W != 0, since most histogram bins are empty; readers check the
+// summary first. An empty reservoir reads as Reservoir() with its M: nothing reads more of a reservoir with W == 0.
+Reservoir loadSummarizedReservoir(StructuredBuffer<Reservoir> reservoirs, StructuredBuffer<float2> summaries, uint index)
+{
+    float2 summary = summaries[index];
+    if (summary.x != 0.f) return reservoirs[index];
+    Reservoir empty = Reservoir();
+    empty.M = summary.y;
+    return empty;
+}
+
+void storeSummarizedReservoir(RWStructuredBuffer<Reservoir> reservoirs, RWStructuredBuffer<float2> summaries, uint index,
+    Reservoir reservoir)
+{
+    summaries[index] = float2(reservoir.W, reservoir.M);
+    if (reservoir.W != 0.f) reservoirs[index] = reservoir;
+}

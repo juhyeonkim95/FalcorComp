@@ -135,6 +135,7 @@ DefineList TransientHistogramReSTIRInline::getShaderDefines(const RenderData& re
     defines.add(mOptions.restir.getDefines());
     defines.add(PathLengthAwareReSTIRResources::getReservoirDefines(mOptions.pathTracing, false));
     defines.add("SPATIAL_REUSE_PAIRS", useSpatialReusePairs() ? "1" : "0");
+    defines.add("RESERVOIR_SUMMARIES", "1");
 
     // For optional I/O resources, set 'is_valid_<name>' defines to inform the program of which ones it can access.
     defines.add(getValidResourceDefines(InlinePass::kPrimaryHitAndMotionInputChannels, renderData));
@@ -160,6 +161,8 @@ void TransientHistogramReSTIRInline::bindShaderData(const ShaderVar& var, const 
 {
     var["gPrevReservoirs"] = mReSTIR.prevReservoirs;
     var["gCurrReservoirs"] = mReSTIR.currReservoirs;
+    var["gPrevSummaries"] = mReSTIR.prevSummaries;
+    var["gCurrSummaries"] = mReSTIR.currSummaries;
 
     var["CB"]["gFrameCount"] = mFrameCount;
     var["CB"]["gFrameDim"] = renderData.getDefaultTextureDims();
@@ -281,7 +284,7 @@ void TransientHistogramReSTIRInline::execute(RenderContext* pRenderContext, cons
     }
     const uint2 frameDim = renderData.getDefaultTextureDims();
     mReSTIR.prepare(mpDevice, mpScene, mpSampleGenerator, mOptions.pathTracing, false, mOptions.histogram.timeBin, frameDim,
-        mOptions.restir.useTemporalReuse, renderData.getTexture("vbuffer")->getFormat());
+        mOptions.restir.useTemporalReuse, renderData.getTexture("vbuffer")->getFormat(), true);
 
     InlinePass::checkScene(*mpScene, renderData);
     if (mpScene->getRenderSettings().useEmissiveLights)

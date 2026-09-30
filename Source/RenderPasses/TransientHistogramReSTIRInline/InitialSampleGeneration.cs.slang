@@ -58,6 +58,9 @@ Texture2D<PackedHitInfo> gTemporalVBuffer;
 // Reservoir Struct
 StructuredBuffer<Reservoir> gPrevReservoirs; // Last frame's final reservoirs (temporal reuse).
 RWStructuredBuffer<Reservoir> gCurrReservoirs;
+// W and M of each reservoir: only reservoirs with W != 0 are stored after finalization (loadSummarizedReservoir).
+StructuredBuffer<float2> gPrevSummaries;
+RWStructuredBuffer<float2> gCurrSummaries;
 
 // Outputs
 RWTexture2D<float4> gOutputColor;
@@ -122,12 +125,13 @@ float3 tracePath(uint2 pixel, uint2 frameDim)
     {
         for (uint bin = 0; bin < gTimeBin; ++bin)
         {
-            gCurrReservoirs[pixelIndex * gTimeBin + bin] = Reservoir();
+            storeSummarizedReservoir(gCurrReservoirs, gCurrSummaries, pixelIndex * gTimeBin + bin, Reservoir());
             gTransientHistogram[uint3(pixel, bin)] = 0.f;
         }
         return 0.f;
     }
-    // The finalization below writes every bin's reservoir and histogram texel; only bins past the mask need a clear.
+    // The finalization below stores every bin (its summary, and its reservoir if not empty) and histogram texel; only
+    // bins past the mask need a clear, for candidate submission.
     TouchedBins touched = {};
     for (uint bin = 64; bin < gTimeBin; ++bin)
         gCurrReservoirs[pixelIndex * gTimeBin + bin] = Reservoir();
@@ -228,7 +232,7 @@ float3 tracePath(uint2 pixel, uint2 frameDim)
 #if USE_TEMPORAL_REUSE
         if (history.valid)
         {
-            Reservoir previous = gPrevReservoirs[history.pixelIndex * gTimeBin + bin];
+            Reservoir previous = loadSummarizedReservoir(gPrevReservoirs, gPrevSummaries, history.pixelIndex * gTimeBin + bin);
             previous.M = temporalHistoryMass(previous.M, gTemporalHistoryLength, gSamplesPerPixel);
             if (previous.M > 0.f)
             {
@@ -242,7 +246,7 @@ float3 tracePath(uint2 pixel, uint2 frameDim)
             }
         }
 #endif
-        gCurrReservoirs[index] = reservoir;
+        storeSummarizedReservoir(gCurrReservoirs, gCurrSummaries, index, reservoir);
         float3 radiance = reservoir.W * reservoir.f;
         integratedRadiance += radiance;
         gTransientHistogram[uint3(pixel, bin)] = toHistogramTexel(radiance / gBinWidth);

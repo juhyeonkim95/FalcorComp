@@ -146,6 +146,9 @@ public:
 
     ref<Buffer> prevReservoirs;
     ref<Buffer> currReservoirs;
+    /// W and M of each reservoir (float2), with useSummaries in prepare(): only reservoirs with W != 0 are then stored.
+    ref<Buffer> prevSummaries;
+    ref<Buffer> currSummaries;
     ref<Buffer> spatialPairs; ///< Pair records of the two-pass spatial reuse (preparePairs).
     ref<Buffer> spatialCandidateValid; ///< Spatial neighbors' validity for the two-pass spatial reuse (preparePairs).
     static constexpr size_t kPairBufferBytes = size_t(512) << 20;
@@ -185,8 +188,9 @@ public:
         return defines;
     }
 
-    /// (Re)allocates `reservoirsPerPixel` reservoirs per pixel, of the layout getReservoirDefines() gives; the neighbor
-    /// offsets; and, with temporal reuse, the previous frame's V-buffer. A resize discards the history.
+    /// (Re)allocates `reservoirsPerPixel` reservoirs per pixel, of the layout getReservoirDefines() gives, and with
+    /// `useSummaries` their summaries (RESERVOIR_SUMMARIES); the neighbor offsets; and, with temporal reuse, the previous
+    /// frame's V-buffer. A resize discards the history.
     void prepare(
         ref<Device> pDevice,
         const ref<Scene>& pScene,
@@ -196,7 +200,8 @@ public:
         uint32_t reservoirsPerPixel,
         uint2 frameDim,
         bool useTemporalReuse,
-        ResourceFormat vbufferFormat
+        ResourceFormat vbufferFormat,
+        bool useSummaries = false
     )
     {
         if (!mpReflectTypes)
@@ -235,6 +240,18 @@ public:
                 );
             }
         }
+        for (ref<Buffer>* pSummaries : {&prevSummaries, &currSummaries})
+        {
+            if (!useSummaries)
+                *pSummaries = nullptr;
+            else if (!*pSummaries || (*pSummaries)->getElementCount() != reservoirCount)
+            {
+                temporalHistoryValid = false;
+                *pSummaries = pDevice->createStructuredBuffer(sizeof(float2), reservoirCount,
+                    ResourceBindFlags::ShaderResource | ResourceBindFlags::UnorderedAccess, MemoryType::DeviceLocal,
+                    nullptr, false);
+            }
+        }
 
         if (!neighborOffsets)
             neighborOffsets = createNeighborOffsetTexture(pDevice, kNeighborOffsetCount);
@@ -260,10 +277,9 @@ public:
     {
         for (uint iteration = 0; iteration < iterations; iteration++)
         {
-            std::swap(currReservoirs, prevReservoirs);
+            swapReservoirs();
             spatialVar["gRandomSeed"] = randomSeed++;
-            spatialVar["prevReservoirs"] = prevReservoirs;
-            spatialVar["currReservoirs"] = currReservoirs;
+            bindReservoirs(spatialVar);
             pPass->execute(pRenderContext, {frameDim.x, frameDim.y, 1});
         }
     }
@@ -313,12 +329,11 @@ public:
     {
         for (uint iteration = 0; iteration < iterations; iteration++)
         {
-            std::swap(currReservoirs, prevReservoirs);
+            swapReservoirs();
             for (const ShaderVar* var : {&pairVar, &spatialVar})
             {
                 (*var)["gRandomSeed"] = randomSeed;
-                (*var)["prevReservoirs"] = prevReservoirs;
-                (*var)["currReservoirs"] = currReservoirs;
+                bindReservoirs(*var);
             }
             randomSeed++;
             for (uint firstBin = 0; firstBin < binCount; firstBin += chunkBins)
@@ -339,14 +354,32 @@ public:
     /// camera; keeps the V-buffer and camera position it refers to.
     void endFrame(RenderContext* pRenderContext, bool useTemporalReuse, const Scene& scene, const ref<Texture>& pVBuffer)
     {
-        std::swap(currReservoirs, prevReservoirs);
+        swapReservoirs();
         temporalHistoryValid = useTemporalReuse && scene.getCamera()->getApertureRadius() == 0.f;
         if (temporalHistoryValid)
             pRenderContext->copyResource(temporalVBuffer.get(), pVBuffer.get());
         previousCameraPosition = scene.getCamera()->getPosition();
     }
 
+    /// Binds prevReservoirs and currReservoirs, and their summaries if allocated, to a SpatialReuse `var`.
+    void bindReservoirs(const ShaderVar& var) const
+    {
+        var["prevReservoirs"] = prevReservoirs;
+        var["currReservoirs"] = currReservoirs;
+        if (prevSummaries)
+        {
+            var["prevSummaries"] = prevSummaries;
+            var["currSummaries"] = currSummaries;
+        }
+    }
+
 private:
+    void swapReservoirs()
+    {
+        std::swap(currReservoirs, prevReservoirs);
+        std::swap(currSummaries, prevSummaries);
+    }
+
     /// Low-discrepancy offsets in the unit disk (R2 sequence), stored as RG8Snorm.
     static ref<Texture> createNeighborOffsetTexture(ref<Device> pDevice, uint32_t sampleCount)
     {
