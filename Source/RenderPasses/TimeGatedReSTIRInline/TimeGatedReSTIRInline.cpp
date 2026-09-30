@@ -262,7 +262,7 @@ void TimeGatedReSTIRInline::bindSpatialReuse(const ref<ComputePass>& pass, const
     mOptions.restir.bindShiftMapping(rootVar["ShiftMappingCB"]);
     if (useSpatialReusePairs())
     {
-        var["pairs"] = mReSTIR.spatialPairs;
+        var["pairs"] = mReSTIR.reusePairs;
         var["pairCandidateValid"] = mReSTIR.spatialCandidateValid;
     }
 }
@@ -276,8 +276,10 @@ void TimeGatedReSTIRInline::spatialReuse(RenderContext* pRenderContext, const Re
     if (useSpatialReusePairs())
     {
         InlinePass::updateScenePassDefines(pRenderContext, mpSpatialReusePairsPass, mpScene, mpSampleGenerator, defines);
-        mReSTIR.preparePairs(mpDevice, mpSpatialReusePairsPass->getRootVar()["CB"]["gSpatialReuse"], frameDim,
-            candidateCount, mOptions.restir.spatialReuseNeighborCount, 1);
+        const ShaderVar pairVar = mpSpatialReusePairsPass->getRootVar()["CB"]["gSpatialReuse"];
+        mReSTIR.preparePairs(mpDevice, pairVar["pairs"], frameDim, candidateCount, 1);
+        mReSTIR.prepareCandidateValid(mpDevice, pairVar["pairCandidateValid"], frameDim,
+            mOptions.restir.spatialReuseNeighborCount);
         bindSpatialReuse(mpSpatialReusePairsPass, renderData);
     }
     bindSpatialReuse(mpSpatialReusePass, renderData);

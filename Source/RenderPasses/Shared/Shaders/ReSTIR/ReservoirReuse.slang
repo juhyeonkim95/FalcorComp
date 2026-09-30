@@ -363,6 +363,21 @@ void streamCanonicalCandidate(inout Reservoir destination, CanonicalCandidate ca
     destination.totalPathLength = source.totalPathLength;
 }
 
+// One pair of a pairwise merge, evaluated in its own pass (two-pass spatial and temporal reuse) for a later pass to
+// stream: the incoming candidate of the other reservoir (with that reservoir's M) and the canonical sample's side.
+// 64 bytes.
+struct ReusePair
+{
+    HitInfo hit;           // IncomingCandidate fields.
+    float3 f;
+    float weight;
+    float3 prefixEnd;
+    float totalPathLength;
+    float canonical;       // Spatial: the canonical pairwise coefficient; temporal: the CanonicalCandidate weight.
+    float sourceM;         // M of the other reservoir.
+    uint status;           // IncomingCandidate kind; temporal: | CanonicalCandidate kind << 8.
+};
+
 // Stream `source` (otherMass: the mass of the other reservoir in the pair) into `destination` with its pairwise MIS
 // weight. A canonical source keeps its own sample and only evaluates the other pixel's support; any other source
 // is shifted to the destination pixel (primary hit `primary`, gate targetGate).

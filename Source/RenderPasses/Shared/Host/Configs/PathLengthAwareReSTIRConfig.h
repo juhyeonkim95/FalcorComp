@@ -149,8 +149,8 @@ public:
     /// W and M of each reservoir (float2), with useSummaries in prepare(): only reservoirs with W != 0 are then stored.
     ref<Buffer> prevSummaries;
     ref<Buffer> currSummaries;
-    ref<Buffer> spatialPairs; ///< Pair records of the two-pass spatial reuse (preparePairs).
-    ref<Buffer> spatialCandidateValid; ///< Spatial neighbors' validity for the two-pass spatial reuse (preparePairs).
+    ref<Buffer> reusePairs; ///< Pair records of the two-pass spatial and temporal reuse (preparePairs).
+    ref<Buffer> spatialCandidateValid; ///< Spatial neighbors' validity for the two-pass spatial reuse.
     static constexpr size_t kPairBufferBytes = size_t(512) << 20;
     ref<Texture> neighborOffsets;
     ref<Texture> temporalVBuffer;
@@ -284,29 +284,31 @@ public:
         }
     }
 
-    /// (Re)allocates spatialPairs, the pair records of the two-pass spatial reuse (SPATIAL_REUSE_PAIRS; `spatialVar` is
-    /// the shader's SpatialReuse), for `candidates` per pixel and bin: as many bins per chunk as fit in
-    /// kPairBufferBytes, at least one; and spatialCandidateValid, one flag per pixel and spatial neighbor. Returns the
-    /// bins per chunk.
-    uint preparePairs(ref<Device> pDevice, const ShaderVar& spatialVar, uint2 frameDim, uint candidates,
-        uint neighborCount, uint binCount)
+    /// (Re)allocates reusePairs, the pair records (ReusePair; `pairsVar` is a shader buffer of them) of the two-pass
+    /// spatial and temporal reuse, for `candidates` records per pixel and bin: as many bins per chunk as fit in
+    /// kPairBufferBytes, at least one. Returns the bins per chunk.
+    uint preparePairs(ref<Device> pDevice, const ShaderVar& pairsVar, uint2 frameDim, uint candidates, uint binCount)
     {
-        const ShaderVar pairsVar = spatialVar["pairs"];
-        const uint32_t validCount = std::max(frameDim.x * frameDim.y * neighborCount, 1u);
-        if (!spatialCandidateValid || spatialCandidateValid->getElementCount() != validCount)
-            spatialCandidateValid = pDevice->createStructuredBuffer(spatialVar["pairCandidateValid"], validCount,
-                ResourceBindFlags::ShaderResource | ResourceBindFlags::UnorderedAccess, MemoryType::DeviceLocal, nullptr,
-                false);
         const size_t stride =
             pairsVar.getType()->unwrapArray()->asResourceType()->getStructType()->getSlangTypeLayout()->getStride();
         const size_t bytesPerBin = std::max<size_t>(size_t(frameDim.x) * frameDim.y * candidates * stride, 1);
         const uint chunkBins = std::clamp(uint(kPairBufferBytes / bytesPerBin), 1u, std::max(binCount, 1u));
         const uint32_t count = std::max(frameDim.x * frameDim.y * candidates * chunkBins, 1u);
-        if (!spatialPairs || spatialPairs->getElementCount() != count || spatialPairs->getStructSize() != stride)
-            spatialPairs = pDevice->createStructuredBuffer(pairsVar, count,
+        if (!reusePairs || reusePairs->getElementCount() != count || reusePairs->getStructSize() != stride)
+            reusePairs = pDevice->createStructuredBuffer(pairsVar, count,
                 ResourceBindFlags::ShaderResource | ResourceBindFlags::UnorderedAccess, MemoryType::DeviceLocal, nullptr,
                 false);
         return chunkBins;
+    }
+
+    /// (Re)allocates spatialCandidateValid (`validVar` is its shader buffer): one flag per pixel and spatial neighbor.
+    void prepareCandidateValid(ref<Device> pDevice, const ShaderVar& validVar, uint2 frameDim, uint neighborCount)
+    {
+        const uint32_t validCount = std::max(frameDim.x * frameDim.y * neighborCount, 1u);
+        if (!spatialCandidateValid || spatialCandidateValid->getElementCount() != validCount)
+            spatialCandidateValid = pDevice->createStructuredBuffer(validVar, validCount,
+                ResourceBindFlags::ShaderResource | ResourceBindFlags::UnorderedAccess, MemoryType::DeviceLocal, nullptr,
+                false);
     }
 
     /// Spatial reuse split into two passes (SPATIAL_REUSE_PAIRS) per iteration and chunk of `chunkBins` bins:

@@ -7,7 +7,7 @@
 //
 // resampleGate does one reservoir's whole reuse in one thread. With SPATIAL_REUSE_PAIRS, a reuse iteration is two
 // passes instead (per chunk of bins): evaluatePair computes one candidate's shifts at one bin per thread (the central
-// sample's canonical shift against it and its incoming shift) into a SpatialReusePair, and resampleFromPairs streams
+// sample's canonical shift against it and its incoming shift) into a ReusePair, and resampleFromPairs streams
 // those records into each reservoir with the same random draws. A thread then holds one candidate rather than the
 // whole neighbor loop, which keeps the shifts' register use from limiting the kernel's occupancy.
 import Utils.Sampling.SampleGenerator;
@@ -24,21 +24,6 @@ import RenderPasses.Shared.Shaders.Lights.Laser;
 #ifndef RESERVOIR_SUMMARIES
 #define RESERVOIR_SUMMARIES 0
 #endif
-
-// One reuse candidate of a reservoir (SPATIAL_REUSE_PAIRS): the incoming shift of the candidate's sample (an
-// IncomingCandidate, with the candidate reservoir's M) and the canonical pairwise coefficient of the central sample
-// against the candidate. 64 bytes. Only valid, non-empty pairs (isEmptyPair) have a record.
-struct SpatialReusePair
-{
-    HitInfo hit;
-    float3 f;
-    float weight;
-    float3 prefixEnd;
-    float totalPathLength;
-    float canonical;
-    float sourceM;
-    uint status; // IncomingCandidate kind (kIncomingMassOnly, kIncomingSample).
-};
 
 struct SpatialReuse
 {
@@ -79,7 +64,9 @@ struct SpatialReuse
     // Records of the bins [pairFirstBin, pairFirstBin + pairBinCount) (a chunk; a time gate has the single bin 0),
     // getMaxCandidateCount() per pixel and bin, ordered candidate, bin, pixel: the threads of a warp (neighboring
     // pixels, same candidate) access consecutive records.
-    RWStructuredBuffer<SpatialReusePair> pairs;
+    // A pair's canonical is the central sample's pairwise coefficient against the candidate, and its status the
+    // incoming kind. Only valid, non-empty pairs (isEmptyPair) have a record.
+    RWStructuredBuffer<ReusePair> pairs;
     // Whether each spatial neighbor (neighborCount per pixel, ordered candidate, pixel) is a candidate; it does not
     // depend on the bin, so evaluatePair records it at the chunk's first bin.
     RWStructuredBuffer<uint> pairCandidateValid;
@@ -364,7 +351,7 @@ struct SpatialReuse
 
     // Both shifts of candidate i at one bin, as resampleGate computes them: the central sample's canonical coefficient
     // against the candidate, and the candidate's incoming shift (with the candidate reservoir's M).
-    SpatialReusePair evaluateCandidateShifts(uint reservoirIndex, uint neighborReservoirIndex, uint candidateCount,
+    ReusePair evaluateCandidateShifts(uint reservoirIndex, uint neighborReservoirIndex, uint candidateCount,
         ShadingData primary, IMaterialInstance primaryMaterial, float primaryDepth, float gateCenter,
         ShadingData neighborPrimary, IMaterialInstance neighborMaterial, float neighborDepth, float neighborGateCenter,
         inout SampleGenerator sg)
@@ -374,7 +361,7 @@ struct SpatialReuse
         const float centralMass = getPrevM(reservoirIndex) / candidateCount;
         const float neighborM = getPrevM(neighborReservoirIndex);
         ShiftMappingDebugInfo debugInfo;
-        SpatialReusePair pair = {};
+        ReusePair pair = {};
         pair.sourceM = neighborM;
         pair.status = kIncomingMassOnly;
         if (getPrevW(reservoirIndex) > 0)
@@ -499,7 +486,7 @@ struct SpatialReuse
                 destination.M += getPrevM(neighborReservoirIndex);
                 continue;
             }
-            SpatialReusePair pair = pairs[getPairIndex(linearPixel, bin, i)];
+            ReusePair pair = pairs[getPairIndex(linearPixel, bin, i)];
             canonicalWeight += pair.canonical;
             // As streamIncomingCandidate, reading the candidate's reservoir only for the payload of a selected sample.
             if (pair.status == kIncomingMassOnly)

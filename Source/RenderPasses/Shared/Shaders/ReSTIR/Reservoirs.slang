@@ -146,6 +146,16 @@ Reservoir loadSummarizedReservoir(StructuredBuffer<Reservoir> reservoirs, Struct
     return empty;
 }
 
+Reservoir loadSummarizedReservoir(RWStructuredBuffer<Reservoir> reservoirs, RWStructuredBuffer<float2> summaries,
+    uint index)
+{
+    float2 summary = summaries[index];
+    if (summary.x != 0.f) return reservoirs[index];
+    Reservoir empty = Reservoir();
+    empty.M = summary.y;
+    return empty;
+}
+
 void storeSummarizedReservoir(RWStructuredBuffer<Reservoir> reservoirs, RWStructuredBuffer<float2> summaries, uint index,
     Reservoir reservoir)
 {

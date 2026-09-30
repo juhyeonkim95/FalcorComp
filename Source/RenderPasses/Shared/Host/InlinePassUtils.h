@@ -41,7 +41,7 @@ inline const ChannelList kColorOutputChannels = {
     // clang-format on
 };
 
-/// Compute pass for the "main" entry of `shaderFile`, with the scene's shader modules, type conformances and
+/// Compute pass for the entry `entryPoint` of `shaderFile`, with the scene's shader modules, type conformances and
 /// defines, the sample generator's defines and `defines`. Binds the scene and the sample generator.
 inline ref<ComputePass> createScenePass(
     ref<Device> pDevice,
@@ -49,12 +49,13 @@ inline ref<ComputePass> createScenePass(
     const ref<Scene>& pScene,
     const ref<SampleGenerator>& pSampleGenerator,
     const std::string& shaderFile,
-    const DefineList& defines
+    const DefineList& defines,
+    const std::string& entryPoint = "main"
 )
 {
     ProgramDesc desc;
     desc.addShaderModules(pScene->getShaderModules());
-    desc.addShaderLibrary(shaderFile).csEntry("main");
+    desc.addShaderLibrary(shaderFile).csEntry(entryPoint);
     desc.addTypeConformances(pScene->getTypeConformances());
 
     DefineList allDefines;
