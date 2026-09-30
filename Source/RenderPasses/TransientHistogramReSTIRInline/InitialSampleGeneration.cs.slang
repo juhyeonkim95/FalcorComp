@@ -69,11 +69,27 @@ RWTexture3D<HistogramTexel> gTransientHistogram;
 static const uint kTimeGateBox = 1;
 
 
+// Which of the first 64 bins of a pixel have received a candidate this frame, so that their reservoirs are in memory.
+// The other bins start as empty reservoirs in registers instead of being cleared in memory first (most bins never get a
+// candidate); bins from 64 on are still cleared up front.
+struct TouchedBins
+{
+    uint2 bits;
+
+    bool inMemory(uint bin) { return bin >= 64 || ((bits[bin >> 5] >> (bin & 31)) & 1) != 0; }
+
+    [mutating]
+    void add(uint bin)
+    {
+        if (bin < 64) bits[bin >> 5] |= 1u << (bin & 31);
+    }
+};
+
 // The same completed path is a candidate for every gate it overlaps.
 // Box bins are disjoint, so that common case updates only one reservoir.
 void submitHistogramCandidate(uint pixelIndex, ReconnectionState rc, ShadingData surface,
     IMaterialInstance material, LightSample light, LightConnection connection,
-    float totalLength, float3 throughput, uint lightSeed, inout SampleGenerator rng)
+    float totalLength, float3 throughput, uint lightSeed, inout TouchedBins touched, inout SampleGenerator rng)
 {
     uint firstBin = 0;
     uint endBin = gTimeBin;
@@ -90,23 +106,31 @@ void submitHistogramCandidate(uint pixelIndex, ReconnectionState rc, ShadingData
         float gate = gTimeGateMode == kTimeGateBox ? 1.f : pathLengthImportance(totalLength, center);
         if (!(gate > 0.f)) continue;
         uint index = pixelIndex * gTimeBin + bin;
-        Reservoir reservoir = gCurrReservoirs[index];
+        Reservoir reservoir = touched.inMemory(bin) ? gCurrReservoirs[index] : Reservoir();
         submitCandidate(reservoir, rc, surface, material, light, connection, totalLength, gate,
             throughput, 1.f, gSamplesPerPixel, lightSeed, true, rng);
         gCurrReservoirs[index] = reservoir;
+        touched.add(bin);
     }
 }
 
 float3 tracePath(uint2 pixel, uint2 frameDim)
 {
     uint pixelIndex = pixel.y * frameDim.x + pixel.x;
-    for (uint bin = 0; bin < gTimeBin; ++bin)
-    {
-        gCurrReservoirs[pixelIndex * gTimeBin + bin] = Reservoir();
-        gTransientHistogram[uint3(pixel, bin)] = 0.f;
-    }
     HitInfo primaryHit = HitInfo(gVBuffer[pixel]);
-    if (!primaryHit.isValid()) return 0.f;
+    if (!primaryHit.isValid())
+    {
+        for (uint bin = 0; bin < gTimeBin; ++bin)
+        {
+            gCurrReservoirs[pixelIndex * gTimeBin + bin] = Reservoir();
+            gTransientHistogram[uint3(pixel, bin)] = 0.f;
+        }
+        return 0.f;
+    }
+    // The finalization below writes every bin's reservoir and histogram texel; only bins past the mask need a clear.
+    TouchedBins touched = {};
+    for (uint bin = 64; bin < gTimeBin; ++bin)
+        gCurrReservoirs[pixelIndex * gTimeBin + bin] = Reservoir();
 
     float3 cameraPosition = gScene.camera.getPosition();
     ShadingData primary = loadShadingData(primaryHit, cameraPosition, getPrimaryRayDir(pixel, frameDim, gViewW));
@@ -149,7 +173,7 @@ float3 tracePath(uint2 pixel, uint2 frameDim)
                 bool inRange = gTimeGateMode != kTimeGateBox || (totalLength >= gTimeMin && totalLength < gTimeMax);
                 if (connected && inRange) shadeLightConnection(connection, surface, material, light, rng);
                 submitHistogramCandidate(pixelIndex, rc, surface, material, light, connection, totalLength,
-                    throughput, lightSeed, rng);
+                    throughput, lightSeed, touched, rng);
             }
             if (rc.bounce > 0) ++rc.postBounce;
             if (depth + 1 >= MAX_BOUNCES) break;
@@ -197,7 +221,7 @@ float3 tracePath(uint2 pixel, uint2 frameDim)
     for (uint bin = 0; bin < gTimeBin; ++bin)
     {
         uint index = pixelIndex * gTimeBin + bin;
-        Reservoir reservoir = gCurrReservoirs[index];
+        Reservoir reservoir = touched.inMemory(bin) ? gCurrReservoirs[index] : Reservoir();
         reservoir.finalizeW();
         // Each bin had gSamplesPerPixel path trials, including paths contributing zero.
         reservoir.M = gSamplesPerPixel;
