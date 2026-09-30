@@ -11,6 +11,7 @@
 :maxdepth: 1
 :caption: Getting started
 
+src/getting_started/overview
 src/getting_started/installation
 ```
 
