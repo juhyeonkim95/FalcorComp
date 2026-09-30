@@ -281,3 +281,6 @@ graph.add_edge("VBuffer.mvec", "Tracer.mvec")
 graph.add_edge("Laser", "Tracer")  # run the laser pass first
 graph.mark_output("Tracer.histogram")
 ```
+
+See the [offline](../../tutorials/transient_restir_offline.md) and
+[online](../../tutorials/transient_restir_online.md) transient ReSTIR tutorials for complete scripts.
