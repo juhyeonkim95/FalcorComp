@@ -193,6 +193,89 @@ bool shiftToPrefix(Reservoir source, VertexData x, ReconnectionSuffix suffix, Sh
     return true;
 }
 
+// What a non-canonical source with a static suffix contributes to a pairwise merge: only its mass (no sample, no
+// reconnection vertex, or no shift), or its shifted path with its RIS weight. evaluateIncomingCandidate computes it and
+// streamIncomingCandidate adds it to a reservoir, so the two can run in separate passes.
+static const uint kIncomingMassOnly = 0;
+static const uint kIncomingSample = 1;
+struct IncomingCandidate
+{
+    HitInfo hit;            // Shifted x.
+    float3 f;               // Target of the shifted path.
+    float weight;           // RIS weight: pairwise MIS coefficient * target * source W * Jacobian.
+    float3 prefixEnd;       // a on the target prefix.
+    float totalPathLength;  // Of the shifted path.
+    uint kind;              // kIncomingMassOnly or kIncomingSample.
+};
+
+// Shift `source` (otherMass: the mass of the other reservoir in the pair) to the destination pixel (primary hit
+// `primary`, gate targetGate), keeping its suffix.
+IncomingCandidate evaluateIncomingCandidate(
+    Reservoir source,
+    float otherMass,
+    ReconnectionCriteria criteria,
+    ShadingData primary,
+    IMaterialInstance primaryMaterial,
+    float primaryLength,
+    const float targetGate,
+    const float sourceGate,
+    const float K,
+    float3 lightPosition,  // The point light, when the suffix ends there.
+    float3 lightDirection,
+    inout SampleGenerator sg,
+    inout ShiftMappingDebugInfo debugInfo
+)
+{
+#if DEBUG_NEWTON_ITERATIONS
+    debugInfo.newtonStats = uint4(0);
+    debugInfo.mappingDistance = float2(0.f);
+#endif
+    IncomingCandidate candidate = {};
+    candidate.kind = kIncomingMassOnly;
+    // No valid sample, or a path without a reconnection vertex: it cannot be shifted.
+    if (source.W == 0.f) return candidate;
+    if (source.W > 0 && source.rcVertexBounce == 0) return candidate;
+
+    VertexData x = gScene.getVertexData(source.rcVertexHit.getTriangleHit());
+    ReconnectionSuffix suffix = loadReconnectionSuffix(source, lightPosition, lightDirection);
+    ShiftedPath shifted;
+    if (!shiftToPrefix(source, x, suffix, suffix.vertex, sourceGate, primary, primaryMaterial, primaryLength,
+            targetGate, K, criteria, sg, debugInfo, shifted))
+        return candidate;
+    float shiftedTarget = getReservoirWeight(shifted.f);
+#if DEBUG_NEWTON_ITERATIONS
+    debugInfo.newtonStats = finalizeReuseStatistics(
+        debugInfo.newtonStats, shifted.mappingJacobian, shifted.jacobian, shiftedTarget);
+#endif
+    float misWeight = spatialPairCoefficient(source.M, getReservoirWeight(source.f), otherMass, shiftedTarget,
+        shifted.jacobian);
+    candidate.kind = kIncomingSample;
+    candidate.f = shifted.f;
+    candidate.weight = misWeight * shiftedTarget * source.W * shifted.jacobian;
+    candidate.hit = shifted.hit;
+    candidate.prefixEnd = shifted.prefixEnd;
+    candidate.totalPathLength = shifted.totalPathLength;
+    return candidate;
+}
+
+// Stream a candidate of `source` (from evaluateIncomingCandidate) into `destination`.
+void streamIncomingCandidate(inout Reservoir destination, IncomingCandidate candidate, Reservoir source,
+    inout SampleGenerator sg)
+{
+    if (candidate.kind == kIncomingMassOnly)
+    {
+        destination.M += source.M;
+        return;
+    }
+    if (destination.update(candidate.f, candidate.weight, source.M, sg))
+    {
+        copyReconnectionPayload(destination, source);
+        destination.rcVertexHit = candidate.hit;
+        destination.rcPrevVertexPosition = candidate.prefixEnd;
+        destination.totalPathLength = candidate.totalPathLength;
+    }
+}
+
 // Stream `source` (otherMass: the mass of the other reservoir in the pair) into `destination` with its pairwise MIS
 // weight. A canonical source keeps its own sample and only evaluates the other pixel's support; any other source
 // is shifted to the destination pixel (primary hit `primary`, gate targetGate).
@@ -225,6 +308,18 @@ void combineReservoirWithShiftMapping(
 #else
     ShiftMappingDebugInfo debugInfo;
 #endif
+
+#if IS_SCENE_DYNAMIC
+    if (!isCanonical && !updateLight)
+#else
+    if (!isCanonical)
+#endif
+    {
+        IncomingCandidate candidate = evaluateIncomingCandidate(source, otherMass, criteria, primary, primaryMaterial,
+            primaryLength, targetGate, sourceGate, K, lightPosition, lightDirection, sg, debugInfo);
+        streamIncomingCandidate(destination, candidate, source, sg);
+        return;
+    }
 
     // No valid sample.
     if (source.W == 0.f)
