@@ -135,10 +135,12 @@ Unlike a narrow time gate, a histogram gives the path tracer an easy task: every
 lands in some bin, so none of its work is wasted, while ReSTIR does its reuse separately for each
 of the 64 bins. In this scene the path tracer therefore reaches a lower relMSE in the same time.
 With temporal reuse, ReSTIR's MAPE is slightly lower, but its relMSE stays higher; its noise is
-smoother, but correlated between neighboring pixels. ReSTIR pays off where
-paths that reach the laser spot are hard to find, such as scenes lit indirectly, and in online
-rendering, where every frame is shown on its own
-(see [Transient ReSTIR (online)](transient_restir_online.md)).
+smoother, but correlated between neighboring pixels. The same holds offline in
+*Veach, Ajar* (4 seconds each: relMSE 0.078 for the path tracer, 0.13 to 0.16 for ReSTIR). ReSTIR
+pays off in online rendering, where every frame is shown on its own and the path tracer cannot
+average frames, while temporal reuse carries the paths of earlier frames forward: see
+[Transient ReSTIR (online)](transient_restir_online.md), where ReSTIR is clearly ahead in
+*Veach, Ajar*.
 
 These numbers were measured on an NVIDIA GeForce RTX 3090 with Vulkan; frame counts and errors
 depend on the GPU.

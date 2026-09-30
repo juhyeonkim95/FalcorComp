@@ -65,7 +65,7 @@ across pixels in every bin, and compare it with the path tracer at equal renderi
 :link-type: doc
 
 Move the camera over 100 frames with temporal reuse, and compare THPT and TH ReSTIR at equal frame
-time in two videos.
+time in the Cornell box and in *Veach, Ajar*.
 ```
 ````
 

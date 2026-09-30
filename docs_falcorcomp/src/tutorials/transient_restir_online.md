@@ -1,8 +1,8 @@
 # Transient ReSTIR (online)
 
 In online rendering, every frame is rendered once within a fixed time budget and shown, instead of
-being averaged with other frames. This tutorial moves the camera forward through the Cornell box,
-by 0.005 per frame over 100 frames, and renders a 64-bin transient histogram of every frame with
+being averaged with other frames. This tutorial moves the camera forward through a scene, by 0.005
+per frame over 100 frames, and renders a 64-bin transient histogram of every frame with
 `TransientHistogramPathTracerInline` and with `TransientHistogramReSTIRInline` at *equal frame
 time*. Every 10th frame is compared with a reference.
 
@@ -12,18 +12,36 @@ path-length-aware shift mapping, so each bin keeps improving while the camera mo
 tracer starts from nothing in every frame. Temporal reuse assumes that only the camera moves; the
 scene and the laser stay fixed.
 
-It uses the same scene file as the other tutorials (see [ToF rendering](index.md)), renders at
-256 x 256, and needs `ffmpeg` to write the videos. The videos show four of the 64 bins.
+The script renders one of two scenes, chosen on the command line:
+
+- `cornell-box` (the default): the Cornell box of the other tutorials (see [ToF rendering](index.md)),
+  at 256 x 256.
+- `veach-ajar`: *Veach, Ajar* by Benedikt Bitterli (CC0), at 480 x 270, with the laser at the
+  camera's starting position. Download {download}`veach-ajar.zip <scenes/veach-ajar.zip>` (14 MB)
+  and unzip it next to the script. Its textures are converted to PNG; they are read as linear
+  colors, as in the original scene.
+
+```console
+$ python transient_restir_online.py              # Cornell box
+$ python transient_restir_online.py veach-ajar
+```
+
+It needs `ffmpeg` to write the videos, which show four of the 64 bins. The errors are defined as in
+[the offline comparison](#transient-equal-time), over all bins. The numbers below were measured on
+an NVIDIA GeForce RTX 3090 with Vulkan; frame times and the matched sample counts depend on the
+GPU.
+
+## Cornell box
 
 ```{raw} html
 <div style="display: flex; flex-wrap: wrap; gap: 12px; justify-content: center; margin: 1em 0;">
   <figure style="margin: 0; flex: 1 1 300px; max-width: 480px; text-align: center;">
-    <video src="../../_static/tutorials/transient_thpt_online.mp4" controls autoplay loop muted playsinline
+    <video src="../../_static/tutorials/transient_thpt_online_cornell-box.mp4" controls autoplay loop muted playsinline
            style="width: 100%;"></video>
     <figcaption>TransientHistogramPathTracerInline</figcaption>
   </figure>
   <figure style="margin: 0; flex: 1 1 300px; max-width: 480px; text-align: center;">
-    <video src="../../_static/tutorials/transient_restir_online.mp4" controls autoplay loop muted playsinline
+    <video src="../../_static/tutorials/transient_restir_online_cornell-box.mp4" controls autoplay loop muted playsinline
            style="width: 100%;"></video>
     <figcaption>TransientHistogramReSTIRInline</figcaption>
   </figure>
@@ -40,26 +58,66 @@ It uses the same scene file as the other tutorials (see [ToF rendering](index.md
   - Mean relMSE
   - Mean MAPE
 * - `TransientHistogramPathTracerInline`
-  - 509
-  - 40.0 ms
-  - 0.626
-  - 0.695
+  - 534
+  - 44.0 ms
+  - 0.597
+  - 0.683
 * - `TransientHistogramReSTIRInline`
   - 32
-  - 40.3 ms
+  - 44.2 ms
   - 0.483
   - 0.437
 ```
 
-At the same frame time, ReSTIR's mean relMSE over the compared frames is 23 % lower and its MAPE
-37 % lower, with 16 times fewer initial samples. The errors are defined as in
-[the offline comparison](#transient-equal-time), over all bins. These
-numbers were measured on an NVIDIA GeForce RTX 3090 with Vulkan; frame times and the matched sample
-count depend on the GPU.
+At the same frame time, ReSTIR's mean relMSE over the compared frames is 19 % lower and its MAPE
+36 % lower, with 17 times fewer initial samples.
+
+## Veach, Ajar
+
+```{raw} html
+<div style="display: flex; flex-wrap: wrap; gap: 12px; justify-content: center; margin: 1em 0;">
+  <figure style="margin: 0; flex: 1 1 300px; max-width: 480px; text-align: center;">
+    <video src="../../_static/tutorials/transient_thpt_online_veach-ajar.mp4" controls autoplay loop muted playsinline
+           style="width: 100%;"></video>
+    <figcaption>TransientHistogramPathTracerInline</figcaption>
+  </figure>
+  <figure style="margin: 0; flex: 1 1 300px; max-width: 480px; text-align: center;">
+    <video src="../../_static/tutorials/transient_restir_online_veach-ajar.mp4" controls autoplay loop muted playsinline
+           style="width: 100%;"></video>
+    <figcaption>TransientHistogramReSTIRInline</figcaption>
+  </figure>
+</div>
+```
+
+```{list-table}
+:header-rows: 1
+:widths: 40 15 15 15 15
+
+* - Method
+  - Samples per pixel
+  - Frame time
+  - Mean relMSE
+  - Mean MAPE
+* - `TransientHistogramPathTracerInline`
+  - 277
+  - 122.6 ms
+  - 2.861
+  - 1.133
+* - `TransientHistogramReSTIRInline`
+  - 32
+  - 127.8 ms
+  - 1.547
+  - 0.403
+```
+
+The path tracer's frames stay noisy even with 277 samples per pixel. At the same frame time,
+ReSTIR's mean relMSE is 46 % lower and its MAPE 64 % lower, and the room is clearly recognizable in
+every frame.
 
 ## 1. Load the scene and set up the camera path
 
-The camera moves along its view direction, starting from the scene's camera. The ReSTIR options
+`SCENES` holds each scene's file, image size, histogram range and laser. The camera moves along
+its view direction, starting from the scene's camera. The ReSTIR options
 add temporal reuse to those of [the offline tutorial](transient_restir_offline.md):
 `useTemporalReuse` with a `temporalHistoryLength` of 20 frames, and one round of spatial reuse,
 which is cheaper per frame than the three rounds used offline.
@@ -112,8 +170,8 @@ the frame times until they are within 5 %, with at most three adjustments.
 Both sequences are rendered again, this time reading every frame back, and every 10th frame is
 compared with the reference histogram at the same camera position. The reference is rendered by
 the path tracer with 16,384 samples per pixel, as 16 frames of 1,024 samples, so that no single
-frame runs for long. If the `reference` folder does not exist, the script renders it first and
-saves it in half precision (about 250 MB).
+frame runs for long. If the `reference-<scene>` folder does not exist, the script renders it first
+and saves it in half precision (about 250 MB for the Cornell box, 500 MB for Veach, Ajar).
 
 ```{literalinclude} code/transient_restir_online.py
 :language: python
@@ -131,6 +189,6 @@ the sample count, the frame time and the mean errors, and encoded at 15 frames p
 :start-after: "# 6. Save a video per tracer"
 ```
 
-The full script: {download}`transient_restir_online.py <code/transient_restir_online.py>`. It
-takes about four minutes, including the reference. It also saves the compared frames' errors to
-`errors.csv`.
+The full script: {download}`transient_restir_online.py <code/transient_restir_online.py>`.
+Including the reference, it takes about four minutes for the Cornell box and nine for Veach, Ajar.
+It also saves the compared frames' errors to `errors-<scene>.csv`.

@@ -1,9 +1,13 @@
-"""Online transient rendering with a moving camera: THPT and TH ReSTIR at equal frame time."""
+"""Online transient rendering with a moving camera: THPT and TH ReSTIR at equal frame time.
+
+Usage: python transient_restir_online.py [cornell-box | veach-ajar]
+"""
 # 1. Load the scene
 import csv
 from pathlib import Path
 import shutil
 import subprocess
+import sys
 import tempfile
 from time import perf_counter
 
@@ -11,12 +15,30 @@ import numpy as np
 from PIL import Image, ImageDraw, ImageFont
 import falcorcomp as falcor
 
-SIZE = 256
+# Each scene: its file, image size, histogram range and laser (in Veach, Ajar, at the starting camera).
+SCENES = {
+    "cornell-box": {
+        "file": "cornell-box/scene-v4-nolight.pbrt", "size": (256, 256), "range": (16.75, 18.03),
+        "laser": {"laserPosition": [0.0, 1.7, 6.8], "laserDirection": [0.0, 0.0, -1.0],
+                  "laserPower": [170.0, 120.0, 40.0], "laserAngle": 0.0},
+    },
+    "veach-ajar": {
+        "file": "veach-ajar/scene-v4.pbrt", "size": (480, 270), "range": (19.0, 21.0),
+        "laser": {"laserPosition": [4.054023, 1.616475, -2.306524],
+                  "laserDirection": [-0.990015, -0.032298, -0.137213],
+                  "laserPower": [1000.0, 1000.0, 1000.0], "laserAngle": 0.0},
+    },
+}
+SCENE = sys.argv[1] if len(sys.argv) > 1 else "cornell-box"
+WIDTH, HEIGHT = SCENES[SCENE]["size"]
+LASER = SCENES[SCENE]["laser"]
+
 testbed = falcor.Testbed(create_window=False)
-testbed.load_scene("cornell-box/scene-v4-nolight.pbrt")
-testbed.resize_frame_buffer(SIZE, SIZE)
+testbed.load_scene(SCENES[SCENE]["file"])
+testbed.resize_frame_buffer(WIDTH, HEIGHT)
 camera = testbed.scene.camera
-camera.aspectRatio = 1.0
+camera.aspectRatio = WIDTH / HEIGHT
+camera.apertureRadius = 0.0  # no depth of field
 testbed.clock.pause()
 
 # The camera moves forward along its view direction by STEP per frame.
@@ -25,9 +47,9 @@ START_POSITION = np.array([camera.position.x, camera.position.y, camera.position
 START_TARGET = np.array([camera.target.x, camera.target.y, camera.target.z])
 FORWARD = (START_TARGET - START_POSITION) / np.linalg.norm(START_TARGET - START_POSITION)
 
-T_MIN, T_MAX, BINS = 16.75, 18.03, 64
+(T_MIN, T_MAX), BINS = SCENES[SCENE]["range"], 64
 HISTOGRAM = {"timeMin": T_MIN, "timeMax": T_MAX, "timeBin": BINS, "histogramFilter": "box"}
-PT = {"samplesPerPixel": 32, "maxBounces": 6, "computeDirect": False, **HISTOGRAM}
+PT = {"samplesPerPixel": 32, "maxBounces": 6, "computeDirect": False, "useAlphaTest": True, **HISTOGRAM}
 RESTIR = {**PT,
           "spatialReuseIteration": 1, "spatialReuseNeighborCount": 5,
           "useTemporalReuse": True, "temporalHistoryLength": 20.0,
@@ -35,7 +57,7 @@ RESTIR = {**PT,
           "reconnectionRoughnessThreshold": 0.05}
 SKIP_FRAMES = 10          # frames left out of the timing: shader compilation, history warm-up
 TOLERANCE = 0.05          # accepted frame-time difference between the two tracers
-REFERENCE = Path("reference")               # frame_0009.npy, frame_0019.npy, ...; rendered below if missing
+REFERENCE = Path(f"reference-{SCENE}")      # frame_0009.npy, frame_0019.npy, ...; rendered below if missing
 REFERENCE_FRAMES = range(9, FRAMES, 10)     # every 10th frame is compared with a reference
 REFERENCE_SPP, REFERENCE_PASSES = 1024, 16  # 16 x 1024 = 16384 spp per reference frame
 SHOWN_BINS = [12, 24, 36, 48]               # the bins in the videos
@@ -50,11 +72,8 @@ def set_pose(frame):
 # 2. Build a render graph around a tracer
 def create_graph(tracer, properties):
     graph = testbed.create_render_graph(tracer)
-    graph.create_pass("VBuffer", "VBufferRT", {"samplePattern": "Center", "sampleCount": 1})
-    graph.create_pass("Laser", "LaserLight", {
-        "laserPosition": [0.0, 1.7, 6.8], "laserDirection": [0.0, 0.0, -1.0],
-        "laserPower": [170.0, 120.0, 40.0], "laserAngle": 0.0,
-    })
+    graph.create_pass("VBuffer", "VBufferRT", {"samplePattern": "Center", "sampleCount": 1, "useAlphaTest": True})
+    graph.create_pass("Laser", "LaserLight", LASER)
     graph.create_pass("Tracer", tracer, properties)
     graph.add_edge("VBuffer.vbuffer", "Tracer.vbuffer")
     graph.add_edge("VBuffer.viewW", "Tracer.viewW")
@@ -129,7 +148,7 @@ def to_display(histogram):
     tiles = np.maximum(histogram[SHOWN_BINS], 0.0) * (T_MAX - T_MIN)
     tiles = tiles / (1.0 + tiles)  # Reinhard
     tiles = np.where(tiles <= 0.0031308, 12.92 * tiles, 1.055 * tiles ** (1 / 2.4) - 0.055)  # sRGB
-    grid = tiles.reshape(2, 2, SIZE, SIZE, 3).transpose(0, 2, 1, 3, 4).reshape(2 * SIZE, 2 * SIZE, 3)
+    grid = tiles.reshape(2, 2, HEIGHT, WIDTH, 3).transpose(0, 2, 1, 3, 4).reshape(2 * HEIGHT, 2 * WIDTH, 3)
     return (np.clip(grid, 0, 1) * 255).astype(np.uint8)
 
 
@@ -153,7 +172,7 @@ pt_mean = np.mean(list(pt_errors.values()), axis=0)
 restir_mean = np.mean(list(restir_errors.values()), axis=0)
 print(f"Mean relMSE: THPT {pt_mean[0]:.3f}, TH ReSTIR {restir_mean[0]:.3f}")
 print(f"Mean MAPE: THPT {pt_mean[1]:.3f}, TH ReSTIR {restir_mean[1]:.3f}")
-with open("errors.csv", "w", newline="") as file:
+with open(f"errors-{SCENE}.csv", "w", newline="") as file:
     writer = csv.writer(file)
     writer.writerow(["frame", "thpt_relmse", "thpt_mape", "th_restir_relmse", "th_restir_mape"])
     for frame in REFERENCE_FRAMES:
@@ -165,7 +184,7 @@ def save_video(path, name, spp, frame_ms, frames, mean_errors, fps=15):
     font = ImageFont.load_default(size=20)
     with tempfile.TemporaryDirectory() as folder:
         for frame, image in enumerate(frames):
-            canvas = Image.new("RGB", (2 * SIZE, 2 * SIZE + 64), "black")
+            canvas = Image.new("RGB", (2 * WIDTH, 2 * HEIGHT + 64), "black")
             canvas.paste(Image.fromarray(image), (0, 64))
             draw = ImageDraw.Draw(canvas)
             draw.text((10, 6), f"{name}: {spp} spp, {frame_ms:.1f} ms/frame", fill="white", font=font)
@@ -177,6 +196,6 @@ def save_video(path, name, spp, frame_ms, frames, mean_errors, fps=15):
                         "-pix_fmt", "yuv420p", path], check=True)
 
 
-save_video("transient_thpt_online.mp4", "THPT", pt_spp, pt_ms, pt_frames, pt_mean)
-save_video("transient_restir_online.mp4", "TH ReSTIR", RESTIR["samplesPerPixel"], restir_ms,
+save_video(f"transient_thpt_online_{SCENE}.mp4", "THPT", pt_spp, pt_ms, pt_frames, pt_mean)
+save_video(f"transient_restir_online_{SCENE}.mp4", "TH ReSTIR", RESTIR["samplesPerPixel"], restir_ms,
            restir_frames, restir_mean)
