@@ -111,6 +111,11 @@ falcorcomp includes the implementations of these papers:
   low-sample event camera rendering.
 - **Geometric Antithetic Sampling for Spatiotemporally Modulated Light**, SIGGRAPH Asia 2026.
   Antithetic sampling in the CW-ToF and structured light render passes.
+- **A Monte Carlo Rendering Framework for Simulating Optical Heterodyne Detection**, SIGGRAPH 2025 (ACM TOG),
+  honorable mention. [Project page](https://juhyeonkim95.github.io/project-pages/ohd_rendering/). The OHD path
+  integral behind the Doppler spectrum and Doppler-gated render passes.
+- **Doppler Time-of-Flight Rendering**, SIGGRAPH Asia 2023 (ACM TOG).
+  [Project page](https://juhyeonkim95.github.io/project-pages/dopplertof/). The Doppler ToF render pass.
 
 If falcorcomp is useful in your research, please cite the corresponding papers; the BibTeX entries
 are in the [README](https://github.com/juhyeonkim95/FalcorComp#citation).

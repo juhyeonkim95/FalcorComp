@@ -119,4 +119,30 @@ If you find FalcorComp useful in your research, please consider citing the corre
 
 % Geometric Antithetic Sampling for Spatiotemporally Modulated Light
 (TBD)
+
+% A Monte Carlo Rendering Framework for Simulating Optical Heterodyne Detection
+@article{kim2025ohd,
+  author={Kim, Juhyeon and Benko, Craig and Wrenninge, Magnus and Villemin, Ryusuke and Barber, Zeb and Jarosz, Wojciech and Pediredla, Adithya},
+  title={A Monte Carlo Rendering Framework for Simulating Optical Heterodyne Detection},
+  journal={ACM Transactions on Graphics (TOG)},
+  volume={44},
+  number={4},
+  articleno={56},
+  numpages={19},
+  year={2025},
+  doi={10.1145/3731150},
+  publisher={ACM New York, NY, USA}
+}
+
+% Doppler Time-of-Flight Rendering
+@article{kim2023doppler,
+  title={Doppler Time-of-Flight Rendering},
+  author={Kim, Juhyeon and Jarosz, Wojciech and Gkioulekas, Ioannis and Pediredla, Adithya},
+  journal={ACM Transactions on Graphics (TOG)},
+  volume={42},
+  number={6},
+  pages={1--18},
+  year={2023},
+  publisher={ACM New York, NY, USA}
+}
 ```
