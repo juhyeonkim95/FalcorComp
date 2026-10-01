@@ -51,7 +51,11 @@ Doppler: the measurement depends on how fast each path's length changes as the s
 | **Doppler spectrum (OHD)** | `H × W × B`: for every pixel, the light at each Doppler shift, in `B` bins | [`DopplerHistogramPathTracerInline`](../plugin_reference/doppler/DopplerHistogramPathTracerInline.md) |
 | **Doppler ToF** | `H × W`: a CW-ToF measurement with slightly different light and sensor frequencies, over an exposure in which the objects move | [`DopplerToFPathTracerInline`](../plugin_reference/doppler/DopplerToFPathTracerInline.md) |
 
-Event camera rendering is coming.
+Event cameras: each pixel reports when its brightness $\log(I_\epsilon + I)$ changes by more than a threshold.
+
+| Measurement | Output | Render passes |
+|---|---|---|
+| **Brightness change and events** | `H × W` per frame: the change $\Delta L$ since the previous frame, and the signed number of events | [`EventDifference`](../plugin_reference/event/EventDifference.md), [`EventSVGF`](../plugin_reference/event/EventSVGF.md), [`EventGenerator`](../plugin_reference/event/EventGenerator.md) |
 
 ## How it is used
 
@@ -98,8 +102,8 @@ falcorcomp includes the implementations of these papers:
   (ACM TOG). [Project page](https://juhyeonkim95.github.io/project-pages/tof_restir/). The ReSTIR
   render passes for time-gated and transient rendering.
 - **Difference-aware Filtering for Event Camera Simulation**, EGSR 2026 (Computer Graphics Forum).
-  [Project page](https://juhyeonkim95.github.io/project-pages/event_svgf/). Low-sample event camera
-  rendering (coming to falcorcomp).
+  [Project page](https://juhyeonkim95.github.io/project-pages/event_svgf/). The `EventSVGF` render pass:
+  low-sample event camera rendering.
 - **Geometric Antithetic Sampling for Spatiotemporally Modulated Light**, SIGGRAPH Asia 2026.
   Antithetic sampling in the CW-ToF and structured light render passes.
 
