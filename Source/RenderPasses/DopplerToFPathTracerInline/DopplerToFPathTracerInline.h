@@ -92,6 +92,7 @@ private:
         float phase = 0.f;                  ///< Sensor phase, periods.
         TimeSampling timeSampling = TimeSampling::Stratified;
         Antithetic antithetic = Antithetic::HalfPeriod;
+        bool randomReplay = true;           ///< The partner time uses the same random numbers; false: new ones.
         std::map<std::string, Motion> velocities; ///< Object name -> motion.
         uint seed = 0;                      ///< Offsets the time sequence and the path random numbers.
     };

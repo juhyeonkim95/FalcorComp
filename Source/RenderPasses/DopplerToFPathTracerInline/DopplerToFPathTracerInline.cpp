@@ -63,6 +63,7 @@ const char kTimeSampling[] = "timeSampling";
 const char kAntithetic[] = "antithetic";
 const char kVelocities[] = "velocities";
 const char kSeed[] = "seed";
+const char kRandomReplay[] = "randomReplay";
 
 const std::map<std::string, DopplerToFPathTracerInline::TimeSampling> kTimeSamplings = {
     {"uniform", DopplerToFPathTracerInline::TimeSampling::Uniform},
@@ -120,6 +121,8 @@ void DopplerToFPathTracerInline::parseProperties(const Properties& props)
             mOptions.antithetic = parseName(kAntithetics, std::string(value), kAntithetic);
         else if (key == kSeed)
             mOptions.seed = value;
+        else if (key == kRandomReplay)
+            mOptions.randomReplay = value;
         else if (key == kVelocities)
         {
             // {"object name": {"linear": [..], "angular": [..], "center": [..]}}; missing entries are zero.
@@ -164,6 +167,7 @@ Properties DopplerToFPathTracerInline::getProperties() const
     props[kTimeSampling] = nameOf(kTimeSamplings, mOptions.timeSampling);
     props[kAntithetic] = nameOf(kAntithetics, mOptions.antithetic);
     props[kSeed] = mOptions.seed;
+    props[kRandomReplay] = mOptions.randomReplay;
     Properties velocities;
     for (const auto& [name, motion] : mOptions.velocities)
     {
@@ -337,7 +341,6 @@ void DopplerToFPathTracerInline::execute(RenderContext* pRenderContext, const Re
     LaserState::resolve(renderData).bindShaderData(var["Laser"]);
     var["gOutputColor"] = pColor;
     var["CB"]["gFrameDim"] = frameDim;
-    var["CB"]["gSeedFrame"] = pair + 0x10000u * mOptions.seed; // Same random numbers at both times (random replay).
     var["CB"]["gSamplesPerPixel"] = mOptions.pathTracing.samplesPerPixel;
     var["CB"]["gModulationFrequency"] = mOptions.modulationFrequency * 1e6f;
     var["CB"]["gHeterodyneFrequency"] = mOptions.heterodyneFrequency;
@@ -350,6 +353,9 @@ void DopplerToFPathTracerInline::execute(RenderContext* pRenderContext, const Re
             applyPose(pRenderContext, times[i]);
             mpScene->bindShaderDataForRaytracing(pRenderContext, var["gScene"]);
         }
+        // Random replay: the partner time uses the same random numbers; otherwise its own.
+        const uint replayOffset = (i > 0 && !mOptions.randomReplay) ? 0x80000000u : 0u;
+        var["CB"]["gSeedFrame"] = pair + 0x10000u * mOptions.seed + replayOffset;
         var["CB"]["gTime"] = times[i];
         var["CB"]["gAddToOutput"] = i > 0;
         mpComputePass->execute(pRenderContext, uint3(frameDim, 1));
