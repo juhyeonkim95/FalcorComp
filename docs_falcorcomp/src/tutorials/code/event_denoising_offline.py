@@ -113,7 +113,7 @@ results = {
 }
 try:
     results["OptiX denoiser (2 spp)"] = render("optix", 2)
-except RuntimeError:  # the falcorcomp package leaves out OptixDenoiser (OptiX SDK license)
+except Exception:  # the falcorcomp package leaves out OptixDenoiser (OptiX SDK license)
     print("OptixDenoiser is not available: skipping it.")
 results["SVGF (2 spp)"] = render("svgf", 2)
 results["EventSVGF (1 + 1 spp)"] = render("eventsvgf", 1)        # the difference denoised
