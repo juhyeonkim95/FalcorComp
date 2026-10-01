@@ -12,6 +12,7 @@
 :caption: Getting started
 
 src/getting_started/overview
+src/getting_started/measurements
 src/getting_started/installation
 ```
 

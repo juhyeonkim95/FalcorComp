@@ -23,6 +23,7 @@ modulation in $[0, 1]$). Bottom row, with the tall box approaching and the short
 of optical heterodyne detection (4 of its bins), a Doppler-gated image (only the light shifted by about +26 MHz: the
 tall box), the velocity estimated from Doppler ToF measurements (red approaching, blue receding), and the events of
 a camera moving right (red brighter, blue darker). The settings follow the [tutorials](../tutorials/index.md).
+[Measurements as path integrals](measurements.md) gives the path integral of each.
 
 Time-of-flight (ToF): a laser lights the scene, and the measurement depends on the total length of
 each light path (laser -> scene -> camera), which sets its arrival time.
