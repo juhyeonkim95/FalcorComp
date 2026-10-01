@@ -71,6 +71,16 @@ public:
 private:
     void parseProperties(const Properties& props);
     void bindShaderData(const ShaderVar& var, const RenderData& renderData);
+    /// Binds the spatial reuse constants and resources of `pass` (the resampling or the pair pass).
+    void bindSpatialReuse(const ref<ComputePass>& pass, const RenderData& renderData);
+    /// Spatial reuse runs as two passes per iteration (pair shifts, then resampling) when spatialReuseTwoPass is set,
+    /// unless the Newton debug outputs are on, which only the single-pass kernel writes, or the shift is `no`: without
+    /// shift work, the extra pass and its records cost more than the occupancy gains.
+    bool useSpatialReusePairs() const
+    {
+        return mOptions.restir.spatialReuseTwoPass && !mOptions.debugNewtonIterations &&
+               mOptions.restir.shiftMapping.shiftmapMethod != ShiftMappingMethod::Identity;
+    }
     DefineList getShaderDefines(const RenderData& renderData) const;
     /// Shrink mapping's wide-gate path fraction, clamped to [0, 1]; the host and the shader derive the wide path
     /// count from it the same way.
@@ -115,6 +125,8 @@ private:
 
     ref<ComputePass> mpComputePass;      ///< Initial candidates (and temporal reuse).
     ref<ComputePass> mpSpatialReusePass;
+    /// With SPATIAL_REUSE_PAIRS, the first pass of each spatial reuse iteration: one candidate's shifts per thread.
+    ref<ComputePass> mpSpatialReusePairsPass;
     ref<ComputePass> mpAddDirectPass;    ///< Adds the primary-hit direct lighting to the output (computeDirect).
     ref<Texture> mpDirectColor;          ///< Primary-hit direct lighting, kept out of the reservoirs (computeDirect).
 };

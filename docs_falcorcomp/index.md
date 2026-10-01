@@ -11,6 +11,8 @@
 :maxdepth: 1
 :caption: Getting started
 
+src/getting_started/overview
+src/getting_started/measurements
 src/getting_started/installation
 ```
 
@@ -20,14 +22,9 @@ src/getting_started/installation
 :caption: Tutorials
 
 src/tutorials/index
-```
-
-```{toctree}
-:hidden:
-:maxdepth: 1
-:caption: Modulated light
-
 src/tutorials/modulated_index
+src/tutorials/doppler_index
+src/tutorials/event_index
 ```
 
 ```{toctree}
@@ -37,6 +34,7 @@ src/tutorials/modulated_index
 
 src/tutorials/restir_index
 src/tutorials/ellipsoidal_index
+src/tutorials/event_denoising_index
 ```
 
 ```{toctree}
@@ -47,4 +45,6 @@ src/tutorials/ellipsoidal_index
 src/plugin_reference/time_gated
 src/plugin_reference/transient
 src/plugin_reference/modulated
+src/plugin_reference/doppler
+src/plugin_reference/event
 ```

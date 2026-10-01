@@ -69,7 +69,29 @@ private:
     DefineList getShaderDefines(const RenderData& renderData) const;
     const ChannelList& histogramChannels() const;
     void bindTimeGate(const ShaderVar& var) const;
-    void spatialReuse(RenderContext* pRenderContext, const RenderData& renderData);
+    /// Allocates the pair records shared by the two-pass spatial and temporal reuse and returns the bins per chunk of
+    /// each (spatialChunkBins, temporalChunkBins).
+    void preparePairs(uint2 frameDim, uint& spatialChunkBins, uint& temporalChunkBins);
+    /// Two-pass temporal reuse (useTemporalReusePairs), per chunk of `chunkBins` bins, after initial generation.
+    void temporalReuse(RenderContext* pRenderContext, const RenderData& renderData, uint chunkBins);
+    void spatialReuse(RenderContext* pRenderContext, const RenderData& renderData, uint chunkBins);
+    /// Binds the spatial reuse constants and resources of `pass` (the resampling or the pair pass).
+    void bindSpatialReuse(const ref<ComputePass>& pass, const RenderData& renderData);
+    /// Spatial reuse runs as two passes per iteration and chunk of bins (pair shifts, then resampling) when
+    /// spatialReuseTwoPass is set, unless the shift is `no`: without shift work, the extra pass and its records cost
+    /// more than the occupancy gains.
+    bool useSpatialReusePairs() const
+    {
+        return mOptions.restir.spatialReuseTwoPass &&
+               mOptions.restir.shiftMapping.shiftmapMethod != ShiftMappingMethod::Identity;
+    }
+    /// Temporal reuse runs as two passes after initial generation per chunk of bins (the merge shifts of each bin, then
+    /// the merges) when temporalReuseTwoPass is set, unless the shift is `no` (as for spatial reuse).
+    bool useTemporalReusePairs() const
+    {
+        return mOptions.restir.useTemporalReuse && mOptions.temporalReuseTwoPass &&
+               mOptions.restir.shiftMapping.shiftmapMethod != ShiftMappingMethod::Identity;
+    }
 
     /// User settings, composed of shared configs (Shared/Host/Configs) plus this pass's own.
     struct Options
@@ -78,6 +100,10 @@ private:
         PathTracingConfig pathTracing;
         PathLengthAwareReSTIRConfig restir;
         bool useBinReuse = false; ///< Add adjacent bins of the same pixel as spatial reuse candidates.
+        /// Store only non-empty reservoirs, with every reservoir's W and M in a compact buffer (RESERVOIR_SUMMARIES).
+        bool skipEmptyReservoirs = true;
+        /// Temporal reuse in two passes after initial generation instead of inside it (TEMPORAL_REUSE_PAIRS).
+        bool temporalReuseTwoPass = true;
     };
     Options mOptions;
 
@@ -95,5 +121,12 @@ private:
     bool mNeedToClearHistogram = false;
 
     ref<ComputePass> mpComputePass;      ///< Initial candidates (and temporal reuse), written to the histogram.
+    /// With TEMPORAL_REUSE_PAIRS, the temporal reuse after initial generation: the merge shifts of one pixel and bin per
+    /// thread (TemporalReusePairs.cs.slang), then the merges (TemporalReuse.cs.slang).
+    ref<ComputePass> mpTemporalPairsPass;
+    ref<ComputePass> mpTemporalResamplePass;
+    ref<Buffer> mpTemporalRandomState; ///< Each pixel's reservoir random state after initial generation.
     ref<ComputePass> mpSpatialReusePass;
+    /// With SPATIAL_REUSE_PAIRS, the first pass of each spatial reuse iteration: one candidate's shifts per thread.
+    ref<ComputePass> mpSpatialReusePairsPass;
 };

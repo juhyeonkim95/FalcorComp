@@ -21,23 +21,54 @@
 
 FalcorComp is a collection of rendering algorithms for computational imaging built on top of <a href="https://github.com/NVIDIAGameWorks/Falcor">NVIDIA Falcor</a> renderer.
 
-Rather than serving as a general-purpose rendering framework, this repository provides implementations of specialized Monte Carlo renderers developed for computational imaging research. The current focus is on active sensing modalities such as Time-of-Flight, event cameras, and structured light.
+Rather than serving as a general-purpose rendering framework, this repository provides implementations of specialized Monte Carlo renderers developed for computational imaging research. The current focus is on active sensing modalities such as Time-of-Flight, structured light, Doppler sensing, and event cameras.
 
 FalcorComp is **performance-oriented**: all renderers run on the GPU with hardware ray tracing, which enables **real-time, interactive simulation** as well as offline rendering.
 
 
-## Implemented Renderers
+## What It Renders
+
+<p align="center">
+  <img src="docs_falcorcomp/src/getting_started/images/overview_outputs.jpg" alt="The Cornell box rendered as each kind of output" width="100%">
+</p>
+
+The Cornell box rendered with FalcorComp. Left: a standard image. Top: a time-gated image, a transient histogram, and CW-ToF and structured-light measurements. Bottom, with the tall box approaching and the short box receding: a Doppler spectrum, a Doppler-gated image, the velocity from Doppler ToF measurements, and the events of a moving camera. Every measurement is a path integral with a weight on each light path; see [Measurements as path integrals](https://falcorcomp.readthedocs.io/en/latest/src/getting_started/measurements.html).
 
 ### Time-of-Flight
 
-| Renderer | Output | Description |
+The measurement depends on the total length of each light path (laser → scene → camera), which sets its arrival time.
+
+| Measurement | Output | Render passes |
 |---|---|---|
-| **Time-gated rendering** | Image, `H × W` | Only the light whose total path length (laser → scene → camera) falls inside a time gate. |
-| **Transient histogram rendering** | Histogram, `H × W × B` | For every pixel, how much light arrives at each path length, in `B` bins. |
+| **Time-gated image** | `H × W`: the light whose path length falls inside a time gate | [`TimeGatedPathTracerInline`](https://falcorcomp.readthedocs.io/en/latest/src/plugin_reference/time_gated/TimeGatedPathTracerInline.html), [`TimeGatedReSTIRInline`](https://falcorcomp.readthedocs.io/en/latest/src/plugin_reference/time_gated/TimeGatedReSTIRInline.html) |
+| **Transient histogram** | `H × W × B`: for every pixel, the light arriving at each path length, in `B` bins | [`TransientHistogramPathTracerInline`](https://falcorcomp.readthedocs.io/en/latest/src/plugin_reference/transient/TransientHistogramPathTracerInline.html), [`TransientHistogramReSTIRInline`](https://falcorcomp.readthedocs.io/en/latest/src/plugin_reference/transient/TransientHistogramReSTIRInline.html) |
 
-### Coming soon
+### Modulated Light
 
-Event camera · Structured light · Doppler rendering
+The light varies in time or in space, and the measurement weights each path by that modulation.
+
+| Measurement | Modulation | Render pass |
+|---|---|---|
+| **Continuous-wave ToF** | a periodic function of the path length | [`CWToFPathTracerInline`](https://falcorcomp.readthedocs.io/en/latest/src/plugin_reference/modulated/CWToFPathTracerInline.html) |
+| **Structured light** | a projected pattern | [`StructuredLightPathTracerInline`](https://falcorcomp.readthedocs.io/en/latest/src/plugin_reference/modulated/StructuredLightPathTracerInline.html) |
+
+### Doppler
+
+The measurement depends on how fast each path's length changes as the scene moves.
+
+| Measurement | Output | Render pass |
+|---|---|---|
+| **Doppler-gated image (OHD)** | `H × W`: the light whose Doppler shift falls inside a gate | [`DopplerGatedPathTracerInline`](https://falcorcomp.readthedocs.io/en/latest/src/plugin_reference/doppler/DopplerGatedPathTracerInline.html) |
+| **Doppler spectrum (OHD)** | `H × W × B`: for every pixel, the light at each Doppler shift, in `B` bins | [`DopplerHistogramPathTracerInline`](https://falcorcomp.readthedocs.io/en/latest/src/plugin_reference/doppler/DopplerHistogramPathTracerInline.html) |
+| **Doppler ToF** | `H × W`: a CW-ToF measurement with slightly different light and sensor frequencies, over an exposure in which the objects move | [`DopplerToFPathTracerInline`](https://falcorcomp.readthedocs.io/en/latest/src/plugin_reference/doppler/DopplerToFPathTracerInline.html) |
+
+### Event Camera
+
+Each pixel reports when its brightness log(I_ε + I) changes by more than a threshold.
+
+| Measurement | Output | Render passes |
+|---|---|---|
+| **Brightness change and events** | `H × W` per frame: the change ΔL since the previous frame, and the signed number of events | [`EventDifference`](https://falcorcomp.readthedocs.io/en/latest/src/plugin_reference/event/EventDifference.html), [`EventSVGF`](https://falcorcomp.readthedocs.io/en/latest/src/plugin_reference/event/EventSVGF.html), [`EventGenerator`](https://falcorcomp.readthedocs.io/en/latest/src/plugin_reference/event/EventGenerator.html) |
 
 ## Related Works
 
@@ -61,6 +92,18 @@ FalcorComp includes implementations of the following papers:
   Project Page (TBD)
 
   Variance reduction for rendering spatiotemporally modulated light (CW-ToF, structured light) using geometric antithetic sampling.
+
+- **"A Monte Carlo Rendering Framework for Simulating Optical Heterodyne Detection"**  
+  **SIGGRAPH 2025 (ACM TOG), Honorable Mention**  
+  [[Project Page]](https://juhyeonkim95.github.io/project-pages/ohd_rendering/)
+
+  Rendering the Doppler spectrum of optical heterodyne detection (coherent lidar) with the OHD path integral.
+
+- **"Doppler Time-of-Flight Rendering"**  
+  **SIGGRAPH Asia 2023 (ACM TOG)**  
+  [[Project Page]](https://juhyeonkim95.github.io/project-pages/dopplertof/)
+
+  Rendering Doppler time-of-flight cameras, whose heterodyne measurement reveals the velocity of moving objects.
 
 For details, please refer to the corresponding project page for each paper.
 
@@ -119,4 +162,30 @@ If you find FalcorComp useful in your research, please consider citing the corre
 
 % Geometric Antithetic Sampling for Spatiotemporally Modulated Light
 (TBD)
+
+% A Monte Carlo Rendering Framework for Simulating Optical Heterodyne Detection
+@article{kim2025ohd,
+  author={Kim, Juhyeon and Benko, Craig and Wrenninge, Magnus and Villemin, Ryusuke and Barber, Zeb and Jarosz, Wojciech and Pediredla, Adithya},
+  title={A Monte Carlo Rendering Framework for Simulating Optical Heterodyne Detection},
+  journal={ACM Transactions on Graphics (TOG)},
+  volume={44},
+  number={4},
+  articleno={56},
+  numpages={19},
+  year={2025},
+  doi={10.1145/3731150},
+  publisher={ACM New York, NY, USA}
+}
+
+% Doppler Time-of-Flight Rendering
+@article{kim2023doppler,
+  title={Doppler Time-of-Flight Rendering},
+  author={Kim, Juhyeon and Jarosz, Wojciech and Gkioulekas, Ioannis and Pediredla, Adithya},
+  journal={ACM Transactions on Graphics (TOG)},
+  volume={42},
+  number={6},
+  pages={1--18},
+  year={2023},
+  publisher={ACM New York, NY, USA}
+}
 ```

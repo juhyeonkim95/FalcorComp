@@ -119,11 +119,13 @@ void submitEllipsoidalCandidate(inout Reservoir reservoir, ReconnectionState rc,
         ellipsoidal.distance > gReconnectionMinDistance;
     float suffixDirectionWeight = 0.f;
     if (rc.postBounce == 2) suffixDirectionWeight = shadingCosine(origin, material, ellipsoidal.direction) / ellipsoidal.pdf;
-    rc.recordHit(ellipsoidal.hit, target, proposal, targetDepth, eligible, ellipsoidal.distance, origin.IoR,
+    rc.recordHit(ellipsoidal.hit, target, origin.posW, proposal, targetDepth, eligible, ellipsoidal.distance, origin.IoR,
         suffixDirectionWeight, 0);
-    LightConnection connection = evaluateLightConnection(target, targetMaterial, light, rng);
+    bool connected;
+    LightConnection connection = connectToLight(target, light, connected);
     float totalLength = targetLength + connection.distance + light.laserT;
     float gate = pathLengthImportance(totalLength, gTimeCenter);
+    if (connected && gate != 0.f) shadeLightConnection(connection, target, targetMaterial, light, rng);
     submitCandidate(reservoir, rc, target, targetMaterial, light, connection, totalLength, gate,
         throughput * proposal.weight, techniqueWeight, gSamplesPerPixel, lightSeed, false, rng);
 }
@@ -206,8 +208,10 @@ float3 evalPrimaryDirect(uint2 pixel, ShadingData primary, IMaterialInstance pri
         LightSample light = {};
         lightSampler.generateLightSample(sg, light);
         if (!light.valid) continue;
-        LightConnection connection = evaluateLightConnection(primary, primaryMaterial, light, sg);
+        bool connected;
+        LightConnection connection = connectToLight(primary, light, connected);
         float gate = pathLengthImportance(primaryLength + connection.distance + light.laserT, gTimeCenter);
+        if (connected && gate != 0.f) shadeLightConnection(connection, primary, primaryMaterial, light, sg);
         direct += connection.bsdfCosine * connection.incidentRadiance * gate;
     }
     direct /= float(gSamplesPerPixel) * gTimeGateWindow;
@@ -332,15 +336,19 @@ float3 tracePath(uint2 pixel, uint2 frameDim)
             pathLength += segmentLength * segmentIoR;
             if (!(pathLength < maxPathLength)) break;
             bool currentDiffuse = material.getProperties(surface).roughness > gReconnectionRoughnessThreshold;
-            rc.recordHit(hit, surface, sample, depth, previousDiffuse && currentDiffuse && segmentLength > gReconnectionMinDistance,
+            rc.recordHit(hit, surface, previousPosition, sample, depth, previousDiffuse && currentDiffuse && segmentLength > gReconnectionMinDistance,
                 segmentLength, segmentIoR, suffixDirectionWeight, sampleSeed);
 
             LightSample light = {};
             uint lightSeed = lightRng.getCurrentSeed();
             lightSampler.generateLightSample(lightRng, light);
-            LightConnection connection = evaluateLightConnection(surface, material, light, rng);
+            bool connected;
+            LightConnection connection = connectToLight(surface, light, connected);
             float totalLength = pathLength + connection.distance + light.laserT;
             float gate = pathLengthImportance(totalLength, gTimeCenter, useRoughGate);
+            // Outside the gate the candidate contributes zero: skip its visibility ray and BSDF evaluation. It is
+            // still submitted (M and the reservoir's random draws are unchanged).
+            if (connected && gate != 0.f) shadeLightConnection(connection, surface, material, light, rng);
             float techniqueWeight = 1.f;
 #if LIGHT_SAMPLING_METHOD != DIRECT_CONNECTION
             techniqueWeight = evalBsdfTechniqueWeight(previous, surface, hit, light, gTimeCenter, emissiveSampler,
@@ -365,6 +373,10 @@ float3 tracePath(uint2 pixel, uint2 frameDim)
 #if USE_SHRINK_MAPPING
     reservoir = mergeGateReservoirs(reservoir, wideReservoir, narrowCount, wideCount,
         primary, primaryMaterial, primaryLength, rng);
+#else
+    // Reuse weighs reservoirs by M (pairwise MIS confidence), which must be the number of camera paths, not the number
+    // of candidates submitted along them: that count varies with each path and correlates with the selected sample.
+    reservoir.M = float(gSamplesPerPixel);
 #endif
     reservoir.finalizeW();
 #if USE_TEMPORAL_REUSE

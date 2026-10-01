@@ -12,6 +12,7 @@ import RenderPasses.Shared.Shaders.Lights.LightConnection;
 
 import RenderPasses.Shared.Shaders.ReSTIR.PathReconstruction;
 import RenderPasses.Shared.Shaders.ShiftMapping.ShiftMapping;
+import RenderPasses.Shared.Shaders.ShiftMapping.NewtonSolver;
 
 // Balanced ratios with scaled mass, target and Jacobian factors. No logs and
 // no reciprocal of a tiny target are needed; all products here are <= 1.
@@ -51,6 +52,7 @@ void copyReconnectionPayload(inout Reservoir destination, const Reservoir source
     destination.rcVertexBounce = source.rcVertexBounce;
     destination.initRandomSeed = source.initRandomSeed;
     destination.rcNextVertexBounce = source.rcNextVertexBounce;
+    destination.rcPrevVertexPosition = source.rcPrevVertexPosition;
 #if IS_SCENE_DYNAMIC
     destination.rcNextVertexRandomSeed = source.rcNextVertexRandomSeed;
     destination.rcNextVertexRayDirection = source.rcNextVertexRayDirection;
@@ -115,6 +117,7 @@ struct ShiftedPath
 {
     HitInfo hit;
     ShadingData vertex;
+    float3 prefixEnd; // a on the target prefix.
     float3 f;
     float jacobian;
     float mappingJacobian; // Jacobian of the shift mapping alone (debug statistics).
@@ -122,11 +125,13 @@ struct ShiftedPath
 };
 
 // Shift the reconnection vertex x of `source` (gate sourceGate) to the camera prefix of another pixel (primary hit
-// `primary` at optical length primaryLength, gate targetGate), keeping the suffix. K scales the path length offset
-// from the gate center (gate-width ratio). Returns false if the prefix cannot be replayed there.
-bool shiftToPrefix(Reservoir source, VertexData x, ReconnectionSuffix suffix, float sourceGate,
-    ShadingData primary, IMaterialInstance primaryMaterial, float primaryLength, float targetGate, float K,
-    ReconnectionCriteria criteria, inout SampleGenerator sg, inout ShiftMappingDebugInfo debugInfo, out ShiftedPath shifted)
+// `primary` at optical length primaryLength, gate targetGate), keeping the suffix. The shift uses the source path's
+// own endpoints of x: its stored a (rcPrevVertexPosition) and sourceNext (its y). K scales the path length
+// offset from the gate center (gate-width ratio). Returns false if the prefix cannot be replayed there.
+bool shiftToPrefix(Reservoir source, VertexData x, ReconnectionSuffix suffix, ShadingData sourceNext,
+    float sourceGate, ShadingData primary, IMaterialInstance primaryMaterial, float primaryLength, float targetGate,
+    float K, ReconnectionCriteria criteria, inout SampleGenerator sg, inout ShiftMappingDebugInfo debugInfo,
+    out ShiftedPath shifted)
 {
     // Replay the camera prefix in the target pixel, from its primary hit to a.
     ShadingData a = primary;
@@ -140,18 +145,32 @@ bool shiftToPrefix(Reservoir source, VertexData x, ReconnectionSuffix suffix, fl
         return false;
     }
 
-    float targetLength = prefixLength + length(a.posW - x.posW) + length(x.posW - suffix.vertex.posW) + suffix.length;
-    float dt = K * (source.totalPathLength - sourceGate) + targetGate - targetLength;
-    float tol = max(abs(dt) * gNewtonRelativeTolerance, 1e-6f);
+    // Each path's length besides its two segments at x: the source's prefix up to a_s and suffix from y_s (from its
+    // stored total), and the target's prefix up to a plus the suffix from y.
+    float sourceRest = source.totalPathLength - length(source.rcPrevVertexPosition - x.posW)
+        - length(x.posW - sourceNext.posW);
+    ShiftLengthCondition condition = { K, sourceGate, targetGate, sourceRest, prefixLength + suffix.length };
     float jacobian = 0.f;
-    shifted.hit = pathLengthAwareShiftMapping(a, source.rcVertexHit, suffix.vertex, dt, jacobian, debugInfo, tol, sg);
+    ShiftSource shiftSource = makeShiftSource(source.rcPrevVertexPosition, sourceNext, a, suffix.vertex);
+    VertexData shiftedData;
+    shifted.hit = pathLengthAwareShiftMapping(a, source.rcVertexHit, x, suffix.vertex, shiftSource, condition,
+        jacobian, shiftedData, debugInfo, sg);
+    shifted.prefixEnd = a.posW;
     shifted.mappingJacobian = jacobian;
     jacobian *= K;
     // A rejected/non-finite shift must have zero support, not NaN weight.
     jacobian = select(isfinite(jacobian), max(jacobian, 0.f), 0.f);
+    if (jacobian == 0.f)
+    {
+        // No support: skip the moved path's evaluation (and its visibility ray). shifted.vertex is left unset.
+        shifted.jacobian = 0.f;
+        shifted.f = 0.f;
+        shifted.totalPathLength = source.totalPathLength;
+        return true;
+    }
 
-    float3 shiftedPosition = gScene.getVertexData(shifted.hit.getTriangleHit()).posW;
-    shifted.vertex = loadShadingData(shifted.hit, a.posW, normalize(shiftedPosition - a.posW));
+    float3 shiftedPosition = shiftedData.posW;
+    shifted.vertex = loadShadingData(shifted.hit.getTriangleHit(), shiftedData, normalize(shiftedPosition - a.posW));
     shifted.totalPathLength = prefixLength + length(a.posW - shiftedPosition)
         + length(shiftedPosition - suffix.vertex.posW) + suffix.length;
 
@@ -160,15 +179,204 @@ bool shiftToPrefix(Reservoir source, VertexData x, ReconnectionSuffix suffix, fl
     jacobian *= float(criteria.isRough(shiftedMaterial.getProperties(shifted.vertex).roughness) &&
         criteria.isLongEnough(length(shiftedPosition - a.posW)));
     shifted.jacobian = jacobian;
+    if (source.rcVertexBounce == 0 || jacobian == 0.f)
+    {
+        shifted.f = 0.f;
+        return true;
+    }
 
     shifted.f = prefixThroughput * evalReconnectionTarget(a, aMaterial, shifted.vertex, suffix.vertex, suffix.material,
         prefixLength, suffix.length, targetGate, suffix.irradiance, sg, suffix.isSurface, K,
         source.rcNextVertexBounce > 0);
-    shifted.f *= checkVisibility(a, shifted.vertex);
-    if (source.rcVertexBounce == 0 || jacobian == 0.f)
-        shifted.f = 0.f;
+    // A zero target (e.g. outside the gate) needs no visibility ray.
+    if (any(shifted.f != 0.f)) shifted.f *= checkVisibility(a, shifted.vertex);
     return true;
 }
+
+// What a non-canonical source with a static suffix contributes to a pairwise merge: only its mass (no sample, no
+// reconnection vertex, or no shift), or its shifted path with its RIS weight. evaluateIncomingCandidate computes it and
+// streamIncomingCandidate adds it to a reservoir, so the two can run in separate passes.
+static const uint kIncomingMassOnly = 0;
+static const uint kIncomingSample = 1;
+struct IncomingCandidate
+{
+    HitInfo hit;            // Shifted x.
+    float3 f;               // Target of the shifted path.
+    float weight;           // RIS weight: pairwise MIS coefficient * target * source W * Jacobian.
+    float3 prefixEnd;       // a on the target prefix.
+    float totalPathLength;  // Of the shifted path.
+    uint kind;              // kIncomingMassOnly or kIncomingSample.
+};
+
+// Shift `source` (otherMass: the mass of the other reservoir in the pair) to the destination pixel (primary hit
+// `primary`, gate targetGate), keeping its suffix.
+IncomingCandidate evaluateIncomingCandidate(
+    Reservoir source,
+    float otherMass,
+    ReconnectionCriteria criteria,
+    ShadingData primary,
+    IMaterialInstance primaryMaterial,
+    float primaryLength,
+    const float targetGate,
+    const float sourceGate,
+    const float K,
+    float3 lightPosition,  // The point light, when the suffix ends there.
+    float3 lightDirection,
+    inout SampleGenerator sg,
+    inout ShiftMappingDebugInfo debugInfo
+)
+{
+#if DEBUG_NEWTON_ITERATIONS
+    debugInfo.newtonStats = uint4(0);
+    debugInfo.mappingDistance = float2(0.f);
+#endif
+    IncomingCandidate candidate = {};
+    candidate.kind = kIncomingMassOnly;
+    // No valid sample, or a path without a reconnection vertex: it cannot be shifted.
+    if (source.W == 0.f) return candidate;
+    if (source.W > 0 && source.rcVertexBounce == 0) return candidate;
+
+    VertexData x = gScene.getVertexData(source.rcVertexHit.getTriangleHit());
+    ReconnectionSuffix suffix = loadReconnectionSuffix(source, lightPosition, lightDirection);
+    ShiftedPath shifted;
+    if (!shiftToPrefix(source, x, suffix, suffix.vertex, sourceGate, primary, primaryMaterial, primaryLength,
+            targetGate, K, criteria, sg, debugInfo, shifted))
+        return candidate;
+    float shiftedTarget = getReservoirWeight(shifted.f);
+#if DEBUG_NEWTON_ITERATIONS
+    debugInfo.newtonStats = finalizeReuseStatistics(
+        debugInfo.newtonStats, shifted.mappingJacobian, shifted.jacobian, shiftedTarget);
+#endif
+    float misWeight = spatialPairCoefficient(source.M, getReservoirWeight(source.f), otherMass, shiftedTarget,
+        shifted.jacobian);
+    candidate.kind = kIncomingSample;
+    candidate.f = shifted.f;
+    candidate.weight = misWeight * shiftedTarget * source.W * shifted.jacobian;
+    candidate.hit = shifted.hit;
+    candidate.prefixEnd = shifted.prefixEnd;
+    candidate.totalPathLength = shifted.totalPathLength;
+    return candidate;
+}
+
+// Stream a candidate of `source` (from evaluateIncomingCandidate) into `destination`.
+void streamIncomingCandidate(inout Reservoir destination, IncomingCandidate candidate, Reservoir source,
+    inout SampleGenerator sg)
+{
+    if (candidate.kind == kIncomingMassOnly)
+    {
+        destination.M += source.M;
+        return;
+    }
+    if (destination.update(candidate.f, candidate.weight, source.M, sg))
+    {
+        copyReconnectionPayload(destination, source);
+        destination.rcVertexHit = candidate.hit;
+        destination.rcPrevVertexPosition = candidate.prefixEnd;
+        destination.totalPathLength = candidate.totalPathLength;
+    }
+}
+
+// What the canonical source of a pairwise merge contributes with a static suffix: only its mass (no sample), its
+// sample without a reconnection vertex (which the other domain cannot have), or its sample with the pairwise MIS
+// weight against the other domain (weight as if alone when the shift there fails). evaluateCanonicalCandidate computes
+// it and streamCanonicalCandidate adds it to a reservoir, so the two can run in separate passes.
+static const uint kCanonicalMassOnly = 0;
+static const uint kCanonicalLocalSample = 1;
+static const uint kCanonicalSample = 2;
+struct CanonicalCandidate
+{
+    float weight; // RIS weight: pairwise MIS coefficient * target * source W.
+    uint kind;    // kCanonicalMassOnly, kCanonicalLocalSample or kCanonicalSample.
+};
+
+// Evaluate the canonical `source` against the other domain (otherMass: the other reservoir's mass; primary hit
+// `primary`, gate targetGate) by shifting its path there.
+CanonicalCandidate evaluateCanonicalCandidate(
+    Reservoir source,
+    float otherMass,
+    ReconnectionCriteria criteria,
+    ShadingData primary,
+    IMaterialInstance primaryMaterial,
+    float primaryLength,
+    const float targetGate,
+    const float sourceGate,
+    const float K,
+    float3 lightPosition,  // The point light, when the suffix ends there.
+    float3 lightDirection,
+    inout SampleGenerator sg,
+    inout ShiftMappingDebugInfo debugInfo
+)
+{
+#if DEBUG_NEWTON_ITERATIONS
+    debugInfo.newtonStats = uint4(0);
+    debugInfo.mappingDistance = float2(0.f);
+#endif
+    CanonicalCandidate candidate = {};
+    candidate.kind = kCanonicalMassOnly;
+    if (source.W == 0.f) return candidate;
+    float sourceTarget = getReservoirWeight(source.f);
+    if (source.W > 0 && source.rcVertexBounce == 0)
+    {
+        candidate.kind = kCanonicalLocalSample;
+        candidate.weight = sourceTarget * source.W;
+        return candidate;
+    }
+
+    VertexData x = gScene.getVertexData(source.rcVertexHit.getTriangleHit());
+    ReconnectionSuffix suffix = loadReconnectionSuffix(source, lightPosition, lightDirection);
+    candidate.kind = kCanonicalSample;
+    ShiftedPath shifted;
+    if (!shiftToPrefix(source, x, suffix, suffix.vertex, sourceGate, primary, primaryMaterial, primaryLength,
+            targetGate, K, criteria, sg, debugInfo, shifted))
+    {
+        candidate.weight = sourceTarget * source.W;
+        return candidate;
+    }
+    float shiftedTarget = getReservoirWeight(shifted.f);
+#if DEBUG_NEWTON_ITERATIONS
+    debugInfo.newtonStats = finalizeReuseStatistics(
+        debugInfo.newtonStats, shifted.mappingJacobian, shifted.jacobian, shiftedTarget);
+#endif
+    float misWeight = spatialPairCoefficient(source.M, sourceTarget, otherMass, shiftedTarget, shifted.jacobian);
+    candidate.weight = misWeight * sourceTarget * source.W;
+    return candidate;
+}
+
+// Stream the canonical `source` (with its candidate from evaluateCanonicalCandidate) into `destination`. A sample
+// without a reconnection vertex carries only its target f and the flag.
+void streamCanonicalCandidate(inout Reservoir destination, CanonicalCandidate candidate, Reservoir source,
+    inout SampleGenerator sg)
+{
+    if (candidate.kind == kCanonicalMassOnly)
+    {
+        destination.M += source.M;
+        return;
+    }
+    if (!destination.update(source.f, candidate.weight, source.M, sg)) return;
+    if (candidate.kind == kCanonicalLocalSample)
+    {
+        destination.rcVertexBounce = 0;
+        return;
+    }
+    copyReconnectionPayload(destination, source);
+    destination.rcVertexHit = source.rcVertexHit;
+    destination.totalPathLength = source.totalPathLength;
+}
+
+// One pair of a pairwise merge, evaluated in its own pass (two-pass spatial and temporal reuse) for a later pass to
+// stream: the incoming candidate of the other reservoir (with that reservoir's M) and the canonical sample's side.
+// 64 bytes.
+struct ReusePair
+{
+    HitInfo hit;           // IncomingCandidate fields.
+    float3 f;
+    float weight;
+    float3 prefixEnd;
+    float totalPathLength;
+    float canonical;       // Spatial: the canonical pairwise coefficient; temporal: the CanonicalCandidate weight.
+    float sourceM;         // M of the other reservoir.
+    uint status;           // IncomingCandidate kind; temporal: | CanonicalCandidate kind << 8.
+};
 
 // Stream `source` (otherMass: the mass of the other reservoir in the pair) into `destination` with its pairwise MIS
 // weight. A canonical source keeps its own sample and only evaluates the other pixel's support; any other source
@@ -193,6 +401,7 @@ void combineReservoirWithShiftMapping(
 #endif
 #if IS_SCENE_DYNAMIC
     , bool updateLight = false, float3 targetLightPower = float3(0.f), float targetLightCosAngle = 0.f
+    , float3 sourceLightPosition = float3(0.f), float3 sourceLightDirection = float3(0.f)
 #endif
 ){
 #if DEBUG_NEWTON_ITERATIONS
@@ -201,6 +410,26 @@ void combineReservoirWithShiftMapping(
 #else
     ShiftMappingDebugInfo debugInfo;
 #endif
+
+    // A static suffix: evaluate and stream the candidate. Re-lit suffixes (updateLight) are handled below.
+#if IS_SCENE_DYNAMIC
+    if (!updateLight)
+#endif
+    {
+        if (isCanonical)
+        {
+            CanonicalCandidate candidate = evaluateCanonicalCandidate(source, otherMass, criteria, primary,
+                primaryMaterial, primaryLength, targetGate, sourceGate, K, lightPosition, lightDirection, sg, debugInfo);
+            streamCanonicalCandidate(destination, candidate, source, sg);
+        }
+        else
+        {
+            IncomingCandidate candidate = evaluateIncomingCandidate(source, otherMass, criteria, primary,
+                primaryMaterial, primaryLength, targetGate, sourceGate, K, lightPosition, lightDirection, sg, debugInfo);
+            streamIncomingCandidate(destination, candidate, source, sg);
+        }
+        return;
+    }
 
     // No valid sample.
     if (source.W == 0.f)
@@ -242,15 +471,31 @@ void combineReservoirWithShiftMapping(
     VertexData x = gScene.getVertexData(source.rcVertexHit.getTriangleHit());
     ReconnectionSuffix suffix = loadReconnectionSuffix(suffixSource, lightPosition, lightDirection);
 
+    // The source path's own y. A re-lit suffix may start at another y (a moved light); then the source's y is its
+    // original next vertex, or the source frame's light for a point-light endpoint.
+    ShadingData sourceNext = suffix.vertex;
+#if IS_SCENE_DYNAMIC
+    if (updateLight)
+    {
+        if (source.rcNextVertexHit.isValid())
+            sourceNext = loadShadingData(source.rcNextVertexHit, float3(0.f), source.rcNextVertexWi);
+        else
+        {
+            sourceNext.posW = sourceLightPosition;
+            sourceNext.frontFacing = true;
+            sourceNext.faceN = sourceLightDirection;
+        }
+    }
+#endif
     ShiftedPath shifted;
-    if (!shiftToPrefix(source, x, suffix, sourceGate, primary, primaryMaterial, primaryLength, targetGate, K,
-            criteria, sg, debugInfo, shifted))
+    if (!shiftToPrefix(source, x, suffix, sourceNext, sourceGate, primary, primaryMaterial, primaryLength,
+            targetGate, K, criteria, sg, debugInfo, shifted))
     {
         combineUnsupportedShift(destination, source, isCanonical, sg);
         return;
     }
 #if IS_SCENE_DYNAMIC
-    if (updateLight)
+    if (updateLight && shifted.jacobian > 0.f)
     {
         if (suffixSource.rcNextVertexBounce > 0)
             shifted.f *= checkVisibility(shifted.vertex, suffix.vertex);
@@ -291,6 +536,7 @@ void combineReservoirWithShiftMapping(
         {
             copyReconnectionPayload(destination, suffixSource);
             destination.rcVertexHit = shifted.hit;
+            destination.rcPrevVertexPosition = shifted.prefixEnd;
             destination.totalPathLength = shifted.totalPathLength;
         }
     }
@@ -320,8 +566,8 @@ float evaluateCanonicalShiftWeight(
         return 0.f;
 
     ShiftedPath shifted;
-    if (!shiftToPrefix(source, x, suffix, sourceGate, primary, primaryMaterial, primaryLength, targetGate, 1.f,
-            criteria, sg, debugInfo, shifted))
+    if (!shiftToPrefix(source, x, suffix, suffix.vertex, sourceGate, primary, primaryMaterial, primaryLength,
+            targetGate, 1.f, criteria, sg, debugInfo, shifted))
         return 1.f;
     return spatialPairCoefficient(source.M, getReservoirWeight(source.f),
         otherMass, getReservoirWeight(shifted.f), shifted.jacobian);
@@ -361,7 +607,8 @@ Reservoir mergeReservoirPair(Reservoir canonical, ReuseDomain canonicalDomain, R
         , debugInfo
 #endif
 #if IS_SCENE_DYNAMIC
-        , updateLight, canonicalDomain.lightPower, canonicalDomain.lightCosAngle
+        , updateLight, canonicalDomain.lightPower, canonicalDomain.lightCosAngle, otherDomain.lightPosition,
+        otherDomain.lightDirection
 #endif
     );
     // Canonical -> other evaluates competing support, retaining the canonical sample.
@@ -373,7 +620,8 @@ Reservoir mergeReservoirPair(Reservoir canonical, ReuseDomain canonicalDomain, R
         , debugInfo
 #endif
 #if IS_SCENE_DYNAMIC
-        , updateLight, otherDomain.lightPower, otherDomain.lightCosAngle
+        , updateLight, otherDomain.lightPower, otherDomain.lightCosAngle, canonicalDomain.lightPosition,
+        canonicalDomain.lightDirection
 #endif
     );
     // The canonical no-RC branch copies only f and its flag; keep the selected length too.

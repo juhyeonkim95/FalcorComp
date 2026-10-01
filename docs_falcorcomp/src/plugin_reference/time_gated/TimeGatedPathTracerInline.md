@@ -2,11 +2,11 @@
 
 This render pass renders a *time-gated* image: the radiance carried by paths whose total optical
 length, from the laser through the scene to the camera, lies near a gate center $t$. For a path
-$\bar{x}$ with optical length $\ell(\bar{x})$ (segment lengths weighted by the index of
+$\bar{\mathbf{x}}$ with optical length $\ell(\bar{\mathbf{x}})$ (segment lengths weighted by the index of
 refraction), each pixel estimates
 
 $$
-I(t) = \frac{1}{\Delta} \int f(\bar{x})\, w\!\left(\frac{\ell(\bar{x}) - t}{\Delta}\right) \mathrm{d}\bar{x},
+I(t) = \frac{1}{\Delta} \int f(\bar{\mathbf{x}})\, w\!\left(\frac{\ell(\bar{\mathbf{x}}) - t}{\Delta}\right) \mathrm{d}\bar{\mathbf{x}},
 $$
 
 where $f$ is the path contribution and $w$ the gate kernel of width $\Delta$ (`timeGateWindow`).
@@ -44,7 +44,9 @@ Time gate:
 * - `timeGateMode`
   - string
   - Gate kernel: `box`, `tent`, `gaussian`, `exp` (one-sided exponential), `exp_two_side`
-    (two-sided exponential), `cos` or `all` (no gating). See [the kernels](#gate-kernels). (Default: `box`)
+    (two-sided exponential), `cos` or `all` (no gating). See [the kernels](#gate-kernels).
+    `epanechnikov` and `perlin` are also accepted, but this pass does not implement them: they act
+    like `all`. (Default: `box`)
 * - `timeGateWindow`
   - float
   - Gate width $\Delta$, in path-length units. (Default: `0.05`)
@@ -79,8 +81,8 @@ Sampling:
 * - `maxBounces`
   - integer
   - Maximum number of surface vertices on a camera path, counting the primary hit and any vertex
-    inserted by an ellipsoidal connection. Each vertex is connected to the laser spot.
-    (Default: `3`)
+    inserted by an ellipsoidal connection. Each vertex is connected to the laser spot (the
+    primary hit only with `computeDirect`). (Default: `3`)
 * - `samplingMethod`
   - string
   - How a camera-path vertex is connected to the laser spot: `direct`, `ellipsoidal` or
@@ -147,6 +149,9 @@ Every camera-path vertex $x$ is connected to the laser spot:
   `emissiveSampler`. This finds the rare paths that fit a narrow gate.
 - `ellipsoidal_direct_mis`: both, combined with the balance heuristic.
 
+The `cos` and `all` kernels have no length to draw from, so with them no ellipsoidal connections
+are made and both ellipsoidal methods behave like `direct`.
+
 (laser)=
 ## Laser
 
@@ -201,9 +206,10 @@ downstream accumulation, for example to move it every frame.
 * - `vbuffer` (input)
   - Primary hits, from `VBufferRT`.
 * - `viewW` (input, optional)
-  - Primary ray directions, from `VBufferRT`.
+  - Primary ray directions, from `VBufferRT`. Needed for depth of field.
 * - `color` (output)
-  - Time-gated image $I(t)$, RGBA32Float.
+  - Time-gated image $I(t)$, RGBA32Float. Pixels without a primary hit show the scene's
+    environment map background (also divided by $\Delta$) if it has one, otherwise black.
 ```
 
 ## Example

@@ -1,0 +1,13 @@
+add_plugin(DopplerHistogramPathTracerInline)
+
+target_sources(DopplerHistogramPathTracerInline PRIVATE
+    DopplerHistogramPathTracerInline.cpp
+    DopplerHistogramPathTracerInline.h
+    DopplerHistogramPathTracerInline.cs.slang
+)
+
+target_copy_shaders(DopplerHistogramPathTracerInline RenderPasses/DopplerHistogramPathTracerInline)
+
+target_source_group(DopplerHistogramPathTracerInline "RenderPasses")
+
+add_dependencies(DopplerHistogramPathTracerInline RenderPassSharedShaders)

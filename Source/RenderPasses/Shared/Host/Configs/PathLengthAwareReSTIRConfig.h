@@ -5,6 +5,7 @@
 #include "Utils/Sampling/SampleGenerator.h"
 #include "RenderGraph/RenderPass.h"
 #include "Scene/Scene.h"
+#include <algorithm>
 #include <memory>
 #include <utility>
 
@@ -14,6 +15,9 @@ struct PathLengthAwareReSTIRConfig
     uint spatialReuseIteration = 1;
     uint spatialReuseNeighborCount = 5;
     float spatialReuseGatherRadius = 10.0f; ///< Pixels.
+    /// Spatial reuse as two passes per iteration (one candidate's shifts per thread, then resampling); false runs the
+    /// single-pass kernel. Same results either way; the shift `no` always uses the single pass.
+    bool spatialReuseTwoPass = true;
     bool useTemporalReuse = false;
     float temporalHistoryLength = 20.0f;    ///< History cap in frames of samples; 0 ignores it, negative is uncapped.
 
@@ -31,6 +35,8 @@ struct PathLengthAwareReSTIRConfig
             spatialReuseNeighborCount = value;
         else if (key == "spatialReuseGatherRadius")
             spatialReuseGatherRadius = value;
+        else if (key == "spatialReuseTwoPass")
+            spatialReuseTwoPass = value;
         else if (key == "useTemporalReuse")
             useTemporalReuse = value;
         else if (key == "temporalHistoryLength")
@@ -49,6 +55,7 @@ struct PathLengthAwareReSTIRConfig
         props["spatialReuseIteration"] = spatialReuseIteration;
         props["spatialReuseNeighborCount"] = spatialReuseNeighborCount;
         props["spatialReuseGatherRadius"] = spatialReuseGatherRadius;
+        props["spatialReuseTwoPass"] = spatialReuseTwoPass;
         props["useTemporalReuse"] = useTemporalReuse;
         props["temporalHistoryLength"] = temporalHistoryLength;
         shiftMapping.serialize(props);
@@ -92,6 +99,11 @@ struct PathLengthAwareReSTIRConfig
         dirty |= widget.var("Spatial radius (px)", spatialReuseGatherRadius, 1.f, 128.f);
         widget.tooltip("Radius, in pixels, within which spatial neighbors are chosen.", true);
 
+        dirty |= widget.checkbox("Two-pass spatial reuse", spatialReuseTwoPass);
+        widget.tooltip("Compute each candidate's shifts in its own thread, then resample in a second pass: faster with "
+                       "a length-aware shift (lower register use). Off runs the single-pass kernel. The results are "
+                       "the same; the shift None always uses the single pass.", true);
+
         dirty |= widget.checkbox("Temporal reuse", useTemporalReuse);
         widget.tooltip("Resample the previous frame's reservoir (reprojected with motion vectors when the mvec input "
                        "is connected)." + temporalNote, true);
@@ -134,6 +146,12 @@ public:
 
     ref<Buffer> prevReservoirs;
     ref<Buffer> currReservoirs;
+    /// W and M of each reservoir (float2), with useSummaries in prepare(): only reservoirs with W != 0 are then stored.
+    ref<Buffer> prevSummaries;
+    ref<Buffer> currSummaries;
+    ref<Buffer> reusePairs; ///< Pair records of the two-pass spatial and temporal reuse (preparePairs).
+    ref<Buffer> spatialCandidateValid; ///< Spatial neighbors' validity for the two-pass spatial reuse.
+    static constexpr size_t kPairBufferBytes = size_t(512) << 20;
     ref<Texture> neighborOffsets;
     ref<Texture> temporalVBuffer;
     bool temporalHistoryValid = false;
@@ -170,8 +188,9 @@ public:
         return defines;
     }
 
-    /// (Re)allocates `reservoirsPerPixel` reservoirs per pixel, of the layout getReservoirDefines() gives; the neighbor
-    /// offsets; and, with temporal reuse, the previous frame's V-buffer. A resize discards the history.
+    /// (Re)allocates `reservoirsPerPixel` reservoirs per pixel, of the layout getReservoirDefines() gives, and with
+    /// `useSummaries` their summaries (RESERVOIR_SUMMARIES); the neighbor offsets; and, with temporal reuse, the previous
+    /// frame's V-buffer. A resize discards the history.
     void prepare(
         ref<Device> pDevice,
         const ref<Scene>& pScene,
@@ -181,7 +200,8 @@ public:
         uint32_t reservoirsPerPixel,
         uint2 frameDim,
         bool useTemporalReuse,
-        ResourceFormat vbufferFormat
+        ResourceFormat vbufferFormat,
+        bool useSummaries = false
     )
     {
         if (!mpReflectTypes)
@@ -220,6 +240,18 @@ public:
                 );
             }
         }
+        for (ref<Buffer>* pSummaries : {&prevSummaries, &currSummaries})
+        {
+            if (!useSummaries)
+                *pSummaries = nullptr;
+            else if (!*pSummaries || (*pSummaries)->getElementCount() != reservoirCount)
+            {
+                temporalHistoryValid = false;
+                *pSummaries = pDevice->createStructuredBuffer(sizeof(float2), reservoirCount,
+                    ResourceBindFlags::ShaderResource | ResourceBindFlags::UnorderedAccess, MemoryType::DeviceLocal,
+                    nullptr, false);
+            }
+        }
 
         if (!neighborOffsets)
             neighborOffsets = createNeighborOffsetTexture(pDevice, kNeighborOffsetCount);
@@ -245,11 +277,84 @@ public:
     {
         for (uint iteration = 0; iteration < iterations; iteration++)
         {
-            std::swap(currReservoirs, prevReservoirs);
+            swapReservoirs();
             spatialVar["gRandomSeed"] = randomSeed++;
-            spatialVar["prevReservoirs"] = prevReservoirs;
-            spatialVar["currReservoirs"] = currReservoirs;
+            bindReservoirs(spatialVar);
             pPass->execute(pRenderContext, {frameDim.x, frameDim.y, 1});
+        }
+    }
+
+    /// (Re)allocates reusePairs, the pair records (ReusePair; `pairsVar` is a shader buffer of them) of the two-pass
+    /// spatial and temporal reuse, for `candidates` records per pixel and bin: as many bins per chunk as fit in
+    /// kPairBufferBytes, at least one. Returns the bins per chunk.
+    uint preparePairs(ref<Device> pDevice, const ShaderVar& pairsVar, uint2 frameDim, uint candidates, uint binCount)
+    {
+        const size_t stride =
+            pairsVar.getType()->unwrapArray()->asResourceType()->getStructType()->getSlangTypeLayout()->getStride();
+        const size_t bytesPerBin = std::max<size_t>(size_t(frameDim.x) * frameDim.y * candidates * stride, 1);
+        const uint chunkBins = std::clamp(uint(kPairBufferBytes / bytesPerBin), 1u, std::max(binCount, 1u));
+        const uint32_t count = std::max(frameDim.x * frameDim.y * candidates * chunkBins, 1u);
+        if (!reusePairs || reusePairs->getElementCount() != count || reusePairs->getStructSize() != stride)
+            reusePairs = pDevice->createStructuredBuffer(pairsVar, count,
+                ResourceBindFlags::ShaderResource | ResourceBindFlags::UnorderedAccess, MemoryType::DeviceLocal, nullptr,
+                false);
+        return chunkBins;
+    }
+
+    /// (Re)allocates spatialCandidateValid (`validVar` is its shader buffer): one flag per pixel and spatial neighbor.
+    void prepareCandidateValid(ref<Device> pDevice, const ShaderVar& validVar, uint2 frameDim, uint neighborCount)
+    {
+        const uint32_t validCount = std::max(frameDim.x * frameDim.y * neighborCount, 1u);
+        if (!spatialCandidateValid || spatialCandidateValid->getElementCount() != validCount)
+            spatialCandidateValid = pDevice->createStructuredBuffer(validVar, validCount,
+                ResourceBindFlags::ShaderResource | ResourceBindFlags::UnorderedAccess, MemoryType::DeviceLocal, nullptr,
+                false);
+    }
+
+    /// Spatial reuse split into two passes (SPATIAL_REUSE_PAIRS) per iteration and chunk of `chunkBins` bins:
+    /// `pPairPass` with `pairsPerPixel` threads per pixel along x (a candidate each) and the chunk's bins along z, then
+    /// the resampling pass `pPass`.
+    /// Both get the reservoirs, the same seed and the chunk (pairFirstBin, pairBinCount).
+    void runSpatialReuse(
+        RenderContext* pRenderContext,
+        const ref<ComputePass>& pPairPass,
+        const ShaderVar& pairVar,
+        uint pairsPerPixel,
+        const ref<ComputePass>& pPass,
+        const ShaderVar& spatialVar,
+        uint iterations,
+        uint& randomSeed,
+        uint2 frameDim,
+        uint binCount,
+        uint chunkBins
+    )
+    {
+        for (uint iteration = 0; iteration < iterations; iteration++)
+        {
+            swapReservoirs();
+            for (const ShaderVar* var : {&pairVar, &spatialVar})
+            {
+                (*var)["gRandomSeed"] = randomSeed;
+                bindReservoirs(*var);
+            }
+            randomSeed++;
+            for (uint firstBin = 0; firstBin < binCount; firstBin += chunkBins)
+            {
+                const uint bins = std::min(chunkBins, binCount - firstBin);
+                for (const ShaderVar* var : {&pairVar, &spatialVar})
+                {
+                    (*var)["pairFirstBin"] = firstBin;
+                    (*var)["pairBinCount"] = bins;
+                }
+                {
+                    FALCOR_PROFILE(pRenderContext, "pairs");
+                    pPairPass->execute(pRenderContext, {frameDim.x * pairsPerPixel, frameDim.y, bins});
+                }
+                {
+                    FALCOR_PROFILE(pRenderContext, "resample");
+                    pPass->execute(pRenderContext, {frameDim.x, frameDim.y, 1});
+                }
+            }
         }
     }
 
@@ -257,14 +362,32 @@ public:
     /// camera; keeps the V-buffer and camera position it refers to.
     void endFrame(RenderContext* pRenderContext, bool useTemporalReuse, const Scene& scene, const ref<Texture>& pVBuffer)
     {
-        std::swap(currReservoirs, prevReservoirs);
+        swapReservoirs();
         temporalHistoryValid = useTemporalReuse && scene.getCamera()->getApertureRadius() == 0.f;
         if (temporalHistoryValid)
             pRenderContext->copyResource(temporalVBuffer.get(), pVBuffer.get());
         previousCameraPosition = scene.getCamera()->getPosition();
     }
 
+    /// Binds prevReservoirs and currReservoirs, and their summaries if allocated, to a SpatialReuse `var`.
+    void bindReservoirs(const ShaderVar& var) const
+    {
+        var["prevReservoirs"] = prevReservoirs;
+        var["currReservoirs"] = currReservoirs;
+        if (prevSummaries)
+        {
+            var["prevSummaries"] = prevSummaries;
+            var["currSummaries"] = currSummaries;
+        }
+    }
+
 private:
+    void swapReservoirs()
+    {
+        std::swap(currReservoirs, prevReservoirs);
+        std::swap(currSummaries, prevSummaries);
+    }
+
     /// Low-discrepancy offsets in the unit disk (R2 sequence), stored as RG8Snorm.
     static ref<Texture> createNeighborOffsetTexture(ref<Device> pDevice, uint32_t sampleCount)
     {

@@ -16,6 +16,9 @@ export struct RayTraceHemisphereChart:IShiftChart
     bool useCartesianChart;
     HitInfo hit;
     float hitT;
+    // The hit's position and face normal, loaded once per hit (update, or setHit from known vertex data).
+    float3 hitPosition;
+    float3 hitFaceNormal;
 
     __init(float3 p1, float3 p2, float3 p2o, float3 t2, float3 b2, float3 n2)
     {
@@ -23,6 +26,17 @@ export struct RayTraceHemisphereChart:IShiftChart
         this.t2 = t2; this.b2 = b2; this.n2 = n2;
         this.useCartesianChart = false;
         this.hit = HitInfo(); this.hitT = 0.f;
+        this.hitPosition = float3(0.f); this.hitFaceNormal = float3(0.f);
+    }
+
+    // State at a known surface point: its hit, vertex data and ray parameter from p2o.
+    [mutating]
+    void setHit(HitInfo hit, VertexData vertex, float hitT)
+    {
+        this.hit = hit;
+        this.hitT = hitT;
+        hitPosition = vertex.posW;
+        hitFaceNormal = vertex.faceNormalW;
     }
 
     // Keep azimuth unwrapped: the gauge uses coordinates' - coordinates across the 0/1 seam.
@@ -106,6 +120,12 @@ export struct RayTraceHemisphereChart:IShiftChart
         Ray ray = Ray(p2o, d, 0.0f, FLT_MAX);
         SceneRayQuery<0> sceneRayQuery;
         hit = sceneRayQuery.traceRay(ray, hitT);
+        if (hit.isValid() && hit.getType() == HitType::Triangle)
+        {
+            VertexData v = gScene.getVertexData(hit.getTriangleHit());
+            hitPosition = v.posW;
+            hitFaceNormal = v.faceNormalW;
+        }
     }
 
     // ---- eval: uses si.t as ρ, with derivatives from frozen plane at (si.p, si.n) ----
@@ -124,11 +144,9 @@ export struct RayTraceHemisphereChart:IShiftChart
         directionDerivatives(e, d, d_mu, d_psi, d_mumu, d_mupsi, d_psipsi);
 
         
-        VertexData v = gScene.getVertexData(hit.getTriangleHit());
-
-        float3 x = v.posW;
-        bool frontFacing = dot(d, v.faceNormalW) >= 0.f;
-        float3 n = frontFacing ? v.faceNormalW : -v.faceNormalW;
+        float3 x = hitPosition;
+        bool frontFacing = dot(d, hitFaceNormal) >= 0.f;
+        float3 n = frontFacing ? hitFaceNormal : -hitFaceNormal;
         // The chart is X(coordinates) = p2o + hitT * d(coordinates), while physical path
         // length still uses p2. Use the traced ray parameter for derivatives.
         float r = hitT;

@@ -18,6 +18,19 @@ It uses the same scene file as the other tutorials (see [Modulated light](modula
 :align: center
 ```
 
+The three images below show what this measurement keeps. With the modulation shifted to $[0, 1]$
+(`unsignedModulation`), the full measurement (left) is dominated by the direct light, which shows
+the projected stripes clearly; its indirect part alone (middle) is smooth and dim. The signed, zero-mean
+measurement of this tutorial (right, as above) removes the constant part of the modulation, so only
+the indirect light that does not cancel is left. Each image has 8,192 samples per pixel; the script
+is {download}`modulated_components.py <code/modulated_components.py>` (`python
+modulated_components.py structured_light`).
+
+```{image} images/structured_light_components.jpg
+:alt: Structured light with the pattern in [0, 1] (direct + indirect, indirect) and in [-1, 1] (indirect)
+:align: center
+```
+
 ## 1. Load the scene
 
 ```{literalinclude} code/structured_light_offline.py

@@ -48,6 +48,7 @@ namespace
 {
 const char kShaderFile[] = "RenderPasses/TimeGatedReSTIRInline/InitialSampleGeneration.cs.slang";
 const char kSpatialReuseFile[] = "RenderPasses/TimeGatedReSTIRInline/SpatialReuse.cs.slang";
+const char kSpatialReusePairsFile[] = "RenderPasses/TimeGatedReSTIRInline/SpatialReusePairs.cs.slang";
 const char kAddDirectFile[] = "RenderPasses/TimeGatedReSTIRInline/AddDirect.cs.slang";
 
 const ChannelList kDebugOutputChannels = {
@@ -145,6 +146,7 @@ void TimeGatedReSTIRInline::setProperties(const Properties& props)
     {
         mpComputePass = nullptr;
         mpSpatialReusePass = nullptr;
+        mpSpatialReusePairsPass = nullptr;
     }
     mOptionsChanged = true;
 }
@@ -182,6 +184,7 @@ DefineList TimeGatedReSTIRInline::getShaderDefines(const RenderData& renderData)
     }
     defines.add("USE_SHRINK_MAPPING", wideSampleCount > 0 ? "1" : "0");
     defines.add("DEBUG_NEWTON_ITERATIONS", mOptions.debugNewtonIterations ? "1" : "0");
+    defines.add("SPATIAL_REUSE_PAIRS", useSpatialReusePairs() ? "1" : "0");
     defines.add(PathLengthAwareReSTIRResources::getReservoirDefines(mOptions.pathTracing, mOptions.isSceneDynamic));
 
     defines.add("LIGHT_SAMPLING_METHOD", std::to_string((uint32_t)mOptions.ellipsoidalSampling.samplingMethod));
@@ -236,10 +239,9 @@ void TimeGatedReSTIRInline::bindShaderData(const ShaderVar& var, const RenderDat
     }
 }
 
-void TimeGatedReSTIRInline::spatialReuse(RenderContext* pRenderContext, const RenderData& renderData)
+void TimeGatedReSTIRInline::bindSpatialReuse(const ref<ComputePass>& pass, const RenderData& renderData)
 {
-    InlinePass::updateScenePassDefines(pRenderContext, mpSpatialReusePass, mpScene, mpSampleGenerator, getShaderDefines(renderData));
-    auto rootVar = mpSpatialReusePass->getRootVar();
+    auto rootVar = pass->getRootVar();
     auto var = rootVar["CB"]["gSpatialReuse"];
     const uint2 frameDim = renderData.getDefaultTextureDims();
 
@@ -258,6 +260,29 @@ void TimeGatedReSTIRInline::spatialReuse(RenderContext* pRenderContext, const Re
     rootVar["TimeGate"]["gTimeGateWindowRough"] = mOptions.wideGateWindow();
     mLaser.bindShaderData(rootVar["Laser"]);
     mOptions.restir.bindShiftMapping(rootVar["ShiftMappingCB"]);
+    if (useSpatialReusePairs())
+    {
+        var["pairs"] = mReSTIR.reusePairs;
+        var["pairCandidateValid"] = mReSTIR.spatialCandidateValid;
+    }
+}
+
+void TimeGatedReSTIRInline::spatialReuse(RenderContext* pRenderContext, const RenderData& renderData)
+{
+    const uint2 frameDim = renderData.getDefaultTextureDims();
+    const DefineList defines = getShaderDefines(renderData);
+    InlinePass::updateScenePassDefines(pRenderContext, mpSpatialReusePass, mpScene, mpSampleGenerator, defines);
+    const uint candidateCount = mOptions.restir.spatialReuseNeighborCount;
+    if (useSpatialReusePairs())
+    {
+        InlinePass::updateScenePassDefines(pRenderContext, mpSpatialReusePairsPass, mpScene, mpSampleGenerator, defines);
+        const ShaderVar pairVar = mpSpatialReusePairsPass->getRootVar()["CB"]["gSpatialReuse"];
+        mReSTIR.preparePairs(mpDevice, pairVar["pairs"], frameDim, candidateCount, 1);
+        mReSTIR.prepareCandidateValid(mpDevice, pairVar["pairCandidateValid"], frameDim,
+            mOptions.restir.spatialReuseNeighborCount);
+        bindSpatialReuse(mpSpatialReusePairsPass, renderData);
+    }
+    bindSpatialReuse(mpSpatialReusePass, renderData);
 
     // Clear diagnostics once per frame; spatial iterations add to these buffers.
     // Keep initial RGB intact, including when spatial iteration count is zero.
@@ -267,7 +292,13 @@ void TimeGatedReSTIRInline::spatialReuse(RenderContext* pRenderContext, const Re
         pRenderContext->clearUAV(renderData.getTexture("mappingDistance")->getUAV().get(), float4(0.f));
     }
 
-    mReSTIR.runSpatialReuse(pRenderContext, mpSpatialReusePass, var, mOptions.restir.spatialReuseIteration, mRandomSeed, frameDim);
+    auto var = mpSpatialReusePass->getRootVar()["CB"]["gSpatialReuse"];
+    if (useSpatialReusePairs())
+        mReSTIR.runSpatialReuse(pRenderContext, mpSpatialReusePairsPass,
+            mpSpatialReusePairsPass->getRootVar()["CB"]["gSpatialReuse"], candidateCount, mpSpatialReusePass, var,
+            mOptions.restir.spatialReuseIteration, mRandomSeed, frameDim, 1, 1);
+    else
+        mReSTIR.runSpatialReuse(pRenderContext, mpSpatialReusePass, var, mOptions.restir.spatialReuseIteration, mRandomSeed, frameDim);
 }
 
 void TimeGatedReSTIRInline::addDirect(RenderContext* pRenderContext, const RenderData& renderData)
@@ -322,6 +353,13 @@ void TimeGatedReSTIRInline::execute(RenderContext* pRenderContext, const RenderD
         defines.add(mTriangleSampler.getDefines());
         defines.add("NEIGHBOR_OFFSET_COUNT", std::to_string(PathLengthAwareReSTIRResources::kNeighborOffsetCount));
         mpSpatialReusePass = InlinePass::createScenePass(mpDevice, pRenderContext, mpScene, mpSampleGenerator, kSpatialReuseFile, defines);
+    }
+    if (useSpatialReusePairs() && !mpSpatialReusePairsPass)
+    {
+        DefineList defines = getShaderDefines(renderData);
+        defines.add(mTriangleSampler.getDefines());
+        defines.add("NEIGHBOR_OFFSET_COUNT", std::to_string(PathLengthAwareReSTIRResources::kNeighborOffsetCount));
+        mpSpatialReusePairsPass = InlinePass::createScenePass(mpDevice, pRenderContext, mpScene, mpSampleGenerator, kSpatialReusePairsFile, defines);
     }
     const uint2 frameDim = renderData.getDefaultTextureDims();
     if (mOptions.pathTracing.computeDirect &&
@@ -442,6 +480,7 @@ void TimeGatedReSTIRInline::renderUI(Gui::Widgets& widget)
         {
             mpComputePass = nullptr;
             mpSpatialReusePass = nullptr;
+            mpSpatialReusePairsPass = nullptr;
         }
         // Pass the flag to downstream passes (accumulation reset) and discard the ReSTIR history.
         mOptionsChanged = true;
@@ -455,6 +494,7 @@ void TimeGatedReSTIRInline::setScene(RenderContext* pRenderContext, const ref<Sc
     // The programs, the triangle sampler and the reservoir type depend on the scene.
     mpComputePass = nullptr;
     mpSpatialReusePass = nullptr;
+    mpSpatialReusePairsPass = nullptr;
     mTriangleSampler.reset();
     mReSTIR.resetScene();
     mFrameCount = 0;

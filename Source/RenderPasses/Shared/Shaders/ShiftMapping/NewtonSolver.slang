@@ -31,6 +31,32 @@ struct NewtonResult
     NewtonResultStatus    status;   // 0 OK, 1 no converge, 2 singular Jacobian
 };
 
+// The path-length condition of a shift. A full path length is L = ell(x) + rest: ell(x) = |a - x| + |y - x| is the two
+// segments at the moved vertex x, rest is the remainder (the prefix up to a plus the suffix from y). The target path
+// through x' is as far from its gate center g_t as the source path through x is from g_s, scaled by K:
+//     L_t(x') - g_t = K (L_s(x) - g_s)   <=>   ell_t(x') = K (ell_s(x) + rest_s - g_s) + g_t - rest_t.
+struct ShiftLengthCondition
+{
+    float K;          // Gate-width ratio (target / source); 1 for gates of equal width.
+    float sourceGate; // g_s
+    float targetGate; // g_t
+    float sourceRest; // rest_s: the source path's prefix up to a_s plus its suffix from y_s.
+    float targetRest; // rest_t: the target path's prefix up to a_t plus its suffix from y_t.
+
+    // ell_t(x') required by the source path's ell_s(x).
+    float targetLength(float sourceLength)
+    {
+        return K * (sourceLength + sourceRest - sourceGate) + targetGate - targetRest;
+    }
+};
+
+// ell_t(x') = ell_s(x) + dt: a fixed length change (e.g. antithetic sampling with the same endpoints).
+ShiftLengthCondition makeLengthOffset(float dt)
+{
+    ShiftLengthCondition condition = { 1.f, 0.f, dt, 0.f, 0.f };
+    return condition;
+}
+
 // =================== Helpers ===================
 float2 Rperp(float2 v) { return float2(-v.y, v.x); }
 
@@ -88,10 +114,23 @@ void gaugeTerms(
     J0Delta = float2(0.0, 0.0) - 0.5 * Hmul(H0, RDel);
 }
 
-// Constant-offset solver: c is held fixed for the Jacobian.
+// Solves ell_t(xi') = condition.targetLength(ell_s(xi)) with the gauge a . (xi' - xi) = 0. xi is the source vertex in
+// sourceOps's coordinates (sourceOps evaluates the source path's two segments ell_s, and its state represents the
+// source vertex); xi' is in ops's coordinates (the target path's ell_t). The gauge compares the raw coordinates, and
+// the avg_grad gauge a = R (g_s(xi) + g_t(xi')) / 2 is symmetric under swapping the roles, so the reverse shift (charts
+// and conditions swapped) has the same solutions. The source rows of the Jacobian (d/dxi) use ell_s's gradient g_s
+// and Hessian H_s at xi.
+//   - traceStart = false: ops's state at xi already represents the source vertex (both charts are the same function).
+//   - traceStart = true: the charts differ; ops's start point X_t(xi) is another surface point, traced here.
+// Without a distinct source (distinctSource = false), ops and sourceOps are the same function (same endpoints and
+// chart): ell_s = ell_t and g_s = g_t, the single-length solve.
 NewtonResult solveShiftNewton<Chart : IShiftChart>(
     inout Chart ops,
-    float2 xi, float c,
+    Chart sourceOps,
+    bool distinctSource,
+    bool traceStart,
+    ShiftLengthCondition condition,
+    float2 xi,
     GaugeMode mode,
     float2 a_const,          // used iff CONSTANT_A
     int maxIters,            // e.g., 15
@@ -110,12 +149,21 @@ NewtonResult solveShiftNewton<Chart : IShiftChart>(
 
     // Start eval (fixed during solve)
     float  L0; float2 g0; float3 H0;
+    if (traceStart) ops.update(xi);
     if(!ops.eval(xi, L0, g0, H0)){
         R.status = NewtonResultStatus::InvalidPoint; return R;
     }
+    // Source length at the start: g0/H0 below are the source's gradient and Hessian.
+    float2 gt0 = g0; float3 Ht0 = H0;
+    float Ls = L0;
+    if (distinctSource)
+    {
+        if (!sourceOps.eval(xi, Ls, g0, H0)) { R.status = NewtonResultStatus::InvalidPoint; return R; }
+    }
+    float targetValue = condition.targetLength(Ls);
 
-    // no need to search
-    if (abs(c) <= tol)
+    // no need to search (a distinct source needs the Jacobian of its map even where xi' = xi)
+    if (abs(targetValue - L0) <= tol && !distinctSource)
     {
         R.xi_prime = xi;
         R.detJ = 1.0;
@@ -130,15 +178,16 @@ NewtonResult solveShiftNewton<Chart : IShiftChart>(
 
     float2 e = xi; //ops.project(xi + s0 * dir);
 
-    float  L1 = L0; float2 g1 = g0; float3 H1 = H0;
+    float  L1 = L0; float2 g1 = gt0; float3 H1 = Ht0;
     float2 a, JpDelta, J0Delta;
     float2 Delta;
     float inv00, inv01, inv10, inv11, detJp;
-    bool success = false;
+    // Where the start already has the target length, xi' = xi solves both equations; only the Jacobian is needed.
+    bool success = abs(L0 - targetValue) <= tol;
     float beta = 1.0f;
 
     // --- Newton iterations using only Jp = ∂F/∂η' ---
-    for (int it = 0; it < maxIters; ++it)
+    for (int it = 0; it < maxIters && !success; ++it)
     {
         R.iters = it + 1;
 
@@ -146,7 +195,7 @@ NewtonResult solveShiftNewton<Chart : IShiftChart>(
         gaugeTerms(mode, a_const, g0, g1, H0, H1, Delta, a, JpDelta, J0Delta);
 
         // Current Residuals
-        float F1 = L1 - L0 - c;
+        float F1 = L1 - targetValue;
         float F2 = dot(a, Delta);
 
         // Jp rows: [ g1^T ; (a + JpDelta)^T ]
@@ -166,7 +215,7 @@ NewtonResult solveShiftNewton<Chart : IShiftChart>(
         const float2 e_try = ops.project(float2(e.x + beta*dx, e.y + beta*dy) );
         ops.update(e_try);
         bool update_eta = ops.eval(e_try, L_try, g_try, H_try);
-        float F1_try = L_try - L0 - c;
+        float F1_try = L_try - targetValue;
 
         if(!update_eta || (abs(F1_try) > abs(F1))){
             beta *= 0.5f;
@@ -203,8 +252,8 @@ NewtonResult solveShiftNewton<Chart : IShiftChart>(
     if (abs(detJp) < 1e-20) { R.status = (R.status != 0 ? R.status : NewtonResultStatus::Singular); R.detJ = 0.0; }
     else                    { R.detJ = abs(detJ0 / detJp); }
 
-    // reject too large jacobian change
-    if (R.detJ >= 10.0 || R.detJ < 0.1) R.status = (NewtonResultStatus::NoConverge);
     if (R.iters >= maxIters) R.status = (success ? NewtonResultStatus::Success : NewtonResultStatus::NoConverge);
+    // Reject too large a Jacobian change (after the iteration check, which must not restore Success).
+    if (R.detJ >= 10.0 || R.detJ < 0.1) R.status = (NewtonResultStatus::NoConverge);
     return R;
 }

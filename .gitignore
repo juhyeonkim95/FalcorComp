@@ -48,5 +48,6 @@
 # Local files kept out of the repository
 /temp/
 
-# Reference code (ReSTIR PT), kept locally only
+# Reference code (ReSTIR PT, Reservoir Splatting), kept locally only
 /ReSTIR_PT-master/
+/reference_code/

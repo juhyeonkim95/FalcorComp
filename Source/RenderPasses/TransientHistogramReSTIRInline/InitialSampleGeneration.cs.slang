@@ -1,79 +1,29 @@
-#include "Scene/SceneDefines.slangh"
-#include "Utils/Math/MathConstants.slangh"
-
-import Utils.Math.MathHelpers;
-import Utils.Geometry.GeometryHelpers;
-import Utils.Sampling.SampleGenerator;
-import Rendering.Lights.LightHelpers;
-import Utils.Color.ColorHelpers;
-import RenderPasses.Shared.Shaders.Utils.TimeGate;
-import RenderPasses.Shared.Shaders.Utils.TransientHistogram;
-import Scene.RaytracingInline;
-import RenderPasses.Shared.Shaders.ReSTIR.Reservoirs;
-
-import RenderPasses.Shared.Shaders.Utils.LoadShadingData;
-import RenderPasses.Shared.Shaders.Lights.LaserLightSampler;
-import RenderPasses.Shared.Shaders.Lights.LightConnection;
-import RenderPasses.Shared.Shaders.ReSTIR.PathReconstruction;
-import RenderPasses.Shared.Shaders.ReSTIR.InitialCandidates;
-import RenderPasses.Shared.Shaders.Utils.RayUtils;
-#if USE_TEMPORAL_REUSE
-import RenderPasses.Shared.Shaders.ReSTIR.ReservoirReuse;
-import RenderPasses.Shared.Shaders.ReSTIR.TemporalReuse;
-#endif
-import RenderPasses.Shared.Shaders.Lights.Laser;
-
-
-cbuffer CB
-{
-    uint2 gFrameDim;
-    uint gFrameCount;    // Frame count since scene was loaded.
-    
-    uint gSamplesPerPixel;
-    float gReconnectionRoughnessThreshold;
-    float gReconnectionMinDistance;
-    float gTemporalHistoryLength;
-#if USE_TEMPORAL_REUSE
-    bool gTemporalHistoryValid;
-    float3 gPreviousCameraPosition;
-#endif
-}
-
-
-ReconnectionCriteria getReconnectionCriteria()
-{
-    ReconnectionCriteria criteria = { gReconnectionRoughnessThreshold, gReconnectionMinDistance };
-    return criteria;
-}
-
-// Inputs
-Texture2D<PackedHitInfo> gVBuffer;
-Texture2D<float4> gViewW; // Optional
-Texture2D<float2> gMotionVector; // Optional
-#if USE_TEMPORAL_REUSE
-Texture2D<PackedHitInfo> gTemporalVBuffer;
-#endif
-
-
-// Reservoir Struct
-StructuredBuffer<Reservoir> gPrevReservoirs; // Last frame's final reservoirs (temporal reuse).
-RWStructuredBuffer<Reservoir> gCurrReservoirs;
-
-// Outputs
-RWTexture2D<float4> gOutputColor;
-
-RWTexture3D<HistogramTexel> gTransientHistogram;
-
+#include "RenderPasses/TransientHistogramReSTIRInline/HistogramReSTIRCommon.slangh"
 
 // TimeGateMode::Box; macros in imported Slang modules are not exported.
 static const uint kTimeGateBox = 1;
 
+// Which of the first 64 bins of a pixel have received a candidate this frame, so that their reservoirs are in memory.
+// The other bins start as empty reservoirs in registers instead of being cleared in memory first (most bins never get a
+// candidate); bins from 64 on are still cleared up front.
+struct TouchedBins
+{
+    uint2 bits;
+
+    bool inMemory(uint bin) { return bin >= 64 || ((bits[bin >> 5] >> (bin & 31)) & 1) != 0; }
+
+    [mutating]
+    void add(uint bin)
+    {
+        if (bin < 64) bits[bin >> 5] |= 1u << (bin & 31);
+    }
+};
 
 // The same completed path is a candidate for every gate it overlaps.
 // Box bins are disjoint, so that common case updates only one reservoir.
 void submitHistogramCandidate(uint pixelIndex, ReconnectionState rc, ShadingData surface,
     IMaterialInstance material, LightSample light, LightConnection connection,
-    float totalLength, float3 throughput, uint lightSeed, inout SampleGenerator rng)
+    float totalLength, float3 throughput, uint lightSeed, inout TouchedBins touched, inout SampleGenerator rng)
 {
     uint firstBin = 0;
     uint endBin = gTimeBin;
@@ -90,23 +40,40 @@ void submitHistogramCandidate(uint pixelIndex, ReconnectionState rc, ShadingData
         float gate = gTimeGateMode == kTimeGateBox ? 1.f : pathLengthImportance(totalLength, center);
         if (!(gate > 0.f)) continue;
         uint index = pixelIndex * gTimeBin + bin;
-        Reservoir reservoir = gCurrReservoirs[index];
-        submitCandidate(reservoir, rc, surface, material, light, connection, totalLength, gate,
-            throughput, 1.f, gSamplesPerPixel, lightSeed, true, rng);
-        gCurrReservoirs[index] = reservoir;
+        // Selection needs only wSum: the stored reservoir is rewritten only if the candidate is selected. M is set at
+        // finalization, and a selection sets every field in use.
+        Reservoir reservoir = Reservoir();
+        const float previousWeightSum = touched.inMemory(bin) ? gCurrReservoirs[index].wSum : 0.f;
+        reservoir.wSum = previousWeightSum;
+        if (submitCandidate(reservoir, rc, surface, material, light, connection, totalLength, gate,
+                throughput, 1.f, gSamplesPerPixel, lightSeed, true, rng))
+            gCurrReservoirs[index] = reservoir;
+        else if (reservoir.wSum != previousWeightSum)
+            gCurrReservoirs[index].wSum = reservoir.wSum;
+        else
+            continue; // Rejected: nothing to store.
+        touched.add(bin);
     }
 }
 
 float3 tracePath(uint2 pixel, uint2 frameDim)
 {
     uint pixelIndex = pixel.y * frameDim.x + pixel.x;
-    for (uint bin = 0; bin < gTimeBin; ++bin)
-    {
-        gCurrReservoirs[pixelIndex * gTimeBin + bin] = Reservoir();
-        gTransientHistogram[uint3(pixel, bin)] = 0.f;
-    }
     HitInfo primaryHit = HitInfo(gVBuffer[pixel]);
-    if (!primaryHit.isValid()) return 0.f;
+    if (!primaryHit.isValid())
+    {
+        for (uint bin = 0; bin < gTimeBin; ++bin)
+        {
+            storeReservoir(pixelIndex * gTimeBin + bin, Reservoir());
+            gTransientHistogram[uint3(pixel, bin)] = 0.f;
+        }
+        return 0.f;
+    }
+    // The finalization below stores every bin's reservoir (storeReservoir) and histogram texel; only bins past the mask
+    // need a clear, for candidate submission.
+    TouchedBins touched = {};
+    for (uint bin = 64; bin < gTimeBin; ++bin)
+        gCurrReservoirs[pixelIndex * gTimeBin + bin] = Reservoir();
 
     float3 cameraPosition = gScene.camera.getPosition();
     ShadingData primary = loadShadingData(primaryHit, cameraPosition, getPrimaryRayDir(pixel, frameDim, gViewW));
@@ -141,10 +108,15 @@ float3 tracePath(uint2 pixel, uint2 frameDim)
                 LightSample light = {};
                 uint lightSeed = lightRng.getCurrentSeed();
                 lightSampler.generateLightSample(lightRng, light);
-                LightConnection connection = evaluateLightConnection(surface, material, light, rng);
+                bool connected;
+                LightConnection connection = connectToLight(surface, light, connected);
                 float totalLength = pathLength + connection.distance + light.laserT;
+                // Box bins drop candidates outside [gTimeMin, gTimeMax) unevaluated: skip their visibility ray and
+                // BSDF evaluation.
+                bool inRange = gTimeGateMode != kTimeGateBox || (totalLength >= gTimeMin && totalLength < gTimeMax);
+                if (connected && inRange) shadeLightConnection(connection, surface, material, light, rng);
                 submitHistogramCandidate(pixelIndex, rc, surface, material, light, connection, totalLength,
-                    throughput, lightSeed, rng);
+                    throughput, lightSeed, touched, rng);
             }
             if (rc.bounce > 0) ++rc.postBounce;
             if (depth + 1 >= MAX_BOUNCES) break;
@@ -171,18 +143,14 @@ float3 tracePath(uint2 pixel, uint2 frameDim)
             // Match time-gated generation and shared prefix replay.
             pathLength += segmentLength * segmentIoR;
             bool currentDiffuse = material.getProperties(surface).roughness > gReconnectionRoughnessThreshold;
-            rc.recordHit(hit, surface, sample, depth + 1,
+            rc.recordHit(hit, surface, previousPosition, sample, depth + 1,
                 previousDiffuse && currentDiffuse && segmentLength > gReconnectionMinDistance,
                 segmentLength, segmentIoR, suffixDirectionWeight, sampleSeed);
         }
     }
 
-#if USE_TEMPORAL_REUSE
-    // Geometry and the light are static, so only the camera (and hence the camera prefix) differs between frames.
-    // The gate center of a bin is the same in both frames.
-    TemporalHistory history = {};
-    if (gTemporalHistoryValid && gTemporalHistoryLength != 0.f)
-        history = findTemporalHistory(pixel, frameDim, gMotionVector, gTemporalVBuffer, gPreviousCameraPosition);
+#if USE_TEMPORAL_REUSE && !TEMPORAL_REUSE_PAIRS
+    TemporalHistory history = getTemporalHistory(pixel);
     IMaterialInstance previousMaterial = primaryMaterial;
     if (history.valid)
         previousMaterial = gScene.materials.getMaterialInstance(history.primary, ExplicitLodTextureSampler(0.f));
@@ -192,14 +160,14 @@ float3 tracePath(uint2 pixel, uint2 frameDim)
     for (uint bin = 0; bin < gTimeBin; ++bin)
     {
         uint index = pixelIndex * gTimeBin + bin;
-        Reservoir reservoir = gCurrReservoirs[index];
+        Reservoir reservoir = touched.inMemory(bin) ? gCurrReservoirs[index] : Reservoir();
         reservoir.finalizeW();
         // Each bin had gSamplesPerPixel path trials, including paths contributing zero.
         reservoir.M = gSamplesPerPixel;
-#if USE_TEMPORAL_REUSE
+#if USE_TEMPORAL_REUSE && !TEMPORAL_REUSE_PAIRS
         if (history.valid)
         {
-            Reservoir previous = gPrevReservoirs[history.pixelIndex * gTimeBin + bin];
+            Reservoir previous = loadPrevReservoir(history.pixelIndex * gTimeBin + bin);
             previous.M = temporalHistoryMass(previous.M, gTemporalHistoryLength, gSamplesPerPixel);
             if (previous.M > 0.f)
             {
@@ -213,11 +181,15 @@ float3 tracePath(uint2 pixel, uint2 frameDim)
             }
         }
 #endif
-        gCurrReservoirs[index] = reservoir;
+        storeReservoir(index, reservoir);
         float3 radiance = reservoir.W * reservoir.f;
         integratedRadiance += radiance;
         gTransientHistogram[uint3(pixel, bin)] = toHistogramTexel(radiance / gBinWidth);
     }
+#if TEMPORAL_REUSE_PAIRS
+    // The merges (TemporalReuse.cs.slang) draw next.
+    gTemporalRandomState[pixelIndex] = rng.getCurrentSeed();
+#endif
     return integratedRadiance;
 }
 
