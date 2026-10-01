@@ -51,7 +51,7 @@ Doppler: the measurement depends on how fast each path's length changes as the s
 
 | Measurement | Output | Render pass |
 |---|---|---|
-| **Doppler-gated image (OHD)** | `H × W`: the light whose Doppler shift falls inside a gate | `DopplerGatedPathTracerInline` |
+| **Doppler-gated image (OHD)** | `H × W`: the light whose Doppler shift falls inside a gate | [`DopplerGatedPathTracerInline`](../plugin_reference/doppler/DopplerGatedPathTracerInline.md) |
 | **Doppler spectrum (OHD)** | `H × W × B`: for every pixel, the light at each Doppler shift, in `B` bins | [`DopplerHistogramPathTracerInline`](../plugin_reference/doppler/DopplerHistogramPathTracerInline.md) |
 | **Doppler ToF** | `H × W`: a CW-ToF measurement with slightly different light and sensor frequencies, over an exposure in which the objects move | [`DopplerToFPathTracerInline`](../plugin_reference/doppler/DopplerToFPathTracerInline.md) |
 

@@ -5,6 +5,8 @@ These render passes simulate measurements of moving scenes:
 - [`DopplerHistogramPathTracerInline`](doppler/DopplerHistogramPathTracerInline.md): the Doppler spectrum of optical
   heterodyne detection (OHD), as in coherent lidar. Nothing moves; each path's Doppler shift follows from the
   velocities of its vertices.
+- [`DopplerGatedPathTracerInline`](doppler/DopplerGatedPathTracerInline.md): the light whose Doppler shift falls in
+  a gate, one image instead of the spectrum, as the time-gated path tracer is to the transient histogram.
 - [`DopplerToFPathTracerInline`](doppler/DopplerToFPathTracerInline.md): Doppler time-of-flight, a continuous-wave
   ToF camera with different light and sensor modulation frequencies. The objects really move during the exposure.
 - [`VelocityGroundTruthInline`](doppler/VelocityGroundTruthInline.md): ground-truth velocity maps for both.
@@ -12,7 +14,7 @@ These render passes simulate measurements of moving scenes:
 (doppler-velocities)=
 ## Velocities
 
-All three take the motion of the scene objects in the same `velocities` property: a dictionary from an object name
+All four take the motion of the scene objects in the same `velocities` property: a dictionary from an object name
 to its instantaneous rigid motion, v(x) = linear + angular × (x − center):
 
 ```python
@@ -38,6 +40,7 @@ more of the scene; see [Moving objects](#doppler-tof-moving-objects).
 :maxdepth: 1
 
 doppler/DopplerHistogramPathTracerInline
+doppler/DopplerGatedPathTracerInline
 doppler/DopplerToFPathTracerInline
 doppler/VelocityGroundTruthInline
 ```
