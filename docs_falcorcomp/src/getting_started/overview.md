@@ -13,13 +13,16 @@ installed as a Python package and driven from Python scripts.
 ## What it renders
 
 ```{image} images/overview_outputs.jpg
-:alt: The Cornell box as a standard image, a time-gated image, a transient histogram, a CW-ToF measurement and a structured-light measurement
+:alt: The Cornell box as a standard image, a time-gated image, a transient histogram, CW-ToF and structured-light measurements, a Doppler spectrum, a Doppler-gated image, a Doppler ToF velocity map and camera events
 :align: center
 ```
 
-The Cornell box rendered with falcorcomp, from left to right: a standard image (no time gating), a time-gated
-image, a transient histogram (16 of its 64 bins, in reading order), and CW-ToF and structured-light measurements
-(with the modulation in $[0, 1]$), with the settings of the [tutorials](../tutorials/index.md).
+The Cornell box rendered with falcorcomp. Left: a standard image (no time gating). Top row: a time-gated image, a
+transient histogram (16 of its 64 bins, in reading order), and CW-ToF and structured-light measurements (with the
+modulation in $[0, 1]$). Bottom row, with the tall box approaching and the short box receding: the Doppler spectrum
+of optical heterodyne detection (4 of its bins), a Doppler-gated image (only the light shifted by about +26 MHz: the
+tall box), the velocity estimated from Doppler ToF measurements (red approaching, blue receding), and the events of
+a camera moving right (red brighter, blue darker). The settings follow the [tutorials](../tutorials/index.md).
 
 Time-of-flight (ToF): a laser lights the scene, and the measurement depends on the total length of
 each light path (laser -> scene -> camera), which sets its arrival time.
@@ -48,6 +51,7 @@ Doppler: the measurement depends on how fast each path's length changes as the s
 
 | Measurement | Output | Render pass |
 |---|---|---|
+| **Doppler-gated image (OHD)** | `H × W`: the light whose Doppler shift falls inside a gate | `DopplerGatedPathTracerInline` |
 | **Doppler spectrum (OHD)** | `H × W × B`: for every pixel, the light at each Doppler shift, in `B` bins | [`DopplerHistogramPathTracerInline`](../plugin_reference/doppler/DopplerHistogramPathTracerInline.md) |
 | **Doppler ToF** | `H × W`: a CW-ToF measurement with slightly different light and sensor frequencies, over an exposure in which the objects move | [`DopplerToFPathTracerInline`](../plugin_reference/doppler/DopplerToFPathTracerInline.md) |
 
