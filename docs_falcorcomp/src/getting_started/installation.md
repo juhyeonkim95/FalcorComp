@@ -62,14 +62,14 @@ downloaded instead, choose the one whose name matches your Python version (`cp31
 :sync: linux
 
 ```bash
-pip install falcorcomp-0.1.3-cp312-cp312-manylinux_2_35_x86_64.whl
+pip install falcorcomp-0.1.4-cp312-cp312-manylinux_2_35_x86_64.whl
 ```
 :::
 :::{tab-item} Windows
 :sync: windows
 
 ```bat
-pip install falcorcomp-0.1.3-cp312-cp312-win_amd64.whl
+pip install falcorcomp-0.1.4-cp312-cp312-win_amd64.whl
 ```
 :::
 ::::
@@ -93,6 +93,15 @@ ones:
 Set the environment variable `FALCOR_SHADER_CACHE_PATH` to use another directory, or to an empty
 string to disable the cache.
 
+## What the package leaves out
+
+The package contains every falcorcomp render pass, plus Falcor's `PathTracer`, `SVGFPass` and the passes the
+tutorials use. Two things work only in a [build from source](#building-from-source), for license reasons:
+
+- `PathTracer`'s `useRTXDI` option: the RTXDI SDK's shaders may not be redistributed in source form.
+- `OptixDenoiser`: the OptiX SDK license requires an agreement with every recipient.
+
+(building-from-source)=
 ## Building from source
 
 Building the wheel yourself is only needed for development or for a Python version without a
