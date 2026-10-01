@@ -1,18 +1,17 @@
 # Event camera (offline)
 
-This tutorial simulates an event camera moving forward through the Cornell box at 1000 frames per second. It renders
-the brightness change of every frame three ways, each with 2 samples per pixel per frame, and compares them with a
-reference:
+This tutorial simulates an event camera moving forward through the Cornell box at 1000 frames per second, and renders
+the brightness change between two frames with 1024 samples per pixel per frame, two ways:
 
-- **Path tracer:** every frame with new random numbers, differenced with `EventDifference`.
-- **Correlated path tracer:** every frame rendered twice, reusing the previous frame's seed, differenced with
-  `EventDifference` (see [Correlated sampling](#event-correlated-sampling)).
-- **EventSVGF:** the same two renders, with the difference denoised by `EventSVGF`.
+- **Path tracer:** each frame with its own random numbers (`EventDifference`, `sampling = independent`).
+- **Correlated path tracer:** each frame rendered twice, once with the previous frame's random numbers, so that the
+  difference compares renders with the same random numbers (`sampling = correlated`; see
+  [Correlated sampling](#event-correlated-sampling)).
 
 It uses the scene described in [Event camera rendering](event_index.md).
 
 ```{image} images/event_camera.jpg
-:alt: Primal image, intensity change, brightness change and events of path tracing, correlated path tracing, EventSVGF and a reference
+:alt: Primal image, intensity change, brightness change and events of path tracing with independent and with correlated random numbers
 :align: center
 ```
 
@@ -24,62 +23,51 @@ $C = 0.2$.
 ```{literalinclude} code/event_camera_offline.py
 :language: python
 :start-after: "# 1. Load the scene"
-:end-before: "# 2. Build the render graphs"
+:end-before: "# 2. Build the render graph"
 ```
 
-## 2. Build the render graphs
+## 2. Build the render graph
 
-`GBufferRT` finds the primary hits at the pixel centers; one `PathTracer` (path tracer) or two (correlated) render
-from them. `EventDifference` or `EventSVGF` turns the renders into the frame's change, and `EventGenerator` turns
-the brightness change into events. `EventSVGF` also takes the albedo, emission, depth, normal and motion vectors of
-the primary hits.
+`GBufferRT` finds the primary hits at the pixel centers; one `PathTracer` (independent) or two (correlated) render
+from them. `EventDifference` keeps the previous frame and outputs the image, $\Delta I$ and $\Delta L$;
+`EventGenerator` turns $\Delta L$ into events. `PathTracer` renders at most 16 samples per pixel, so
+`EventDifference` averages several executions into one frame (`subframes`).
 
 ```{literalinclude} code/event_camera_offline.py
 :language: python
-:start-after: "# 2. Build the render graphs"
-:end-before: "# 3. Render the camera path"
+:start-after: "# 2. Build the render graph"
+:end-before: "# 3. Render two frames"
 ```
 
-## 3. Render the camera path
+## 3. Render two frames
 
-Before every frame, the script moves the camera and sets the seeds: with correlated sampling, `TracerA` reuses the
-previous frame's seed and `TracerB` takes a new one. After 30 frames, it reads the last frame's outputs.
+Before every execution, the script sets the seeds of the path tracers, which fix their random numbers. With
+correlated sampling, `TracerA` uses the previous frame's seed of the same execution and `TracerB` a new one, so
+every render of frame 1 has a partner in frame 0 with the same random numbers. The difference needs only the
+previous frame, so two frames are enough.
 
 ```{literalinclude} code/event_camera_offline.py
 :language: python
-:start-after: "# 3. Render the camera path"
-:end-before: "# 4. Reference"
+:start-after: "# 3. Render two frames"
+:end-before: "# 4. Show"
 ```
 
-## 4. Reference
+## 4. Compare
 
-The reference is the correlated difference of the last two frames with 4096 + 4096 samples per pixel:
-`EventDifference` averages 256 executions of 16 samples into each frame (`subframes`), each with its own pair of
-seeds.
+Both rows render 1024 samples per pixel per frame, and their images look the same. Their differences do not:
+
+- **Path tracer:** $\Delta I$ is the difference of two independent noisy images, and at 1024 samples per pixel the
+  noise still hides the change, most of all on the dark boxes in $\Delta L$; events fire all over the image (0.18 per
+  pixel).
+- **Correlated path tracer:** the noise of the two renders cancels, and $\Delta I$ shows the change: along the edges
+  of the walls, the boxes and the light, and a slow change of the walls' shading. Events fire mostly along the edges
+  and the light (0.013 per pixel).
 
 ```{literalinclude} code/event_camera_offline.py
 :language: python
-:start-after: "# 4. Reference"
-:end-before: "# 5. Show"
+:start-after: "# 4. Show"
 ```
 
-## 5. Compare
-
-Each row shows the frame's image, $\Delta I$, $\Delta L$ and the events, with the number of events per pixel where
-the reference has none.
-
-- **Path tracer:** the difference of two independent noisy images is noise, and events fire everywhere (about 8
-  false events per pixel).
-- **Correlated path tracer:** most of the noise cancels, and $\Delta I$ already has the reference's structure. What
-  remains are rare large differences, where a bounce with the same random numbers reaches a different object in the
-  next frame; they are densest where the walls meet (0.05 false events per pixel).
-- **EventSVGF:** those are filtered out, leaving 0.008 false events per pixel. Its image is gray because it filters
-  the luminance only.
-
-```{literalinclude} code/event_camera_offline.py
-:language: python
-:start-after: "# 5. Show"
-```
-
-The full script: {download}`event_camera_offline.py <code/event_camera_offline.py>`. It takes about a minute, most
-of it for the reference.
+The full script: {download}`event_camera_offline.py <code/event_camera_offline.py>`. It takes about 30 seconds.
+Rendering at a few samples per pixel, as for long sequences, needs denoising: see
+[Event rendering with denoising](event_denoising_index.md).

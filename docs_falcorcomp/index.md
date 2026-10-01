@@ -33,6 +33,7 @@ src/tutorials/event_index
 
 src/tutorials/restir_index
 src/tutorials/ellipsoidal_index
+src/tutorials/event_denoising_index
 ```
 
 ```{toctree}

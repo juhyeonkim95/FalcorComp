@@ -123,4 +123,5 @@ graph.add_edge("Difference.deltaL", "Events.deltaL")
 ```
 
 Set the seeds of `TracerA` and `TracerB` every frame as in [Correlated sampling](#event-correlated-sampling). The
-[event camera tutorial](../../tutorials/event_camera_offline.md) compares EventSVGF with path tracing.
+[event rendering with denoising tutorial](../../tutorials/event_denoising_offline.md) compares EventSVGF with path
+tracing and primal denoisers.
