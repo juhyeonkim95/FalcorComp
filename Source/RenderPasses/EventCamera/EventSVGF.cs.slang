@@ -48,7 +48,7 @@ RWTexture2D<float2> gHistory;
 Texture2D<float> gPrevReprojected; // Frame t-1's reprojection of the frame t-2 feedback, at the same pixel.
 RWTexture2D<float> gReprojected;
 RWTexture2D<float> gPrevIllumination2;         // Demodulated color2 of frame t-1; updated in place.
-RWTexture2D<float4> gPrevAlbedoEmission;       // (luminance of albedo, of emission) of frame t-1; updated in place.
+RWTexture2D<float4> gPrevAlbedoEmission;       // (albedo, emission, emitted luminance) of frame t-1, as remodulated; in place.
 RWTexture2D<float> gPrevFinalIllumination;     // Denoised primal of frame t-1; updated in place.
 
 // Reproject output, a-trous input/output.
@@ -63,11 +63,17 @@ RWTexture2D<float> gDeltaL;
 RWTexture2D<float> gDeltaIllumination;
 RWTexture2D<float4> gPrimal;
 
-float demodulate(float3 color, float3 emission, float3 albedo)
+/// (albedo, emission) luminance used to demodulate and remodulate; (1, 0) without demodulation.
+float2 modulation(float3 albedo, float3 emission)
 {
     if (!gUseDemodulation)
-        return luminance(color);
-    return (luminance(color) - luminance(emission)) / max(luminance(albedo), kMinAlbedo);
+        return float2(1.0, 0.0);
+    return float2(max(luminance(albedo), kMinAlbedo), luminance(emission));
+}
+
+float demodulate(float3 color, float2 albedoEmission)
+{
+    return (luminance(color) - albedoEmission.y) / albedoEmission.x;
 }
 
 /// Pixel `coord` of the previous frame shows the same surface: inside the image (one-pixel border excluded), depth
@@ -174,9 +180,9 @@ void reproject(uint3 dispatchThreadId: SV_DispatchThreadID)
 
     // Demodulated primal (I^1_t + I^2_t) / 2 and difference I^1_t - I^2_{t-1} (the pair sharing the seed r_{t-1}).
     const float3 emission = gEmission[pixel].rgb;
-    const float3 albedo = gAlbedo[pixel].rgb;
-    const float illumination1 = demodulate(gColor1[pixel].rgb, emission, albedo);
-    const float illumination2 = demodulate(gColor2[pixel].rgb, emission, albedo);
+    const float2 albedoEmission = modulation(gAlbedo[pixel].rgb, emission);
+    const float illumination1 = demodulate(gColor1[pixel].rgb, albedoEmission);
+    const float illumination2 = demodulate(gColor2[pixel].rgb, albedoEmission);
     const float prevIllumination2 = gPrevIllumination2[pixel];
     gPrevIllumination2[pixel] = illumination2;
     const float primal = 0.5f * (illumination1 + illumination2);
@@ -193,9 +199,10 @@ void reproject(uint3 dispatchThreadId: SV_DispatchThreadID)
     // position, minus frame t-2's feedback where frame t-1 reprojected this pixel.
     const float predicted = prev.difference + prev.prevPrevIllumination - gPrevReprojected[pixel];
     const float alphaDifference = (prev.valid && historyLength >= 2) ? max(gAlpha, 1.0 / (historyLength - 1)) : 1.0;
-    const bool accumulate = historyLength >= 3 && sameSurface && prev.diffValid && gUseTemporalAccumulation;
+    const bool prevReprojected = gPrevHistory[pixel].x >= 2; // Frame t-1 reprojected this pixel: the third term exists.
+    const bool accumulate = historyLength >= 3 && sameSurface && prev.diffValid && prevReprojected && gUseTemporalAccumulation;
     float differenceAccumulated = lerp(predicted, difference, accumulate ? alphaDifference : 1.0);
-    if (luminance(emission) > 0 || gPrevAlbedoEmission[pixel].y > 0)
+    if (luminance(emission) > 0 || gPrevAlbedoEmission[pixel].z > 0)
         differenceAccumulated = 0.0;
 
     gIllumination[pixel] = float4(primalAccumulated, differenceAccumulated, 0.0, variance);
@@ -285,16 +292,20 @@ void finalize(uint3 dispatchThreadId: SV_DispatchThreadID)
 
     const float4 zn = gZN[pixel];
     const float4 znPrev = gPrevZN[pixel];
-    const float albedo = luminance(gAlbedo[pixel].rgb);
-    const float emission = luminance(gEmission[pixel].rgb);
-    const float2 prevAlbedoEmission = gPrevAlbedoEmission[pixel].xy;
-    const float prevAlbedo = prevAlbedoEmission.x;
-    const float prevEmission = prevAlbedoEmission.y;
+    // (albedo, emission) for remodulation, and the luminance of the emission (to detect emitters).
+    const float emitted = luminance(gEmission[pixel].rgb);
+    const float2 albedoEmission = modulation(gAlbedo[pixel].rgb, gEmission[pixel].rgb);
+    const float albedo = albedoEmission.x;
+    const float emission = albedoEmission.y;
+    const float3 prev = gPrevAlbedoEmission[pixel].xyz;
+    const float prevAlbedo = prev.x;
+    const float prevEmission = prev.y;
+    const float prevEmitted = prev.z;
     const float illumination = gFiltered[pixel].r;
     const float illuminationDifference = gFiltered[pixel].g;
     const float prevIllumination = gPrevFinalIllumination[pixel];
     gPrevFinalIllumination[pixel] = illumination;
-    gPrevAlbedoEmission[pixel] = float4(albedo, emission, 0.0, 0.0);
+    gPrevAlbedoEmission[pixel] = float4(albedo, emission, emitted, 0.0);
 
     float deltaIllumination = 0.0;
     float deltaI = 0.0;
@@ -304,12 +315,13 @@ void finalize(uint3 dispatchThreadId: SV_DispatchThreadID)
         // Same surface in both frames (and not an emitter in both): the denoised difference; otherwise the
         // difference of the denoised primals.
         const bool sameSurface = isConsistent(pixel, zn.x, znPrev.x, oct_to_ndir_snorm(zn.zw), oct_to_ndir_snorm(znPrev.zw)) &&
-            (emission == 0 || prevEmission == 0);
+            (emitted == 0 || prevEmitted == 0);
         deltaIllumination = (sameSurface && gUseDenoisedDifference) ? illuminationDifference : illumination - prevIllumination;
         // Eq. 19 and 21.
         deltaI = albedo * deltaIllumination + (albedo - prevAlbedo) * prevIllumination + (emission - prevEmission);
+        // The current intensity prevI + dI is clamped at 0, so dL is bounded by the intensity bias.
         const float prevI = prevAlbedo * prevIllumination + prevEmission;
-        deltaL = log(max(1 + deltaI / (prevI + gIntensityBias), 1e-10));
+        deltaL = log(gIntensityBias + max(prevI + deltaI, 0.0)) - log(gIntensityBias + max(prevI, 0.0));
     }
     gDeltaIllumination[pixel] = deltaIllumination;
     gDeltaI[pixel] = float4(deltaI, deltaI, deltaI, 0.0);
