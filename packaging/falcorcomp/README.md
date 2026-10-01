@@ -1,15 +1,17 @@
 # FalcorComp
 
-FalcorComp is a GPU renderer for computational imaging, built on NVIDIA's [Falcor](https://github.com/NVIDIAGameWorks/Falcor) rendering framework. It adds render passes that simulate imaging systems beyond conventional cameras, and it is installed and used as the Python package `falcorcomp`.
-
-The current release covers time-of-flight imaging: time-gated and transient rendering, including the methods from *ToF ReSTIR: Time-of-Flight Rendering with Spatio-temporal Reservoir Resampling* (SIGGRAPH 2026). More computational imaging applications will be added in future releases.
+FalcorComp is a GPU renderer for computational imaging, built on NVIDIA's [Falcor](https://github.com/NVIDIAGameWorks/Falcor) rendering framework. It adds render passes that simulate imaging systems beyond conventional cameras — time-of-flight, modulated light, Doppler sensing and event cameras — and it is installed and used as the Python package `falcorcomp`. All renderers run on the GPU with hardware ray tracing, for interactive as well as offline simulation.
 
 The package is a binary wheel for Linux. It contains Falcor, the render passes and their shaders, so no separate Falcor build is needed.
+
+![The Cornell box rendered as a standard image, a time-gated image, a transient histogram, CW-ToF and structured-light measurements, a Doppler spectrum, a Doppler-gated image, a Doppler ToF velocity map and camera events](https://raw.githubusercontent.com/juhyeonkim95/FalcorComp/master/docs_falcorcomp/src/getting_started/images/overview_outputs.jpg)
 
 ```python
 import falcorcomp as falcor
 testbed = falcor.Testbed(create_window=False)
 ```
+
+Documentation, tutorials and the reference of every render pass: [falcorcomp.readthedocs.io](https://falcorcomp.readthedocs.io/en/latest/).
 
 ## Render passes
 
@@ -17,9 +19,28 @@ testbed = falcor.Testbed(create_window=False)
 |---|---|
 | Time-gated rendering | `TimeGatedPathTracerInline`, `TimeGatedReSTIRInline` |
 | Transient rendering | `TransientHistogramPathTracerInline`, `TransientHistogramReSTIRInline` |
-| Utilities | `VBufferRT`/`LaserVBufferRT`, `AccumulatePass`, `ToneMapper`, `TransientHistogramViewer`, `LaserPositionViewer` |
+| Continuous-wave ToF | `CWToFPathTracerInline` |
+| Structured light | `StructuredLightPathTracerInline` |
+| Doppler (optical heterodyne detection) | `DopplerGatedPathTracerInline`, `DopplerHistogramPathTracerInline` |
+| Doppler ToF | `DopplerToFPathTracerInline`, `VelocityGroundTruthInline` (ground-truth velocity) |
+| Event cameras | `EventDifference`, `EventSVGF`, `EventGenerator`, with Falcor's `PathTracer` and `SVGFPass` |
+| Utilities | `LaserLight`, `VBufferRT`/`GBufferRT`, `AccumulatePass`, `ToneMapper`, `TransientHistogramViewer`, `LaserPositionViewer`, `SplitScreenPass` |
 
 Scene importers: pbrt, pyscene, Mitsuba, Assimp.
+
+Not in the package, for license reasons: `PathTracer`'s `useRTXDI` option (the RTXDI SDK's shaders cannot be redistributed in source form) and `OptixDenoiser` (the OptiX SDK license). Both work in a build from source.
+
+## Research
+
+FalcorComp includes the implementations of these papers:
+
+- **ToF ReSTIR: Time-of-Flight Rendering with Spatio-temporal Reservoir Resampling**, SIGGRAPH 2026 (ACM TOG). [Project page](https://juhyeonkim95.github.io/project-pages/tof_restir/)
+- **Difference-aware Filtering for Event Camera Simulation**, EGSR 2026 (Computer Graphics Forum). [Project page](https://juhyeonkim95.github.io/project-pages/event_svgf/)
+- **Geometric Antithetic Sampling for Spatiotemporally Modulated Light**, SIGGRAPH Asia 2026.
+- **A Monte Carlo Rendering Framework for Simulating Optical Heterodyne Detection**, SIGGRAPH 2025 (ACM TOG), honorable mention. [Project page](https://juhyeonkim95.github.io/project-pages/ohd_rendering/)
+- **Doppler Time-of-Flight Rendering**, SIGGRAPH Asia 2023 (ACM TOG). [Project page](https://juhyeonkim95.github.io/project-pages/dopplertof/)
+
+The BibTeX entries are in the [README on GitHub](https://github.com/juhyeonkim95/FalcorComp#citation).
 
 ## Requirements
 

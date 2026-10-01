@@ -35,11 +35,26 @@ PLUGINS = [
     "TransientHistogramPathTracerInline",
     "TransientHistogramReSTIRInline",
     "InlinePathTracer",
-    # Passes used by ToF render graphs (VBufferRT/LaserVBufferRT, accumulation, tone mapping).
+    # Modulated light.
+    "CWToFPathTracerInline",
+    "StructuredLightPathTracerInline",
+    # Doppler.
+    "DopplerHistogramPathTracerInline",
+    "DopplerGatedPathTracerInline",
+    "DopplerToFPathTracerInline",
+    "VelocityGroundTruthInline",
+    # Event cameras (EventDifference, EventSVGF, EventGenerator), with Falcor's path tracer and SVGF, which the event
+    # tutorials use. OptixDenoiser is left out: the OptiX SDK license requires agreements with every recipient.
+    "EventCamera",
+    "PathTracer",
+    "SVGFPass",
+    # Passes used by the render graphs (the light, VBufferRT/GBufferRT, accumulation, tone mapping, split screen).
+    "LaserLight",
     "GBuffer",
     "AccumulatePass",
     "TransientHistogramAccumulatePass",
     "ToneMapper",
+    "DebugPasses",
     # Viewers for transient histograms and the laser spot.
     "TransientHistogramViewer",
     "LaserPositionViewer",
@@ -52,12 +67,18 @@ PLUGINS = [
 # Shader folders under shaders/RenderPasses for the plugins above (and what they import).
 RENDER_PASS_SHADERS = [
     "TimeGatedPathTracerInline", "TimeGatedReSTIRInline", "TransientHistogramPathTracerInline",
-    "TransientHistogramReSTIRInline", "InlinePathTracer", "Shared", "GBuffer", "AccumulatePass",
-    "TransientHistogramAccumulatePass", "ToneMapper", "TransientHistogramViewer", "LaserPositionViewer",
+    "TransientHistogramReSTIRInline", "InlinePathTracer", "CWToFPathTracerInline", "StructuredLightPathTracerInline",
+    "DopplerHistogramPathTracerInline", "DopplerGatedPathTracerInline", "DopplerToFPathTracerInline",
+    "VelocityGroundTruthInline", "EventCamera", "PathTracer", "SVGFPass", "Shared", "GBuffer",
+    "AccumulatePass", "TransientHistogramAccumulatePass", "ToneMapper", "DebugPasses", "TransientHistogramViewer",
+    "LaserPositionViewer",
 ]
 # Shader folders (relative to shaders/) left out of the package: render passes are added selectively,
 # tests and samples are unused, and RTXDI may only be redistributed as compiled code.
 EXCLUDED_SHADERS = {"RenderPasses", "Samples", "Tests", "Testing", "rtxdi", "Rendering/RTXDI"}
+# Falcor's own (BSD) RTXDI wrapper, shipped without the RTXDI SDK: PathTracer imports it, and without useRTXDI it
+# compiles with RTXDI_INSTALLED = 0, which leaves out every SDK include. useRTXDI is therefore not available.
+RTXDI_WRAPPER_SHADERS = ["Rendering/RTXDI/RTXDI.slang", "Rendering/RTXDI/PackedTypes.slang"]
 DATA_FOLDERS = ["framework"]
 # Libraries loaded with dlopen() at runtime, which ldd cannot see.
 DLOPEN_LIBRARIES = ["libslang-glslang.so", "libtbbmalloc.so.2"]
@@ -159,6 +180,9 @@ def stage(bin_dir, stage_dir, strip):
     copy_tree(shaders, package / "shaders", ignore=ignore_excluded)
     for name in RENDER_PASS_SHADERS:
         copy_tree(shaders / "RenderPasses" / name, package / "shaders" / "RenderPasses" / name)
+    for name in RTXDI_WRAPPER_SHADERS:
+        (package / "shaders" / name).parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(shaders / name, package / "shaders" / name)
 
     # Data comes from the repository: the build's copy keeps files that were deleted from the repository.
     for name in DATA_FOLDERS:

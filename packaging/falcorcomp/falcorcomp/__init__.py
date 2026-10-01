@@ -1,4 +1,4 @@
-"""falcorcomp: Falcor with time-of-flight render passes.
+"""falcorcomp: Falcor with render passes for computational imaging (ToF, modulated light, Doppler, event cameras).
 
 Usage mirrors the ``falcor`` module of a Falcor build:
 
@@ -13,7 +13,7 @@ import os as _os
 import sys as _sys
 import sysconfig as _sysconfig
 
-__version__ = "0.1.3"
+__version__ = "0.1.4"
 
 
 def _preload_libpython():
