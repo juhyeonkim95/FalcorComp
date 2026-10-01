@@ -74,7 +74,7 @@ private:
  * 1. reproject: demodulate (i = (I - E) / A), accumulate the primal (I^1 + I^2) / 2 over time as SVGF does, and the
  *    non-motion-aligned difference I^1_t - I^2_{t-1} with the correction of Eq. 15-16;
  * 2. atrous: a-trous wavelet filter of both; the difference uses the difference-aware weight (Eq. 12), which also
- *    needs the previous frame's depth and normal to agree;
+ *    needs the previous frame's depth and normal to agree, and leaves out emitters;
  * 3. finalize: remodulate the difference (Eq. 19) and convert it to the brightness change (Eq. 21).
  * Luminance only: deltaI holds dI in all three channels; primal is albedo * illumination + emission.
  */
@@ -106,6 +106,7 @@ private:
     bool mUseDifferenceAwareFiltering = true;
     bool mUseTemporalAccumulation = true;
     bool mUseDenoisedDifference = true;
+    bool mUseDifferenceVariance = true; ///< The difference's own variance sets its edge-stopping width.
 
     uint32_t mFrameCount = 0;
     bool mClearHistory = true;
@@ -116,6 +117,7 @@ private:
     ref<Texture> mpPrevFiltered, mpPrevPrevFiltered; ///< Feedback-tap illumination of frames t-1 and t-2.
     ref<Texture> mpPrevIllumination2, mpPrevAlbedoEmission, mpPrevFinalIllumination;
     ref<Texture> mpIllumination, mpPingPong[2];
+    ref<Texture> mpEmitter; ///< Emitter in the current or the previous frame (R8).
 };
 
 /** Events from the brightness change dL of each event frame; output is the signed event count per pixel.

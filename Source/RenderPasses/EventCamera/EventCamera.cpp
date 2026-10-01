@@ -228,6 +228,9 @@ EventSVGF::EventSVGF(ref<Device> pDevice, const Properties& props) : RenderPass(
             mUseTemporalAccumulation = value;
         else if (key == "useDenoisedDifference")
             mUseDenoisedDifference = value;
+        else if (key == "useDifferenceVariance")
+            mUseDifferenceVariance = value;
+
         else
             logWarning("Unknown property '{}' in EventSVGF properties.", key);
     }
@@ -254,6 +257,7 @@ Properties EventSVGF::getProperties() const
     props["useDifferenceAwareFiltering"] = mUseDifferenceAwareFiltering;
     props["useTemporalAccumulation"] = mUseTemporalAccumulation;
     props["useDenoisedDifference"] = mUseDenoisedDifference;
+    props["useDifferenceVariance"] = mUseDifferenceVariance;
     return props;
 }
 
@@ -275,8 +279,8 @@ void EventSVGF::allocate(uint2 dim)
     for (int i = 0; i < 2; i++)
     {
         mpZN[i] = create(ResourceFormat::RGBA32Float);
-        mpMoments[i] = create(ResourceFormat::RG32Float);
-        mpHistory[i] = create(ResourceFormat::RG32Float);
+        mpMoments[i] = create(ResourceFormat::RGBA32Float);
+        mpHistory[i] = create(ResourceFormat::RGBA32Float);
         mpReprojected[i] = create(ResourceFormat::R32Float);
         mpPingPong[i] = create(ResourceFormat::RGBA32Float);
     }
@@ -286,6 +290,7 @@ void EventSVGF::allocate(uint2 dim)
     mpPrevAlbedoEmission = create(ResourceFormat::RGBA32Float);
     mpPrevFinalIllumination = create(ResourceFormat::R32Float);
     mpIllumination = create(ResourceFormat::RGBA32Float);
+    mpEmitter = create(ResourceFormat::R8Unorm);
     mDim = dim;
 }
 
@@ -325,6 +330,7 @@ void EventSVGF::execute(RenderContext* pRenderContext, const RenderData& renderD
         var["CB"]["gUseDifferenceAwareFiltering"] = uint(mUseDifferenceAwareFiltering);
         var["CB"]["gUseDenoisedDifference"] = uint(mUseDenoisedDifference);
         var["CB"]["gIntensityBias"] = mIntensityBias;
+        var["CB"]["gUseDifferenceVariance"] = uint(mUseDifferenceVariance);
         var["gZN"] = mpZN[0];
         var["gPrevZN"] = mpZN[1];
         return var;
@@ -351,6 +357,7 @@ void EventSVGF::execute(RenderContext* pRenderContext, const RenderData& renderD
         var["gPrevIllumination2"] = mpPrevIllumination2;
         var["gPrevAlbedoEmission"] = mpPrevAlbedoEmission;
         var["gIllumination"] = mpIllumination;
+        var["gEmitterOut"] = mpEmitter;
         mpReproject->execute(pRenderContext, uint3(dim, 1));
     }
 
@@ -363,6 +370,7 @@ void EventSVGF::execute(RenderContext* pRenderContext, const RenderData& renderD
     ref<Texture> pFiltered = mpIllumination;
     {
         auto var = bindCommon(mpAtrous);
+        var["gEmitter"] = mpEmitter;
         const int32_t tap = std::min(mFeedbackTap, int32_t(mIterations) - 1);
         for (uint32_t i = 0; i < mIterations; i++)
         {
