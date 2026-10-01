@@ -5,6 +5,7 @@ target_sources(EventCamera PRIVATE
     EventCamera.h
     EventDifference.cs.slang
     EventGenerator.cs.slang
+    EventSVGF.cs.slang
 )
 
 target_copy_shaders(EventCamera RenderPasses/EventCamera)

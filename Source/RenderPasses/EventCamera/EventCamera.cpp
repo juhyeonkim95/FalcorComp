@@ -35,6 +35,9 @@ static void regEventCamera(pybind11::module& m)
     difference.def_property_readonly("subframe", &EventDifference::getSubframe);
     difference.def_property_readonly("event_frame", &EventDifference::getEventFrame);
 
+    pybind11::class_<EventSVGF, RenderPass, ref<EventSVGF>> svgf(m, "EventSVGF");
+    svgf.def("reset", &EventSVGF::reset);
+
     pybind11::class_<EventGenerator, RenderPass, ref<EventGenerator>> generator(m, "EventGenerator");
     generator.def("reset", &EventGenerator::reset);
 }
@@ -42,6 +45,7 @@ static void regEventCamera(pybind11::module& m)
 extern "C" FALCOR_API_EXPORT void registerPlugin(Falcor::PluginRegistry& registry)
 {
     registry.registerClass<RenderPass, EventDifference>();
+    registry.registerClass<RenderPass, EventSVGF>();
     registry.registerClass<RenderPass, EventGenerator>();
     ScriptBindings::registerBinding(regEventCamera);
 }
@@ -49,6 +53,7 @@ extern "C" FALCOR_API_EXPORT void registerPlugin(Falcor::PluginRegistry& registr
 namespace
 {
 const char kDifferenceShader[] = "RenderPasses/EventCamera/EventDifference.cs.slang";
+const char kSVGFShader[] = "RenderPasses/EventCamera/EventSVGF.cs.slang";
 const char kGeneratorShader[] = "RenderPasses/EventCamera/EventGenerator.cs.slang";
 const char kEventFrameReady[] = "eventFrameReady";
 
@@ -60,6 +65,21 @@ const ChannelList kDifferenceOutputs = {
     { "deltaI", "", "Intensity change dI of the last event frame (RGB)", false, ResourceFormat::RGBA32Float },
     { "deltaL", "", "Brightness change dL = d log(Ie + luminance) of the last event frame", false, ResourceFormat::R32Float },
     { "primal", "", "Intensity of the last event frame", false, ResourceFormat::RGBA32Float },
+};
+const ChannelList kSVGFInputs = {
+    { "color1", "", "Render of the current frame with the previous frame's seed", false },
+    { "color2", "", "Render of the current frame with the current seed", false },
+    { "albedo", "", "Albedo of the primary hit", false },
+    { "emission", "", "Emission of the primary hit", false },
+    { "linearZ", "", "Linear z and its slope", false },
+    { "normal", "", "World-space normal of the primary hit", false },
+    { "mvec", "", "Motion vectors", false },
+};
+const ChannelList kSVGFOutputs = {
+    { "deltaI", "", "Intensity change dI (luminance, in all three channels)", false, ResourceFormat::RGBA32Float },
+    { "deltaL", "", "Brightness change dL = d log(Ie + luminance)", false, ResourceFormat::R32Float },
+    { "primal", "", "Denoised intensity: albedo * illumination + emission", false, ResourceFormat::RGBA32Float },
+    { "deltaIllumination", "", "Denoised demodulated difference di", false, ResourceFormat::R32Float },
 };
 const ChannelList kGeneratorInputs = {
     { "deltaL", "gDeltaL", "Brightness change of the event frame", false },
@@ -178,6 +198,205 @@ void EventDifference::execute(RenderContext* pRenderContext, const RenderData& r
     pRenderContext->copyResource(renderData.getTexture("deltaI").get(), mpDeltaI.get());
     pRenderContext->copyResource(renderData.getTexture("deltaL").get(), mpDeltaL.get());
     pRenderContext->copyResource(renderData.getTexture("primal").get(), mpPrimal.get());
+}
+
+// EventSVGF
+
+EventSVGF::EventSVGF(ref<Device> pDevice, const Properties& props) : RenderPass(pDevice)
+{
+    for (const auto& [key, value] : props)
+    {
+        if (key == "iterations")
+            mIterations = value;
+        else if (key == "feedbackTap")
+            mFeedbackTap = value;
+        else if (key == "phiColor")
+            mPhiColor = value;
+        else if (key == "phiNormal")
+            mPhiNormal = value;
+        else if (key == "alpha")
+            mAlpha = value;
+        else if (key == "momentsAlpha")
+            mMomentsAlpha = value;
+        else if (key == "intensityBias")
+            mIntensityBias = value;
+        else if (key == "useDemodulation")
+            mUseDemodulation = value;
+        else if (key == "useDifferenceAwareFiltering")
+            mUseDifferenceAwareFiltering = value;
+        else if (key == "useTemporalAccumulation")
+            mUseTemporalAccumulation = value;
+        else if (key == "useDenoisedDifference")
+            mUseDenoisedDifference = value;
+        else
+            logWarning("Unknown property '{}' in EventSVGF properties.", key);
+    }
+    if (mIterations < 1)
+        FALCOR_THROW("iterations must be at least 1.");
+    if (!(mIntensityBias > 0.f))
+        FALCOR_THROW("intensityBias must be positive.");
+    mpReproject = ComputePass::create(mpDevice, kSVGFShader, "reproject");
+    mpAtrous = ComputePass::create(mpDevice, kSVGFShader, "atrous");
+    mpFinalize = ComputePass::create(mpDevice, kSVGFShader, "finalize");
+}
+
+Properties EventSVGF::getProperties() const
+{
+    Properties props;
+    props["iterations"] = mIterations;
+    props["feedbackTap"] = mFeedbackTap;
+    props["phiColor"] = mPhiColor;
+    props["phiNormal"] = mPhiNormal;
+    props["alpha"] = mAlpha;
+    props["momentsAlpha"] = mMomentsAlpha;
+    props["intensityBias"] = mIntensityBias;
+    props["useDemodulation"] = mUseDemodulation;
+    props["useDifferenceAwareFiltering"] = mUseDifferenceAwareFiltering;
+    props["useTemporalAccumulation"] = mUseTemporalAccumulation;
+    props["useDenoisedDifference"] = mUseDenoisedDifference;
+    return props;
+}
+
+RenderPassReflection EventSVGF::reflect(const CompileData& compileData)
+{
+    RenderPassReflection reflector;
+    addRenderPassInputs(reflector, kSVGFInputs);
+    addRenderPassOutputs(reflector, kSVGFOutputs, ResourceBindFlags::UnorderedAccess);
+    return reflector;
+}
+
+void EventSVGF::allocate(uint2 dim)
+{
+    auto create = [&](ResourceFormat format)
+    {
+        return mpDevice->createTexture2D(dim.x, dim.y, format, 1, 1, nullptr,
+            ResourceBindFlags::UnorderedAccess | ResourceBindFlags::ShaderResource);
+    };
+    for (int i = 0; i < 2; i++)
+    {
+        mpZN[i] = create(ResourceFormat::RGBA32Float);
+        mpMoments[i] = create(ResourceFormat::RG32Float);
+        mpHistory[i] = create(ResourceFormat::RG32Float);
+        mpReprojected[i] = create(ResourceFormat::R32Float);
+        mpPingPong[i] = create(ResourceFormat::RGBA32Float);
+    }
+    mpPrevFiltered = create(ResourceFormat::RGBA32Float);
+    mpPrevPrevFiltered = create(ResourceFormat::RGBA32Float);
+    mpPrevIllumination2 = create(ResourceFormat::R32Float);
+    mpPrevAlbedoEmission = create(ResourceFormat::RGBA32Float);
+    mpPrevFinalIllumination = create(ResourceFormat::R32Float);
+    mpIllumination = create(ResourceFormat::RGBA32Float);
+    mDim = dim;
+}
+
+void EventSVGF::clearHistory(RenderContext* pRenderContext)
+{
+    for (const auto& pTexture : {mpZN[1], mpMoments[1], mpHistory[1], mpReprojected[1], mpPrevFiltered,
+             mpPrevPrevFiltered, mpPrevIllumination2, mpPrevAlbedoEmission, mpPrevFinalIllumination})
+        pRenderContext->clearUAV(pTexture->getUAV().get(), float4(0.f));
+}
+
+void EventSVGF::execute(RenderContext* pRenderContext, const RenderData& renderData)
+{
+    const ref<Texture> pColor1 = renderData.getTexture("color1");
+    const uint2 dim = uint2(pColor1->getWidth(), pColor1->getHeight());
+    if (any(dim != mDim))
+    {
+        allocate(dim);
+        reset();
+    }
+    if (mClearHistory)
+    {
+        clearHistory(pRenderContext);
+        mClearHistory = false;
+    }
+
+    auto bindCommon = [&](const ref<ComputePass>& pPass)
+    {
+        auto var = pPass->getRootVar();
+        var["CB"]["gFrameDim"] = dim;
+        var["CB"]["gFrameCount"] = mFrameCount;
+        var["CB"]["gAlpha"] = mAlpha;
+        var["CB"]["gMomentsAlpha"] = mMomentsAlpha;
+        var["CB"]["gUseDemodulation"] = uint(mUseDemodulation);
+        var["CB"]["gUseTemporalAccumulation"] = uint(mUseTemporalAccumulation);
+        var["CB"]["gPhiColor"] = mPhiColor;
+        var["CB"]["gPhiNormal"] = mPhiNormal;
+        var["CB"]["gUseDifferenceAwareFiltering"] = uint(mUseDifferenceAwareFiltering);
+        var["CB"]["gUseDenoisedDifference"] = uint(mUseDenoisedDifference);
+        var["CB"]["gIntensityBias"] = mIntensityBias;
+        var["gZN"] = mpZN[0];
+        var["gPrevZN"] = mpZN[1];
+        return var;
+    };
+
+    // 1. Temporal accumulation.
+    {
+        auto var = bindCommon(mpReproject);
+        var["gColor1"] = pColor1;
+        var["gColor2"] = renderData.getTexture("color2");
+        var["gAlbedo"] = renderData.getTexture("albedo");
+        var["gEmission"] = renderData.getTexture("emission");
+        var["gLinearZ"] = renderData.getTexture("linearZ");
+        var["gNormal"] = renderData.getTexture("normal");
+        var["gMotion"] = renderData.getTexture("mvec");
+        var["gPrevFiltered"] = mpPrevFiltered;
+        var["gPrevPrevFiltered"] = mpPrevPrevFiltered;
+        var["gPrevMoments"] = mpMoments[1];
+        var["gMoments"] = mpMoments[0];
+        var["gPrevHistory"] = mpHistory[1];
+        var["gHistory"] = mpHistory[0];
+        var["gPrevReprojected"] = mpReprojected[1];
+        var["gReprojected"] = mpReprojected[0];
+        var["gPrevIllumination2"] = mpPrevIllumination2;
+        var["gPrevAlbedoEmission"] = mpPrevAlbedoEmission;
+        var["gIllumination"] = mpIllumination;
+        mpReproject->execute(pRenderContext, uint3(dim, 1));
+    }
+
+    // 2. a-trous iterations; the feedback tap becomes frame t-1's history, the previous one frame t-2's.
+    auto feedback = [&](const ref<Texture>& pSource)
+    {
+        std::swap(mpPrevFiltered, mpPrevPrevFiltered);
+        pRenderContext->copyResource(mpPrevFiltered.get(), pSource.get());
+    };
+    ref<Texture> pFiltered = mpIllumination;
+    {
+        auto var = bindCommon(mpAtrous);
+        const int32_t tap = std::min(mFeedbackTap, int32_t(mIterations) - 1);
+        for (uint32_t i = 0; i < mIterations; i++)
+        {
+            const ref<Texture>& pTarget = mpPingPong[i % 2];
+            var["CB"]["gStepSize"] = int(1u << i);
+            var["gAtrousInput"] = pFiltered;
+            var["gAtrousOutput"] = pTarget;
+            mpAtrous->execute(pRenderContext, uint3(dim, 1));
+            pFiltered = pTarget;
+            if (int32_t(i) == tap)
+                feedback(pFiltered);
+        }
+        if (mFeedbackTap < 0)
+            feedback(mpIllumination);
+    }
+
+    // 3. Remodulation, dI and dL.
+    {
+        auto var = bindCommon(mpFinalize);
+        var["gAlbedo"] = renderData.getTexture("albedo");
+        var["gEmission"] = renderData.getTexture("emission");
+        var["gFiltered"] = pFiltered;
+        var["gPrevAlbedoEmission"] = mpPrevAlbedoEmission;
+        var["gPrevFinalIllumination"] = mpPrevFinalIllumination;
+        var["gDeltaI"] = renderData.getTexture("deltaI");
+        var["gDeltaL"] = renderData.getTexture("deltaL");
+        var["gDeltaIllumination"] = renderData.getTexture("deltaIllumination");
+        var["gPrimal"] = renderData.getTexture("primal");
+        mpFinalize->execute(pRenderContext, uint3(dim, 1));
+    }
+
+    for (auto* pPair : {mpZN, mpMoments, mpHistory, mpReprojected})
+        std::swap(pPair[0], pPair[1]);
+    mFrameCount++;
 }
 
 // EventGenerator

@@ -68,6 +68,56 @@ private:
     ref<Texture> mpSum1, mpSum2, mpHistory, mpDeltaI, mpDeltaL, mpPrimal;
 };
 
+/** EventSVGF (Kim et al., EGSR 2026): denoises the frame difference from correlated sampling (color1 with the
+ * previous frame's seed, color2 with the current one) with an extension of SVGF, and outputs the same channels as
+ * EventDifference. Per frame:
+ * 1. reproject: demodulate (i = (I - E) / A), accumulate the primal (I^1 + I^2) / 2 over time as SVGF does, and the
+ *    non-motion-aligned difference I^1_t - I^2_{t-1} with the correction of Eq. 15-16;
+ * 2. atrous: a-trous wavelet filter of both; the difference uses the difference-aware weight (Eq. 12), which also
+ *    needs the previous frame's depth and normal to agree;
+ * 3. finalize: remodulate the difference (Eq. 19) and convert it to the brightness change (Eq. 21).
+ * Luminance only: deltaI holds dI in all three channels; primal is albedo * illumination + emission.
+ */
+class EventSVGF : public RenderPass
+{
+public:
+    FALCOR_PLUGIN_CLASS(EventSVGF, "EventSVGF", "Difference-aware SVGF for event cameras.");
+    static ref<EventSVGF> create(ref<Device> pDevice, const Properties& props) { return make_ref<EventSVGF>(pDevice, props); }
+    EventSVGF(ref<Device> pDevice, const Properties& props);
+    Properties getProperties() const override;
+    RenderPassReflection reflect(const CompileData& compileData) override;
+    void execute(RenderContext* pRenderContext, const RenderData& renderData) override;
+
+    /// Forget the history: the next frame has no difference (outputs 0).
+    void reset() { mFrameCount = 0; mClearHistory = true; }
+
+private:
+    void allocate(uint2 dim);
+    void clearHistory(RenderContext* pRenderContext);
+
+    uint32_t mIterations = 4;
+    int32_t mFeedbackTap = 1; ///< a-trous iteration fed back to the next frame (-1: the unfiltered accumulation).
+    float mPhiColor = 10.f;
+    float mPhiNormal = 128.f;
+    float mAlpha = 0.1f;
+    float mMomentsAlpha = 0.2f;
+    float mIntensityBias = 1e-8f;
+    bool mUseDemodulation = true;
+    bool mUseDifferenceAwareFiltering = true;
+    bool mUseTemporalAccumulation = true;
+    bool mUseDenoisedDifference = true;
+
+    uint32_t mFrameCount = 0;
+    bool mClearHistory = true;
+    uint2 mDim = uint2(0);
+    ref<ComputePass> mpReproject, mpAtrous, mpFinalize;
+    // History: [0] the current frame, [1] the previous one; swapped every frame.
+    ref<Texture> mpZN[2], mpMoments[2], mpHistory[2], mpReprojected[2];
+    ref<Texture> mpPrevFiltered, mpPrevPrevFiltered; ///< Feedback-tap illumination of frames t-1 and t-2.
+    ref<Texture> mpPrevIllumination2, mpPrevAlbedoEmission, mpPrevFinalIllumination;
+    ref<Texture> mpIllumination, mpPingPong[2];
+};
+
 /** Events from the brightness change dL of each event frame; output is the signed event count per pixel.
  * - probabilistic: floor(|dL|/C) events plus one more with probability frac(|dL|/C), with the sign of dL (the
  *   threshold phase is uniform, Kim et al. Sec. 4.6 and App. B).
