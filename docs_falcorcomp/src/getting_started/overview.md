@@ -44,7 +44,14 @@ with a narrow time gate or in online rendering. The modulated-light renderers su
 sampling, which pairs every sampled path with a nearby one of opposite modulation, so that the
 indirect light cancels the way it does in the real measurement.
 
-Event camera and Doppler rendering are coming.
+Doppler: the measurement depends on how fast each path's length changes as the scene moves.
+
+| Measurement | Output | Render pass |
+|---|---|---|
+| **Doppler spectrum (OHD)** | `H × W × B`: for every pixel, the light at each Doppler shift, in `B` bins | [`DopplerHistogramPathTracerInline`](../plugin_reference/doppler/DopplerHistogramPathTracerInline.md) |
+| **Doppler ToF** | `H × W`: a CW-ToF measurement with slightly different light and sensor frequencies, over an exposure in which the objects move | [`DopplerToFPathTracerInline`](../plugin_reference/doppler/DopplerToFPathTracerInline.md) |
+
+Event camera rendering is coming.
 
 ## How it is used
 

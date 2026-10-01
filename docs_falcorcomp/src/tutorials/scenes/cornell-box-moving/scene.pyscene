@@ -1,0 +1,26 @@
+# The tutorials' Cornell box (scene-v4-nolight.pbrt) as PLY meshes, with the two boxes built as animated, so that
+# DopplerToFPathTracerInline can move them. Load it with
+# SceneBuilderFlags.DontMergeMaterials | SceneBuilderFlags.DontOptimizeGraph to keep every object separate and named.
+import math
+
+camera = Camera()
+camera.position = float3(0.0, 1.0, 6.8)
+camera.target = float3(0.0, 1.0, 0.0)
+camera.up = float3(0.0, 1.0, 0.0)
+camera.focalLength = 12.0 / math.tan(math.radians(19.5 / 2))  # 19.5-degree vertical field of view (24 mm frame)
+sceneBuilder.addCamera(camera)
+
+REFLECTANCE = {"Floor": (0.725, 0.71, 0.68), "Ceiling": (0.725, 0.71, 0.68), "BackWall": (0.725, 0.71, 0.68),
+               "RightWall": (0.14, 0.45, 0.091), "LeftWall": (0.63, 0.065, 0.05),
+               "ShortBox": (0.725, 0.71, 0.68), "TallBox": (0.725, 0.71, 0.68)}
+MOVING = {"ShortBox", "TallBox"}
+
+for name, (r, g, b) in REFLECTANCE.items():
+    material = PBRTDiffuseMaterial(name)
+    material.baseColor = float4(r, g, b, 1.0)
+    material.doubleSided = True
+    mesh = TriangleMesh.createFromFile("meshes/" + name + ".ply")
+    mesh.name = name
+    # isAnimated: the mesh keeps its own scene-graph node and acceleration structure, so that it can be moved.
+    sceneBuilder.addMeshInstance(sceneBuilder.addNode(name, Transform()),
+                                 sceneBuilder.addTriangleMesh(mesh, material, name in MOVING))

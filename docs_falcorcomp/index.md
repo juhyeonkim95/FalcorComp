@@ -22,6 +22,7 @@ src/getting_started/installation
 
 src/tutorials/index
 src/tutorials/modulated_index
+src/tutorials/doppler_index
 ```
 
 ```{toctree}
@@ -41,4 +42,5 @@ src/tutorials/ellipsoidal_index
 src/plugin_reference/time_gated
 src/plugin_reference/transient
 src/plugin_reference/modulated
+src/plugin_reference/doppler
 ```
