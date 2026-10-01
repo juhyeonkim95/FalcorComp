@@ -11,7 +11,7 @@ $$
 and over the exposure $[0, T)$ the camera measures
 
 $$
-I = \frac{1}{T} \int_0^T \int f(\bar{x}, t)\, w\big(t, \ell(\bar{x}, t)\big)\, \mathrm{d}\bar{x}\, \mathrm{d}t .
+I = \frac{1}{T} \int_0^T \int f(\bar{\mathbf{x}}, t)\, w\big(t, \ell(\bar{\mathbf{x}}, t)\big)\, \mathrm{d}\bar{\mathbf{x}}\, \mathrm{d}t .
 $$
 
 When $T$ is a whole number of heterodyne periods $1/\Delta f$, light from static objects cancels, and what remains

@@ -5,7 +5,7 @@ and a light path contributes according to the pattern value at the projector coo
 which its last vertex is lit. Each pixel estimates
 
 $$
-I = \int f(\bar{x})\, P\!\left(\xi(\bar{x})\right) \mathrm{d}\bar{x},
+I = \int f(\bar{\mathbf{x}})\, P\!\left(\xi(\bar{\mathbf{x}})\right) \mathrm{d}\bar{\mathbf{x}},
 $$
 
 where $f$ is the path contribution, $\xi \in [0, 1]^2$ the projector coordinates of the path's last

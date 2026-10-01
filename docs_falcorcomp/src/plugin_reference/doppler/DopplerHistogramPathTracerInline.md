@@ -7,9 +7,9 @@ path integral of Kim et al. (2025), the same form as the
 path length: every path adds its contribution to the bin of its shift
 
 $$
-\Delta f(\bar{x}) = \frac{u(\bar{x})}{\lambda},
+\Delta f(\bar{\mathbf{x}}) = \frac{u(\bar{\mathbf{x}})}{\lambda},
 \qquad
-u(\bar{x}) = \sum_k \eta_k\, (v_k - v_{k+1}) \cdot \hat{d}_k ,
+u(\bar{\mathbf{x}}) = \sum_k \eta_k\, (v_k - v_{k+1}) \cdot \hat{d}_k ,
 $$
 
 where $\lambda$ is the laser wavelength and $u$ the *path velocity*: over the path's segments $x_k \to x_{k+1}$ (from

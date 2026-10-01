@@ -7,9 +7,9 @@ heterodyne detection (OHD) with a single-frequency laser. It relates to
 for one gate instead of the whole spectrum. Every path is weighted by a gate kernel $g$ at its Doppler shift
 
 $$
-\Delta f(\bar{x}) = \frac{u(\bar{x})}{\lambda},
+\Delta f(\bar{\mathbf{x}}) = \frac{u(\bar{\mathbf{x}})}{\lambda},
 \qquad
-I = \frac{1}{w} \int f(\bar{x})\, g\!\left(\frac{\Delta f(\bar{x}) - f_c}{w}\right) \mathrm{d}\bar{x},
+I = \frac{1}{w} \int f(\bar{\mathbf{x}})\, g\!\left(\frac{\Delta f(\bar{\mathbf{x}}) - f_c}{w}\right) \mathrm{d}\bar{\mathbf{x}},
 $$
 
 with the path velocity $u$ of the [Doppler spectrum path tracer](DopplerHistogramPathTracerInline.md), the gate

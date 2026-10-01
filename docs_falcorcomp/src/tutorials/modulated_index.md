@@ -7,13 +7,13 @@ light with a reference signal, so the measurement depends on the phase of each p
 value where each path is lit. Both measure a path integral weighted by a modulation term $m$:
 
 $$
-I = \int f(\bar{x})\, m(\bar{x})\, \mathrm{d}\bar{x}.
+I = \int f(\bar{\mathbf{x}})\, m(\bar{\mathbf{x}})\, \mathrm{d}\bar{\mathbf{x}}.
 $$
 
-| Measurement | Modulation $m(\bar{x})$ | Render pass |
+| Measurement | Modulation $m(\bar{\mathbf{x}})$ | Render pass |
 |---|---|---|
-| **CW-ToF** | a periodic waveform of the path length, $w(\ell(\bar{x}) / \lambda - \phi)$ | `CWToFPathTracerInline` |
-| **Structured light** | the projector pattern at the path's projector coordinates, $P(\xi(\bar{x}))$ | `StructuredLightPathTracerInline` |
+| **CW-ToF** | a periodic waveform of the path length, $w(\ell(\bar{\mathbf{x}}) / \lambda - \phi)$ | `CWToFPathTracerInline` |
+| **Structured light** | the projector pattern at the path's projector coordinates, $P(\xi(\bar{\mathbf{x}}))$ | `StructuredLightPathTracerInline` |
 
 By default both passes use the zero-mean part of the modulation, in $[-1, 1]$ (the constant part
 is an ordinary image; `unsignedModulation` adds it back). With a high-frequency modulation, the

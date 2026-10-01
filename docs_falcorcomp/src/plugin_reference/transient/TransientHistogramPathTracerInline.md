@@ -6,7 +6,7 @@ each total optical path length, from the laser through the scene to the camera. 
 $\Delta = (\text{timeMax} - \text{timeMin}) / B$. With the `box` filter, bin $i$ estimates
 
 $$
-H_i = \frac{1}{\Delta} \int f(\bar{x})\, \mathbf{1}\!\left[\ell(\bar{x}) \in [t_i, t_i + \Delta)\right] \mathrm{d}\bar{x},
+H_i = \frac{1}{\Delta} \int f(\bar{\mathbf{x}})\, \mathbf{1}\!\left[\ell(\bar{\mathbf{x}}) \in [t_i, t_i + \Delta)\right] \mathrm{d}\bar{\mathbf{x}},
 \qquad t_i = \text{timeMin} + i\Delta,
 $$
 

@@ -2,11 +2,11 @@
 
 This render pass renders a *continuous-wave time-of-flight* (CW-ToF) measurement. A CW-ToF camera
 modulates its light source periodically and correlates the returning light with a reference signal,
-so a light path contributes according to the phase of its optical length $\ell(\bar{x})$ within the
+so a light path contributes according to the phase of its optical length $\ell(\bar{\mathbf{x}})$ within the
 modulation period. Each pixel estimates
 
 $$
-I = \int f(\bar{x})\, m\!\left(\ell(\bar{x})\right) \mathrm{d}\bar{x}, \qquad
+I = \int f(\bar{\mathbf{x}})\, m\!\left(\ell(\bar{\mathbf{x}})\right) \mathrm{d}\bar{\mathbf{x}}, \qquad
 m(\ell) = w\!\left(\frac{\ell}{\lambda} - \phi\right),
 $$
 

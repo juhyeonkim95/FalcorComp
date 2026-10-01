@@ -2,11 +2,11 @@
 
 This render pass renders a *time-gated* image: the radiance carried by paths whose total optical
 length, from the laser through the scene to the camera, lies near a gate center $t$. For a path
-$\bar{x}$ with optical length $\ell(\bar{x})$ (segment lengths weighted by the index of
+$\bar{\mathbf{x}}$ with optical length $\ell(\bar{\mathbf{x}})$ (segment lengths weighted by the index of
 refraction), each pixel estimates
 
 $$
-I(t) = \frac{1}{\Delta} \int f(\bar{x})\, w\!\left(\frac{\ell(\bar{x}) - t}{\Delta}\right) \mathrm{d}\bar{x},
+I(t) = \frac{1}{\Delta} \int f(\bar{\mathbf{x}})\, w\!\left(\frac{\ell(\bar{\mathbf{x}}) - t}{\Delta}\right) \mathrm{d}\bar{\mathbf{x}},
 $$
 
 where $f$ is the path contribution and $w$ the gate kernel of width $\Delta$ (`timeGateWindow`).
