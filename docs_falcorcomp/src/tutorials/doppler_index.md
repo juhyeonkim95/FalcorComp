@@ -1,0 +1,64 @@
+# Doppler rendering
+
+Some sensors measure how fast the scene moves. A coherent lidar with **optical heterodyne detection** (OHD) mixes the
+returning light with its own laser, and the beat frequency reveals each path's Doppler shift. A **Doppler
+time-of-flight** (D-ToF) camera is a continuous-wave ToF camera whose light and sensor are modulated at slightly
+different frequencies, so that light from static objects cancels over the exposure and moving objects remain.
+
+| Measurement | Output | Render pass |
+|---|---|---|
+| **Doppler spectrum (OHD)** | `H × W × B`: for every pixel, the light at each Doppler shift | `DopplerHistogramPathTracerInline` |
+| **Doppler ToF** | `H × W`: the heterodyne (or homodyne) measurement over the exposure | `DopplerToFPathTracerInline` |
+
+Both take the objects' velocities as a property (see
+[Velocities](#doppler-velocities)). The OHD pass never moves the scene: a path's Doppler shift follows from the
+velocities of its vertices. The D-ToF pass moves the objects during the exposure, so they must be built as animated.
+`VelocityGroundTruthInline` renders the reference velocity maps.
+
+- **Scenes:** the OHD tutorial uses the Cornell box of the other tutorials,
+  {download}`scene-v4-nolight.pbrt <scenes/cornell-box/scene-v4-nolight.pbrt>`, saved as
+  `cornell-box/scene-v4-nolight.pbrt`. The D-ToF tutorial uses the same box with movable boxes,
+  {download}`scene.pyscene <scenes/cornell-box-moving/scene.pyscene>` with its meshes
+  ({download}`Floor <scenes/cornell-box-moving/meshes/Floor.ply>`,
+  {download}`Ceiling <scenes/cornell-box-moving/meshes/Ceiling.ply>`,
+  {download}`BackWall <scenes/cornell-box-moving/meshes/BackWall.ply>`,
+  {download}`LeftWall <scenes/cornell-box-moving/meshes/LeftWall.ply>`,
+  {download}`RightWall <scenes/cornell-box-moving/meshes/RightWall.ply>`,
+  {download}`ShortBox <scenes/cornell-box-moving/meshes/ShortBox.ply>`,
+  {download}`TallBox <scenes/cornell-box-moving/meshes/TallBox.ply>`), saved as `cornell-box-moving/scene.pyscene`
+  and `cornell-box-moving/meshes/*.ply`.
+- **Light:** a point light at the camera, set on `LaserLight`.
+- **Extra package:** the scripts plot with matplotlib (`pip install matplotlib`).
+
+## Tutorials
+
+````{grid} 1 2 2 2
+:gutter: 3
+
+```{grid-item-card} Doppler spectrum (OHD, offline)
+:img-top: images/thumbnails/doppler_spectrum_thumb.jpg
+:img-alt: Mean Doppler shift of the Cornell box with a box coming closer and a box moving away
+:link: doppler_spectrum_offline
+:link-type: doc
+
+Render the Doppler spectrum of the Cornell box with `DopplerHistogramPathTracerInline` while its boxes move, and
+look at the spectra of single pixels.
+```
+
+```{grid-item-card} Doppler ToF velocity (offline)
+:img-top: images/thumbnails/doppler_tof_thumb.jpg
+:img-alt: Velocity of the Cornell box's boxes estimated from Doppler ToF measurements
+:link: doppler_tof_offline
+:link-type: doc
+
+Move the boxes during the exposure with `DopplerToFPathTracerInline`, estimate their velocity from a heterodyne and
+a homodyne measurement, and compare it with the ground truth.
+```
+````
+
+```{toctree}
+:hidden:
+
+doppler_spectrum_offline
+doppler_tof_offline
+```

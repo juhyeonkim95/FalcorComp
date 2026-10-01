@@ -53,3 +53,11 @@ ShadingData loadShadingData(const HitInfo hit, const float3 rayOrigin, const flo
     return sd;
 }
 
+/**
+ * Same as loadShadingData for a triangle hit whose vertex data v is already loaded.
+ */
+ShadingData loadShadingData(const TriangleHit hit, const VertexData v, const float3 rayDir)
+{
+    return gScene.materials.prepareShadingData(v, gScene.getMaterialID(hit.instanceID), -rayDir);
+}
+

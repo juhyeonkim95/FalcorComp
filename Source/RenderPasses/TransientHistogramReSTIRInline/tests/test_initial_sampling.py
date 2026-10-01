@@ -10,18 +10,18 @@ ROOT = Path(__file__).resolve().parents[4]
 def render(testbed, *, threshold=0.25, single=True, laser=True, direct=False, mode="box"):
     graph = testbed.create_render_graph("histogram_initial_sampling")
     graph.create_pass("V", "VBufferRT", {"samplePattern": "Center", "sampleCount": 1})
-    graph.create_pass("L", "LaserVBufferRT", {
+    graph.create_pass("L", "LaserLight", {
         "laserPosition": [0., 1.7, 6.8], "laserDirection": [0., 0., -1.],
         "laserPower": [170., 120., 40.], "laserAngle": 0.,
     })
     graph.create_pass("P", "TransientHistogramReSTIRInline", {
         "samplesPerPixel": 32, "maxBounces": 6, "computeDirect": direct,
-        "timeMin": 0., "timeMax": 40., "timeBin": 8, "timeGateMode": mode,
+        "timeMin": 0., "timeMax": 40., "timeBin": 8, "histogramFilter": mode,
         "useSingleChannel": single, "isLightSourceLaser": laser,
-        "specularRoughnessThreshold": threshold, "spatialReuseIteration": 0,
+        "reconnectionRoughnessThreshold": threshold, "spatialReuseIteration": 0,
     })
     for source, target in [("V.vbuffer", "P.vbuffer"), ("V.viewW", "P.viewW"),
-                           ("L.vbuffer", "P.laservbuffer"), ("L.viewW", "P.laserviewW")]:
+                           ("L", "P")]:
         graph.add_edge(source, target)
     graph.mark_output("P.histogram")
     graph.mark_output("P.color")

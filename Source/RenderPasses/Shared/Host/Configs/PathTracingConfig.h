@@ -18,7 +18,7 @@ inline const std::unordered_map<std::string, SingleChannel> kSingleChannels = {
     {"blue", SingleChannel::Blue},
 };
 
-/// Camera paths and the output. The light is set on the laser pass (LaserVBufferRT, see LaserState).
+/// Camera paths and the output. The light is set on the laser pass (LaserLight, see LaserState).
 struct PathTracingConfig
 {
     uint samplesPerPixel = 128;
@@ -97,19 +97,20 @@ struct PathTracingConfig
         return dirty;
     }
 
-    /// Output options. `pathTracerOptions` also shows computeDirect and useSingleChannel, which only the
-    /// path tracer implements.
-    bool renderOutputUI(Gui::Widgets& widget, bool pathTracerOptions)
+    /// Output options, plus computeDirect and the single-channel options for the passes that implement them.
+    bool renderOutputUI(Gui::Widgets& widget, bool showComputeDirect, bool showSingleChannel)
     {
         bool dirty = false;
-        if (pathTracerOptions)
+        if (showComputeDirect)
         {
             dirty |= widget.checkbox("Primary-hit direct", computeDirect);
             widget.tooltip("Include the shortest path, camera -> primary hit -> laser spot.", true);
-
+        }
+        if (showSingleChannel)
+        {
             dirty |= widget.checkbox("Single channel", useSingleChannel);
-            widget.tooltip("Keep one channel. The time-gated path tracer writes it to all three; the histogram passes "
-                           "store one float per bin.", true);
+            widget.tooltip("Keep one channel. The time-gated passes write it to all three; the histogram passes "
+                           "store one float per bin. The ReSTIR passes also resample by it.", true);
             if (useSingleChannel)
             {
                 static const Gui::DropdownList kChannelList = {

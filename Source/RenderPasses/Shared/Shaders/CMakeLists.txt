@@ -1,23 +1,35 @@
 # Slang modules shared by the render passes. They are imported as RenderPasses.Shared.Shaders.<Folder>.<Module>,
 # so they are copied to the shader output directory with their folders kept.
 set(shared_shaders
+    Utils/InstanceVelocity.slang
     Utils/LoadShadingData.slang
+    Utils/RayUtils.slang
     Utils/SingleChannel.slang
+    Utils/TimeGate.slang
+    Utils/TransientHistogram.slang
+    Utils/Waveform.slang
+    Utils/ContinuousWave.slang
+    Lights/Laser.slang
     Lights/LaserLightSampler.slang
     Lights/LightConnection.slang
     Lights/EllipsoidalSampling.slang
+    ShiftMapping/ShiftMapping.slang
+    ShiftMapping/NewtonSolver.slang
+    ShiftMapping/Charts/ShiftChart.slang
+    ShiftMapping/Charts/LocalPlaneChart.slang
+    ShiftMapping/Charts/BarycentricChart.slang
+    ShiftMapping/Charts/RayTraceHemisphereChart.slang
+    ShiftMapping/Charts/CartesianRayChart.slang
     ReSTIR/Reservoirs.slang
     ReSTIR/InitialCandidates.slang
     ReSTIR/PathReconstruction.slang
-    ReSTIR/PathLengthAwareShiftmapping.slang
+    ReSTIR/ReflectTypes.cs.slang
     ReSTIR/ReservoirReuse.slang
     ReSTIR/SpatialReuse.slang
-    PathLengthNewtonSolver/NewtonSolver.slang
-    PathLengthNewtonSolver/SurfaceOps/BarycentricTriSurface.slang
-    PathLengthNewtonSolver/SurfaceOps/CartesianRayChart.slang
-    PathLengthNewtonSolver/SurfaceOps/LocalTangentSurface.slang
-    PathLengthNewtonSolver/SurfaceOps/RayTraceHemisphere.slang
-    PathLengthNewtonSolver/SurfaceOps/SurfaceOpsInterface.slang
+    ReSTIR/TemporalReuse.slang
+    Antithetic/AntitheticMIS.slang
+    Projector/ProjectorLight.slang
+    Projector/ProjectorPatterns.slang
 )
 set(shared_shader_outputs)
 foreach(shader IN LISTS shared_shaders)

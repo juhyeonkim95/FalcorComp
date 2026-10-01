@@ -1,7 +1,7 @@
 #pragma once
 #include "ConfigUtils.h"
 #include "RenderGraph/RenderPass.h"
-#include "Utils/Transient/Transient.h"
+#include "TimeGate.h"
 #include <cmath>
 
 /// Transient histogram: timeBin bins over path lengths [timeMin, timeMax), filled with a bin filter or,
@@ -19,7 +19,7 @@ struct TransientHistogramConfig
     float timeMin = 9.f;
     float timeMax = 12.f;
     uint timeBin = 512;
-    TimeGateMode filter = TimeGateMode::BOX; ///< Bin filter (Box/Tent), or the kernel with KDE.
+    TimeGateMode filter = TimeGateMode::Box; ///< Bin filter (Box/Tent), or the kernel with KDE.
     bool useKernelDensityEstimation = false;
     float initialWindowRatio = 1.f;          ///< KDE: kernel width of a frame's first sample / histogram range, in (0, 1].
 
@@ -33,14 +33,16 @@ struct TransientHistogramConfig
         dict[kTimeMaxKey] = timeMax;
     }
 
-    /// Sets the histogram constants (filter, tbin, tmin, tmax, tunit) under `timeGateVar`.
-    void bindShaderData(const ShaderVar& timeGateVar) const
+    /// Sets the filter (TimeGate constants) and the bins (TransientHistogram constants: tbin, tmin, tmax, tunit)
+    /// under `var` (the root).
+    void bindShaderData(const ShaderVar& var) const
     {
-        timeGateVar["time_gate_mode"] = uint(filter);
-        timeGateVar["tbin"] = timeBin;
-        timeGateVar["tmin"] = timeMin;
-        timeGateVar["tmax"] = timeMax;
-        timeGateVar["tunit"] = binWidth();
+        var["TimeGate"]["gTimeGateMode"] = uint(filter);
+        auto histogramVar = var["TransientHistogram"];
+        histogramVar["gTimeBin"] = timeBin;
+        histogramVar["gTimeMin"] = timeMin;
+        histogramVar["gTimeMax"] = timeMax;
+        histogramVar["gBinWidth"] = binWidth();
     }
 
     void validate() const
@@ -61,8 +63,8 @@ struct TransientHistogramConfig
             timeMax = value;
         else if (key == "timeBin")
             timeBin = value;
-        else if (key == "timeGateMode")
-            filter = parseEnumProperty(TimeGateModeTable, value, key);
+        else if (key == "histogramFilter")
+            filter = parseEnumProperty(kTimeGateModes, value, key);
         else if (key == "useKernelDensityEstimation")
             useKernelDensityEstimation = value;
         else if (key == "initialWindowRatio")
@@ -77,7 +79,7 @@ struct TransientHistogramConfig
         props["timeMin"] = timeMin;
         props["timeMax"] = timeMax;
         props["timeBin"] = timeBin;
-        props["timeGateMode"] = enumPropertyName(TimeGateModeTable, filter);
+        props["histogramFilter"] = enumPropertyName(kTimeGateModes, filter);
         props["useKernelDensityEstimation"] = useKernelDensityEstimation;
         props["initialWindowRatio"] = initialWindowRatio;
     }
@@ -105,17 +107,17 @@ struct TransientHistogramConfig
         }
         const bool kde = allowKernelDensityEstimation && useKernelDensityEstimation;
 
-        // Kernels implemented by the histogram filters in TransientUtils.
+        // Kernels implemented by the histogram filters in TimeGate.slang.
         static const Gui::DropdownList kBinFilterList = {
-            {(uint32_t)TimeGateMode::BOX, "Box"},
-            {(uint32_t)TimeGateMode::TENT, "Tent"},
+            {(uint32_t)TimeGateMode::Box, "Box"},
+            {(uint32_t)TimeGateMode::Tent, "Tent"},
         };
         static const Gui::DropdownList kKernelList = {
-            {(uint32_t)TimeGateMode::BOX, "Box"},
-            {(uint32_t)TimeGateMode::TENT, "Tent"},
-            {(uint32_t)TimeGateMode::GAUSSIAN, "Gaussian"},
-            {(uint32_t)TimeGateMode::EPANECHNIKOV, "Epanechnikov"},
-            {(uint32_t)TimeGateMode::PERLIN, "Perlin"},
+            {(uint32_t)TimeGateMode::Box, "Box"},
+            {(uint32_t)TimeGateMode::Tent, "Tent"},
+            {(uint32_t)TimeGateMode::Gaussian, "Gaussian"},
+            {(uint32_t)TimeGateMode::Epanechnikov, "Epanechnikov"},
+            {(uint32_t)TimeGateMode::Perlin, "Perlin"},
         };
         uint32_t mode = (uint32_t)filter;
         if (widget.dropdown("Filter", kde ? kKernelList : kBinFilterList, mode))
@@ -132,9 +134,9 @@ struct TransientHistogramConfig
             widget.tooltip("Kernel width of a frame's first sample = histogram range x this ratio.", true);
         }
         // Keep the filter valid when KDE is off.
-        if (!useKernelDensityEstimation && filter != TimeGateMode::BOX && filter != TimeGateMode::TENT)
+        if (!useKernelDensityEstimation && filter != TimeGateMode::Box && filter != TimeGateMode::Tent)
         {
-            filter = TimeGateMode::BOX;
+            filter = TimeGateMode::Box;
             dirty = true;
         }
         return dirty;

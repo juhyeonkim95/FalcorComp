@@ -62,14 +62,14 @@ downloaded instead, choose the one whose name matches your Python version (`cp31
 :sync: linux
 
 ```bash
-pip install falcorcomp-0.1.2-cp312-cp312-manylinux_2_35_x86_64.whl
+pip install falcorcomp-0.1.3-cp312-cp312-manylinux_2_35_x86_64.whl
 ```
 :::
 :::{tab-item} Windows
 :sync: windows
 
 ```bat
-pip install falcorcomp-0.1.2-cp312-cp312-win_amd64.whl
+pip install falcorcomp-0.1.3-cp312-cp312-win_amd64.whl
 ```
 :::
 ::::

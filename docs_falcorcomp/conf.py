@@ -8,7 +8,13 @@ extensions = [
     "myst_parser",
     "sphinx.ext.mathjax",
     "sphinx_design",  # tutorial cards and the Linux / Windows tabs
+    "sphinx_copybutton",  # "copy" button on code blocks
 ]
+
+# Leave shell and Python prompts out of the copied text; blocks without prompts are copied whole.
+copybutton_prompt_text = r"\$ |>>> |\.\.\. "
+copybutton_prompt_is_regexp = True
+copybutton_only_copy_prompt_lines = False
 
 myst_enable_extensions = ["colon_fence", "deflist", "dollarmath"]
 

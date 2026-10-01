@@ -27,7 +27,7 @@ def check_bedroom_cached_lighting():
     """Dynamic specialization must not alter spatial reuse when the light is fixed.
 
     This catches accidental suffix updates with the default zero-power light in
-    combine_reservoir_with_shiftmapping(updateLight=false).
+    combineReservoirWithShiftMapping(updateLight=false).
     """
     scene = load_scene_config(ROOT / "experiments/tof_restir_release/scenes/exp7/bedroom.json",
                               [96, 54], gate_width=.05)

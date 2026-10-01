@@ -1,4 +1,4 @@
-import RenderPasses.Shared.Shaders.PathLengthNewtonSolver.SurfaceOps.CartesianRayChart;
+import RenderPasses.Shared.Shaders.ShiftMapping.Charts.CartesianRayChart;
 
 RWStructuredBuffer<float4> results;
 

@@ -37,25 +37,6 @@ extern "C" FALCOR_API_EXPORT void registerPlugin(Falcor::PluginRegistry& registr
 namespace
 {
 const char kShaderFile[] = "RenderPasses/InlinePathTracer/InlinePathTracer.cs.slang";
-const char kInputViewDir[] = "viewW";
-
-const ChannelList kInputChannels = {
-    // clang-format off
-    { "vbuffer",        "gVBuffer",     "Visibility buffer in packed format" },
-    { kInputViewDir,    "gViewW",       "World-space view direction (xyz float format)", true /* optional */ },
-};
-
-const ChannelList kLaserInputChannels = {
-    // 1 x 1 laser hit buffer
-    { "laservbuffer",        "gLaserVBuffer",     "Laser visibility buffer in packed format" },
-    { "laserviewW",    "gLaserViewW",       "World-space view direction (xyz float format)", true /* optional */ },
-};
-
-const ChannelList kOutputChannels = {
-    // clang-format off
-    { "color",          "gOutputColor", "Output color (sum of direct and indirect)", false, ResourceFormat::RGBA32Float },
-    // clang-format on
-};
 
 } // namespace
 
@@ -96,9 +77,8 @@ RenderPassReflection InlinePathTracer::reflect(const CompileData& compileData)
     RenderPassReflection reflector;
 
     // Define our input/output channels.
-    addRenderPassInputs(reflector, kInputChannels);
-    addRenderPassInputs(reflector, kLaserInputChannels, ResourceBindFlags::ShaderResource, uint2(1, 1));
-    addRenderPassOutputs(reflector, kOutputChannels);
+    addRenderPassInputs(reflector, InlinePass::kPrimaryHitInputChannels);
+    addRenderPassOutputs(reflector, InlinePass::kColorOutputChannels);
 
     return reflector;
 }
@@ -110,9 +90,8 @@ DefineList InlinePathTracer::getShaderDefines(const RenderData& renderData) cons
     defines.add(InlinePass::getSceneLightDefines(*mpScene));
 
     // For optional I/O resources, set 'is_valid_<name>' defines to inform the program of which ones it can access.
-    defines.add(getValidResourceDefines(kInputChannels, renderData));
-    defines.add(getValidResourceDefines(kLaserInputChannels, renderData));
-    defines.add(getValidResourceDefines(kOutputChannels, renderData));
+    defines.add(getValidResourceDefines(InlinePass::kPrimaryHitInputChannels, renderData));
+    defines.add(getValidResourceDefines(InlinePass::kColorOutputChannels, renderData));
     return defines;
 }
 
@@ -120,13 +99,11 @@ void InlinePathTracer::bindShaderData(const ShaderVar& var, const RenderData& re
 {
     var["CB"]["gFrameCount"] = mFrameCount;
     var["CB"]["gFrameDim"] = renderData.getDefaultTextureDims();
-    var["CB"]["gPRNGDimension"] = InlinePass::getPRNGDimension(renderData);
-    var["CB"]["samplesPerPixel"] = mOptions.pathTracing.samplesPerPixel;
-    LaserState::resolve(renderData).bindShaderData(var["CB"]);
+    var["CB"]["gSamplesPerPixel"] = mOptions.pathTracing.samplesPerPixel;
+    LaserState::resolve(renderData).bindShaderData(var["Laser"]);
 
-    InlinePass::bindChannels(var, renderData, kInputChannels);
-    InlinePass::bindChannels(var, renderData, kLaserInputChannels);
-    InlinePass::bindChannels(var, renderData, kOutputChannels);
+    InlinePass::bindChannels(var, renderData, InlinePass::kPrimaryHitInputChannels);
+    InlinePass::bindChannels(var, renderData, InlinePass::kColorOutputChannels);
 }
 
 void InlinePathTracer::execute(RenderContext* pRenderContext, const RenderData& renderData)
@@ -139,15 +116,15 @@ void InlinePathTracer::execute(RenderContext* pRenderContext, const RenderData& 
 
     if (!mpScene)
     {
-        InlinePass::clearChannels(pRenderContext, renderData, kOutputChannels);
+        InlinePass::clearChannels(pRenderContext, renderData, InlinePass::kColorOutputChannels);
         return;
     }
 
     if (!mpComputePass)
         mpComputePass = InlinePass::createScenePass(mpDevice, pRenderContext, mpScene, mpSampleGenerator, kShaderFile, getShaderDefines(renderData));
-    InlinePass::checkScene(*mpScene, renderData, kInputViewDir);
+    InlinePass::checkScene(*mpScene, renderData);
 
-    mpComputePass->getProgram()->addDefines(getShaderDefines(renderData));
+    InlinePass::updateScenePassDefines(pRenderContext, mpComputePass, mpScene, mpSampleGenerator, getShaderDefines(renderData));
     bindShaderData(mpComputePass->getRootVar(), renderData);
     mpComputePass->execute(pRenderContext, uint3(renderData.getDefaultTextureDims(), 1));
 
@@ -163,7 +140,7 @@ void InlinePathTracer::renderUI(Gui::Widgets& widget)
         dirty |= options.pathTracing.renderSamplingUI(group, " Each vertex is connected to the laser spot.");
 
     if (auto group = widget.group("Output", true))
-        dirty |= options.pathTracing.renderOutputUI(group, true);
+        dirty |= options.pathTracing.renderOutputUI(group, true, true);
 
     // If rendering options that modify the output have changed, set flag to indicate that.
     // In execute() we will pass the flag to other passes for reset of temporal data etc.
@@ -178,7 +155,7 @@ void InlinePathTracer::renderUI(Gui::Widgets& widget)
 void InlinePathTracer::setScene(RenderContext* pRenderContext, const ref<Scene>& pScene)
 {
     // Clear data for previous scene.
-    // After changing scene, the raytracing program should to be recreated.
+    // After changing scene, the raytracing program should be recreated.
     mpComputePass = nullptr;
     mFrameCount = 0;
     mOptionsChanged = true;

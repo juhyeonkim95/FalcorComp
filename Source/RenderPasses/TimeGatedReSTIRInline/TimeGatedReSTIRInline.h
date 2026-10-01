@@ -29,7 +29,7 @@
 #include "Falcor.h"
 #include "RenderGraph/RenderPass.h"
 #include "Utils/Sampling/SampleGenerator.h"
-#include "Utils/Transient/Transient.h"
+#include <algorithm>
 #include "../Shared/Host/Configs/TimeGateConfig.h"
 #include "../Shared/Host/Configs/EllipsoidalSamplingConfig.h"
 #include "../Shared/Host/Configs/PathTracingConfig.h"
@@ -40,20 +40,13 @@
 using namespace Falcor;
 
 
-/**
- * Minimal path tracer.
- *
- * This pass implements a minimal brute-force path tracer. It does purposely
- * not use any importance sampling or other variance reduction techniques.
- * The output is unbiased/consistent ground truth images, against which other
- * renderers can be validated.
- *
- * Note that transmission and nested dielectrics are not yet supported.
+/** Time-gated ReSTIR: initial candidates from path tracing, then spatial and temporal reuse of the paths across pixels,
+ * shifted with a path-length-aware shift mapping so that they stay inside the time gate.
  */
 class TimeGatedReSTIRInline : public RenderPass
 {
 public:
-    FALCOR_PLUGIN_CLASS(TimeGatedReSTIRInline, "TimeGatedReSTIRInline", "Minimal path tracer.");
+    FALCOR_PLUGIN_CLASS(TimeGatedReSTIRInline, "TimeGatedReSTIRInline", "Time-gated ReSTIR.");
 
     static ref<TimeGatedReSTIRInline> create(ref<Device> pDevice, const Properties& props)
     {
@@ -63,6 +56,8 @@ public:
     TimeGatedReSTIRInline(ref<Device> pDevice, const Properties& props);
 
     virtual Properties getProperties() const override;
+    /// Changes options of the live pass (pass.set_properties() from Python), like an edit in the UI.
+    virtual void setProperties(const Properties& props) override;
     virtual RenderPassReflection reflect(const CompileData& compileData) override;
     virtual void execute(RenderContext* pRenderContext, const RenderData& renderData) override;
     virtual void renderUI(Gui::Widgets& widget) override;
@@ -76,9 +71,22 @@ public:
 private:
     void parseProperties(const Properties& props);
     void bindShaderData(const ShaderVar& var, const RenderData& renderData);
+    /// Binds the spatial reuse constants and resources of `pass` (the resampling or the pair pass).
+    void bindSpatialReuse(const ref<ComputePass>& pass, const RenderData& renderData);
+    /// Spatial reuse runs as two passes per iteration (pair shifts, then resampling) when spatialReuseTwoPass is set,
+    /// unless the Newton debug outputs are on, which only the single-pass kernel writes, or the shift is `no`: without
+    /// shift work, the extra pass and its records cost more than the occupancy gains.
+    bool useSpatialReusePairs() const
+    {
+        return mOptions.restir.spatialReuseTwoPass && !mOptions.debugNewtonIterations &&
+               mOptions.restir.shiftMapping.shiftmapMethod != ShiftMappingMethod::Identity;
+    }
     DefineList getShaderDefines(const RenderData& renderData) const;
-    DefineList getReservoirDefines() const;
+    /// Shrink mapping's wide-gate path fraction, clamped to [0, 1]; the host and the shader derive the wide path
+    /// count from it the same way.
+    float shrinkSampleRatio() const { return std::clamp(mOptions.roughTimeGateSampleRatio, 0.f, 1.f); }
     void spatialReuse(RenderContext* pRenderContext, const RenderData& renderData);
+    void addDirect(RenderContext* pRenderContext, const RenderData& renderData);
 
     /// User settings, composed of shared configs (Shared/Host/Configs) plus this pass's own.
     struct Options
@@ -89,8 +97,13 @@ private:
         PathLengthAwareReSTIRConfig restir;
         bool isSceneDynamic = false;          ///< Keep the history when the light moves, re-evaluating reused paths.
         bool debugNewtonIterations = false;   ///< Adds the newtonStatistics and mappingDistance outputs.
-        float timeGateWindowRough = 0.0f;     ///< Direct sampling: wide gate traced by some paths and shrunk into the gate.
-        float roughTimeGateSampleRatio = 0.5f; ///< Fraction of paths traced with the wide gate.
+        /// Direct sampling with a box or tent gate: trace paths with a wider gate and shrink them into the gate.
+        bool useShrinkMapping = false;
+        float timeGateWindowRough = 0.0f;      ///< Width of the wide gate; 0 means 10 x timeGateWindow.
+        float roughTimeGateSampleRatio = 1.0f; ///< Fraction of the paths traced with the wide gate.
+
+        /// Width of the wide gate that shrink mapping traces.
+        float wideGateWindow() const { return timeGateWindowRough > 0.f ? timeGateWindowRough : 10.f * timeGate.timeGateWindow; }
     };
     Options mOptions;
 
@@ -112,4 +125,8 @@ private:
 
     ref<ComputePass> mpComputePass;      ///< Initial candidates (and temporal reuse).
     ref<ComputePass> mpSpatialReusePass;
+    /// With SPATIAL_REUSE_PAIRS, the first pass of each spatial reuse iteration: one candidate's shifts per thread.
+    ref<ComputePass> mpSpatialReusePairsPass;
+    ref<ComputePass> mpAddDirectPass;    ///< Adds the primary-hit direct lighting to the output (computeDirect).
+    ref<Texture> mpDirectColor;          ///< Primary-hit direct lighting, kept out of the reservoirs (computeDirect).
 };

@@ -5,6 +5,7 @@
 import Utils.Sampling.SampleGenerator;
 import Scene.RaytracingInline;
 import RenderPasses.Shared.Shaders.Lights.LaserLightSampler;
+import RenderPasses.Shared.Shaders.Utils.RayUtils;
 
 // Offset each surface endpoint toward the open segment. The point-light endpoint
 // has no surface to offset. BSDFs and path lengths still use unmodified positions.
@@ -13,10 +14,10 @@ bool checkLightVisibility(ShadingData surface, LightSample light)
     if (!light.valid) return false;
     float3 segment = light.posW() - surface.posW;
     if (!(dot(segment, segment) > 0.f)) return false;
-    float3 origin = surface.computeRayOrigin(dot(surface.getOrientedFaceNormal(), segment) >= 0.f);
+    float3 origin = rayOriginToward(surface, segment);
     float3 endpoint = light.posW();
 #if IS_LIGHT_SOURCE_LASER
-    endpoint = light.sd.computeRayOrigin(dot(light.getOrientedFaceNormal(), -segment) >= 0.f);
+    endpoint = rayOriginToward(light.sd, -segment);
 #endif
     float3 offsetSegment = endpoint - origin;
     if (!(dot(offsetSegment, segment) > 0.f)) return false;
@@ -34,18 +35,37 @@ struct LightConnection
     float3 incidentRadiance; // Li at the surface from the light sample, zero if occluded.
 };
 
-// Invalid or degenerate light samples yield a zero connection.
-LightConnection evaluateLightConnection(ShadingData surface, IMaterialInstance material,
-    LightSample light, inout SampleGenerator rng)
+// The geometric part of a connection: its direction and distance. `connected` is false for an invalid light sample
+// or a degenerate segment, whose connection stays zero. shadeLightConnection completes it; a caller can skip that
+// (a visibility ray and a BSDF evaluation) where the path's contribution is known to be zero.
+LightConnection connectToLight(ShadingData surface, LightSample light, out bool connected)
 {
     LightConnection connection = {};
+    connected = false;
     if (!light.valid) return connection;
     float3 segment = light.posW() - surface.posW;
     connection.distance = length(segment);
     if (!(connection.distance > 0.f) || !isfinite(connection.distance)) return connection;
     connection.direction = segment / connection.distance;
+    connected = true;
+    return connection;
+}
+
+// Visibility, BSDF * cosine and incident radiance of a connection from connectToLight.
+void shadeLightConnection(inout LightConnection connection, ShadingData surface, IMaterialInstance material,
+    LightSample light, inout SampleGenerator rng)
+{
     bool visible = checkLightVisibility(surface, light);
     connection.bsdfCosine = material.eval(surface, connection.direction, rng);
     connection.incidentRadiance = light.evalLi(surface.posW, rng) * float(visible);
+}
+
+// Invalid or degenerate light samples yield a zero connection.
+LightConnection evaluateLightConnection(ShadingData surface, IMaterialInstance material,
+    LightSample light, inout SampleGenerator rng)
+{
+    bool connected;
+    LightConnection connection = connectToLight(surface, light, connected);
+    if (connected) shadeLightConnection(connection, surface, material, light, rng);
     return connection;
 }

@@ -609,6 +609,8 @@ target_sources(Falcor PRIVATE
 
     Utils/Geometry/GeometryHelpers.slang
     Utils/Geometry/IntersectionHelpers.slang
+    Utils/Geometry/Ellipsoid.slang
+    Utils/Geometry/EllipsoidIntersection.slang
 
     Utils/Image/AsyncTextureLoader.cpp
     Utils/Image/AsyncTextureLoader.h
@@ -749,9 +751,6 @@ target_sources(Falcor PRIVATE
     Utils/UI/TextRenderer.cpp
     Utils/UI/TextRenderer.h
 
-    Utils/Transient/TransientUtils.slang
-    Utils/Transient/EllipsoidIntersection.slang
-    Utils/Transient/Ellipsoid.slang
 )
 
 

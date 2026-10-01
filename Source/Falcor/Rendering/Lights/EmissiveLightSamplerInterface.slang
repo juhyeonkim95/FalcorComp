@@ -26,7 +26,7 @@
  # OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  **************************************************************************/
 __exported import Utils.Sampling.SampleGeneratorInterface;
-import Utils.Transient.Ellipsoid;
+import Utils.Geometry.Ellipsoid;
 
 /** Slang interface and structs used by emissive light samplers.
 */

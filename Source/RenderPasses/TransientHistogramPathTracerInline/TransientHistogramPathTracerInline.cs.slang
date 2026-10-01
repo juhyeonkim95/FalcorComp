@@ -1,127 +1,76 @@
 import RenderPasses.Shared.Shaders.Utils.LoadShadingData;
-import RenderPasses.Shared.Shaders.Utils.SingleChannel;
 import RenderPasses.Shared.Shaders.Lights.LaserLightSampler;
 import RenderPasses.Shared.Shaders.Lights.LightConnection;
 #include "Scene/SceneDefines.slangh"
 #include "Utils/Math/MathConstants.slangh"
-
-// Set by the host: 1 when the histogram sums frames (the host clears it only on reset), 0 for one frame per
-// histogram (the host clears it every frame).
-#ifndef ACCUMULATE_HISTOGRAM
-#define ACCUMULATE_HISTOGRAM 0
-#endif
 
 import Utils.Math.MathHelpers;
 import Utils.Geometry.GeometryHelpers;
 import Utils.Sampling.SampleGenerator;
 import Rendering.Lights.LightHelpers;
 import Utils.Color.ColorHelpers;
-import Utils.Transient.TransientUtils;
+import RenderPasses.Shared.Shaders.Utils.TimeGate;
+import RenderPasses.Shared.Shaders.Utils.TransientHistogram;
+import RenderPasses.Shared.Shaders.Utils.RayUtils;
 import Scene.RaytracingInline;
+import RenderPasses.Shared.Shaders.Lights.Laser;
 
 cbuffer CB
 {
     uint2 gFrameDim;
     uint gFrameCount;    // Frame count since scene was loaded.
-    uint gPRNGDimension; // First available PRNG dimension.
 
-    float3 laserOrigin;
-    float3 laserDirection;
-    float3 laserPower;
-    float laserCosAngle;
-
-    uint samplesPerPixel;
-    float initialWindowRatio;
+    uint gSamplesPerPixel;
+    float gInitialWindowRatio;
 }
 
 // Inputs
 Texture2D<PackedHitInfo> gVBuffer;
 Texture2D<float4> gViewW; // Optional
 
-Texture2D<PackedHitInfo> gLaserVBuffer;
-Texture2D<float4> gLaserViewW; // Optional
 
 // Outputs
 RWTexture2D<float4> gOutputColor;
 
-#if USE_SINGLE_CHANNEL
-RWTexture3D<float> gTransientHistogram;
-#else
-RWTexture3D<float4> gTransientHistogram;
-#endif
+RWTexture3D<HistogramTexel> gTransientHistogram;
 
 // Static configuration based on defines set from the host.
-#define is_valid(name) (is_valid_##name != 0)
 static const uint kMaxBounces = MAX_BOUNCES;
 static const bool kComputeDirect = COMPUTE_DIRECT;
 static const bool kUseImportanceSampling = USE_IMPORTANCE_SAMPLING;
-static const bool kUseAlphaTest = USE_ALPHA_TEST;
-
-static const float kRayTMax = FLT_MAX;
-
-HitInfo traceRay(const float3 origin, const float3 dir, out float hitT)
-{
-    Ray ray = Ray(origin, dir, 0.0, kRayTMax);
-    SceneRayQuery<kUseAlphaTest> sceneRayQuery;
-    return sceneRayQuery.traceRay(ray, hitT);
-}
-
-
-/**
- * Returns the primary ray's direction.
- */
-float3 getPrimaryRayDir(uint2 launchIndex, uint2 launchDim, const Camera camera)
-{
-    if (is_valid(gViewW))
-    {
-        // If we have the view vector bound as a buffer, just fetch it. No need to compute anything.
-        return -gViewW[launchIndex].xyz;
-    }
-    else
-    {
-        // Compute the view vector. This must exactly match what the G-buffer pass is doing (jitter etc.).
-        // Note that we do not take depth-of-field into account as it would require exactly matching the
-        // sample generator between the passes, which is error prone. The host side will issue a warning instead.
-        return camera.computeRayPinhole(launchIndex, launchDim).dir;
-    }
-}
 
 
 // Histogram values are radiance density per unit path length, summed across frames.
-// RGB alpha is auxiliary weight; single-channel storage deliberately uses red, not luminance.
+// RGB alpha is auxiliary weight; single-channel storage keeps the channel chosen by SINGLE_CHANNEL.
 void addHistogramBin(uint2 pixel, uint bin, float3 radiance, float weight = 1.f)
 {
-#if USE_SINGLE_CHANNEL
-    gTransientHistogram[uint3(pixel, bin)] += selectChannel(radiance) * weight;
-#else
-    gTransientHistogram[uint3(pixel, bin)] += float4(radiance, 1.f) * weight;
-#endif
+    gTransientHistogram[uint3(pixel, bin)] += toHistogramTexel(radiance) * weight;
 }
 
 void accumulateToHistogram(uint2 pixel, float pathLength, float3 radiance, float window)
 {
     if (!isfinite(pathLength)) return;
 #if USE_KERNEL_DENSITY_ESTIMATION
-    radiance /= window * samplesPerPixel;
-    for (uint bin = 0; bin < tbin; ++bin)
+    radiance /= window * gSamplesPerPixel;
+    for (uint bin = 0; bin < gTimeBin; ++bin)
     {
-        float center = tmin + (bin + 0.5f) * tunit;
+        float center = binCenter(bin);
         float weight = pathLengthImportanceGivenWindow(pathLength, center, window);
         if (weight > 0.f) addHistogramBin(pixel, bin, radiance * weight);
     }
 #else
-    // Half-open range prevents tmax from being incorrectly added to the final bin.
-    if (pathLength < tmin || pathLength >= tmax) return;
-    float coordinate = (pathLength - tmin) / tunit;
-    uint bin = min(uint(coordinate), tbin - 1);
-    radiance /= tunit * samplesPerPixel;
+    // Half-open range prevents gTimeMax from being incorrectly added to the final bin.
+    if (pathLength < gTimeMin || pathLength >= gTimeMax) return;
+    float coordinate = (pathLength - gTimeMin) / gBinWidth;
+    uint bin = min(uint(coordinate), gTimeBin - 1);
+    radiance /= gBinWidth * gSamplesPerPixel;
 #if HISTOGRAM_FILTER == HISTOGRAM_FILTER_BOX
     addHistogramBin(pixel, bin, radiance);
 #elif HISTOGRAM_FILTER == HISTOGRAM_FILTER_TENT
     // Retain the existing interpolation and final-bin clamping convention.
     float residual = frac(coordinate);
     addHistogramBin(pixel, bin, radiance, 1.f - residual);
-    addHistogramBin(pixel, min(bin + 1, tbin - 1), radiance, residual);
+    addHistogramBin(pixel, min(bin + 1, gTimeBin - 1), radiance, residual);
 #endif
 #endif
 }
@@ -132,19 +81,19 @@ float3 tracePath(const uint2 pixel, const uint2 frameDim)
     HitInfo primaryHit = HitInfo(gVBuffer[pixel]);
     if (!primaryHit.isValid()) return float3(0.f);
     float3 cameraOrigin = gScene.camera.getPosition();
-    ShadingData primary = loadShadingData(primaryHit, cameraOrigin, getPrimaryRayDir(pixel, frameDim, gScene.camera));
-    SampleGenerator sg = SampleGenerator(pixel, gFrameCount + 151);
-    LaserLightSampler lightSampler = LaserLightSampler(laserOrigin, laserDirection, laserCosAngle, laserPower);
+    ShadingData primary = loadShadingData(primaryHit, cameraOrigin, getPrimaryRayDir(pixel, frameDim, gViewW));
+    SampleGenerator sg = createPixelSampleGenerator(pixel, gFrameCount, kPathSampleStream);
+    LaserLightSampler lightSampler = createLaserLightSampler();
     float3 radiance = 0.f;
     // Preserve the existing per-frame progressive KDE bandwidth schedule.
-    float window = (tmax - tmin) * initialWindowRatio;
+    float window = (gTimeMax - gTimeMin) * gInitialWindowRatio;
 #if USE_KERNEL_DENSITY_ESTIMATION
     // Ad hoc extension: paths beyond the histogram range can contribute through KDE support.
-    const float maxPathLength = 1.5f * tmax;
+    const float maxPathLength = 1.5f * gTimeMax;
 #else
-    const float maxPathLength = tmax;
+    const float maxPathLength = gTimeMax;
 #endif
-    for (uint sample = 0; sample < samplesPerPixel; ++sample)
+    for (uint sample = 0; sample < gSamplesPerPixel; ++sample)
     {
         ShadingData surface = primary;
         float pathLength = length(primary.posW - cameraOrigin);
@@ -181,7 +130,7 @@ float3 tracePath(const uint2 pixel, const uint2 frameDim)
         }
         window *= (sample + 0.8f) / (sample + 1.f);
     }
-    return radiance / samplesPerPixel;
+    return radiance / gSamplesPerPixel;
 }
 
 #if LIGHT_SAMPLING_METHOD == TRIANGLE_APPROX
@@ -241,19 +190,19 @@ void sortTriangleSamples(inout float lengths[3], inout float3 values[3])
 
 // Deterministic single-intermediate-triangle approximation. It uses center visibility,
 // vertex integrands and linear path-length interpolation, not unbiased path sampling.
-// samplesPerPixel and maxBounces apply only to the direct path walk.
+// gSamplesPerPixel and maxBounces apply only to the direct path walk.
 float3 tracePathTriangleApprox(const uint2 pixel, const uint2 frameDim)
 {
     HitInfo primaryHit = HitInfo(gVBuffer[pixel]);
     if (!primaryHit.isValid()) return float3(0.f);
     float3 cameraOrigin = gScene.camera.getPosition();
-    ShadingData primary = loadShadingData(primaryHit, cameraOrigin, getPrimaryRayDir(pixel, frameDim, gScene.camera));
+    ShadingData primary = loadShadingData(primaryHit, cameraOrigin, getPrimaryRayDir(pixel, frameDim, gViewW));
     IMaterialInstance primaryMaterial = gScene.materials.getMaterialInstance(primary, ExplicitLodTextureSampler(0.f));
     float primaryLength = length(primary.posW - cameraOrigin);
-    SampleGenerator sg = SampleGenerator(pixel, gFrameCount + 151);
+    SampleGenerator sg = createPixelSampleGenerator(pixel, gFrameCount, kPathSampleStream);
 
     // Preserve the approximation's collimated-laser assumption.
-    LaserLightSampler sampler = LaserLightSampler(laserOrigin, laserDirection, 1.f, laserPower);
+    LaserLightSampler sampler = LaserLightSampler(gLaserOrigin, gLaserDirection, 1.f, gLaserPower);
     LightSample light = {};
     sampler.generateLightSample(sg, light);
     if (!light.valid) return float3(0.f);
@@ -271,7 +220,7 @@ float3 tracePathTriangleApprox(const uint2 pixel, const uint2 frameDim)
         float3 direction = normalize(toCenter);
         if (abs(dot(direction, primary.getOrientedFaceNormal())) < 1e-5f) continue;
         float hitT;
-        float3 origin = primary.computeRayOrigin(dot(primary.getOrientedFaceNormal(), direction) >= 0.f);
+        float3 origin = rayOriginToward(primary, direction);
         HitInfo centerHit = traceRay(origin, direction, hitT);
         if (!centerHit.isValid() || centerHit.getType() != HitType::Triangle) continue;
         ShadingData centerSurface = loadShadingData(centerHit, origin, direction);
@@ -309,11 +258,11 @@ float3 tracePathTriangleApprox(const uint2 pixel, const uint2 frameDim)
                              cosine * triangle.area / max(distance * distance, kMinLightDistSqr);
         }
         sortTriangleSamples(lengths, values);
-        for (uint bin = 0; bin < tbin; ++bin)
+        for (uint bin = 0; bin < gTimeBin; ++bin)
         {
-            float3 density = integrateLinearGate(lengths, values, tmin + (bin + 0.5f) * tunit, tunit) / tunit;
+            float3 density = integrateLinearGate(lengths, values, binCenter(bin), gBinWidth) / gBinWidth;
             addHistogramBin(pixel, bin, density);
-            radiance += density * tunit;
+            radiance += density * gBinWidth;
         }
     }
     return radiance;

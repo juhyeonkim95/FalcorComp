@@ -1,4 +1,4 @@
-# Online time-gated rendering
+# Time-gated rendering (online)
 
 This tutorial renders the Cornell box from [Time-gated rendering](time_gated_offline.md) in an
 interactive window. The image converges while the camera stays still, and the settings and the

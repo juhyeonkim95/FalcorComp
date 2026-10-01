@@ -148,10 +148,12 @@ void TransientHistogramViewer::execute(RenderContext* pRenderContext, const Rend
     defines.add("HAS_OVERLAY", hasOverlay ? "1" : "0");
     if (!mpViewPass)
         mpViewPass = ComputePass::create(mpDevice, kShaderFile, "main", defines);
-    mpViewPass->getProgram()->addDefines(defines);
+    if (mpViewPass->getProgram()->addDefines(defines))
+        mpViewPass->setVars(nullptr);
     if (!mpProfilePass)
         mpProfilePass = ComputePass::create(mpDevice, kShaderFile, "readProfile", defines);
-    mpProfilePass->getProgram()->addDefines(defines);
+    if (mpProfilePass->getProgram()->addDefines(defines))
+        mpProfilePass->setVars(nullptr);
 
     auto var = mpViewPass->getRootVar();
     var["CB"]["gOutputDim"] = outputDim;

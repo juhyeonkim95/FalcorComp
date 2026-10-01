@@ -4,8 +4,9 @@ target_sources(TimeGatedReSTIRInline PRIVATE
     TimeGatedReSTIRInline.cpp
     TimeGatedReSTIRInline.h
     InitialSampleGeneration.cs.slang
-    ReflectTypes.cs.slang
     SpatialReuse.cs.slang
+    SpatialReusePairs.cs.slang
+    AddDirect.cs.slang
 )
 
 target_copy_shaders(TimeGatedReSTIRInline RenderPasses/TimeGatedReSTIRInline)

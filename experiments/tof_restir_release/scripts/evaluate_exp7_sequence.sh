@@ -5,7 +5,7 @@ source "$release_dir/output_paths.sh"
 
 # Edit scene names and zero-based grid frame indices here.
 experiments=(
-    # "cornell_box 1 2 4 16 32 64"
+    "cornell_box 1 2 4 16 32 64"
     # "veach_ajar 1 2 4 16 32 64"
     "classroom 5 15 30 50 70 90"
     "bedroom 5 15 30 50 70 90"

@@ -46,25 +46,6 @@ extern "C" FALCOR_API_EXPORT void registerPlugin(Falcor::PluginRegistry& registr
 namespace
 {
 const char kShaderFile[] = "RenderPasses/TimeGatedPathTracerInline/TimeGatedPathTracerInline.cs.slang";
-const char kInputViewDir[] = "viewW";
-
-const ChannelList kInputChannels = {
-    // clang-format off
-    { "vbuffer",        "gVBuffer",     "Visibility buffer in packed format" },
-    { kInputViewDir,    "gViewW",       "World-space view direction (xyz float format)", true /* optional */ },
-};
-
-const ChannelList kLaserInputChannels = {
-    // 1 x 1 laser hit buffer
-    { "laservbuffer",        "gLaserVBuffer",     "Laser visibility buffer in packed format" },
-    { "laserviewW",    "gLaserViewW",       "World-space view direction (xyz float format)", true /* optional */ },
-};
-
-const ChannelList kOutputChannels = {
-    // clang-format off
-    { "color",          "gOutputColor", "Output color (sum of direct and indirect)", false, ResourceFormat::RGBA32Float },
-    // clang-format on
-};
 
 } // namespace
 
@@ -130,9 +111,8 @@ RenderPassReflection TimeGatedPathTracerInline::reflect(const CompileData& compi
     RenderPassReflection reflector;
 
     // Define our input/output channels.
-    addRenderPassInputs(reflector, kInputChannels);
-    addRenderPassInputs(reflector, kLaserInputChannels, ResourceBindFlags::ShaderResource, uint2(1, 1));
-    addRenderPassOutputs(reflector, kOutputChannels);
+    addRenderPassInputs(reflector, InlinePass::kPrimaryHitInputChannels);
+    addRenderPassOutputs(reflector, InlinePass::kColorOutputChannels);
 
     return reflector;
 }
@@ -144,14 +124,13 @@ DefineList TimeGatedPathTracerInline::getShaderDefines(const RenderData& renderD
     defines.add(InlinePass::getSceneLightDefines(*mpScene));
 
     defines.add("LIGHT_SAMPLING_METHOD", std::to_string((uint32_t)mOptions.ellipsoidalSampling.samplingMethod));
-    defines.add("DIRECT_CONNECTION", std::to_string((uint32_t)EllipsoidalSamplingMethod::DIRECT));
-    defines.add("ELLIPSOIDAL_CONNECTION", std::to_string((uint32_t)EllipsoidalSamplingMethod::ELLIPSOIDAL));
-    defines.add("ELLIPSOIDAL_DIRECT_MIS", std::to_string((uint32_t)EllipsoidalSamplingMethod::ELLIPSOIDAL_DIRECT_MIS));
+    defines.add("DIRECT_CONNECTION", std::to_string((uint32_t)EllipsoidalSamplingMethod::Direct));
+    defines.add("ELLIPSOIDAL_CONNECTION", std::to_string((uint32_t)EllipsoidalSamplingMethod::Ellipsoidal));
+    defines.add("ELLIPSOIDAL_DIRECT_MIS", std::to_string((uint32_t)EllipsoidalSamplingMethod::EllipsoidalDirectMIS));
 
     // For optional I/O resources, set 'is_valid_<name>' defines to inform the program of which ones it can access.
-    defines.add(getValidResourceDefines(kInputChannels, renderData));
-    defines.add(getValidResourceDefines(kLaserInputChannels, renderData));
-    defines.add(getValidResourceDefines(kOutputChannels, renderData));
+    defines.add(getValidResourceDefines(InlinePass::kPrimaryHitInputChannels, renderData));
+    defines.add(getValidResourceDefines(InlinePass::kColorOutputChannels, renderData));
     return defines;
 }
 
@@ -161,15 +140,13 @@ void TimeGatedPathTracerInline::bindShaderData(const ShaderVar& var, const Rende
 
     var["CB"]["gFrameCount"] = mFrameCount;
     var["CB"]["gFrameDim"] = renderData.getDefaultTextureDims();
-    var["CB"]["gPRNGDimension"] = InlinePass::getPRNGDimension(renderData);
-    var["CB"]["specularRoughnessThreshold"] = mOptions.ellipsoidalSampling.ellipsoidRoughnessThreshold;
-    var["CB"]["samplesPerPixel"] = mOptions.pathTracing.samplesPerPixel;
-    LaserState::resolve(renderData).bindShaderData(var["CB"]);
+    var["CB"]["gEllipsoidRoughnessThreshold"] = mOptions.ellipsoidalSampling.ellipsoidRoughnessThreshold;
+    var["CB"]["gSamplesPerPixel"] = mOptions.pathTracing.samplesPerPixel;
+    LaserState::resolve(renderData).bindShaderData(var["Laser"]);
     mOptions.timeGate.bindShaderData(var["TimeGate"], mGate);
 
-    InlinePass::bindChannels(var, renderData, kInputChannels);
-    InlinePass::bindChannels(var, renderData, kLaserInputChannels);
-    InlinePass::bindChannels(var, renderData, kOutputChannels);
+    InlinePass::bindChannels(var, renderData, InlinePass::kPrimaryHitInputChannels);
+    InlinePass::bindChannels(var, renderData, InlinePass::kColorOutputChannels);
 }
 
 void TimeGatedPathTracerInline::execute(RenderContext* pRenderContext, const RenderData& renderData)
@@ -182,7 +159,7 @@ void TimeGatedPathTracerInline::execute(RenderContext* pRenderContext, const Ren
 
     if (!mpScene)
     {
-        InlinePass::clearChannels(pRenderContext, renderData, kOutputChannels);
+        InlinePass::clearChannels(pRenderContext, renderData, InlinePass::kColorOutputChannels);
         return;
     }
 
@@ -194,11 +171,11 @@ void TimeGatedPathTracerInline::execute(RenderContext* pRenderContext, const Ren
         defines.add(mTriangleSampler.getDefines());
         mpComputePass = InlinePass::createScenePass(mpDevice, pRenderContext, mpScene, mpSampleGenerator, kShaderFile, defines);
     }
-    InlinePass::checkScene(*mpScene, renderData, kInputViewDir);
+    InlinePass::checkScene(*mpScene, renderData);
     if (mpScene->getRenderSettings().useEmissiveLights)
         mpScene->getLightCollection(pRenderContext);
 
-    mpComputePass->getProgram()->addDefines(getShaderDefines(renderData));
+    InlinePass::updateScenePassDefines(pRenderContext, mpComputePass, mpScene, mpSampleGenerator, getShaderDefines(renderData));
     bindShaderData(mpComputePass->getRootVar(), renderData);
     mpComputePass->execute(pRenderContext, uint3(renderData.getDefaultTextureDims(), 1));
 
@@ -223,7 +200,7 @@ void TimeGatedPathTracerInline::renderUI(Gui::Widgets& widget)
     }
 
     if (auto group = widget.group("Output", true))
-        dirty |= options.pathTracing.renderOutputUI(group, true);
+        dirty |= options.pathTracing.renderOutputUI(group, true, true);
 
     // If rendering options that modify the output have changed, set flag to indicate that.
     // In execute() we will pass the flag to other passes for reset of temporal data etc.
@@ -243,7 +220,7 @@ void TimeGatedPathTracerInline::renderUI(Gui::Widgets& widget)
 void TimeGatedPathTracerInline::setScene(RenderContext* pRenderContext, const ref<Scene>& pScene)
 {
     // Clear data for previous scene.
-    // After changing scene, the raytracing program should to be recreated.
+    // After changing scene, the raytracing program should be recreated.
     mpComputePass = nullptr;
     mTriangleSampler.reset();
     mFrameCount = 0;

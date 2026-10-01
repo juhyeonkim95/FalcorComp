@@ -1,42 +1,13 @@
 #pragma once
 #include "ConfigUtils.h"
+#include "ShiftMappingConfig.h"
+#include "PathTracingConfig.h"
+#include "Utils/Sampling/SampleGenerator.h"
 #include "RenderGraph/RenderPass.h"
 #include "Scene/Scene.h"
+#include <algorithm>
 #include <memory>
 #include <utility>
-
-/// Path-length-aware shift mapping: the chart on which the reconnection vertex is moved.
-enum class ShiftmapMethod
-{
-    NO = 0,
-    LOCAL_TANGENT_SURFACE = 1,
-    BARYCENTRIC = 2,
-    RAY_TRACE_HEMISPHERE = 3,
-    AREA_ADAPTIVE = 4,
-    RAY_TRACE_CHART = 5,
-};
-
-static const std::unordered_map<std::string, ShiftmapMethod> ShiftmapMethodTable = {
-    {"no", ShiftmapMethod::NO},
-    {"local_tangent", ShiftmapMethod::LOCAL_TANGENT_SURFACE},
-    {"barycentric", ShiftmapMethod::BARYCENTRIC},
-    {"ray_trace", ShiftmapMethod::RAY_TRACE_HEMISPHERE},
-    {"area_adaptive", ShiftmapMethod::AREA_ADAPTIVE},
-    {"ray_trace_chart", ShiftmapMethod::RAY_TRACE_CHART}
-};
-
-enum class GaugeMode
-{
-    CONSTANT = 0,
-    ORTHO_GRAD_START = 1,
-    ORTHO_AVG_GRAD = 2,
-};
-
-static const std::unordered_map<std::string, GaugeMode> GaugeModeTable = {
-    {"constant", GaugeMode::CONSTANT},
-    {"grad", GaugeMode::ORTHO_GRAD_START},
-    {"avg_grad", GaugeMode::ORTHO_AVG_GRAD}
-};
 
 /// Spatial and temporal reuse with path-length-aware shift mapping.
 struct PathLengthAwareReSTIRConfig
@@ -44,44 +15,36 @@ struct PathLengthAwareReSTIRConfig
     uint spatialReuseIteration = 1;
     uint spatialReuseNeighborCount = 5;
     float spatialReuseGatherRadius = 10.0f; ///< Pixels.
+    /// Spatial reuse as two passes per iteration (one candidate's shifts per thread, then resampling); false runs the
+    /// single-pass kernel. Same results either way; the shift `no` always uses the single pass.
+    bool spatialReuseTwoPass = true;
     bool useTemporalReuse = false;
     float temporalHistoryLength = 20.0f;    ///< History cap in frames of samples; 0 ignores it, negative is uncapped.
 
-    ShiftmapMethod shiftmapMethod = ShiftmapMethod::NO;
-    GaugeMode gaugeMode = GaugeMode::CONSTANT;
-    float2 gaugeAxis = float2(1, 0);
-    uint newtonMaxIteration = 5;
-    float newtonRelativeTolerance = 0.01f;
+    ShiftMappingConfig shiftMapping;
     float reconnectionRoughnessThreshold = 0.25f; ///< Both vertices of a reconnection segment must be rougher.
-
-    uint2 laserHitVBufferRes = uint2(256, 256);
+    float reconnectionMinDistance = 0.f;          ///< A reconnection segment must be longer (scene units).
 
     bool parse(const std::string& key, const Properties::ConstValue& value)
     {
+        if (shiftMapping.parse(key, value))
+            return true;
         if (key == "spatialReuseIteration")
             spatialReuseIteration = value;
         else if (key == "spatialReuseNeighborCount")
             spatialReuseNeighborCount = value;
         else if (key == "spatialReuseGatherRadius")
             spatialReuseGatherRadius = value;
+        else if (key == "spatialReuseTwoPass")
+            spatialReuseTwoPass = value;
         else if (key == "useTemporalReuse")
             useTemporalReuse = value;
         else if (key == "temporalHistoryLength")
             temporalHistoryLength = value;
-        else if (key == "shiftmapMethod")
-            shiftmapMethod = parseEnumProperty(ShiftmapMethodTable, value, key);
-        else if (key == "gaugeMode")
-            gaugeMode = parseEnumProperty(GaugeModeTable, value, key);
-        else if (key == "gaugeAxis")
-            gaugeAxis = value;
-        else if (key == "NewtonMaxIteration")
-            newtonMaxIteration = value;
-        else if (key == "NewtonRelativeTolerance")
-            newtonRelativeTolerance = value;
-        else if (key == "specularRoughnessThreshold")
+        else if (key == "reconnectionRoughnessThreshold")
             reconnectionRoughnessThreshold = value;
-        else if (key == "laserHitVBufferRes")
-            laserHitVBufferRes = value;
+        else if (key == "reconnectionMinDistance")
+            reconnectionMinDistance = value;
         else
             return false;
         return true;
@@ -92,35 +55,26 @@ struct PathLengthAwareReSTIRConfig
         props["spatialReuseIteration"] = spatialReuseIteration;
         props["spatialReuseNeighborCount"] = spatialReuseNeighborCount;
         props["spatialReuseGatherRadius"] = spatialReuseGatherRadius;
+        props["spatialReuseTwoPass"] = spatialReuseTwoPass;
         props["useTemporalReuse"] = useTemporalReuse;
         props["temporalHistoryLength"] = temporalHistoryLength;
-        props["shiftmapMethod"] = enumPropertyName(ShiftmapMethodTable, shiftmapMethod);
-        props["gaugeMode"] = enumPropertyName(GaugeModeTable, gaugeMode);
-        props["gaugeAxis"] = gaugeAxis;
-        props["NewtonMaxIteration"] = newtonMaxIteration;
-        props["NewtonRelativeTolerance"] = newtonRelativeTolerance;
-        props["specularRoughnessThreshold"] = reconnectionRoughnessThreshold;
-        props["laserHitVBufferRes"] = laserHitVBufferRes;
+        shiftMapping.serialize(props);
+        props["reconnectionRoughnessThreshold"] = reconnectionRoughnessThreshold;
+        props["reconnectionMinDistance"] = reconnectionMinDistance;
     }
 
     /// SHIFT_MAPPING_METHOD, SHIFT_MAPPING_GAUGE_MODE and USE_TEMPORAL_REUSE.
     DefineList getDefines() const
     {
-        DefineList defines;
-        defines.add("SHIFT_MAPPING_METHOD", std::to_string((uint32_t)shiftmapMethod));
-        defines.add("SHIFT_MAPPING_GAUGE_MODE", std::to_string((uint32_t)gaugeMode));
+        DefineList defines = shiftMapping.getDefines();
         defines.add("USE_TEMPORAL_REUSE", useTemporalReuse ? "1" : "0");
         return defines;
     }
 
-    /// Sets the shift mapping constants (Shiftmap_CB) under `shiftmapVar`.
+    /// Sets the shift mapping constants (ShiftMappingCB) under `shiftmapVar`.
     void bindShiftMapping(const ShaderVar& shiftmapVar) const
     {
-        shiftmapVar["gGaugeAxis"] = gaugeAxis;
-        shiftmapVar["gGaugeMode"] = uint(gaugeMode);
-        shiftmapVar["gShiftMappingMethod"] = uint(shiftmapMethod);
-        shiftmapVar["gNewtonMaxIteration"] = newtonMaxIteration;
-        shiftmapVar["gNewtonRelativeTolerance"] = newtonRelativeTolerance;
+        shiftMapping.bindShaderData(shiftmapVar);
     }
 
     /// Sets the spatial reuse neighbor count, radius and reconnection threshold under `spatialVar`.
@@ -128,7 +82,8 @@ struct PathLengthAwareReSTIRConfig
     {
         spatialVar["neighborCount"] = spatialReuseNeighborCount;
         spatialVar["gatherRadius"] = spatialReuseGatherRadius;
-        spatialVar["specularRoughnessThreshold"] = reconnectionRoughnessThreshold;
+        spatialVar["reconnectionRoughnessThreshold"] = reconnectionRoughnessThreshold;
+        spatialVar["reconnectionMinDistance"] = reconnectionMinDistance;
     }
 
     /// Spatial and temporal reuse. `temporalNote` is appended to the Temporal reuse tooltip.
@@ -143,6 +98,11 @@ struct PathLengthAwareReSTIRConfig
 
         dirty |= widget.var("Spatial radius (px)", spatialReuseGatherRadius, 1.f, 128.f);
         widget.tooltip("Radius, in pixels, within which spatial neighbors are chosen.", true);
+
+        dirty |= widget.checkbox("Two-pass spatial reuse", spatialReuseTwoPass);
+        widget.tooltip("Compute each candidate's shifts in its own thread, then resample in a second pass: faster with "
+                       "a length-aware shift (lower register use). Off runs the single-pass kernel. The results are "
+                       "the same; the shift None always uses the single pass.", true);
 
         dirty |= widget.checkbox("Temporal reuse", useTemporalReuse);
         widget.tooltip("Resample the previous frame's reservoir (reprojected with motion vectors when the mvec input "
@@ -160,53 +120,19 @@ struct PathLengthAwareReSTIRConfig
     /// Shift method, reconnection threshold, gauge and Newton solve.
     bool renderShiftMappingUI(Gui::Widgets& widget)
     {
-        bool dirty = false;
-        static const Gui::DropdownList kShiftmapMethodList = {
-            {(uint32_t)ShiftmapMethod::NO, "None (naive reuse)"},
-            {(uint32_t)ShiftmapMethod::LOCAL_TANGENT_SURFACE, "Local tangent"},
-            {(uint32_t)ShiftmapMethod::BARYCENTRIC, "Barycentric"},
-            {(uint32_t)ShiftmapMethod::RAY_TRACE_HEMISPHERE, "Ray trace"},
-            {(uint32_t)ShiftmapMethod::AREA_ADAPTIVE, "Area adaptive"},
-            {(uint32_t)ShiftmapMethod::RAY_TRACE_CHART, "Ray trace chart"},
-        };
-        uint32_t method = (uint32_t)shiftmapMethod;
-        if (widget.dropdown("Method", kShiftmapMethodList, method))
-        {
-            shiftmapMethod = (ShiftmapMethod)method;
-            dirty = true;
-        }
-        widget.tooltip("How a reused path is fitted to the target pixel's gate. The reconnection vertex is moved so "
-                       "the path length changes by the gate difference, using a Newton solve on the chosen chart.\n"
-                       "None keeps the vertex fixed (naive reuse).", true);
-
-        dirty |= widget.var("Reconnection roughness threshold", reconnectionRoughnessThreshold, 0.f, 1.f);
-        widget.tooltip("A path can reconnect at a segment only if both of its vertices are rougher than this.", true);
-
-        if (shiftmapMethod != ShiftmapMethod::NO)
-        {
-            static const Gui::DropdownList kGaugeModeList = {
-                {(uint32_t)GaugeMode::CONSTANT, "Constant axis"},
-                {(uint32_t)GaugeMode::ORTHO_GRAD_START, "Orthogonal to start gradient"},
-                {(uint32_t)GaugeMode::ORTHO_AVG_GRAD, "Orthogonal to average gradient"},
-            };
-            uint32_t gauge = (uint32_t)gaugeMode;
-            if (widget.dropdown("Gauge", kGaugeModeList, gauge))
+        return shiftMapping.renderUI(widget,
+            "How a reused path is fitted to the target pixel's gate. The reconnection vertex is moved so the path "
+            "length changes by the gate difference, using a Newton solve on the chosen chart.\n"
+            "None keeps the vertex fixed (naive reuse).",
+            [this](Gui::Widgets& group)
             {
-                gaugeMode = (GaugeMode)gauge;
-                dirty = true;
-            }
-            widget.tooltip("Fixes the direction left free by the one path-length constraint in the 2D Newton solve.", true);
-
-            if (gaugeMode == GaugeMode::CONSTANT)
-            {
-                dirty |= widget.var("Gauge axis", gaugeAxis, -1.f, 1.f);
-                widget.tooltip("Chart-space axis of the constant gauge. (0, 0) picks a random axis per shift.", true);
-            }
-
-            dirty |= widget.var("Newton iterations", newtonMaxIteration, 1u, 64u);
-            widget.tooltip("Maximum Newton iterations per shift.", true);
-        }
-        return dirty;
+                bool dirty = group.var("Reconnection roughness threshold", reconnectionRoughnessThreshold, 0.f, 1.f);
+                group.tooltip("A path can reconnect at a segment only if both of its vertices are rougher than this.", true);
+                dirty |= group.var("Reconnection min distance", reconnectionMinDistance, 0.f, 1000.f);
+                group.tooltip("A path can reconnect at a segment only if it is longer than this. Very short segments "
+                              "make the shifted target and Jacobian nearly singular.", true);
+                return dirty;
+            });
     }
 };
 
@@ -216,9 +142,16 @@ class PathLengthAwareReSTIRResources
 {
 public:
     static constexpr uint32_t kNeighborOffsetCount = 8192;
+    static constexpr char kReflectTypesFile[] = "RenderPasses/Shared/Shaders/ReSTIR/ReflectTypes.cs.slang";
 
     ref<Buffer> prevReservoirs;
     ref<Buffer> currReservoirs;
+    /// W and M of each reservoir (float2), with useSummaries in prepare(): only reservoirs with W != 0 are then stored.
+    ref<Buffer> prevSummaries;
+    ref<Buffer> currSummaries;
+    ref<Buffer> reusePairs; ///< Pair records of the two-pass spatial and temporal reuse (preparePairs).
+    ref<Buffer> spatialCandidateValid; ///< Spatial neighbors' validity for the two-pass spatial reuse.
+    static constexpr size_t kPairBufferBytes = size_t(512) << 20;
     ref<Texture> neighborOffsets;
     ref<Texture> temporalVBuffer;
     bool temporalHistoryValid = false;
@@ -245,18 +178,30 @@ public:
             temporalHistoryValid = false;
     }
 
-    /// (Re)allocates `reservoirsPerPixel` reservoirs per pixel, of the type that `reflectTypesFile` reflects under
-    /// `reflectDefines`; the neighbor offsets; and, with temporal reuse, the previous frame's V-buffer. A resize
-    /// discards the history.
+    /// Defines that the reservoir layout depends on: a scalar target with a single channel, and the replay data of
+    /// dynamic scenes. Every program that uses the reservoirs needs them.
+    static DefineList getReservoirDefines(const PathTracingConfig& pathTracing, bool isSceneDynamic)
+    {
+        DefineList defines;
+        defines.add("RESERVOIR_SCALAR_TARGET", pathTracing.useSingleChannel ? "1" : "0");
+        defines.add("IS_SCENE_DYNAMIC", isSceneDynamic ? "1" : "0");
+        return defines;
+    }
+
+    /// (Re)allocates `reservoirsPerPixel` reservoirs per pixel, of the layout getReservoirDefines() gives, and with
+    /// `useSummaries` their summaries (RESERVOIR_SUMMARIES); the neighbor offsets; and, with temporal reuse, the previous
+    /// frame's V-buffer. A resize discards the history.
     void prepare(
         ref<Device> pDevice,
         const ref<Scene>& pScene,
-        const std::string& reflectTypesFile,
-        const DefineList& reflectDefines,
+        const ref<SampleGenerator>& pSampleGenerator,
+        const PathTracingConfig& pathTracing,
+        bool isSceneDynamic,
         uint32_t reservoirsPerPixel,
         uint2 frameDim,
         bool useTemporalReuse,
-        ResourceFormat vbufferFormat
+        ResourceFormat vbufferFormat,
+        bool useSummaries = false
     )
     {
         if (!mpReflectTypes)
@@ -264,9 +209,13 @@ public:
             ProgramDesc desc;
             desc.addShaderModules(pScene->getShaderModules());
             desc.addTypeConformances(pScene->getTypeConformances());
-            desc.addShaderLibrary(reflectTypesFile).csEntry("main");
-            mpReflectTypes = ComputePass::create(pDevice, desc, reflectDefines, false);
+            desc.addShaderLibrary(kReflectTypesFile).csEntry("main");
+            mpReflectTypes = ComputePass::create(pDevice, desc, DefineList(), false);
         }
+        DefineList reflectDefines = pScene->getSceneDefines();
+        reflectDefines.add(pSampleGenerator->getDefines());
+        reflectDefines.add(pathTracing.getDefines());
+        reflectDefines.add(getReservoirDefines(pathTracing, isSceneDynamic));
         // Set (not add) the defines to replace stale state; recreating the vars recompiles if needed.
         mpReflectTypes->getProgram()->setDefines(reflectDefines);
         mpReflectTypes->setVars(nullptr);
@@ -276,15 +225,31 @@ public:
 
         const ShaderVar reservoirVar = mpReflectTypes->getRootVar()["reservoirs"];
         const uint32_t reservoirCount = frameDim.x * frameDim.y * reservoirsPerPixel;
+        // The reservoir layout depends on the defines (e.g. a scalar target with single channel).
+        const size_t reservoirStride =
+            reservoirVar.getType()->unwrapArray()->asResourceType()->getStructType()->getSlangTypeLayout()->getStride();
         for (ref<Buffer>* pReservoirs : {&prevReservoirs, &currReservoirs})
         {
-            if (!*pReservoirs || (*pReservoirs)->getElementCount() != reservoirCount)
+            if (!*pReservoirs || (*pReservoirs)->getElementCount() != reservoirCount ||
+                (*pReservoirs)->getStructSize() != reservoirStride)
             {
                 temporalHistoryValid = false;
                 *pReservoirs = pDevice->createStructuredBuffer(
                     reservoirVar, reservoirCount, ResourceBindFlags::ShaderResource | ResourceBindFlags::UnorderedAccess,
                     MemoryType::DeviceLocal, nullptr, false
                 );
+            }
+        }
+        for (ref<Buffer>* pSummaries : {&prevSummaries, &currSummaries})
+        {
+            if (!useSummaries)
+                *pSummaries = nullptr;
+            else if (!*pSummaries || (*pSummaries)->getElementCount() != reservoirCount)
+            {
+                temporalHistoryValid = false;
+                *pSummaries = pDevice->createStructuredBuffer(sizeof(float2), reservoirCount,
+                    ResourceBindFlags::ShaderResource | ResourceBindFlags::UnorderedAccess, MemoryType::DeviceLocal,
+                    nullptr, false);
             }
         }
 
@@ -312,11 +277,84 @@ public:
     {
         for (uint iteration = 0; iteration < iterations; iteration++)
         {
-            std::swap(currReservoirs, prevReservoirs);
+            swapReservoirs();
             spatialVar["gRandomSeed"] = randomSeed++;
-            spatialVar["prevReservoirs"] = prevReservoirs;
-            spatialVar["currReservoirs"] = currReservoirs;
+            bindReservoirs(spatialVar);
             pPass->execute(pRenderContext, {frameDim.x, frameDim.y, 1});
+        }
+    }
+
+    /// (Re)allocates reusePairs, the pair records (ReusePair; `pairsVar` is a shader buffer of them) of the two-pass
+    /// spatial and temporal reuse, for `candidates` records per pixel and bin: as many bins per chunk as fit in
+    /// kPairBufferBytes, at least one. Returns the bins per chunk.
+    uint preparePairs(ref<Device> pDevice, const ShaderVar& pairsVar, uint2 frameDim, uint candidates, uint binCount)
+    {
+        const size_t stride =
+            pairsVar.getType()->unwrapArray()->asResourceType()->getStructType()->getSlangTypeLayout()->getStride();
+        const size_t bytesPerBin = std::max<size_t>(size_t(frameDim.x) * frameDim.y * candidates * stride, 1);
+        const uint chunkBins = std::clamp(uint(kPairBufferBytes / bytesPerBin), 1u, std::max(binCount, 1u));
+        const uint32_t count = std::max(frameDim.x * frameDim.y * candidates * chunkBins, 1u);
+        if (!reusePairs || reusePairs->getElementCount() != count || reusePairs->getStructSize() != stride)
+            reusePairs = pDevice->createStructuredBuffer(pairsVar, count,
+                ResourceBindFlags::ShaderResource | ResourceBindFlags::UnorderedAccess, MemoryType::DeviceLocal, nullptr,
+                false);
+        return chunkBins;
+    }
+
+    /// (Re)allocates spatialCandidateValid (`validVar` is its shader buffer): one flag per pixel and spatial neighbor.
+    void prepareCandidateValid(ref<Device> pDevice, const ShaderVar& validVar, uint2 frameDim, uint neighborCount)
+    {
+        const uint32_t validCount = std::max(frameDim.x * frameDim.y * neighborCount, 1u);
+        if (!spatialCandidateValid || spatialCandidateValid->getElementCount() != validCount)
+            spatialCandidateValid = pDevice->createStructuredBuffer(validVar, validCount,
+                ResourceBindFlags::ShaderResource | ResourceBindFlags::UnorderedAccess, MemoryType::DeviceLocal, nullptr,
+                false);
+    }
+
+    /// Spatial reuse split into two passes (SPATIAL_REUSE_PAIRS) per iteration and chunk of `chunkBins` bins:
+    /// `pPairPass` with `pairsPerPixel` threads per pixel along x (a candidate each) and the chunk's bins along z, then
+    /// the resampling pass `pPass`.
+    /// Both get the reservoirs, the same seed and the chunk (pairFirstBin, pairBinCount).
+    void runSpatialReuse(
+        RenderContext* pRenderContext,
+        const ref<ComputePass>& pPairPass,
+        const ShaderVar& pairVar,
+        uint pairsPerPixel,
+        const ref<ComputePass>& pPass,
+        const ShaderVar& spatialVar,
+        uint iterations,
+        uint& randomSeed,
+        uint2 frameDim,
+        uint binCount,
+        uint chunkBins
+    )
+    {
+        for (uint iteration = 0; iteration < iterations; iteration++)
+        {
+            swapReservoirs();
+            for (const ShaderVar* var : {&pairVar, &spatialVar})
+            {
+                (*var)["gRandomSeed"] = randomSeed;
+                bindReservoirs(*var);
+            }
+            randomSeed++;
+            for (uint firstBin = 0; firstBin < binCount; firstBin += chunkBins)
+            {
+                const uint bins = std::min(chunkBins, binCount - firstBin);
+                for (const ShaderVar* var : {&pairVar, &spatialVar})
+                {
+                    (*var)["pairFirstBin"] = firstBin;
+                    (*var)["pairBinCount"] = bins;
+                }
+                {
+                    FALCOR_PROFILE(pRenderContext, "pairs");
+                    pPairPass->execute(pRenderContext, {frameDim.x * pairsPerPixel, frameDim.y, bins});
+                }
+                {
+                    FALCOR_PROFILE(pRenderContext, "resample");
+                    pPass->execute(pRenderContext, {frameDim.x, frameDim.y, 1});
+                }
+            }
         }
     }
 
@@ -324,14 +362,32 @@ public:
     /// camera; keeps the V-buffer and camera position it refers to.
     void endFrame(RenderContext* pRenderContext, bool useTemporalReuse, const Scene& scene, const ref<Texture>& pVBuffer)
     {
-        std::swap(currReservoirs, prevReservoirs);
+        swapReservoirs();
         temporalHistoryValid = useTemporalReuse && scene.getCamera()->getApertureRadius() == 0.f;
         if (temporalHistoryValid)
             pRenderContext->copyResource(temporalVBuffer.get(), pVBuffer.get());
         previousCameraPosition = scene.getCamera()->getPosition();
     }
 
+    /// Binds prevReservoirs and currReservoirs, and their summaries if allocated, to a SpatialReuse `var`.
+    void bindReservoirs(const ShaderVar& var) const
+    {
+        var["prevReservoirs"] = prevReservoirs;
+        var["currReservoirs"] = currReservoirs;
+        if (prevSummaries)
+        {
+            var["prevSummaries"] = prevSummaries;
+            var["currSummaries"] = currSummaries;
+        }
+    }
+
 private:
+    void swapReservoirs()
+    {
+        std::swap(currReservoirs, prevReservoirs);
+        std::swap(currSummaries, prevSummaries);
+    }
+
     /// Low-discrepancy offsets in the unit disk (R2 sequence), stored as RG8Snorm.
     static ref<Texture> createNeighborOffsetTexture(ref<Device> pDevice, uint32_t sampleCount)
     {

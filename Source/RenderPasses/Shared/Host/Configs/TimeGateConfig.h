@@ -1,6 +1,6 @@
 #pragma once
 #include "ConfigUtils.h"
-#include "Utils/Transient/Transient.h"
+#include "TimeGate.h"
 #include <algorithm>
 #include <cmath>
 
@@ -22,7 +22,7 @@ struct TimeGateConfig
     float timeMax = 12.0f;
     uint timeBin = 512;
     float timeGateWindow = 0.05f;
-    TimeGateMode timeGateMode = TimeGateMode::BOX;
+    TimeGateMode timeGateMode = TimeGateMode::Box;
     bool shiftGate = false; ///< Advance the gate one bin per frame, wrapping from timeMax to timeMin.
 
     /// Center of gate `index`. Equal endpoints give a fixed gate.
@@ -34,10 +34,10 @@ struct TimeGateConfig
     /// Sets the TimeGate constants (window, kernel, tcurr, tprev) under `timeGateVar`.
     void bindShaderData(const ShaderVar& timeGateVar, const TimeGateState& state) const
     {
-        timeGateVar["time_gate_window"] = timeGateWindow;
-        timeGateVar["time_gate_mode"] = uint(timeGateMode);
-        timeGateVar["tcurr"] = state.current;
-        timeGateVar["tprev"] = state.previous;
+        timeGateVar["gTimeGateWindow"] = timeGateWindow;
+        timeGateVar["gTimeGateMode"] = uint(timeGateMode);
+        timeGateVar["gTimeCenter"] = state.current;
+        timeGateVar["gPreviousTimeCenter"] = state.previous;
     }
 
     void validate() const
@@ -64,7 +64,7 @@ struct TimeGateConfig
         else if (key == "timeGateWindow")
             timeGateWindow = value;
         else if (key == "timeGateMode")
-            timeGateMode = parseEnumProperty(TimeGateModeTable, value, key);
+            timeGateMode = parseEnumProperty(kTimeGateModes, value, key);
         else if (key == "shiftGate")
             shiftGate = value;
         else
@@ -85,7 +85,7 @@ struct TimeGateConfig
         props["timeMax"] = timeMax;
         props["timeBin"] = timeBin;
         props["timeGateWindow"] = timeGateWindow;
-        props["timeGateMode"] = enumPropertyName(TimeGateModeTable, timeGateMode);
+        props["timeGateMode"] = enumPropertyName(kTimeGateModes, timeGateMode);
         props["shiftGate"] = shiftGate;
     }
 
@@ -93,21 +93,11 @@ struct TimeGateConfig
     bool renderUI(Gui::Widgets& widget, float currentCenter, const std::string& shiftGateNote = "")
     {
         bool dirty = false;
-        // Only the kernels implemented by pathLengthImportance() are offered.
-        static const Gui::DropdownList kTimeGateModeList = {
-            {(uint32_t)TimeGateMode::BOX, "Box"},
-            {(uint32_t)TimeGateMode::TENT, "Tent"},
-            {(uint32_t)TimeGateMode::COS, "Cos"},
-            {(uint32_t)TimeGateMode::ALL, "All (no gating)"},
-        };
-        uint32_t mode = (uint32_t)timeGateMode;
-        if (widget.dropdown("Gate kernel", kTimeGateModeList, mode))
-        {
-            timeGateMode = (TimeGateMode)mode;
-            dirty = true;
-        }
+        dirty |= renderTimeGateModeUI(widget, timeGateMode);
         widget.tooltip("Weight of a path as a function of its total optical length (laser -> scene -> camera) "
-                       "relative to the gate center.", true);
+                       "relative to the gate center. Gaussian: sigma = window / sqrt(2 pi), cut at 3 sigma. "
+                       "Exponential: opens at the center and decays over one window, cut at 3 windows. "
+                       "Two-sided exponential: decays over half a window on each side, cut at 1.5 windows.", true);
 
         dirty |= widget.var("Gate window", timeGateWindow, 0.001f, 1000.0f);
         widget.tooltip("Gate width in path-length units (scene units). The output is divided by it.", true);

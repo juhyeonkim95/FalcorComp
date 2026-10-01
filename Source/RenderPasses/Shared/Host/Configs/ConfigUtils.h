@@ -12,6 +12,9 @@ using namespace Falcor;
  *   TimeGatedReSTIRInline:              TimeGateConfig + EllipsoidalSamplingConfig + PathTracingConfig + PathLengthAwareReSTIRConfig
  *   TransientHistogramPathTracerInline: TransientHistogramConfig + PathTracingConfig
  *   TransientHistogramReSTIRInline:     TransientHistogramConfig + PathTracingConfig + PathLengthAwareReSTIRConfig
+ *   CWToFPathTracerInline:              ContinuousWaveConfig + PathTracingConfig + ShiftMappingConfig
+ *   StructuredLightPathTracerInline:    ProjectorConfig + PathTracingConfig
+ * PathLengthAwareReSTIRConfig holds a ShiftMappingConfig.
  */
 
 /// Enum value named by a string property. Takes the property value itself: std::string(value) is ambiguous on
