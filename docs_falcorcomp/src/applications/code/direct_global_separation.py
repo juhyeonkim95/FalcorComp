@@ -1,8 +1,6 @@
 """Separation of the direct and global light with high-frequency checkerboards (Nayar et
 al. 2006), with naive and antithetic sampling of the indirect light."""
 # 1. Load the scene
-import time
-
 import matplotlib
 matplotlib.use("Agg")  # no window
 import matplotlib.pyplot as plt
@@ -17,7 +15,9 @@ testbed.scene.camera.aspectRatio = 1.0
 testbed.clock.pause()
 
 SHIFTS = 25           # checkerboards shifted by fifths of a cell, 5 x 5
-NAIVE_SPP = 64        # indirect samples per pixel of each naive image
+# Indirect samples per pixel of each image. An antithetic sample traces a partner path,
+# so it gets half as many.
+SPP = {"bsdf": 64, "antithetic": 32}
 CONVERGED_SPP = 2048  # samples per pixel of the white images
 
 # 2. The projector and the render graph
@@ -54,34 +54,16 @@ def render(properties, spp):
     return graph.get_output("Accumulate.output").to_numpy()[..., :3].copy()
 
 
-# 3. Equal time: the cost of a frame of each method
-def frame_time(method):
-    graph.update_pass("Tracer", {**TRACER, "samplesPerPixel": 1, "computeDirect": False,
-                                 "pattern": "checkerboard", "samplingMethod": method})
-    for _ in range(100):  # compile and warm up the GPU
-        testbed.frame()
-    testbed.device.wait()
-    start = time.perf_counter()
-    for _ in range(300):
-        testbed.frame()
-    testbed.device.wait()
-    return (time.perf_counter() - start) / 300
-
-
-cost = {method: frame_time(method) for method in ["bsdf", "antithetic"]}
-SPP = {"bsdf": NAIVE_SPP, "antithetic": round(NAIVE_SPP * cost["bsdf"] / cost["antithetic"])}
-print(f"frame time: naive {1000 * cost['bsdf']:.2f} ms, antithetic {1000 * cost['antithetic']:.2f} ms; "
-      f"antithetic gets {SPP['antithetic']} spp")
-
-# 4. The white image, and the true direct and global light
+# 3. The white image, and the true direct and global light
 white = render({"pattern": "constant"}, CONVERGED_SPP)
 true_direct = render({"pattern": "constant", "maxBounces": 1}, CONVERGED_SPP)
 true_global = white - true_direct
 
-# 5. Capture the checkerboards and their inverses
+# 4. Capture the checkerboards and their inverses
 # The pass renders the signed pattern P = +-1. The image under the binary checkerboard
 # (1 where P = 1, 0 elsewhere) is (white + signed) / 2. The direct light of each pattern
-# is rendered once; only the indirect light is rendered with each method.
+# is rendered first, once (it is easy to converge); only the indirect light, the hard
+# part, is rendered with each method.
 patterns = [{"pattern": "checkerboard", "checkerShift": shift, "invertPattern": inverse}
             for shift in range(SHIFTS) for inverse in [False, True]]
 direct_images = [render({**pattern, "maxBounces": 1}, CONVERGED_SPP // 16) for pattern in patterns]
@@ -95,7 +77,7 @@ def capture(method):
     return np.stack(images)
 
 
-# 6. Separate (Nayar et al.): a point is lit in some images and dark in others. Lit, it
+# 5. Separate (Nayar et al.): a point is lit in some images and dark in others. Lit, it
 # gets its direct light and half its global light; dark, only half its global light.
 def separate(images):
     brightest, darkest = images.max(axis=0), images.min(axis=0)
@@ -120,7 +102,7 @@ for name, method in [("naive", "bsdf"), ("antithetic", "antithetic")]:
     print(f"{name} ({SPP[method]} spp): MSE direct {errors[0]:.2e}, global {errors[1]:.2e}")
     results[name] = (direct, global_, errors, SPP[method])
 
-# 7. Show the components and their squared errors
+# 6. Show the components and their squared errors
 # The 1024 x 1024 images are shown smaller, filtered (interpolation="antialiased").
 fig, axes = plt.subplots(2, 5, figsize=(15, 6.8))
 for row, (component, truth) in enumerate([("Direct", true_direct), ("Global", true_global)]):

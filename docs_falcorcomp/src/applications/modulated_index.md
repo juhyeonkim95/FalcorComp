@@ -3,7 +3,7 @@
 These applications reconstruct the scene from modulated-light measurements rendered with `CWToFPathTracerInline`
 and `StructuredLightPathTracerInline` (see [Modulated light](../tutorials/modulated_index.md)). They render the full
 measurement, direct and indirect light, as a real sensor sees it, and compare naive and
-[antithetic sampling](../tutorials/modulated_antithetic_index.md) at equal rendering time.
+[antithetic sampling](../tutorials/modulated_antithetic_index.md) of the indirect light.
 
 They use two Cornell-box scenes with objects from the Stanford 3D Scanning Repository. Download and unzip them next
 to the scripts:
