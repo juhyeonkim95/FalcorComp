@@ -9,8 +9,8 @@ They use two Cornell-box scenes with objects from the Stanford 3D Scanning Repos
 to the scripts:
 
 - {download}`cornell-box-bunny-diffuse.zip <scenes/cornell-box-bunny-diffuse.zip>`: a diffuse bunny, for depth.
-- {download}`cornell-box-separation.zip <scenes/cornell-box-separation.zip>` (3.6 MB): a glass dragon, a diffuse
-  armadillo and a rough metal bunny, for the separation.
+- {download}`cornell-box-separation.zip <scenes/cornell-box-separation.zip>` (3.6 MB): a glass dragon, a white
+  armadillo and a rough gold bunny, for the separation.
 
 The light sources are lights of the render passes, so the scenes have none. The scripts need matplotlib. The numbers
 were measured on an NVIDIA GeForce RTX 3090 with Vulkan.
@@ -27,13 +27,13 @@ were measured on an NVIDIA GeForce RTX 3090 with Vulkan.
 Four phase-shifted measurements, phase to depth, and `np.unwrap`.
 ```
 
-```{grid-item-card} Depth from structured light
+```{grid-item-card} 3D reconstruction from structured light
 :img-top: images/thumbnails/structured_light_depth_thumb.jpg
-:img-alt: Depth of the bunny scene reconstructed from structured light
+:img-alt: The bunny scene reconstructed from structured light
 :link: structured_light_depth
 :link-type: doc
 
-Gray and XOR codes, decoded to projector columns and triangulated.
+XOR codes along both projector axes, decoded and triangulated.
 ```
 
 ```{grid-item-card} Direct and global separation
@@ -42,7 +42,7 @@ Gray and XOR codes, decoded to projector columns and triangulated.
 :link: direct_global_separation
 :link-type: doc
 
-Separate the direct and the global light with shifted checkerboards (Nayar et al. 2006).
+Separate the direct and the global light with shifted fine checkerboards (Nayar et al. 2006).
 ```
 ````
 

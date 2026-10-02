@@ -1,5 +1,6 @@
-"""Depth of the bunny scene from structured light: 10-bit Gray and XOR codes (Gupta et al.
-2011), decoded to projector columns and triangulated, with naive and antithetic sampling."""
+"""3D reconstruction of the bunny scene from structured light: XOR-02 and XOR-04 codes
+(Gupta et al. 2011) along both projector axes, decoded to projector pixels and
+triangulated, with naive and antithetic sampling of the indirect light."""
 # 1. Load the scene
 import time
 
@@ -9,151 +10,171 @@ import matplotlib.pyplot as plt
 import numpy as np
 import falcorcomp as falcor
 
+SIZE = 1024
 testbed = falcor.Testbed(create_window=False)
 testbed.load_scene("cornell-box-bunny-diffuse/scene-v4.pbrt")
-testbed.resize_frame_buffer(512, 512)
+testbed.resize_frame_buffer(SIZE, SIZE)
 testbed.scene.camera.aspectRatio = 1.0
 testbed.clock.pause()
-position = testbed.scene.camera.position
-camera_position = np.array([position.x, position.y, position.z])
 
-BITS = 10              # 2^10 = 1024 projector columns
-SECONDS = 0.03         # rendering time of each bit image (equal time)
-CONVERGED_FRAMES = 64  # 64 frames x 16 spp for the converged Gray-code images
+BITS = 10                 # 2^10 = 1024 projector columns and rows
+NAIVE_SPP = 512           # indirect samples per pixel of each naive image
+CONVERGED_SPP = 2048      # samples per pixel of the white, direct and reference images
+CAMERA_POSITION = np.array([0.0, 1.0, 6.8])
+CAMERA_FOV = 19.5         # degrees, vertical, from the scene file
 
-# 2. Build the render graph
-# The projector is 0.8 to the right of the camera and looks at the middle of the
-# box; its field of view covers everything the camera sees.
-PROJECTOR = {"projectorPosition": [0.8, 1.0, 6.8], "projectorDirection": [-0.8, 0.0, -6.8],
-             "projectorFov": [34.0, 34.0], "projectorIntensity": [10.0, 10.0, 10.0]}
-STRUCTURED_LIGHT = {
-    "samplesPerPixel": 1, "maxBounces": 4,
-    "computeDirect": True,  # the full measurement: direct and indirect light
-    "patternAxis": "u",     # vertical stripes: codes for the projector column
-    "patternBits": BITS,
-    "useSingleChannel": True, "singleChannel": "luminance",
-    **PROJECTOR,
+# 2. The projector and the render graph
+# A projector 0.1 to the right of the camera, looking the same way, with a field of
+# view a little wider than the camera's (tan of the half angle 0.2).
+PROJECTOR_POSITION = np.array([0.1, 1.0, 6.8])
+TAN_HALF_FOV = 0.2
+PROJECTOR = {
+    "projectorPosition": PROJECTOR_POSITION.tolist(), "projectorDirection": [0.0, 0.0, -1.0],
+    "projectorFov": [2 * np.degrees(np.arctan(TAN_HALF_FOV))] * 2,
+    "projectorIntensity": [10.0, 10.0, 10.0],
 }
+TRACER = {"maxBounces": 4, "patternBits": BITS,
+          "useSingleChannel": True, "singleChannel": "luminance", **PROJECTOR}
 
-
-def create_graph(properties):
-    graph = testbed.create_render_graph("StructuredLight")
-    graph.create_pass("VBuffer", "VBufferRT", {"samplePattern": "Center", "sampleCount": 1})
-    graph.create_pass("Tracer", "StructuredLightPathTracerInline", {**STRUCTURED_LIGHT, **properties})
-    graph.create_pass("Accumulate", "AccumulatePass", {"precisionMode": "SingleCompensated"})
-    graph.add_edge("VBuffer.vbuffer", "Tracer.vbuffer")
-    graph.add_edge("VBuffer.viewW", "Tracer.viewW")
-    graph.add_edge("Tracer.color", "Accumulate.input")
-    graph.mark_output("Accumulate.output")
-    return graph
-
-
-def render(graph, seconds=None, frames=None):
-    testbed.render_graph = graph
-    testbed.frame()  # compiles the shaders
-    start = time.perf_counter()
-    while time.perf_counter() - start < 0.2:  # warm up the GPU
-        testbed.frame()
-    graph.get_pass("Accumulate").reset()
-    testbed.device.wait()
-    count, elapsed = 0, 0.0
-    while (elapsed < seconds) if seconds is not None else (count < frames):
-        start = time.perf_counter()
-        testbed.frame()
-        testbed.device.wait()  # include the frame's GPU time
-        elapsed += time.perf_counter() - start
-        count += 1
-    return graph.get_output("Accumulate.output").to_numpy()[..., 0], count
-
-
-# 3. The true depth, the camera rays, and the pixels the projector lights
-graph = testbed.create_render_graph("Depth")
-graph.create_pass("GBuffer", "GBufferRT", {"samplePattern": "Center", "sampleCount": 1})
-graph.mark_output("GBuffer.posW")
-graph.mark_output("GBuffer.viewW")
+graph = testbed.create_render_graph("StructuredLight")
+# Jittered primary rays (32 Halton positions per pixel) average each pixel's footprint.
+graph.create_pass("VBuffer", "VBufferRT", {"samplePattern": "Halton", "sampleCount": 32})
+graph.create_pass("Tracer", "StructuredLightPathTracerInline", TRACER)
+graph.create_pass("Accumulate", "AccumulatePass", {"precisionMode": "SingleCompensated"})
+graph.add_edge("VBuffer.vbuffer", "Tracer.vbuffer")
+graph.add_edge("VBuffer.viewW", "Tracer.viewW")
+graph.add_edge("Tracer.color", "Accumulate.input")
+graph.mark_output("Accumulate.output")
 testbed.render_graph = graph
-testbed.frame()
-positions = graph.get_output("GBuffer.posW").to_numpy()[..., :3]
-true_depth = np.linalg.norm(positions - camera_position, axis=-1)
-ray_directions = -graph.get_output("GBuffer.viewW").to_numpy()[..., :3]
-# Direct light under a white pattern: zero where the projector does not reach.
-direct_white, _ = render(create_graph({"pattern": "constant", "maxBounces": 1}), frames=1)
-lit = direct_white > 1e-3 * direct_white.max()
 
 
-# 4. Capture one image per bit
-def capture(code, base_bit, method, seconds=None, frames=None):
-    """Signed measurements of bits 0 (finest stripes) to BITS - 1 of a code."""
-    images, spp = [], 0
+def render(properties, spp):
+    """One image with the tracer set to `properties`, averaged over `spp` frames of 1 spp."""
+    graph.update_pass("Tracer", {**TRACER, "samplesPerPixel": 1, **properties})
+    testbed.frame()  # compiles the shaders
+    graph.get_pass("Accumulate").reset()
+    for _ in range(spp):
+        testbed.frame()
+    return graph.get_output("Accumulate.output").to_numpy()[..., 0].copy()
+
+
+# 3. Equal time: the cost of a frame of each method
+def frame_time(method):
+    graph.update_pass("Tracer", {**TRACER, "samplesPerPixel": 1, "computeDirect": False,
+                                 "pattern": "xor", "patternBit": 5, "samplingMethod": method})
+    for _ in range(100):  # compile and warm up the GPU
+        testbed.frame()
+    testbed.device.wait()
+    start = time.perf_counter()
+    for _ in range(500):
+        testbed.frame()
+    testbed.device.wait()
+    return (time.perf_counter() - start) / 500
+
+
+cost = {method: frame_time(method) for method in ["bsdf", "antithetic"]}
+SPP = {"bsdf": NAIVE_SPP, "antithetic": round(NAIVE_SPP * cost["bsdf"] / cost["antithetic"])}
+print(f"frame time: naive {1000 * cost['bsdf']:.2f} ms, antithetic {1000 * cost['antithetic']:.2f} ms; "
+      f"antithetic gets {SPP['antithetic']} spp")
+
+# 4. Capture the code images
+# The direct light of each pattern is rendered once, converged; only the indirect light,
+# the hard part, is rendered with each method.
+white = render({"pattern": "constant"}, CONVERGED_SPP)
+normalization = white + 0.01 * white.mean()
+direct_images = {}
+
+
+def capture(base_bit, axis, indirect_method):
+    """Images of bits 0 (finest) to BITS - 1 of an XOR code along `axis`, divided by the
+    white image. indirect_method: "bsdf" (naive), "antithetic", or None (converged)."""
+    images = []
     for bit in range(BITS):
-        properties = {"pattern": code, "patternBit": bit, "patternBaseBit": base_bit,
-                      "samplingMethod": method}
-        if frames is not None:
-            properties["samplesPerPixel"] = 16
-        image, count = render(create_graph(properties), seconds, frames)
-        images.append(image)
-        spp += count * properties.get("samplesPerPixel", 1)
-    return np.stack(images), spp // BITS
+        pattern = {"pattern": "xor", "patternBaseBit": base_bit, "patternBit": bit, "patternAxis": axis}
+        key = (base_bit, axis, bit)
+        if key not in direct_images:
+            direct_images[key] = render({**pattern, "maxBounces": 1}, CONVERGED_SPP // 16)
+        if indirect_method is None:
+            indirect = render({**pattern, "computeDirect": False}, CONVERGED_SPP)
+        else:
+            indirect = render({**pattern, "computeDirect": False, "samplingMethod": indirect_method},
+                              SPP[indirect_method])
+        images.append((direct_images[key] + indirect) / normalization)
+    return np.stack(images)
 
 
-# 5. Decode the projector column of every pixel
-def decode(images, base_bit=None):
-    """A bit is 1 where its signed measurement is positive. The XOR codes are undone with
-    their base bit; the Gray code is then turned into the column index."""
-    bits = images > 0
-    if base_bit is not None:
-        bits[base_bit + 1:] ^= bits[base_bit]
-    column = np.zeros(images.shape[1:], dtype=np.int64)
-    binary = np.zeros(images.shape[1:], dtype=bool)
-    for bit in reversed(range(BITS)):
-        binary ^= bits[bit]
-        column |= binary.astype(np.int64) << bit
-    return column
+# 5. Decode the projector pixel of every camera pixel
+def decode_xor(images, base_bit):
+    """A bit is 1 where its signed image is positive. Bits above the base bit are XORed
+    with it; undoing that gives the Gray code, which is then turned into the index."""
+    observed = images > 0
+    gray = np.zeros(images.shape[1:], dtype=np.int64)
+    for bit in range(BITS):
+        value = observed[bit] if bit <= base_bit else observed[bit] ^ observed[base_bit]
+        gray |= value.astype(np.int64) << bit
+    index, shift = gray.copy(), 1
+    while (gray >> shift).any():
+        index ^= gray >> shift
+        shift += 1
+    return index
 
 
-def confidence(images):
-    """The magnitude of the least certain bit."""
-    return np.abs(images).min(axis=0)
+# 6. Triangulate the camera ray with the projector ray
+def directions(x, y, tan_half_fov, width):
+    """Unit directions through pixel (x, y) of a pinhole looking down -z, y up."""
+    local = np.stack([(2 * (x + 0.5) / width - 1) * tan_half_fov,
+                      (2 * (y + 0.5) / width - 1) * tan_half_fov,
+                      -np.ones(np.shape(x))], axis=-1)
+    return local / np.linalg.norm(local, axis=-1, keepdims=True)
 
 
-# 6. Triangulate: intersect each camera ray with the plane of light of its column
-def triangulate(column):
-    forward = np.array(PROJECTOR["projectorDirection"]) / np.linalg.norm(PROJECTOR["projectorDirection"])
-    right = np.cross(forward, [0.0, 1.0, 0.0])
-    right /= np.linalg.norm(right)
-    up = np.cross(right, forward)
-    x = (2.0 * (column + 0.5) / 2 ** BITS - 1.0) * np.tan(np.radians(PROJECTOR["projectorFov"][0]) / 2)
-    normal = np.cross(forward + x[..., None] * right, up)  # normal of the column's plane
-    offset = np.array(PROJECTOR["projectorPosition"]) - camera_position
-    return np.sum(offset * normal, -1) / np.sum(ray_directions * normal, -1)
+rows, columns = np.meshgrid(np.arange(SIZE), np.arange(SIZE), indexing="ij")
+camera_rays = directions(columns, SIZE - 1 - rows, np.tan(np.radians(CAMERA_FOV) / 2), SIZE)
 
 
-# 7. Reconstruct
-results = []
-images, spp = capture("gray", 0, "bsdf", frames=CONVERGED_FRAMES)
-results.append((f"Gray code, converged\n({spp} spp per bit)", triangulate(decode(images))))
-for name, method in [("naive", "bsdf"), ("antithetic", "antithetic")]:
-    xor02, spp = capture("xor", 0, method, seconds=SECONDS)
-    xor04, _ = capture("xor", 1, method, seconds=SECONDS)
-    column02, column04 = decode(xor02, 0), decode(xor04, 1)
-    results.append((f"XOR-02, {name}\n({spp} spp per bit)", triangulate(column02)))
-    # Ensemble: in every pixel, the code whose least certain bit is the most certain.
-    column = np.where(confidence(xor02) >= confidence(xor04), column02, column04)
-    results.append((f"XOR-02 + XOR-04, {name}\n({spp} spp per bit)", triangulate(column)))
+def triangulate(column, row):
+    """The midpoint of the closest points of the camera ray and the projector ray."""
+    d1, d2 = camera_rays, directions(column, row, TAN_HALF_FOV, 2 ** BITS)
+    w0 = CAMERA_POSITION - PROJECTOR_POSITION
+    a, b, c = (d1 * d1).sum(-1), (d1 * d2).sum(-1), (d2 * d2).sum(-1)
+    d, e = (d1 * w0).sum(-1), (d2 * w0).sum(-1)
+    denominator = a * c - b * b
+    t, s = (b * e - c * d) / denominator, (a * e - b * d) / denominator
+    return 0.5 * (CAMERA_POSITION + t[..., None] * d1 + PROJECTOR_POSITION + s[..., None] * d2)
 
-# 8. Compare with the true depth
-fig, axes = plt.subplots(2, 3, figsize=(10.5, 8.8))
-low, high = np.percentile(true_depth[lit], [1, 99])
-# Top: Gray code and XOR-02; bottom: the true depth and the XOR ensembles.
-panels = [results[0], results[1], results[3], ("True depth", true_depth), results[2], results[4]]
-for ax, (label, depth) in zip(axes.ravel(), panels):
-    depth = np.where(lit, depth, np.nan)  # pixels in the projector's shadow have no code
-    wrong = np.mean(np.abs(depth - true_depth)[lit] > 0.05)
-    if label != "True depth":
-        label += f"\n{100 * wrong:.1f}% wrong by > 0.05"
-        print(label.replace("\n", " "))
-    ax.imshow(depth, cmap="viridis", vmin=low, vmax=high)
-    ax.set_title(label, fontsize=10)
+
+def reconstruct(indirect_method):
+    """Points from XOR-02 and XOR-04, averaged with the confidence of each: the product
+    of the magnitudes of its normalized bit images."""
+    point_sum, weight_sum = 0.0, 0.0
+    for base_bit in [0, 1]:  # XOR-02, XOR-04
+        u_images = capture(base_bit, "u", indirect_method)  # vertical stripes: the column
+        v_images = capture(base_bit, "v", indirect_method)  # horizontal stripes: the row
+        points = triangulate(decode_xor(u_images, base_bit), decode_xor(v_images, base_bit))
+        weight = np.prod(np.abs(u_images), axis=0) * np.prod(np.abs(v_images), axis=0) + 1e-20
+        point_sum = point_sum + weight[..., None] * points
+        weight_sum = weight_sum + weight[..., None]
+    return point_sum / weight_sum
+
+
+results = [("Converged", reconstruct(None))]
+for name, method in [("Naive", "bsdf"), ("Antithetic", "antithetic")]:
+    results.append((f"{name}, {SPP[method]} spp", reconstruct(method)))
+
+# 7. Show the depth (the z coordinate) and the difference from the converged result
+reference = results[0][1][..., 2]
+fig, axes = plt.subplots(2, 3, figsize=(12, 8.4))
+for column, (label, points) in enumerate(results):
+    depth = points[..., 2]
+    axes[0, column].imshow(depth, vmin=-1, vmax=1, cmap="viridis")
+    axes[0, column].set_title(label)
+    if column > 0:
+        wrong = np.mean(np.abs(depth - reference) > 0.05)
+        print(f"{label}: {100 * wrong:.2f}% of the pixels differ from the converged result by more than 0.05")
+        axes[1, column].imshow(np.abs(depth - reference), vmin=0, vmax=0.2, cmap="inferno")
+        axes[1, column].set_title(f"|difference|: {100 * wrong:.1f}% > 0.05")
+axes[1, 0].set_visible(False)
+for ax in axes.ravel():
     ax.set_xticks([])
     ax.set_yticks([])
 fig.tight_layout()

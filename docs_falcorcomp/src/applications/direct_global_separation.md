@@ -1,64 +1,82 @@
 # Direct and global separation
 
 Nayar et al. (2006) separate the light a camera sees into a direct part, light that reached the surface straight
-from the source, and a global part, all the rest (interreflections, subsurface scattering, light through glass),
-with high-frequency illumination. This page renders the separation scene, a glass dragon, a diffuse armadillo and a
-rough metal bunny in a Cornell box, with `StructuredLightPathTracerInline` and shifted checkerboards.
+from the source, and a global part, all the rest (interreflections, light through glass, ...), with high-frequency
+illumination. This page renders the separation scene, a glass dragon, a white armadillo and a rough gold bunny in a
+Cornell box, with `StructuredLightPathTracerInline` and shifted checkerboards, and compares naive and antithetic
+sampling of the indirect light at equal time.
 
 ```{image} images/direct_global_separation.jpg
-:alt: Direct and global light of the separation scene, true and separated with naive and antithetic sampling, with error maps
+:alt: Direct and global light of the separation scene, true and separated with naive and antithetic sampling, with squared-error maps
 :align: center
 ```
 
-## Shifted checkerboards
+## Setup
 
-The projector shows a binary checkerboard of 64 x 64 cells, shifted over a 5 x 5 grid of fifths of a cell, so that
-every point is lit in some of the 25 images and dark in others. The pass renders the signed pattern $P = \pm 1$, the
-difference of the checkerboard and its inverse, so a measurement is
-
-$$
-S = D\,P + G_P,
-$$
-
-where $D$ is the direct light and $G_P$ the global light under the zero-mean pattern, which nearly cancels for fine
-cells. A pixel is lit by the checkerboard or by its inverse in every image, so over all images $\max |S| = D$, and the
-global light is the white image minus it:
+- **Projector**: collocated with the camera (at its position, looking the same way), with a field of view a little
+  wider than the camera's (the tangent of its half angle is 0.2). It lights everything the camera sees, without
+  shadows.
+- **Patterns**: a binary checkerboard of 1024 x 1024 cells, about one pixel each, shifted over a 5 x 5 grid of
+  fifths of a cell, and the inverse of each: 50 images.
+- **Images**: 1024 x 1024, with primary rays jittered over each pixel (`VBufferRT` with 32 Halton positions). The
+  direct light of each pattern is rendered once (128 samples per pixel); only its indirect light, the noisy part,
+  is rendered with each method. Naive sampling gets 64 samples per pixel for each image, antithetic sampling the
+  number that takes the same time.
 
 ```{literalinclude} code/direct_global_separation.py
 :language: python
-:start-after: "# 5. Separate"
-:end-before: "results = {}"
+:start-after: "# 2. The projector and the render graph"
+:end-before: "graph = testbed.create_render_graph"
+```
+
+## Separation
+
+The pass renders the signed pattern $P = \pm 1$, so the image under the binary checkerboard, 1 where $P = 1$ and 0
+elsewhere, is half the sum of the white image and the signed one:
+
+```{literalinclude} code/direct_global_separation.py
+:language: python
+:start-after: "# 5. Capture the checkerboards and their inverses"
+:end-before: "# 6. Separate"
+```
+
+Under a fine pattern that lights half the scene, a lit point receives its direct light and half its global light,
+a dark one only half its global light. Over the 50 images every point is lit in some and dark in others, so the
+brightest image minus the darkest is the direct light, and twice the darkest is the global light:
+
+```{literalinclude} code/direct_global_separation.py
+:language: python
+:start-after: "# 6. Separate (Nayar et al.)"
+:end-before: "def luminance"
 ```
 
 ## Results
-
-Each checkerboard image is rendered for 0.4 seconds.
 
 ```{list-table}
 :header-rows: 1
 :widths: 40 20 20 20
 
-* - Method
+* - Indirect light
   - Samples per pixel per image
-  - Direct relMSE
-  - Global relMSE
+  - Direct MSE
+  - Global MSE
 * - Naive
-  - 316
-  - **0.032**
-  - **0.22**
-* - Antithetic
-  - 160
-  - 0.041
-  - 0.28
+  - 64
+  - 2.1e-4
+  - 3.6e-5
+* - Antithetic (same time)
+  - 24
+  - **7.1e-5**
+  - **1.7e-5**
 ```
 
-The separation finds the global light of the glass dragon, lit through the glass, and of the armadillo, lit by the
-walls and the other objects; the remaining noise is in the global light of the dragon and of the floor under it. In
-this scene antithetic sampling (each sampled vertex paired with the vertex lit by the next checkerboard cell) does
-not help: most of the global light passes through the glass dragon or off the metal bunny, and vertices sampled from
-their near-specular lobes have no partner, while an antithetic frame costs twice as much. In diffuse scenes it does
-help: under the same checkerboards, the indirect light of the Cornell box and of the diffuse bunny scene renders
-with a 3 to 9 times lower error at equal time.
+The maximum and the minimum over 50 images pick up the noise of the indirect light: with naive sampling, the noise
+raises the brightest image and lowers the darkest one, so the direct light comes out too bright and the global light
+too dark, most of all on the glass dragon, whose light is almost all global. Antithetic sampling pairs each sampled
+vertex with the vertex lit by the neighboring cell, of the opposite sign, so the indirect light cancels pair by pair;
+in the same time, with a third of the samples, the errors drop 3 times for the direct light and 2 times for the
+global light. The error maps show the squared error of the luminance, from 0 (black) to $10^{-4}$ (yellow); the
+images are shown filtered, at a third of their resolution.
 
 The full script: {download}`direct_global_separation.py <code/direct_global_separation.py>`. Run it next to the
-unzipped `cornell-box-separation` folder; it takes about a minute.
+unzipped `cornell-box-separation` folder; it takes a few minutes.
