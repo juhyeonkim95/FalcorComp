@@ -15,13 +15,13 @@ as the [ToF rendering](index.md) tutorials.
 Draw the laser's beam over a time-gated image with `LaserPositionViewer`, from a camera that sees the beam.
 ```
 
-```{grid-item-card} Two gates side by side (online)
-:img-top: images/thumbnails/time_gated_split_screen_thumb.jpg
+```{grid-item-card} Side-by-side visualization (online)
+:img-top: images/thumbnails/side_by_side_thumb.jpg
 :img-alt: Two time gates of the Cornell box on either side of a divider
-:link: time_gated_split_screen
+:link: side_by_side_visualization
 :link-type: doc
 
-Show two time gates side by side in a window with `SplitScreenPass`, and drag the divider between them.
+Compare two images in a window with `SplitScreenPass` or `SideBySidePass`, here two time gates.
 ```
 ````
 
@@ -29,5 +29,5 @@ Show two time gates side by side in a window with `SplitScreenPass`, and drag th
 :hidden:
 
 laser_visualization_offline
-time_gated_split_screen
+side_by_side_visualization
 ```
