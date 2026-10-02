@@ -142,7 +142,7 @@ void LaserPositionViewer::execute(RenderContext* pRenderContext, const RenderDat
     var["CB"]["gConeDensity"] = mConeDensity;
     var["CB"]["gBeamRadius"] = mBeamRadius;
     var["CB"]["gShowSpot"] = uint(mShowSpot);
-    laser.bindShaderData(var["CB"]);
+    laser.bindShaderData(var["Laser"]);
     InlinePass::bindChannels(var, renderData, kInputChannels);
     InlinePass::bindChannels(var, renderData, kOutputChannels);
     mpPass->execute(pRenderContext, uint3(frameDim, 1));
