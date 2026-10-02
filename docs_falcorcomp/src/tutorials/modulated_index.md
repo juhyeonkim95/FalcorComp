@@ -61,6 +61,10 @@ naive sampling at equal time.
 ```
 ````
 
+For more, see [Antithetic sampling for modulated light](modulated_antithetic_index.md) (the modulation wavelength,
+the Newton-based shift, binary codes) and the [applications](../applications/modulated_index.md) (depth
+reconstruction, direct and global separation).
+
 ```{toctree}
 :hidden:
 
