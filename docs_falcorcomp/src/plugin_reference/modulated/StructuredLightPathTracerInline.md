@@ -190,6 +190,10 @@ vertex (for example in corners), because it is not combined with BSDF sampling; 
 baseline for comparisons. Its connections are one-sided: they do not pass through the
 camera-path vertex or the sampled vertex by transmission.
 
+For every method, a vertex is lit by the projector only on the side its path arrived from: the projector never
+lights a surface through it, so it does not light the inside of glass or other transmissive objects (they still
+transmit the light that reflects off other surfaces).
+
 (structured-light-antithetic)=
 ## Antithetic sampling
 

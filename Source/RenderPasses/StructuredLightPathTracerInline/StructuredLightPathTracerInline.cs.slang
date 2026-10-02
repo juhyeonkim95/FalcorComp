@@ -50,10 +50,12 @@ bool traceVisibilityRay(const float3 origin, const float3 dir, const float dista
 }
 
 
-/// Whether `surface` sees the projector along `connection` (the projector lights it).
+/// Whether `surface` sees the projector along `connection` (the projector lights it). The ray starts on the side
+/// the path arrived from, so a projector behind the surface is occluded by it: the projector lights a surface only
+/// by reflection, never through a transmissive surface such as glass (as in the original experiments).
 bool isLit(ShadingData surface, ProjectorConnection connection)
 {
-    return traceVisibilityRay(rayOriginToward(surface, connection.direction), connection.direction, connection.distance);
+    return traceVisibilityRay(surface.computeRayOrigin(), connection.direction, connection.distance);
 }
 
 /// Connection of `surface` to the projector: BSDF * cosine * emitted radiance / distance^2, zero outside the
