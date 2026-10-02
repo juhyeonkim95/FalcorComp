@@ -25,6 +25,7 @@ src/tutorials/index
 src/tutorials/modulated_index
 src/tutorials/doppler_index
 src/tutorials/event_index
+src/tutorials/misc_index
 ```
 
 ```{toctree}
@@ -47,4 +48,5 @@ src/plugin_reference/transient
 src/plugin_reference/modulated
 src/plugin_reference/doppler
 src/plugin_reference/event
+src/plugin_reference/misc
 ```

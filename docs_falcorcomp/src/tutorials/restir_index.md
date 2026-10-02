@@ -32,15 +32,6 @@ it with the path tracer at equal rendering time.
 Sweep the gate over 100 frames with temporal reuse, and compare TGPT and TG ReSTIR at equal frame
 time in two videos.
 ```
-
-```{grid-item-card} Time-gated ReSTIR side by side (online)
-:img-top: images/thumbnails/time_gated_restir_split_screen_preview.webp
-:img-alt: TGPT and TG ReSTIR side by side while the gate sweeps
-:link: time_gated_restir_split_screen
-:link-type: doc
-
-Watch TGPT and TG ReSTIR side by side in a window with `SplitScreenPass` while the gate sweeps.
-```
 ````
 
 ## Transient rendering
@@ -74,7 +65,6 @@ time in the Cornell box and in *Veach, Ajar*.
 
 time_gated_restir_offline
 time_gated_restir_online
-time_gated_restir_split_screen
 transient_restir_offline
 transient_restir_online
 ```
