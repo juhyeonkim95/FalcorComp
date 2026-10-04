@@ -15,8 +15,8 @@ testbed.scene.camera.aspectRatio = 1.0
 testbed.clock.pause()
 
 SHIFTS = 25           # checkerboards shifted by fifths of a cell, 5 x 5
-# Indirect samples per pixel of each image. An antithetic sample traces a partner path,
-# so it gets half as many.
+# Indirect samples per pixel of each image. An antithetic sample also traces its
+# antithetic path, so it gets half as many.
 SPP = {"bsdf": 64, "antithetic": 32}
 CONVERGED_SPP = 2048  # samples per pixel of the white images
 

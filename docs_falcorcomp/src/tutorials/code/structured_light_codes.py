@@ -66,7 +66,7 @@ def scale_intervals(code):
     for i in range(0, len(runs) - 1, 2):
         add(runs[i], runs[i + 1])
         add(runs[i + 1], runs[i])
-    if len(runs) % 2:  # a last, unpaired run maps onto itself (no partner)
+    if len(runs) % 2:  # a last, unpaired run maps onto itself (no antithetic run)
         add(runs[-1], runs[-1])
     return ids, np.array(intervals, dtype=np.uint32).ravel()
 
@@ -203,6 +203,6 @@ for column, seed in zip(axes.T, [183, 160]):
     column[0].set_yticks([])
     column[1].plot(np.arange(COLUMNS), matching, linewidth=0.5)
     column[1].set_xlabel("column $i$")
-    column[1].set_ylabel("optimal-transport partner $T(i)$")
+    column[1].set_ylabel("antithetic column $T(i)$")
 fig.tight_layout()
 fig.savefig("structured_light_codes.png", dpi=100)

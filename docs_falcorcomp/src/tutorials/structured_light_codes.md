@@ -67,7 +67,7 @@ as an `arbitrary` pattern, with the pairing as a column matching:
   - **0.0627**
 ```
 
-The partner is at most one block away, so it is always close, and antithetic sampling reduces the error 35 to 65
+The antithetic column is at most one block away, so it is always close, and antithetic sampling reduces the error 35 to 65
 times in the same time.
 
 ## Arbitrary codes
@@ -84,9 +84,9 @@ A random code with as many 0s as 1s has no blocks. Two maps pair its columns, bo
   each column moves as a whole: the map has no Jacobian. It works when the code is locally balanced, so that the
   $k$-th 0 and the $k$-th 1 are close; where one value runs ahead of the other, the matched columns drift apart.
 - **Scale-based mapping** splits the code into runs of equal values and pairs each run with the next one: a run of
-  0s with the following run of 1s, and back. Each run is mapped linearly onto its partner, stretched or shrunk to its
-  width; the pass includes the Jacobian of the stretch, the ratio of the two widths. The partner is always adjacent,
-  but runs of different widths make the stretch, and the variance it adds, large.
+  0s with the following run of 1s, and back. Each run is mapped linearly onto the next, stretched or shrunk to its
+  width; the pass includes the Jacobian of the stretch, the ratio of the two widths. The antithetic column is always
+  in the adjacent run, but runs of different widths make the stretch, and the variance it adds, large.
 
 ```{literalinclude} code/structured_light_codes.py
 :language: python
@@ -129,8 +129,8 @@ with a long one (seed 160, 46 columns).
 
 For code 183, optimal transport moves columns 7 on average, and it is 12 times better than naive sampling and 3
 times better than the scale-based map. For code 160, one value runs well ahead of the other across the middle of the
-code (the band in its map above): optimal transport moves columns 46 on average, and the partner lights a different
-part of the scene; the scale-based map, whose partner is always the adjacent run, is then 2.5 times better. Both
+code (the band in its map above): optimal transport moves columns 46 on average, and the antithetic column lights a
+different part of the scene; the scale-based map, which always maps to the adjacent run, is then 2.5 times better. Both
 always beat naive sampling, which takes about 60% more frames in the same time.
 
 The full script: {download}`structured_light_codes.py <code/structured_light_codes.py>`. It takes about four

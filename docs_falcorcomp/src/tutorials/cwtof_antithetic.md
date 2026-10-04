@@ -1,7 +1,7 @@
 # CW-ToF: antithetic sampling and the modulation wavelength
 
 This tutorial compares naive and antithetic sampling of a CW-ToF measurement at equal time for three modulation
-wavelengths, with the partner path found by Newton's method on the barycentric coordinates of the vertex's triangle.
+wavelengths, with the antithetic path found by Newton's method on the barycentric coordinates of the vertex's triangle.
 It builds on [CW-ToF rendering (offline)](cwtof_offline.md), which explains the render graph.
 
 ```{image} images/cwtof_antithetic.jpg
@@ -9,16 +9,16 @@ It builds on [CW-ToF rendering (offline)](cwtof_offline.md), which explains the 
 :align: center
 ```
 
-## The partner path
+## The antithetic path
 
 `CWToFPathTracerInline` weights each path by $\cos(2\pi\,\ell / \lambda)$, with $\ell$ the path length. With
-antithetic sampling, every BSDF-sampled vertex $y$ after the primary hit gets a partner $y'$ on its surface such that
+antithetic sampling, every BSDF-sampled vertex $y$ after the primary hit gets an antithetic vertex $y'$ on its surface such that
 the path is half a wavelength longer or shorter, $\ell(y') = \ell(y) \pm \lambda / 2$, where the cos has the opposite
 sign. The two are combined with multiple importance sampling (see
 [Antithetic sampling](#cwtof-antithetic)).
 
 $y'$ has two coordinates on the surface and one condition on the path length, so one more condition fixes it: the
-gauge. Here the partner is found with `shiftmapMethod` = `barycentric`:
+gauge. Here the antithetic vertex is found with `shiftmapMethod` = `barycentric`:
 
 - The unknowns are the barycentric coordinates of $y'$ on $y$'s triangle, so $y'$ stays on the triangle (the shift
   fails if it would leave it).
@@ -95,10 +95,10 @@ so the time includes all of its work.
   - 0.0401
 ```
 
-An antithetic frame costs 50 to 75% more: it solves for a partner and evaluates its path for every sampled vertex.
+An antithetic frame costs 50 to 75% more: it solves for an antithetic vertex and evaluates its path for every sampled vertex.
 With the short wavelength, most of the indirect light cancels, and naive sampling shows only noise; antithetic
 sampling, with fewer samples, already shows the rings and stripes of the reference, at a 7 times lower error. The
-gain shrinks as the wavelength grows: the partner, half a wavelength away, is farther from its path and less similar
+gain shrinks as the wavelength grows: the antithetic path, half a wavelength longer or shorter, is farther from the sampled one and less similar
 to it, and the measurement no longer cancels much. At $\lambda = 1$, comparable to the size of the box, naive
 sampling is better for the same time.
 

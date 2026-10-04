@@ -186,7 +186,7 @@ void CWToFPathTracerInline::renderUI(Gui::Widgets& widget)
         if (auto group = widget.group("Antithetic shift mapping", true))
         {
             dirty |= group.checkbox("Round-trip check", options.antitheticRoundTripCheck);
-            group.tooltip("Keep a shift only if shifting the partner back returns to the start, so the forward and "
+            group.tooltip("Keep a shift only if shifting the antithetic vertex back returns to the start, so the forward and "
                           "backward shifts are exact inverses. Costs a second Newton solve.", true);
             dirty |= options.shiftMapping.renderUI(group,
                 "How the antithetic vertex is found: it is moved on its surface so the path length changes by the "

@@ -26,7 +26,7 @@ CWTOF = {
     "useSingleChannel": True, "singleChannel": "luminance",
 }
 NAIVE = {"useAntitheticSampling": False}
-# The partner vertex is found by Newton's method on the triangle's barycentric
+# The antithetic vertex is found by Newton's method on the triangle's barycentric
 # coordinates, moving along the average path-length gradient.
 ANTITHETIC = {"useAntitheticSampling": True,
               "shiftmapMethod": "barycentric", "gaugeMode": "avg_grad"}

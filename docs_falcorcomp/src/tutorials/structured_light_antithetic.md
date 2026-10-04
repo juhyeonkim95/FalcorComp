@@ -9,15 +9,15 @@ which explains the projector and the render graph.
 :align: center
 ```
 
-## The partner path
+## The antithetic path
 
 `StructuredLightPathTracerInline` weights each path by the projector's pattern $P(\xi)$ at the projector coordinate
-$\xi$ of the vertex the projector lights. With `samplingMethod` = `antithetic`, every BSDF-sampled vertex $y$ gets a
-partner $y'$: the pattern's antithetic map sends $\xi$ to $\xi'$, where the pattern has the opposite sign, and $y'$
+$\xi$ of the vertex the projector lights. With `samplingMethod` = `antithetic`, every BSDF-sampled vertex $y$ gets an
+antithetic vertex $y'$: the pattern's antithetic map sends $\xi$ to $\xi'$, where the pattern has the opposite sign, and $y'$
 is where the projector ray through $\xi'$ hits the scene. For a periodic pattern, $\xi'$ is the mirror image of $\xi$
 within the period: about a quarter or three quarters of the period for a cos, so that
 $\cos(2\pi\,\xi' / \lambda) = -\cos(2\pi\,\xi / \lambda)$. Unlike CW-ToF, no equation has to be solved: the map is
-explicit, and the projector ray gives the partner (see [Antithetic sampling](#structured-light-antithetic)).
+explicit, and the projector ray gives the antithetic vertex (see [Antithetic sampling](#structured-light-antithetic)).
 
 ## The script
 

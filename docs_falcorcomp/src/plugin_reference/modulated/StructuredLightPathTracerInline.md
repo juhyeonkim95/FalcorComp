@@ -149,7 +149,7 @@ tracer.set_pattern_data(values, interval_ids=ids, intervals=intervals)
   `(srcStart, srcEnd, dstStart, dstEnd)`, in columns: the interval is mapped linearly onto another
   one, which must map back onto it.
 
-Give the matching or the intervals, or neither (no antithetic partner), not both. `set_pattern_data`
+Give the matching or the intervals, or neither (no antithetic map), not both. `set_pattern_data`
 warns when the matching is not symmetric or does not pair opposite values, or when the intervals do
 not map back onto themselves, which makes antithetic sampling biased or ineffective. Rendering with
 `pattern = arbitrary` before `set_pattern_data` is called raises an error.
@@ -174,7 +174,7 @@ not map back onto themselves, which makes antithetic sampling biased or ineffect
   - string
   - How the vertex lit by the projector is reached from the camera path: `bsdf` (BSDF sampling,
     then a connection to the projector), `antithetic` (the same, with each BSDF sample paired with
-    its antithetic partner) or `projector` (the vertex is sampled from the projector, stratified
+    its antithetic vertex) or `projector` (the vertex is sampled from the projector, stratified
     along the pattern axis, and connected to the camera path). (Default: `antithetic`)
 * - `projectorSampleCount`
   - integer
@@ -199,8 +199,8 @@ transmit the light that reflects off other surfaces).
 
 With a fine pattern, the pattern changes sign many times across the vertices a pixel's paths light,
 so independent samples mostly cancel and the estimate is noisy. With `samplingMethod = antithetic`,
-every BSDF-sampled vertex $y$ (after the primary hit, and not sampled from a delta lobe) gets a
-partner $y'$: the pattern's antithetic map sends $y$'s projector coordinates $\xi$ to $\xi'$, where
+every BSDF-sampled vertex $y$ (after the primary hit, and not sampled from a delta lobe) gets an
+antithetic vertex $y'$: the pattern's antithetic map sends $y$'s projector coordinates $\xi$ to $\xi'$, where
 the pattern has the opposite sign, and $y'$ is where the projector ray through $\xi'$ hits the
 scene. The two contributions are combined with multiple importance sampling (balance heuristic),
 with the Jacobian

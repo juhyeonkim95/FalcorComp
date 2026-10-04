@@ -21,7 +21,7 @@ sampling of the indirect light.
 - **Images**: 1024 x 1024, with primary rays jittered over each pixel (`VBufferRT` with 32 Halton positions). The
   direct light of each pattern is rendered first, once (128 samples per pixel); only its indirect light, the noisy
   part, is rendered with each method: 64 samples per pixel for naive sampling, 32 for antithetic sampling, whose
-  samples each trace a partner path.
+  samples each also trace their antithetic path.
 - **Glass**: the projector lights a surface only on the side its path arrives from, so it does not light the inside
   of the glass dragon through its surface; the dragon's global light is the light of the walls and the other
   objects, seen through the glass.

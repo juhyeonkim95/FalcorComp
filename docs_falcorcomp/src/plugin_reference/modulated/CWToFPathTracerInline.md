@@ -87,8 +87,8 @@ Sampling:
     reference sampler (cosine-weighted for standard materials). (Default: `true`)
 * - `useAntitheticSampling`
   - boolean
-  - Pair every BSDF-sampled vertex with an antithetic partner whose modulation has the opposite
-    sign. See [Antithetic sampling](#cwtof-antithetic). (Default: `true`)
+  - Pair every BSDF-sampled vertex with an antithetic vertex, whose path has the opposite
+    modulation. See [Antithetic sampling](#cwtof-antithetic). (Default: `true`)
 ```
 
 Antithetic shift mapping (used with `useAntitheticSampling`):
@@ -102,7 +102,7 @@ Antithetic shift mapping (used with `useAntitheticSampling`):
   - Description
 * - `shiftmapMethod`
   - string
-  - How the partner vertex is found: `radial` (along the ray from the path length's minimum on the
+  - How the antithetic vertex is found: `radial` (along the ray from the path length's minimum on the
     vertex's plane), or one of the Newton-based path-length-aware shift mappings: `local_tangent`,
     `barycentric`, `ray_trace`, `area_adaptive`, `ray_trace_chart`. `no` pairs the vertex with
     itself (no variance reduction). (Default: `radial`)
@@ -130,7 +130,7 @@ Antithetic shift mapping (used with `useAntitheticSampling`):
     (Default: `0`)
 * - `antitheticRoundTripCheck`
   - boolean
-  - Keep a partner only if shifting it back returns to the starting vertex (within 1% of the shift
+  - Keep an antithetic vertex only if shifting it back returns to the starting vertex (within 1% of the shift
     distance). This makes the Newton-based methods unbiased, at the cost of a second shift;
     `radial` does not need it. (Default: `false`)
 ```
@@ -165,19 +165,19 @@ Output:
 
 With a short wavelength, the modulation changes sign many times across the paths a pixel samples,
 so independent samples mostly cancel and the estimate is noisy. With `useAntitheticSampling`, every
-BSDF-sampled vertex $y$ (after the primary hit) gets a partner $y'$ on its surface such that the
+BSDF-sampled vertex $y$ (after the primary hit) gets an antithetic vertex $y'$ on its surface such that the
 path through $y'$ has the opposite modulation:
 
-- `cos`, `triangle` and `box` satisfy $w(t + 1/2) = -w(t)$, so the partner's path is half a
+- `cos`, `triangle` and `box` satisfy $w(t + 1/2) = -w(t)$, so the antithetic path is half a
   wavelength longer or shorter, $\ell(y') = \ell(y) \pm \lambda/2$, with equal probability.
-- `sawtooth` has no such shift; its partner is the mirror image in the period, $t \to 1 - t$.
+- `sawtooth` has no such shift; its antithetic point is the mirror image in the period, $t \to 1 - t$.
 
 Because the two paths are geometrically close, their contributions are similar but their
 modulations have opposite signs, so they largely cancel and the variance drops. The primal and
 antithetic samples are combined with multiple importance sampling (balance heuristic). The two
 shifts ($+\lambda/2$ and $-\lambda/2$, or the mirror with itself) are inverses of each other, so the
-weights need the density of only these two points: no extra shift is evaluated. Where no partner
-exists (for example, it would leave the surface or be hidden from the previous vertex), the primal
+weights need the density of only these two points: no extra shift is evaluated. Where no antithetic
+vertex exists (for example, it would leave the surface or be hidden from the previous vertex), the primal
 sample is used alone, which keeps the estimate unbiased.
 
 This needs the two shifts to be exact inverses of each other. The `radial` shift mapping guarantees
@@ -186,12 +186,12 @@ path length (found in closed form with the mirror construction), and the path le
 every such ray, so each target length has one solution on the ray, and the backward shift lands back
 on the start. The Newton-based methods follow the average gradient, which can pick a different
 solution near $m$ and leave a small bias; `antitheticRoundTripCheck` removes it. `radial` works on
-planar faces: on finely tessellated curved surfaces, fewer vertices find a partner on their own
-plane, which reduces the variance reduction but not the correctness.
+planar faces: on finely tessellated curved surfaces, fewer vertices find an antithetic vertex on their
+own plane, which reduces the variance reduction but not the correctness.
 
 Antithetic sampling helps most when the wavelength is short compared with the scene (in the Cornell
-box, below about 0.1 for path lengths around 17): with long wavelengths, the partner is far from the
-primal path and the two are no longer similar.
+box, below about 0.1 for path lengths around 17): with long wavelengths, the antithetic path is far from
+the primal path and the two are no longer similar.
 
 ## Light
 

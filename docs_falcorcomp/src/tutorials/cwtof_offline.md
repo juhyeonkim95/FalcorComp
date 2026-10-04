@@ -49,8 +49,8 @@ in a CW-ToF camera. The tracer's modulation is set by:
 - `waveform` and `modulationWavelength`: the modulation $w(\ell / \lambda - \phi)$, with $\lambda$
   in scene units. `phase` ($\phi$, in periods) shifts it; real CW-ToF cameras take four
   measurements with phases 0, 0.25, 0.5 and 0.75 to recover depth.
-- `useAntitheticSampling`: pair every sampled path with a partner half a wavelength longer or
-  shorter, whose modulation has the opposite sign (see
+- `useAntitheticSampling`: pair every sampled path with an antithetic path half a wavelength
+  longer or shorter, whose modulation has the opposite sign (see
   [Antithetic sampling](#cwtof-antithetic)).
 - `useSingleChannel`: keep the luminance, as a single signed value per pixel.
 
@@ -121,10 +121,10 @@ runs at full speed when the timing starts:
   - 0.0064
 ```
 
-An antithetic frame costs about 25% more, since it finds and evaluates a partner for every sampled
-path, but in the same time its error is 20 times lower: naive sampling shows only noise, while
+An antithetic frame costs about 25% more, since it finds and evaluates an antithetic path for every
+sampled path, but in the same time its error is 20 times lower: naive sampling shows only noise, while
 antithetic sampling already shows the rings and stripes of the reference. The advantage shrinks for
-longer wavelengths, where the partner, half a wavelength away, is no longer similar to its path.
+longer wavelengths, where the antithetic path, half a wavelength away, is no longer similar to the sampled one.
 These numbers were measured on an NVIDIA GeForce RTX 3090 with Vulkan; frame counts and errors
 depend on the GPU.
 

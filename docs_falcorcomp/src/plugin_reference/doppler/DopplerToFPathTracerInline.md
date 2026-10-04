@@ -24,9 +24,9 @@ there.
 ## Antithetic time pairs
 
 The heterodyne term changes sign over half a period: $w(t + 1/(2\Delta f), \ell) = -w(t, \ell)$. With
-`antithetic = half_period`, every frame renders the time $t$ and its partner $t + 1/(2\Delta f)$ (modulo $T$) and
-outputs their mean, so light from static objects cancels within each pair. With `randomReplay`, the partner uses the
-same random numbers (random replay), so the two paths are the same up to the motion in between. On the Cornell box
+`antithetic = half_period`, every frame renders the time $t$ and its antithetic time $t + 1/(2\Delta f)$ (modulo $T$) and
+outputs their mean, so light from static objects cancels within each pair. With `randomReplay`, the antithetic time uses
+the same random numbers (random replay), so the two paths are the same up to the motion in between. On the Cornell box
 with moving boxes (200 MHz, 50 ms exposure), pairing lowered the error of the heterodyne image 17 to 50 times at
 equal render count, and random replay a further 1.1 to 1.3 times.
 
@@ -79,7 +79,7 @@ Time sampling:
     light). See [Antithetic time pairs](#doppler-tof-antithetic). (Default: `half_period`)
 * - `randomReplay`
   - boolean
-  - The partner time uses the same random numbers as the first. (Default: `true`)
+  - The antithetic time uses the same random numbers as the first. (Default: `true`)
 * - `seed`
   - integer
   - Offsets the time sequence and the random numbers of the paths. (Default: `0`)

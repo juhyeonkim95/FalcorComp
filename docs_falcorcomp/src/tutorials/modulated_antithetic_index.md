@@ -20,7 +20,7 @@ NVIDIA GeForce RTX 3090 with Vulkan; frame counts and errors depend on the GPU. 
 :link: cwtof_antithetic
 :link-type: doc
 
-Find the partner by Newton's method on barycentric coordinates, and see how the gain changes with the wavelength.
+Find the antithetic vertex by Newton's method on barycentric coordinates, and see how the gain changes with the wavelength.
 ```
 
 ```{grid-item-card} Structured light: pattern wavelength

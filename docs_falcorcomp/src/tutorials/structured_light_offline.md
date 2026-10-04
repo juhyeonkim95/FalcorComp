@@ -113,7 +113,7 @@ compiling and warming up, and compares both with a naive reference with 262,144 
   - 0.0048
 ```
 
-An antithetic frame costs about 30% more, since it traces a projector ray to the partner and checks
+An antithetic frame costs about 30% more, since it traces a projector ray to the antithetic vertex and checks
 that it is visible, but in the same time its error is 16 times lower. These numbers were measured on
 an NVIDIA GeForce RTX 3090 with Vulkan; frame counts and errors depend on the GPU.
 
