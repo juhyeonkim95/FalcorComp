@@ -37,6 +37,7 @@ src/tutorials/restir_index
 src/tutorials/ellipsoidal_index
 src/tutorials/event_denoising_index
 src/tutorials/modulated_antithetic_index
+src/tutorials/optimization_index
 ```
 
 ```{toctree}
