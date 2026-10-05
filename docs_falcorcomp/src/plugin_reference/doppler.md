@@ -11,6 +11,10 @@ These render passes simulate measurements of moving scenes:
   ToF camera with different light and sensor modulation frequencies. The objects really move during the exposure.
 - [`VelocityGroundTruthInline`](doppler/VelocityGroundTruthInline.md): ground-truth velocity maps for both.
 
+For an introduction to the two sensing principles side by side, see the
+[Doppler rendering tutorial](https://juhyeonkim95.github.io/project-pages/doppler_tutorial/), which compares OHD and
+Doppler ToF.
+
 (doppler-velocities)=
 ## Velocities
 

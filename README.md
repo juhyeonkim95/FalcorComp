@@ -62,6 +62,8 @@ The measurement depends on how fast each path's length changes as the scene move
 | **Doppler spectrum (OHD)** | `H × W × B`: for every pixel, the light at each Doppler shift, in `B` bins | [`DopplerHistogramPathTracerInline`](https://falcorcomp.readthedocs.io/en/latest/src/plugin_reference/doppler/DopplerHistogramPathTracerInline.html) |
 | **Doppler ToF** | `H × W`: a CW-ToF measurement with slightly different light and sensor frequencies, over an exposure in which the objects move | [`DopplerToFPathTracerInline`](https://falcorcomp.readthedocs.io/en/latest/src/plugin_reference/doppler/DopplerToFPathTracerInline.html) |
 
+The [Doppler rendering tutorial](https://juhyeonkim95.github.io/project-pages/doppler_tutorial/) compares OHD and Doppler ToF side by side.
+
 ### Event Camera
 
 Each pixel reports when its brightness log(I_ε + I) changes by more than a threshold.
