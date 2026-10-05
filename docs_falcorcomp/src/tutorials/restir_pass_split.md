@@ -18,6 +18,10 @@ kernel needed the maximum of 255 registers per thread, which leaves room for onl
 multiprocessor, too few to hide the latency of the rays and memory loads of the shifts. The Newton solves also
 diverge: neighbors in the same warp take different numbers of iterations, or fail early.
 
+The transient histogram pass is worse: it keeps a reservoir per histogram bin, so the same thread loops over all
+bins (64 in the tutorials) and their neighbors, and its temporal reuse merged every bin's history inside the
+initial sample generation kernel, the heaviest kernel of the pass.
+
 ## Two kernels per round
 
 With `spatialReuseTwoPass` (on by default) each round runs two kernels:
@@ -39,50 +43,117 @@ buffer), and both kernels skip empty pairs, which most bins are. Temporal reuse 
 
 ## Measure it
 
-The script renders the time-gated ReSTIR tutorial's Cornell box at 512 x 512 with three rounds of spatial reuse,
-once with one kernel and once with two, and reads the GPU time of each kernel from Falcor's profiler. A run without
-spatial reuse measures the initial sample generation, which is the same in both, so the rest of each frame is the
-spatial reuse:
+The script times both passes with their reuse in one kernel and in two, and reads the GPU time of each kernel from
+Falcor's profiler. A run without reuse measures the initial sample generation, which is the same in both, so the
+rest of each frame is the reuse. It compares the outputs of the two as well.
 
 ```{literalinclude} code/restir_pass_split.py
 :language: python
 :start-after: "# 2. Profile one configuration"
+:end-before: "# 3. Time-gated ReSTIR"
 ```
+
+The measurements use the settings of the [time-gated](time_gated_restir_offline.md) and
+[transient](transient_restir_offline.md) ReSTIR tutorials: the Cornell box with the laser, 16 samples per pixel,
+time-gated at 512 x 512 with three spatial rounds, transient at 256 x 256 with 64 bins and one round. Times are GPU
+milliseconds per frame for the reuse only, on an NVIDIA GeForce RTX 3090 (Vulkan, clocks not locked).
+
+**Time-gated ReSTIR, spatial reuse** (`spatialReuseTwoPass`):
 
 ```{list-table}
 :header-rows: 1
-:widths: 24 19 19 19 19
+:widths: 28 18 30 12 12
 
 * - Shift mapping
   - One kernel
   - Two kernels (pairs + resample)
   - Faster by
-  - Image difference
+  - Difference
 * - `local_tangent`
   - 3.88 ms
-  - 3.58 ms (2.79 + 0.77)
-  - 1.09x
+  - 3.58 ms (2.81 + 0.78)
+  - 1.08x
   - $10^{-8}$
 * - `barycentric`
-  - 4.60 ms
-  - 4.09 ms (3.31 + 0.77)
-  - 1.13x
+  - 4.58 ms
+  - 4.09 ms (3.34 + 0.77)
+  - 1.12x
   - $10^{-8}$
 * - `ray_trace`
-  - 11.48 ms
-  - 7.50 ms (6.84 + 0.76)
-  - 1.53x
+  - 11.62 ms
+  - 7.41 ms (6.81 + 0.76)
+  - 1.57x
   - $10^{-8}$
 ```
 
-Times are per frame for three rounds, on an NVIDIA GeForce RTX 3090 (Vulkan, clocks not locked). The more a shift
-costs, the more the split helps: the ray-traced chart traces a ray at every Newton step, and gains the most. The
-gain is larger for transient histograms, where the single kernel looped over every bin: on the Cornell box at
-256 x 256 with 64 bins and one round of local-tangent spatial reuse, the frame went from 52.3 to 36.1 ms
-(clocks locked at 1395 MHz), and two-pass temporal reuse cut the temporal merge of *Veach, Ajar* at 480 x 270 from
-86 to 36 ms.
+**Transient histogram ReSTIR, spatial reuse** (`spatialReuseTwoPass`):
 
-The full script: {download}`restir_pass_split.py <code/restir_pass_split.py>`.
+```{list-table}
+:header-rows: 1
+:widths: 28 18 30 12 12
+
+* - Shift mapping
+  - One kernel
+  - Two kernels (pairs + resample)
+  - Faster by
+  - Difference
+* - `local_tangent`
+  - 29.4 ms
+  - 15.6 ms (12.4 + 3.5)
+  - **1.88x**
+  - 0
+* - `barycentric`
+  - 35.0 ms
+  - 18.2 ms (15.0 + 3.4)
+  - **1.92x**
+  - 0
+* - `ray_trace`
+  - 87.0 ms
+  - 36.4 ms (33.2 + 3.4)
+  - **2.39x**
+  - 0
+```
+
+The more a shift costs, the more the split helps: the ray-traced chart traces a ray at every Newton step and gains
+the most. It helps far more for transient histograms, where the single kernel looped over all 64 bins in each
+thread, on top of the neighbors: that loop is what the split spreads over threads, and the pass skips the empty
+bins of each pair. The time-gated results differ from the single kernel only by float rounding; the transient ones
+are identical.
+
+**Transient histogram ReSTIR, temporal reuse** (`temporalReuseTwoPass`). The gain depends on the scene. On the
+Cornell box with a static camera, two kernels are *slower*: the history and the current frame see the same primary
+hits, so each pixel's merge is cheap and the single kernel does it within the initial sample generation, while the
+split adds the records' memory traffic. In *Veach, Ajar*, with the [transient ReSTIR online](transient_restir_online.md)
+tutorial's laser and a camera moving forward (480 x 270, 32 samples per pixel), every merge shifts real paths
+through a complex scene, and two kernels are 2.2 to 2.9 times faster (the script runs this part if
+`veach-ajar/scene-v4.pbrt` is next to it):
+
+```{list-table}
+:header-rows: 1
+:widths: 30 22 24 24
+
+* - Shift mapping
+  - Cornell box, static camera
+  - *Veach, Ajar*, one kernel
+  - *Veach, Ajar*, two kernels
+* - `local_tangent`
+  - 5.3 ms → 7.4 ms (0.72x)
+  - 62.6 ms
+  - **21.9 ms (2.86x)**
+* - `barycentric`
+  - 5.6 ms → 8.0 ms (0.70x)
+  - 65.0 ms
+  - **24.3 ms (2.68x)**
+* - `ray_trace`
+  - 7.1 ms → 9.2 ms (0.77x)
+  - 87.7 ms
+  - **39.8 ms (2.20x)**
+```
+
+Both temporal versions give identical histograms. `temporalReuseTwoPass` is on by default, for scenes like the
+second; for simple scenes rendered with a still camera, turning it off is faster.
+
+The full script: {download}`restir_pass_split.py <code/restir_pass_split.py>`. It takes about 15 minutes.
 
 ## Other optimizations
 
