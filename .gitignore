@@ -51,3 +51,14 @@
 # Reference code (ReSTIR PT, Reservoir Splatting), kept locally only
 /ReSTIR_PT-master/
 /reference_code/
+
+# CMake output when it is run in the source folder (builds go in build/).
+/CMakeFiles/
+/cmake_install.cmake
+/git_version/
+/git_version_state
+
+# Falcor files this fork does not use; kept locally, not in the repository.
+/environment.yml
+/docs/
+/tests/
