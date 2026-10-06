@@ -1,7 +1,5 @@
 #include "Scene/SceneDefines.slangh"
 __exported import Scene.Shading;
-import Scene.Material.ShadingUtils;
-import Utils.Math.MathHelpers;
 
 /**
  * Vertex data and material ID of a hit point.

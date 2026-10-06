@@ -9,7 +9,6 @@ import RenderPasses.Shared.Shaders.Utils.RayUtils;
 #include "Scene/SceneDefines.slangh"
 #include "Utils/Math/MathConstants.slangh"
 
-import Utils.Math.MathHelpers;
 import Utils.Sampling.SampleGenerator;
 import Scene.RaytracingInline;
 import RenderPasses.Shared.Shaders.Lights.Laser;
