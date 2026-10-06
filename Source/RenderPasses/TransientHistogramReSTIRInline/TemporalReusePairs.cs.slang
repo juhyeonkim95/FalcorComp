@@ -15,8 +15,8 @@ void main(uint3 dispatchThreadId: SV_DispatchThreadID)
     uint historyPixel = gTemporalHistoryPixel[pixelIndex];
     if (historyPixel == kNoHistory) return;
     uint bin = gPairFirstBin + dispatchThreadId.z;
-    uint index = pixelIndex * gTimeBin + bin;
-    uint previousIndex = historyPixel * gTimeBin + bin;
+    ReservoirIndex index = reservoirIndex(pixelIndex, bin);
+    ReservoirIndex previousIndex = reservoirIndex(historyPixel, bin);
     float2 previousSummary = getPrevSummary(previousIndex);
     float historyMass = getHistoryMass(previousSummary);
     if (!(historyMass > 0.f) || isEmptyTemporalPair(getCurrSummary(index), previousSummary)) return;

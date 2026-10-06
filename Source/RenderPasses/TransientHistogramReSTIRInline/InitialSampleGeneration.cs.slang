@@ -83,7 +83,7 @@ float3 tracePath(uint2 pixel, uint2 frameDim)
 #endif
         for (uint bin = 0; bin < gTimeBin; ++bin)
         {
-            storeReservoir(pixelIndex * gTimeBin + bin, Reservoir());
+            storeReservoir(reservoirIndex(pixelIndex, bin), Reservoir());
             if (gWriteHistogram) gTransientHistogram[uint3(pixel, bin)] = 0.f;
         }
         return 0.f;
@@ -197,7 +197,7 @@ float3 tracePath(uint2 pixel, uint2 frameDim)
 #if USE_TEMPORAL_REUSE && !TEMPORAL_REUSE_PAIRS
         if (history.valid)
         {
-            Reservoir previous = loadPrevReservoir(history.pixelIndex * gTimeBin + bin);
+            Reservoir previous = loadPrevReservoir(reservoirIndex(history.pixelIndex, bin));
             previous.M = temporalHistoryMass(previous.M, gTemporalHistoryLength, gSamplesPerPixel);
             if (previous.M > 0.f)
             {
@@ -211,7 +211,7 @@ float3 tracePath(uint2 pixel, uint2 frameDim)
             }
         }
 #endif
-        storeReservoir(index, reservoir);
+        storeReservoir(reservoirIndex(pixelIndex, bin), reservoir);
         float3 radiance = reservoir.W * reservoir.f;
         integratedRadiance += radiance;
         if (writeHistogram) gTransientHistogram[uint3(pixel, bin)] = toHistogramTexel(radiance / gBinWidth);

@@ -79,45 +79,50 @@ struct SpatialReuse
 
     // Reservoir accesses: with RESERVOIR_SUMMARIES, W and M come from the summaries and only non-empty reservoirs are
     // stored.
-    Reservoir loadPrevReservoir(uint index)
+    Reservoir loadPrevReservoir(ReservoirIndex index)
     {
 #if RESERVOIR_SUMMARIES
         return loadSummarizedReservoir(prevReservoirs, prevSummaries, index);
 #else
-        return prevReservoirs[index];
+        return prevReservoirs[index.reservoir];
 #endif
     }
 
-    float getPrevW(uint index)
+    float getPrevW(ReservoirIndex index)
     {
 #if RESERVOIR_SUMMARIES
-        return prevSummaries[index].x;
+        return prevSummaries[index.summary].x;
 #else
-        return prevReservoirs[index].W;
+        return prevReservoirs[index.reservoir].W;
 #endif
     }
 
-    float getPrevM(uint index)
+    float getPrevM(ReservoirIndex index)
     {
 #if RESERVOIR_SUMMARIES
-        return prevSummaries[index].y;
+        return prevSummaries[index.summary].y;
 #else
-        return prevReservoirs[index].M;
+        return prevReservoirs[index.reservoir].M;
 #endif
     }
 
-    void storeReservoir(uint index, Reservoir reservoir)
+    void storeReservoir(ReservoirIndex index, Reservoir reservoir)
     {
 #if RESERVOIR_SUMMARIES
         storeSummarizedReservoir(currReservoirs, currSummaries, index, reservoir);
 #else
-        currReservoirs[index] = reservoir;
+        currReservoirs[index.reservoir] = reservoir;
 #endif
     }
 
     uint getLinearizedPixel(uint2 pixel)
     {
         return pixel.y * gFrameDim.x + pixel.x;
+    }
+
+    ReservoirIndex getReservoirIndex(uint linearPixel, uint bin, uint binCount)
+    {
+        return makeReservoirIndex(linearPixel, bin, binCount, gFrameDim.x * gFrameDim.y);
     }
 
     int2 getNextNeighborPixel(uint startIndex, int2 pixel, uint index)
@@ -211,7 +216,7 @@ struct SpatialReuse
 
     // Add the unshifted central sample after all candidates (preserving the random draws' order), normalize, and
     // store the reservoir. centralReservoir.M is its split mass. Returns W * f.
-    float3 finishReservoir(uint reservoirIndex, inout Reservoir destination, Reservoir centralReservoir,
+    float3 finishReservoir(ReservoirIndex reservoirIndex, inout Reservoir destination, Reservoir centralReservoir,
         float canonicalWeight, uint candidateCount, uint validNeighborCount, inout SampleGenerator sg)
     {
         float centralTarget = getReservoirWeight(centralReservoir.f);
@@ -241,7 +246,7 @@ struct SpatialReuse
         newtonStats = uint4(0);
         mappingDistance = float2(0.f);
 #endif
-        uint reservoirIndex = getLinearizedPixel(pixel) * binCount + bin;
+        ReservoirIndex reservoirIndex = getReservoirIndex(getLinearizedPixel(pixel), bin, binCount);
         HitInfo primaryHit = HitInfo(gVBuffer[pixel]);
         if (!primaryHit.isValid())
         {
@@ -298,7 +303,8 @@ struct SpatialReuse
 
             // Count geometric neighbors even if their reservoir or shift has no support.
             validNeighborCount++;
-            Reservoir neighborReservoir = loadPrevReservoir(getLinearizedPixel(neighborPixel) * binCount + neighborBin);
+            Reservoir neighborReservoir =
+                loadPrevReservoir(getReservoirIndex(getLinearizedPixel(neighborPixel), neighborBin, binCount));
 
             // Central -> neighbor: accumulate the central sample's pairwise weight.
             ShiftMappingDebugInfo debugInfo;
@@ -341,14 +347,15 @@ struct SpatialReuse
 
     // An empty central sample and an empty candidate reservoir (most histogram bins): the canonical coefficient is zero
     // and the candidate contributes only its mass, so the pair needs no shift and no record.
-    bool isEmptyPair(uint reservoirIndex, uint neighborReservoirIndex)
+    bool isEmptyPair(ReservoirIndex reservoirIndex, ReservoirIndex neighborReservoirIndex)
     {
         return !(getPrevW(reservoirIndex) > 0) && getPrevW(neighborReservoirIndex) == 0.f;
     }
 
     // Both shifts of candidate i at one bin, as resampleGate computes them: the central sample's canonical coefficient
     // against the candidate, and the candidate's incoming shift (with the candidate reservoir's M).
-    ReusePair evaluateCandidateShifts(uint reservoirIndex, uint neighborReservoirIndex, uint candidateCount,
+    ReusePair evaluateCandidateShifts(ReservoirIndex reservoirIndex, ReservoirIndex neighborReservoirIndex,
+        uint candidateCount,
         ShadingData primary, IMaterialInstance primaryMaterial, float primaryDepth, float gateCenter,
         ShadingData neighborPrimary, IMaterialInstance neighborMaterial, float neighborDepth, float neighborGateCenter,
         inout SampleGenerator sg)
@@ -402,7 +409,7 @@ struct SpatialReuse
         HitInfo primaryHit = HitInfo(gVBuffer[pixel]);
         if (!primaryHit.isValid()) return;
         uint linearPixel = getLinearizedPixel(pixel);
-        uint reservoirIndex = linearPixel * binCount + bin;
+        ReservoirIndex reservoirIndex = getReservoirIndex(linearPixel, bin, binCount);
 
         // As resampleGate: the generator picks the neighbors; the shifts draw no random numbers.
         SampleGenerator sg = createPixelSampleGenerator(pixel, gRandomSeed, kSpatialReuseStream);
@@ -419,7 +426,7 @@ struct SpatialReuse
             if (recordValidity) pairCandidateValid[getCandidateValidIndex(linearPixel, i)] = 0;
             return;
         }
-        uint neighborReservoirIndex = getLinearizedPixel(neighborPixel) * binCount + neighborBin;
+        ReservoirIndex neighborReservoirIndex = getReservoirIndex(getLinearizedPixel(neighborPixel), neighborBin, binCount);
         const bool empty = isEmptyPair(reservoirIndex, neighborReservoirIndex);
         if (empty && !recordValidity) return;
 
@@ -446,7 +453,7 @@ struct SpatialReuse
     // W * f.
     float3 resampleFromPairs(uint2 pixel, uint binCount, uint bin, float gateCenter)
     {
-        uint reservoirIndex = getLinearizedPixel(pixel) * binCount + bin;
+        ReservoirIndex reservoirIndex = getReservoirIndex(getLinearizedPixel(pixel), bin, binCount);
         HitInfo primaryHit = HitInfo(gVBuffer[pixel]);
         if (!primaryHit.isValid())
         {
@@ -476,7 +483,8 @@ struct SpatialReuse
             int2 neighborPixel;
             uint neighborBin;
             getCandidate(pixel, bin, startIndex, i, neighborPixel, neighborBin);
-            uint neighborReservoirIndex = getLinearizedPixel(neighborPixel) * binCount + neighborBin;
+            ReservoirIndex neighborReservoirIndex =
+                getReservoirIndex(getLinearizedPixel(neighborPixel), neighborBin, binCount);
             // An empty pair has no record: a zero canonical coefficient, and the candidate's mass.
             if (isEmptyPair(reservoirIndex, neighborReservoirIndex))
             {

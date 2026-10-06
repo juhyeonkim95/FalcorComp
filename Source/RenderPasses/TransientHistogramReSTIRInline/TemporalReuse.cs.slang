@@ -6,7 +6,7 @@
 // without history keeps the outputs of initial generation.
 
 // mergeReservoirPair of `current` with the history reservoir at previousIndex (mass historyMass) from its pair record.
-Reservoir mergeTemporalPair(Reservoir current, uint previousIndex, float historyMass, uint pairIndex,
+Reservoir mergeTemporalPair(Reservoir current, ReservoirIndex previousIndex, float historyMass, uint pairIndex,
     inout SampleGenerator rng)
 {
     Reservoir previous = loadPrevReservoir(previousIndex);
@@ -49,8 +49,8 @@ void main(uint3 dispatchThreadId: SV_DispatchThreadID)
     float3 integratedRadiance = gPairFirstBin == 0 ? float3(0.f) : gOutputColor[pixel].xyz;
     for (uint bin = gPairFirstBin; bin < gPairFirstBin + gPairBinCount; ++bin)
     {
-        uint index = pixelIndex * gTimeBin + bin;
-        uint previousIndex = historyPixel * gTimeBin + bin;
+        ReservoirIndex index = reservoirIndex(pixelIndex, bin);
+        ReservoirIndex previousIndex = reservoirIndex(historyPixel, bin);
         Reservoir reservoir = loadCurrReservoir(index);
         float historyMass = getHistoryMass(getPrevSummary(previousIndex));
         if (historyMass > 0.f)

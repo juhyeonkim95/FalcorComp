@@ -84,50 +84,56 @@ RWTexture2D<float4> gOutputColor;
 
 RWTexture3D<HistogramTexel> gTransientHistogram;
 
+// The reservoir (and summary) of a pixel and bin.
+ReservoirIndex reservoirIndex(uint pixelIndex, uint bin)
+{
+    return makeReservoirIndex(pixelIndex, bin, gTimeBin, gFrameDim.x * gFrameDim.y);
+}
+
 // Finalized reservoirs, with their summaries if RESERVOIR_SUMMARIES (then an empty reservoir is not stored).
-Reservoir loadPrevReservoir(uint index)
+Reservoir loadPrevReservoir(ReservoirIndex index)
 {
 #if RESERVOIR_SUMMARIES
     return loadSummarizedReservoir(gPrevReservoirs, gPrevSummaries, index);
 #else
-    return gPrevReservoirs[index];
+    return gPrevReservoirs[index.reservoir];
 #endif
 }
 
-Reservoir loadCurrReservoir(uint index)
+Reservoir loadCurrReservoir(ReservoirIndex index)
 {
 #if RESERVOIR_SUMMARIES
     return loadSummarizedReservoir(gCurrReservoirs, gCurrSummaries, index);
 #else
-    return gCurrReservoirs[index];
+    return gCurrReservoirs[index.reservoir];
 #endif
 }
 
 // W and M of a finalized reservoir.
-float2 getPrevSummary(uint index)
+float2 getPrevSummary(ReservoirIndex index)
 {
 #if RESERVOIR_SUMMARIES
-    return gPrevSummaries[index];
+    return gPrevSummaries[index.summary];
 #else
-    return float2(gPrevReservoirs[index].W, gPrevReservoirs[index].M);
+    return float2(gPrevReservoirs[index.reservoir].W, gPrevReservoirs[index.reservoir].M);
 #endif
 }
 
-float2 getCurrSummary(uint index)
+float2 getCurrSummary(ReservoirIndex index)
 {
 #if RESERVOIR_SUMMARIES
-    return gCurrSummaries[index];
+    return gCurrSummaries[index.summary];
 #else
-    return float2(gCurrReservoirs[index].W, gCurrReservoirs[index].M);
+    return float2(gCurrReservoirs[index.reservoir].W, gCurrReservoirs[index.reservoir].M);
 #endif
 }
 
-void storeReservoir(uint index, Reservoir reservoir)
+void storeReservoir(ReservoirIndex index, Reservoir reservoir)
 {
 #if RESERVOIR_SUMMARIES
     storeSummarizedReservoir(gCurrReservoirs, gCurrSummaries, index, reservoir);
 #else
-    gCurrReservoirs[index] = reservoir;
+    gCurrReservoirs[index.reservoir] = reservoir;
 #endif
 }
 

@@ -149,28 +149,46 @@ struct Reservoir
 // Reservoir summaries (RESERVOIR_SUMMARIES, the histogram pass): each reservoir's W and M in a compact buffer beside
 // the reservoirs. The full reservoir is stored only when W != 0, since most histogram bins are empty; readers check the
 // summary first. An empty reservoir reads as Reservoir() with its M: nothing reads more of a reservoir with W == 0.
-Reservoir loadSummarizedReservoir(StructuredBuffer<Reservoir> reservoirs, StructuredBuffer<float2> summaries, uint index)
+/// Where the reservoir of a pixel and bin lives. Reservoirs are pixel-major (a pixel's bins are adjacent); summaries
+/// are bin-major, so that the threads of a warp, which work on neighboring pixels at one bin, read adjacent 8-byte
+/// summaries (four per 32-byte sector instead of one).
+struct ReservoirIndex
 {
-    float2 summary = summaries[index];
-    if (summary.x != 0.f) return reservoirs[index];
+    uint reservoir; ///< linearPixel * binCount + bin.
+    uint summary;   ///< bin * pixelCount + linearPixel.
+};
+
+ReservoirIndex makeReservoirIndex(uint linearPixel, uint bin, uint binCount, uint pixelCount)
+{
+    ReservoirIndex index;
+    index.reservoir = linearPixel * binCount + bin;
+    index.summary = bin * pixelCount + linearPixel;
+    return index;
+}
+
+Reservoir loadSummarizedReservoir(StructuredBuffer<Reservoir> reservoirs, StructuredBuffer<float2> summaries,
+    ReservoirIndex index)
+{
+    float2 summary = summaries[index.summary];
+    if (summary.x != 0.f) return reservoirs[index.reservoir];
     Reservoir empty = Reservoir();
     empty.M = summary.y;
     return empty;
 }
 
 Reservoir loadSummarizedReservoir(RWStructuredBuffer<Reservoir> reservoirs, RWStructuredBuffer<float2> summaries,
-    uint index)
+    ReservoirIndex index)
 {
-    float2 summary = summaries[index];
-    if (summary.x != 0.f) return reservoirs[index];
+    float2 summary = summaries[index.summary];
+    if (summary.x != 0.f) return reservoirs[index.reservoir];
     Reservoir empty = Reservoir();
     empty.M = summary.y;
     return empty;
 }
 
-void storeSummarizedReservoir(RWStructuredBuffer<Reservoir> reservoirs, RWStructuredBuffer<float2> summaries, uint index,
-    Reservoir reservoir)
+void storeSummarizedReservoir(RWStructuredBuffer<Reservoir> reservoirs, RWStructuredBuffer<float2> summaries,
+    ReservoirIndex index, Reservoir reservoir)
 {
-    summaries[index] = float2(reservoir.W, reservoir.M);
-    if (reservoir.W != 0.f) reservoirs[index] = reservoir;
+    summaries[index.summary] = float2(reservoir.W, reservoir.M);
+    if (reservoir.W != 0.f) reservoirs[index.reservoir] = reservoir;
 }
