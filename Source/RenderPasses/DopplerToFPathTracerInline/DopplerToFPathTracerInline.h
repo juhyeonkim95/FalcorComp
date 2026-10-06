@@ -32,6 +32,7 @@
 #include "../Shared/Host/Configs/PathTracingConfig.h"
 #include "../Shared/Host/LaserState.h"
 #include "../Shared/Host/InlinePassUtils.h"
+#include "../Shared/Host/ObjectMotion.h"
 #include <map>
 #include <random>
 
@@ -59,20 +60,14 @@ public:
         return make_ref<DopplerToFPathTracerInline>(pDevice, props);
     }
     DopplerToFPathTracerInline(ref<Device> pDevice, const Properties& props);
-    ~DopplerToFPathTracerInline() override { restoreBasePose(); }
+    /// Leaves the scene as it was built.
+    ~DopplerToFPathTracerInline() override { mMover.restore(); }
     Properties getProperties() const override;
     RenderPassReflection reflect(const CompileData& compileData) override;
     void execute(RenderContext* pRenderContext, const RenderData& renderData) override;
     void renderUI(Gui::Widgets& widget) override;
     void setScene(RenderContext* pRenderContext, const ref<Scene>& pScene) override;
 
-    /// Instantaneous rigid motion of an object: v(x) = linear + angular x (x - center). m/s, rad/s, scene units (m).
-    struct Motion
-    {
-        float3 linear = float3(0.f);
-        float3 angular = float3(0.f);
-        float3 center = float3(0.f);
-    };
     enum class TimeSampling { Uniform = 0, Stratified = 1 };
     enum class Antithetic { None = 0, HalfPeriod = 1, Mirror = 2 };
 
@@ -93,16 +88,11 @@ private:
         TimeSampling timeSampling = TimeSampling::Stratified;
         Antithetic antithetic = Antithetic::HalfPeriod;
         bool randomReplay = true;           ///< The partner time uses the same random numbers; false: new ones.
-        std::map<std::string, Motion> velocities; ///< Object name -> motion.
+        ObjectMotions velocities;           ///< Object name -> motion.
         uint seed = 0;                      ///< Offsets the time sequence and the path random numbers.
     };
     static void validateOptions(const Options& options);
     void parseProperties(const Properties& props);
-    void findMovingNodes();
-    void applyPose(RenderContext* pRenderContext, float time);
-    /// Puts the moved objects back at their base pose (applied by the next scene update), so that the scene is left
-    /// as it was built: for the other passes, the next frame and the next pass that reads the base pose.
-    void restoreBasePose();
     float sampleTime(uint pair) const;
     DefineList getShaderDefines(const RenderData& renderData) const;
 
@@ -114,13 +104,7 @@ private:
     ref<Scene> mpScene;
     ref<SampleGenerator> mpSampleGenerator;
     ref<ComputePass> mpComputePass;
-    /// Scene-graph node, its base (t = 0) local transform and motion, for every moving object.
-    struct MovingNode
-    {
-        uint32_t nodeID;
-        float4x4 base;
-        Motion motion;
-    };
-    std::vector<MovingNode> mMovingNodes;
-    std::map<uint32_t, float4x4> mBaseTransforms; ///< Node -> transform when the scene was set.
+    /// Moves the named objects to each sampled time and back to their base pose at the end of the frame (applied by
+    /// the next scene update), so that the scene is left as it was built for the other passes and the next frame.
+    SceneMover mMover;
 };

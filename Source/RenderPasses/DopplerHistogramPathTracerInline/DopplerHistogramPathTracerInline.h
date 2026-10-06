@@ -33,6 +33,7 @@
 #include "../Shared/Host/Configs/PathTracingConfig.h"
 #include "../Shared/Host/LaserState.h"
 #include "../Shared/Host/InlinePassUtils.h"
+#include "../Shared/Host/ObjectMotion.h"
 #include <map>
 
 using namespace Falcor;
@@ -68,14 +69,6 @@ public:
     /// (instance index, mesh name, material name) of every geometry instance of the scene.
     std::vector<std::tuple<uint32_t, std::string, std::string>> getObjectNames() const;
 
-    /// Instantaneous rigid motion of an object: v(x) = linear + angular x (x - center). m/s, rad/s, scene units.
-    struct Motion
-    {
-        float3 linear = float3(0.f);
-        float3 angular = float3(0.f);
-        float3 center = float3(0.f);
-    };
-
 private:
     /// User settings, composed of shared configs (Shared/Host/Configs) plus this pass's own.
     struct Options
@@ -91,7 +84,7 @@ private:
         uint frequencyBin = 256;        ///< Number of bins over [frequencyMin, frequencyMax).
         float3 sensorVelocity = float3(0.f); ///< Velocity of the camera, m/s.
         float3 lightVelocity = float3(0.f);  ///< Velocity of the laser (or point light) origin, m/s.
-        std::map<std::string, Motion> velocities; ///< Object name -> motion.
+        ObjectMotions velocities;            ///< Object name -> motion.
         bool accumulate = false; ///< Sum frames in the spectrum instead of writing one frame per spectrum.
         RenderPassHelpers::IOSize outputSize = RenderPassHelpers::IOSize::Default;
         uint2 fixedOutputSize = {512, 512}; ///< Output size when outputSize is Fixed.
@@ -105,7 +98,6 @@ private:
     void parseProperties(const Properties& props);
     const ChannelList& spectrumChannels() const;
     bool needsReset(const RenderData& renderData) const;
-    void updateVelocityBuffer();
     void bindShaderData(const ShaderVar& var, const RenderData& renderData);
     DefineList getShaderDefines(const RenderData& renderData) const;
 
