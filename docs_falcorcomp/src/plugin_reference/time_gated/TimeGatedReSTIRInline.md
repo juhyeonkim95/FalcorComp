@@ -74,6 +74,11 @@ Initial sampling, the candidate paths each pixel starts from in every frame:
   - string
   - How an ellipsoidal connection picks the scene triangle to place its vertex on: `Uniform` or
     `LightBVH`. Unused with `direct`. (Default: `LightBVH`)
+* - `ellipsoidMaxTriangleArea`
+  - float
+  - Triangles larger than this (world-space area) never hold an ellipsoidal vertex, e.g. an NLOS
+    relay wall that would take most samples; paths through them come from BSDF sampling. Unused with
+    `direct`. (Default: `10000`)
 * - `useImportanceSampling`
   - boolean
   - Importance-sample the BSDF when extending a candidate path. (Default: `true`)

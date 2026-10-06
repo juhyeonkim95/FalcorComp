@@ -26,6 +26,9 @@ struct EllipsoidalSamplingConfig
     EllipsoidalSamplingMethod samplingMethod = EllipsoidalSamplingMethod::Direct;
     EmissiveLightSamplerType triSampler = EmissiveLightSamplerType::LightBVH; ///< Picks the triangle of an ellipsoidal connection.
     float ellipsoidRoughnessThreshold = 0.25f; ///< ELLIPSOIDAL only: minimum roughness for an ellipsoidal connection.
+    /// Triangles larger than this (world-space area) never hold an ellipsoidal vertex, e.g. an NLOS relay wall that
+    /// would take most samples; paths through them come from the BSDF technique.
+    float maxTriangleArea = 10000.f;
 
     bool usesEllipsoid() const { return samplingMethod != EllipsoidalSamplingMethod::Direct; }
 
@@ -37,6 +40,8 @@ struct EllipsoidalSamplingConfig
             triSampler = value;
         else if (key == "specularRoughnessThresholdEllipsoid")
             ellipsoidRoughnessThreshold = value;
+        else if (key == "ellipsoidMaxTriangleArea")
+            maxTriangleArea = value;
         else
             return false;
         return true;
@@ -47,6 +52,8 @@ struct EllipsoidalSamplingConfig
     {
         if (usesEllipsoid() && triSampler != EmissiveLightSamplerType::Uniform && triSampler != EmissiveLightSamplerType::LightBVH)
             FALCOR_THROW("emissiveSampler must be Uniform or LightBVH for ellipsoidal sampling.");
+        if (!(maxTriangleArea > 0.f))
+            FALCOR_THROW("ellipsoidMaxTriangleArea must be greater than zero.");
     }
 
     void serialize(Properties& props) const
@@ -54,6 +61,7 @@ struct EllipsoidalSamplingConfig
         props["samplingMethod"] = enumPropertyName(kEllipsoidalSamplingMethods, samplingMethod);
         props["emissiveSampler"] = triSampler;
         props["specularRoughnessThresholdEllipsoid"] = ellipsoidRoughnessThreshold;
+        props["ellipsoidMaxTriangleArea"] = maxTriangleArea;
     }
 
     /// Sampling method, and the ellipsoid threshold and triangle sampler when they apply.
@@ -97,6 +105,9 @@ struct EllipsoidalSamplingConfig
                 dirty = true;
             }
             widget.tooltip("How an ellipsoidal connection selects the scene triangle on which it places y.", true);
+            dirty |= widget.var("Ellipsoid max triangle area", maxTriangleArea, 1e-6f, 1e12f);
+            widget.tooltip("Triangles larger than this (world-space area) never hold y, e.g. an NLOS relay wall that "
+                           "would take most samples. Paths through them come from BSDF sampling.", true);
         }
         return dirty;
     }
@@ -111,10 +122,15 @@ public:
     /// frame while it exists. Call reset() after changing the scene or the config's triSampler.
     void prepare(RenderContext* pRenderContext, const ref<Scene>& pScene, const EllipsoidalSamplingConfig& config)
     {
+        // The sampler is built over the triangle collection, which depends on the area cutoff.
+        if (mpSampler && mMaxTriangleArea != config.maxTriangleArea)
+            mpSampler.reset();
         if (!mpSampler && config.usesEllipsoid())
         {
-            const auto& pTriangles = pScene->getITriCollection(pRenderContext);
-            FALCOR_ASSERT(pTriangles && pTriangles->getActiveLightCount(pRenderContext) > 0);
+            ref<ILightCollection> pTriangles = pScene->getTriCollection(pRenderContext, config.maxTriangleArea);
+            FALCOR_CHECK(pTriangles && pTriangles->getActiveLightCount(pRenderContext) > 0,
+                "Ellipsoidal sampling found no scene triangles (all larger than ellipsoidMaxTriangleArea?).");
+            mMaxTriangleArea = config.maxTriangleArea;
             mLightBVHOptions.buildOptions.maxTriangleCountPerLeaf = 1;
             switch (config.triSampler)
             {
@@ -130,7 +146,7 @@ public:
             mpSampler->update(pRenderContext, pTriangles);
         }
         if (mpSampler)
-            pScene->getTriCollection(pRenderContext);
+            pScene->getTriCollection(pRenderContext, mMaxTriangleArea);
     }
 
     void reset() { mpSampler.reset(); }
@@ -147,4 +163,5 @@ public:
 private:
     std::unique_ptr<EmissiveLightSampler> mpSampler;
     LightBVHSampler::Options mLightBVHOptions;
+    float mMaxTriangleArea = 0.f; ///< The area cutoff of the collection mpSampler was built over.
 };

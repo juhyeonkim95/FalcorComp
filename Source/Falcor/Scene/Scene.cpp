@@ -373,6 +373,16 @@ namespace Falcor
         return mpTriCollection;
     }
 
+    const ref<LightCollection>& Scene::getTriCollection(RenderContext* pRenderContext, float maxTriangleArea)
+    {
+        if (!mpTriCollection || mpTriCollection->getMaxTriangleArea() != maxTriangleArea)
+        {
+            mpTriCollection = LightCollection::create(mpDevice, pRenderContext, this, true, maxTriangleArea);
+            mpTriCollection->bindShaderData(mpSceneBlock->getRootVar()["triCollection"]);
+        }
+        return mpTriCollection;
+    }
+
     void Scene::rasterize(RenderContext* pRenderContext, GraphicsState* pState, ProgramVars* pVars, RasterizerState::CullMode cullMode)
     {
         rasterize(pRenderContext, pState, pVars, mFrontClockwiseRS[cullMode], mFrontCounterClockwiseRS[cullMode]);

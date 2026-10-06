@@ -879,6 +879,11 @@ namespace Falcor
         */
        const ref<LightCollection>& getTriCollection(RenderContext* pRenderContext);
 
+        /** The tri collection without triangles larger than `maxTriangleArea` (world space). The collection is shared:
+            it is rebuilt when the area differs from the current one.
+        */
+        const ref<LightCollection>& getTriCollection(RenderContext* pRenderContext, float maxTriangleArea);
+
         /** Get the environment map or nullptr if it doesn't exist.
         */
         const ref<EnvMap>& getEnvMap() const override { return mpEnvMap; }

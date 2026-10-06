@@ -67,12 +67,19 @@ namespace Falcor
             \param[in] pScene The scene.
             \return A pointer to a new light collection object, or throws an exception if creation failed.
         */
-        static ref<LightCollection> create(ref<Device> pDevice, RenderContext* pRenderContext, Scene* pScene, bool force=false)
+        static ref<LightCollection> create(ref<Device> pDevice, RenderContext* pRenderContext, Scene* pScene, bool force=false,
+            float maxTriangleArea = 10000.f)
         {
-            return make_ref<LightCollection>(pDevice, pRenderContext, pScene, force);
+            return make_ref<LightCollection>(pDevice, pRenderContext, pScene, force, maxTriangleArea);
         }
 
-        LightCollection(ref<Device> pDevice, RenderContext* pRenderContext, Scene* pScene, bool force=false);
+        /// `force`: collect every triangle mesh (with flux = area), not only emissive ones; triangles larger than
+        /// `maxTriangleArea` (world space) are left out, e.g. an NLOS relay wall in ellipsoidal sampling.
+        LightCollection(ref<Device> pDevice, RenderContext* pRenderContext, Scene* pScene, bool force=false,
+            float maxTriangleArea = 10000.f);
+
+        /// Forced collections only: the largest triangle area included.
+        float getMaxTriangleArea() const { return mMaxTriangleArea; }
         ~LightCollection() = default;
 
         const ref<Device>& getDevice() const override { return mpDevice; }
@@ -195,6 +202,7 @@ namespace Falcor
         UpdateFlagsSignal mUpdateFlagsSignal;
 
         bool mForce = false; ///< Forced light collection? (true for tricollection)
+        float mMaxTriangleArea = 10000.f; ///< Forced collections: larger triangles are left out.
     };
 
     FALCOR_ENUM_CLASS_OPERATORS(LightCollection::CPUOutOfDateFlags);

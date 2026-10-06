@@ -50,7 +50,8 @@ namespace Falcor
         const char kFinalizeIntegrationFile[] = "Scene/Lights/FinalizeIntegration.cs.slang";
     }
 
-    LightCollection::LightCollection(ref<Device> pDevice, RenderContext* pRenderContext, Scene* pScene, bool force)
+    LightCollection::LightCollection(ref<Device> pDevice, RenderContext* pRenderContext, Scene* pScene, bool force,
+        float maxTriangleArea)
         : mpDevice(pDevice)
         , mpScene(pScene)
     {
@@ -58,6 +59,7 @@ namespace Falcor
 
         // Setup the lights.
         mForce = force;
+        mMaxTriangleArea = maxTriangleArea;
         setupMeshLights(*mpScene);
 
         // Create program for integrating emissive textures.
@@ -516,9 +518,9 @@ namespace Falcor
             if(mForce){
                 mMeshLightTriangles[triIdx].flux = mMeshLightTriangles[triIdx].area;
 
-                // Hardcoded NLOS heuristic: exclude the large backwall from triangle sampling.
-                // The cutoff is per-triangle world-space area; the wall remains scene geometry.
-                if(mMeshLightTriangles[triIdx].area > 10000){
+                // Exclude triangles larger than mMaxTriangleArea (world space), e.g. an NLOS relay wall that would
+                // take most samples; the triangle remains scene geometry.
+                if(mMeshLightTriangles[triIdx].area > mMaxTriangleArea){
                     mMeshLightTriangles[triIdx].flux = 0.0;
                 }
             }
@@ -713,8 +715,8 @@ namespace Falcor
                 if(mForce){
                     meshLightTri.flux = meshLightTri.area;
                     meshLightTri.averageRadiance = float3(1.0f);
-                    // Match the hardcoded NLOS backwall exclusion in updateActiveTriangleList().
-                    if(meshLightTri.area > 10000){
+                    // Match the exclusion of large triangles in updateActiveTriangleList().
+                    if(meshLightTri.area > mMaxTriangleArea){
                         meshLightTri.flux = 0.0;
                         meshLightTri.averageRadiance = float3(0.0f);
                     }
