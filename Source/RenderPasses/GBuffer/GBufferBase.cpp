@@ -229,10 +229,8 @@ void GBufferBase::updateFrameDim(const uint2 frameDim)
     mInvFrameDim = 1.f / float2(frameDim);
 
     // Update sample generator for camera jitter.
-    if (mpScene){
+    if (mpScene)
         mpScene->getCamera()->setPatternGenerator(mpSampleGenerator, mInvFrameDim);
-        // printf("useCurrentJitter: %d\n", mUseCurrentJitter ? 1 : 0);
-    }
 }
 
 void GBufferBase::updateSamplePattern()
