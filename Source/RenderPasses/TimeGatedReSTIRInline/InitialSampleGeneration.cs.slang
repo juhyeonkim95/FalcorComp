@@ -186,7 +186,9 @@ float3 evalPrimaryDirect(uint2 pixel, ShadingData primary, IMaterialInstance pri
     LaserLightSampler lightSampler = createLaserLightSampler();
     SampleGenerator sg = createPixelSampleGenerator(pixel, gFrameCount, kDirectSampleStream);
     float3 direct = 0.f;
-    for (uint i = 0; i < gSamplesPerPixel; ++i)
+    // A primary hit without a non-delta lobe gets no direct light.
+    const uint directSamples = hasNonDeltaLobe(primary, primaryMaterial) ? gSamplesPerPixel : 0;
+    for (uint i = 0; i < directSamples; ++i)
     {
         LightSample light = {};
         lightSampler.generateLightSample(sg, light);
@@ -320,35 +322,39 @@ float3 tracePath(uint2 pixel, uint2 frameDim)
             rc.recordHit(hit, surface, previousPosition, sample, depth, previousDiffuse && currentDiffuse && gReconnection.isLongEnough(segmentLength),
                 segmentLength, segmentIoR, suffixDirectionWeight, sampleSeed);
 
-            LightSample light = {};
-            uint lightSeed = lightRng.getCurrentSeed();
-            lightSampler.generateLightSample(lightRng, light);
-            LightConnection connection;
-            float totalLength, gate;
-            // Outside the gate the candidate contributes zero: skip its visibility ray and BSDF evaluation. It is
-            // still submitted (M and the reservoir's random draws are unchanged).
-            bool contributes = connectToLightGated(surface, light, pathLength, connection, totalLength, gate, useRoughGate);
-            if (contributes) shadeLightConnection(connection, surface, material, light, rng);
-            float techniqueWeight = 1.f;
+            // A candidate at a vertex without a non-delta lobe would be zero.
+            if (hasNonDeltaLobe(surface, material))
+            {
+                LightSample light = {};
+                uint lightSeed = lightRng.getCurrentSeed();
+                lightSampler.generateLightSample(lightRng, light);
+                LightConnection connection;
+                float totalLength, gate;
+                // Outside the gate the candidate contributes zero: skip its visibility ray and BSDF evaluation. It is
+                // still submitted (M and the reservoir's random draws are unchanged).
+                bool contributes = connectToLightGated(surface, light, pathLength, connection, totalLength, gate, useRoughGate);
+                if (contributes) shadeLightConnection(connection, surface, material, light, rng);
+                float techniqueWeight = 1.f;
 #if LIGHT_SAMPLING_METHOD != DIRECT_CONNECTION
-            // A zero candidate's weight does not matter: skip the light-BVH walk too.
-            if (contributes)
-                techniqueWeight = evalBsdfTechniqueWeight(previous, surface, hit, light, gTimeCenter,
-                    LIGHT_SAMPLING_METHOD == ELLIPSOIDAL_DIRECT_MIS);
+                // A zero candidate's weight does not matter: skip the light-BVH walk too.
+                if (contributes)
+                    techniqueWeight = evalBsdfTechniqueWeight(previous, surface, hit, light, gTimeCenter,
+                        LIGHT_SAMPLING_METHOD == ELLIPSOIDAL_DIRECT_MIS);
 #endif
 #if USE_SHRINK_MAPPING
-            // submitCandidate divides by gSamplesPerPixel. Correct that to 1/N_i
-            // so each gate reservoir separately estimates its full gate integral.
-            if (useRoughGate)
-                submitCandidate(wideReservoir, rc, surface, material, light, connection, totalLength, gate,
-                    throughput, wideSampleWeight, gSamplesPerPixel, lightSeed, false, rng);
-            else
-                submitCandidate(reservoir, rc, surface, material, light, connection, totalLength, gate,
-                    throughput, narrowSampleWeight, gSamplesPerPixel, lightSeed, false, rng);
+                // submitCandidate divides by gSamplesPerPixel. Correct that to 1/N_i
+                // so each gate reservoir separately estimates its full gate integral.
+                if (useRoughGate)
+                    submitCandidate(wideReservoir, rc, surface, material, light, connection, totalLength, gate,
+                        throughput, wideSampleWeight, gSamplesPerPixel, lightSeed, false, rng);
+                else
+                    submitCandidate(reservoir, rc, surface, material, light, connection, totalLength, gate,
+                        throughput, narrowSampleWeight, gSamplesPerPixel, lightSeed, false, rng);
 #else
-            submitCandidate(reservoir, rc, surface, material, light, connection, totalLength, gate,
-                throughput, techniqueWeight, gSamplesPerPixel, lightSeed, false, rng);
+                submitCandidate(reservoir, rc, surface, material, light, connection, totalLength, gate,
+                    throughput, techniqueWeight, gSamplesPerPixel, lightSeed, false, rng);
 #endif
+            }
             if (rc.bounce > 0) ++rc.postBounce;
         }
     }

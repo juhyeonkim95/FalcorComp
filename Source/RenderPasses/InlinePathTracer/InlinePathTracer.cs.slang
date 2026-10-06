@@ -70,7 +70,7 @@ float3 tracePath(const uint2 pixel, const uint2 frameDim)
             float hitT;
 
             // Direct illumination at the primary hit (camera -> primary -> light).
-            if(kComputeDirect){
+            if(kComputeDirect && hasNonDeltaLobe(sd, mi)){
                 // sample light
                 LightSample ls = {};
                 lls.generateLightSample(sg, ls);
@@ -94,10 +94,13 @@ float3 tracePath(const uint2 pixel, const uint2 frameDim)
                     mi = gScene.materials.getMaterialInstance(sd, ExplicitLodTextureSampler(0.f));
 
                     // sample light
-                    LightSample ls = {};
-                    lls.generateLightSample(sg, ls);
-                    LightConnection connection = evaluateLightConnection(sd, mi, ls, sg);
-                    result += throughput * (connection.bsdfCosine * connection.incidentRadiance);
+                    if (hasNonDeltaLobe(sd, mi))
+                    {
+                        LightSample ls = {};
+                        lls.generateLightSample(sg, ls);
+                        LightConnection connection = evaluateLightConnection(sd, mi, ls, sg);
+                        result += throughput * (connection.bsdfCosine * connection.incidentRadiance);
+                    }
                 }
             }
             if (any(isinf(result) || isnan(result))) result = 0.f;

@@ -122,7 +122,8 @@ float3 tracePath(uint2 pixel, uint2 frameDim)
         for (uint depth = 0; depth < max(1u, uint(MAX_BOUNCES)) &&
             pathLength < maxPathLength && any(throughput > 0.f); ++depth)
         {
-            if (depth > 0 || COMPUTE_DIRECT != 0)
+            // A candidate at a vertex without a non-delta lobe would be zero.
+            if ((depth > 0 || COMPUTE_DIRECT != 0) && hasNonDeltaLobe(surface, material))
             {
                 LightSample light = {};
                 uint lightSeed = lightRng.getCurrentSeed();

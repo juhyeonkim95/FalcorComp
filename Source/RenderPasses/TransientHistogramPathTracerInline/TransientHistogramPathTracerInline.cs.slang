@@ -145,7 +145,7 @@ float3 tracePath(const uint2 pixel, const uint2 frameDim)
         for (uint depth = 0; depth < max(1u, kMaxBounces) && pathLength < maxPathLength && any(throughput > 0.f); ++depth)
         {
             IMaterialInstance material = gScene.materials.getMaterialInstance(surface, ExplicitLodTextureSampler(0.f));
-            if (depth > 0 || kComputeDirect)
+            if ((depth > 0 || kComputeDirect) && hasNonDeltaLobe(surface, material))
             {
                 LightSample light = {};
                 lightSampler.generateLightSample(sg, light);

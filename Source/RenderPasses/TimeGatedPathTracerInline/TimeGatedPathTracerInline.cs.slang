@@ -76,7 +76,7 @@ float3 tracePath(const uint2 pixel, const uint2 frameDim)
             float hitT;
 
             // Direct illumination at the primary hit (camera -> primary -> light).
-            if(kComputeDirect){
+            if(kComputeDirect && hasNonDeltaLobe(sd, mi)){
                 // sample light
                 LightSample ls = {};
                 lls.generateLightSample(sg, ls);
@@ -106,9 +106,12 @@ float3 tracePath(const uint2 pixel, const uint2 frameDim)
                     mi = gScene.materials.getMaterialInstance(sd, ExplicitLodTextureSampler(0.f));
 
                     // sample light
-                    LightSample ls = {};
-                    lls.generateLightSample(sg, ls);
-                    result += throughput * evalGatedLightConnection(sd, mi, ls, pathLength, sg);
+                    if (hasNonDeltaLobe(sd, mi))
+                    {
+                        LightSample ls = {};
+                        lls.generateLightSample(sg, ls);
+                        result += throughput * evalGatedLightConnection(sd, mi, ls, pathLength, sg);
+                    }
                 }
             }
 #elif LIGHT_SAMPLING_METHOD == ELLIPSOIDAL_CONNECTION || LIGHT_SAMPLING_METHOD == ELLIPSOIDAL_DIRECT_MIS
@@ -121,8 +124,9 @@ float3 tracePath(const uint2 pixel, const uint2 frameDim)
 #if LIGHT_SAMPLING_METHOD == ELLIPSOIDAL_CONNECTION
                 useEllipsoid = useEllipsoid && mi.getProperties(sd).roughness > gEllipsoidRoughnessThreshold;
 #endif
+                // Both techniques at x need a non-delta lobe (canSampleEllipsoid, and the BSDF technique below).
                 LightSample ls = {};
-                lls.generateLightSample(sg, ls);
+                if (hasNonDelta) lls.generateLightSample(sg, ls);
 
                 // Ellipsoidal technique at x: completes x -> y -> light immediately.
                 if (useEllipsoid && ls.valid)
