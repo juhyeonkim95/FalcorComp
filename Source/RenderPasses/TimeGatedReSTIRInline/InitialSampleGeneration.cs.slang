@@ -19,7 +19,7 @@ import RenderPasses.Shared.Shaders.ReSTIR.TemporalReuse;
 #endif
 import RenderPasses.Shared.Shaders.Utils.LoadShadingData;
 import RenderPasses.Shared.Shaders.Lights.LaserLightSampler;
-import RenderPasses.Shared.Shaders.Lights.LightConnection;
+import RenderPasses.Shared.Shaders.Lights.GatedLightConnection;
 import RenderPasses.Shared.Shaders.Lights.EllipsoidalSampling;
 import RenderPasses.Shared.Shaders.Utils.SingleChannel;
 import RenderPasses.Shared.Shaders.Utils.RayUtils;
@@ -110,11 +110,10 @@ void submitEllipsoidalCandidate(inout Reservoir reservoir, ReconnectionState rc,
     if (rc.postBounce == 2) suffixDirectionWeight = shadingCosine(origin, material, ellipsoidal.direction) / ellipsoidal.pdf;
     rc.recordHit(ellipsoidal.hit, target, origin.posW, proposal, targetDepth, eligible, ellipsoidal.distance, origin.IoR,
         suffixDirectionWeight, 0);
-    bool connected;
-    LightConnection connection = connectToLight(target, light, connected);
-    float totalLength = targetLength + connection.distance + light.laserT;
-    float gate = pathLengthImportance(totalLength, gTimeCenter);
-    if (connected && gate != 0.f) shadeLightConnection(connection, target, targetMaterial, light, rng);
+    LightConnection connection;
+    float totalLength, gate;
+    if (connectToLightGated(target, light, targetLength, connection, totalLength, gate))
+        shadeLightConnection(connection, target, targetMaterial, light, rng);
     submitCandidate(reservoir, rc, target, targetMaterial, light, connection, totalLength, gate,
         throughput * proposal.weight, techniqueWeight, gSamplesPerPixel, lightSeed, false, rng);
 }
@@ -192,11 +191,7 @@ float3 evalPrimaryDirect(uint2 pixel, ShadingData primary, IMaterialInstance pri
         LightSample light = {};
         lightSampler.generateLightSample(sg, light);
         if (!light.valid) continue;
-        bool connected;
-        LightConnection connection = connectToLight(primary, light, connected);
-        float gate = pathLengthImportance(primaryLength + connection.distance + light.laserT, gTimeCenter);
-        if (connected && gate != 0.f) shadeLightConnection(connection, primary, primaryMaterial, light, sg);
-        direct += connection.bsdfCosine * connection.incidentRadiance * gate;
+        direct += evalGatedLightConnection(primary, primaryMaterial, light, primaryLength, sg);
     }
     direct /= float(gSamplesPerPixel) * gTimeGateWindow;
     if (any(isinf(direct) || isnan(direct))) direct = 0.f;
@@ -326,17 +321,16 @@ float3 tracePath(uint2 pixel, uint2 frameDim)
             LightSample light = {};
             uint lightSeed = lightRng.getCurrentSeed();
             lightSampler.generateLightSample(lightRng, light);
-            bool connected;
-            LightConnection connection = connectToLight(surface, light, connected);
-            float totalLength = pathLength + connection.distance + light.laserT;
-            float gate = pathLengthImportance(totalLength, gTimeCenter, useRoughGate);
+            LightConnection connection;
+            float totalLength, gate;
             // Outside the gate the candidate contributes zero: skip its visibility ray and BSDF evaluation. It is
             // still submitted (M and the reservoir's random draws are unchanged).
-            if (connected && gate != 0.f) shadeLightConnection(connection, surface, material, light, rng);
+            bool contributes = connectToLightGated(surface, light, pathLength, connection, totalLength, gate, useRoughGate);
+            if (contributes) shadeLightConnection(connection, surface, material, light, rng);
             float techniqueWeight = 1.f;
 #if LIGHT_SAMPLING_METHOD != DIRECT_CONNECTION
             // A zero candidate's weight does not matter: skip the light-BVH walk too.
-            if (connected && gate != 0.f)
+            if (contributes)
                 techniqueWeight = evalBsdfTechniqueWeight(previous, surface, hit, light, gTimeCenter,
                     LIGHT_SAMPLING_METHOD == ELLIPSOIDAL_DIRECT_MIS);
 #endif

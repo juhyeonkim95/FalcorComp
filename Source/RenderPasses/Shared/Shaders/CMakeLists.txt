@@ -13,6 +13,7 @@ set(shared_shaders
     Lights/Laser.slang
     Lights/LaserLightSampler.slang
     Lights/LightConnection.slang
+    Lights/GatedLightConnection.slang
     Lights/EllipsoidalSampling.slang
     Lights/EllipsoidTriangleSampler.slang
     Lights/SceneTriangles.slang

@@ -1,7 +1,7 @@
 import RenderPasses.Shared.Shaders.Utils.LoadShadingData;
 import RenderPasses.Shared.Shaders.Utils.SingleChannel;
 import RenderPasses.Shared.Shaders.Lights.LaserLightSampler;
-import RenderPasses.Shared.Shaders.Lights.LightConnection;
+import RenderPasses.Shared.Shaders.Lights.GatedLightConnection;
 import RenderPasses.Shared.Shaders.Lights.EllipsoidalSampling;
 #include "Scene/SceneDefines.slangh"
 #include "Utils/Math/MathConstants.slangh"
@@ -80,12 +80,7 @@ float3 tracePath(const uint2 pixel, const uint2 frameDim)
                 // sample light
                 LightSample ls = {};
                 lls.generateLightSample(sg, ls);
-                bool connected;
-                LightConnection connection = connectToLight(sd, ls, connected);
-                float gate = pathLengthImportance(pathLength + connection.distance + ls.laserT, gTimeCenter);
-                // Outside the gate the connection contributes zero: skip its visibility ray and BSDF.
-                if (connected && gate != 0.f) shadeLightConnection(connection, sd, mi, ls, sg);
-                result += throughput * (connection.bsdfCosine * connection.incidentRadiance * gate);
+                result += throughput * evalGatedLightConnection(sd, mi, ls, pathLength, sg);
             }
 #if LIGHT_SAMPLING_METHOD == DIRECT_CONNECTION
             for(uint depth=1; depth<kMaxBounces && any(throughput > 0.) && !any(throughput < 0.) && hit.isValid() && pathLength < maxPathLength; depth++){
@@ -111,12 +106,7 @@ float3 tracePath(const uint2 pixel, const uint2 frameDim)
                     // sample light
                     LightSample ls = {};
                     lls.generateLightSample(sg, ls);
-                    bool connected;
-                    LightConnection connection = connectToLight(sd, ls, connected);
-                    float gate = pathLengthImportance(pathLength + connection.distance + ls.laserT, gTimeCenter);
-                    // Outside the gate the connection contributes zero: skip its visibility ray and BSDF.
-                    if (connected && gate != 0.f) shadeLightConnection(connection, sd, mi, ls, sg);
-                    result += throughput * (connection.bsdfCosine * connection.incidentRadiance * gate);
+                    result += throughput * evalGatedLightConnection(sd, mi, ls, pathLength, sg);
                 }
             }
 #elif LIGHT_SAMPLING_METHOD == ELLIPSOIDAL_CONNECTION || LIGHT_SAMPLING_METHOD == ELLIPSOIDAL_DIRECT_MIS
@@ -146,12 +136,11 @@ float3 tracePath(const uint2 pixel, const uint2 frameDim)
                 // BSDF technique at y: the walk sampled x -> y, now connect y -> light.
                 if (depth > 0 && hasNonDelta && ls.valid)
                 {
-                    bool connected;
-                    LightConnection connection = connectToLight(sd, ls, connected);
-                    float gate = pathLengthImportance(pathLength + connection.distance + ls.laserT, gTimeCenter);
+                    LightConnection connection;
+                    float totalLength, gate;
                     // Outside the gate the connection contributes zero: skip its technique weight (a light-BVH walk),
                     // visibility ray and BSDF.
-                    if (connected && gate != 0.f)
+                    if (connectToLightGated(sd, ls, pathLength, connection, totalLength, gate))
                     {
                         float weight = evalBsdfTechniqueWeight(previous, sd, hit, ls, gTimeCenter,
                             LIGHT_SAMPLING_METHOD == ELLIPSOIDAL_DIRECT_MIS);
@@ -232,12 +221,8 @@ EllipsoidalEstimate estimateEllipsoidalPath(
     float3 firstScatter = material.eval(x, ellipsoidal.direction, sg);
     // sampleEllipsoid() traced x -> y; this connection traces y -> light and is
     // zero when occluded. Together the two checks cover the full x -> y -> light path.
-    bool connected;
-    LightConnection connection = connectToLight(y, light, connected);
-    float gate = pathLengthImportance(prefixLength + ellipsoidal.distance * x.IoR + connection.distance + light.laserT, gTimeCenter);
-    if (connected && gate != 0.f) shadeLightConnection(connection, y, yMaterial, light, sg);
     estimate.radiance = (firstScatter / estimate.ellipsePdf) *
-        (connection.bsdfCosine * connection.incidentRadiance * gate);
+        evalGatedLightConnection(y, yMaterial, light, prefixLength + ellipsoidal.distance * x.IoR, sg);
     return estimate;
 }
 
