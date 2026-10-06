@@ -17,24 +17,24 @@ installed as a Python package and driven from Python scripts.
 :align: center
 ```
 
-The Cornell box rendered with falcorcomp. Left: a standard image (no time gating). Top row: a time-gated image, a
-transient histogram (16 of its 64 bins, in reading order), and CW-ToF and structured-light measurements (with the
-modulation in $[0, 1]$). Bottom row, with the tall box approaching and the short box receding: the Doppler spectrum
-of optical heterodyne detection (4 of its bins), a Doppler-gated image (only the light shifted by about +26 MHz: the
-tall box), the velocity estimated from Doppler ToF measurements (red approaching, blue receding), and the events of
-a camera moving right (red brighter, blue darker). The settings follow the [tutorials](../tutorials/index.md).
-[Measurements as path integrals](measurements.md) gives the path integral of each.
+The Cornell box rendered with falcorcomp. Left: a standard image. Top row: a time-gated image, a transient histogram
+(16 of its 64 bins), and CW-ToF and structured-light measurements. Bottom row, with the tall box approaching and the
+short box receding: the Doppler spectrum of optical heterodyne detection (4 of its bins), a Doppler-gated image (only
+the light shifted by about +26 MHz: the tall box), the velocity estimated from Doppler ToF measurements (red
+approaching, blue receding), and the events of a camera moving right (red brighter, blue darker). The settings follow
+the [tutorials](../tutorials/index.md). [Measurements as path integrals](measurements.md) gives the path integral of
+each.
 
-Time-of-flight (ToF): a laser lights the scene, and the measurement depends on the total length of
-each light path (laser -> scene -> camera), which sets its arrival time.
+- **Time-of-flight (ToF)**: a laser lights the scene, and the measurement depends on the total length of each light
+  path (laser -> scene -> camera), which sets its arrival time.
 
 | Measurement | Output | Render passes |
 |---|---|---|
 | **Time-gated image** | `H × W`: the light whose path length falls inside a time gate | [`TimeGatedPathTracerInline`](../plugin_reference/time_gated/TimeGatedPathTracerInline.md), [`TimeGatedReSTIRInline`](../plugin_reference/time_gated/TimeGatedReSTIRInline.md) |
 | **Transient histogram** | `H × W × B`: for every pixel, the light arriving at each path length, in `B` bins | [`TransientHistogramPathTracerInline`](../plugin_reference/transient/TransientHistogramPathTracerInline.md), [`TransientHistogramReSTIRInline`](../plugin_reference/transient/TransientHistogramReSTIRInline.md) |
 
-Modulated light: the light varies in time or in space, and the measurement weights each path by
-that modulation.
+- **Modulated light**: the light varies in time or in space, and the measurement weights each path by that
+  modulation.
 
 | Measurement | Modulation | Render pass |
 |---|---|---|
@@ -48,7 +48,7 @@ with a narrow time gate or in online rendering. The modulated-light renderers su
 sampling, which pairs every sampled path with a nearby one of opposite modulation, so that the
 indirect light cancels the way it does in the real measurement.
 
-Doppler: the measurement depends on how fast each path's length changes as the scene moves.
+- **Doppler**: the measurement depends on how fast each path's length changes as the scene moves.
 
 | Measurement | Output | Render pass |
 |---|---|---|
@@ -56,7 +56,8 @@ Doppler: the measurement depends on how fast each path's length changes as the s
 | **Doppler spectrum (OHD)** | `H × W × B`: for every pixel, the light at each Doppler shift, in `B` bins | [`DopplerHistogramPathTracerInline`](../plugin_reference/doppler/DopplerHistogramPathTracerInline.md) |
 | **Doppler ToF** | `H × W`: a CW-ToF measurement with slightly different light and sensor frequencies, over an exposure in which the objects move | [`DopplerToFPathTracerInline`](../plugin_reference/doppler/DopplerToFPathTracerInline.md) |
 
-Event cameras: each pixel reports when its brightness $\log(I_\epsilon + I)$ changes by more than a threshold.
+- **Event cameras**: each pixel reports when its brightness $\log(I_\epsilon + I)$ changes by more than a
+  threshold.
 
 | Measurement | Output | Render passes |
 |---|---|---|
@@ -110,7 +111,8 @@ falcorcomp includes the implementations of these papers:
   [Project page](https://juhyeonkim95.github.io/project-pages/event_svgf/). The `EventSVGF` render pass:
   low-sample event camera rendering.
 - **Geometric Antithetic Sampling for Spatiotemporally Modulated Light**, SIGGRAPH Asia 2026.
-  Antithetic sampling in the CW-ToF and structured light render passes.
+  [Project page](https://juhyeonkim95.github.io/project-pages/antithetic_modulation/). Antithetic sampling in the
+  CW-ToF and structured light render passes.
 - **A Monte Carlo Rendering Framework for Simulating Optical Heterodyne Detection**, SIGGRAPH 2025 (ACM TOG),
   honorable mention. [Project page](https://juhyeonkim95.github.io/project-pages/ohd_rendering/). The OHD path
   integral behind the Doppler spectrum and Doppler-gated render passes.

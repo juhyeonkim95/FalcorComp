@@ -28,5 +28,5 @@ html_logo = "_static/logo_icon.png"  # the icon from ../assets/logo.png, without
 html_static_path = ["_static"]
 html_css_files = ["custom.css"]
 # Furo escapes the copyright text; author_link.js links the author's name in the footer to
-# https://juhyeonkim95.github.io/.
+# https://juhyeonkim.netlify.app/.
 html_js_files = ["author_link.js"]

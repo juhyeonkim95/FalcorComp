@@ -91,7 +91,7 @@ FalcorComp includes implementations of the following papers:
 
 - **"Geometric Antithetic Sampling for Spatiotemporally Modulated Light"**  
   **SIGGRAPH Asia 2026 (Conference)**  
-  Project Page (TBD)
+  [[Project Page]](https://juhyeonkim95.github.io/project-pages/antithetic_modulation/)
 
   Variance reduction for rendering spatiotemporally modulated light (CW-ToF, structured light) using geometric antithetic sampling.
 
