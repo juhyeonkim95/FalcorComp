@@ -29,6 +29,7 @@ struct ObjectMotion
 };
 
 /// Object name -> motion. Names match a geometry instance's mesh name, its material name, or "#<instance index>".
+/// Motions are in world space, also for an object whose scene-graph node has a parent.
 using ObjectMotions = std::map<std::string, ObjectMotion>;
 
 /// Parses {"name": {"linear": [..], "angular": [..], "center": [..]}}; missing entries are zero.
@@ -76,6 +77,21 @@ struct SceneObject
     }
 };
 
+/// The motion an object takes: that of its most specific listed name, "#<instance>" over its mesh name over its
+/// material name (e.g. a material name moves every object with that material but the ones listed by mesh). The same
+/// in every pass; nullptr if no name is listed.
+inline const ObjectMotions::value_type* findObjectMotion(const ObjectMotions& motions, const SceneObject& object)
+{
+    for (const std::string& name : {"#" + std::to_string(object.instance), object.mesh, object.material})
+    {
+        if (name.empty())
+            continue;
+        if (auto it = motions.find(name); it != motions.end())
+            return &*it;
+    }
+    return nullptr;
+}
+
 inline std::vector<SceneObject> listSceneObjects(const Scene& scene)
 {
     std::vector<SceneObject> objects;
@@ -109,20 +125,22 @@ inline ref<Buffer> createInstanceVelocityBuffer(ref<Device> pDevice, const Scene
     const auto objects = listSceneObjects(scene);
     std::vector<float4> data(3 * std::max<size_t>(objects.size(), 1), float4(0.f));
     for (const auto& object : objects)
-        for (const auto& [name, motion] : motions)
-            if (object.matches(name))
-            {
-                data[3 * object.instance + 0] = float4(motion.linear, 0.f);
-                data[3 * object.instance + 1] = float4(motion.angular, 0.f);
-                data[3 * object.instance + 2] = float4(motion.center, 0.f);
-            }
+        if (const auto* entry = findObjectMotion(motions, object))
+        {
+            const ObjectMotion& motion = entry->second;
+            data[3 * object.instance + 0] = float4(motion.linear, 0.f);
+            data[3 * object.instance + 1] = float4(motion.angular, 0.f);
+            data[3 * object.instance + 2] = float4(motion.center, 0.f);
+        }
     warnUnmatchedObjects(objects, motions, pass);
     return pDevice->createStructuredBuffer(3 * sizeof(float4), (uint32_t)data.size() / 3, ResourceBindFlags::ShaderResource,
         MemoryType::DeviceLocal, data.data(), false);
 }
 
 /// Moves the scene-graph nodes of the named (movable) objects to their pose at a time t, and back. The pose at t = 0 is
-/// the node transforms when prepare() is first called for the scene.
+/// the node transforms when prepare() is first called for the scene. Motions are in world space, as the velocity
+/// buffers above: a node with a parent moves by the same world transform as a root node, and a moving node below
+/// another one keeps its own motion instead of adding its ancestor's.
 class SceneMover
 {
 public:
@@ -139,28 +157,36 @@ public:
         const auto objects = listSceneObjects(*pScene);
         for (const auto& object : objects)
         {
-            for (const auto& [name, motion] : motions)
+            const auto* entry = findObjectMotion(motions, object);
+            if (!entry)
+                continue;
+            const auto& [name, motion] = *entry;
+            if (!object.movable)
             {
-                if (!object.matches(name))
-                    continue;
-                if (!object.movable)
-                {
-                    logWarning("{}: object '{}' is static and cannot move; build it as animated (e.g. "
-                               "addTriangleMesh(..., isAnimated=True) in a .pyscene).", pass, name);
-                    continue;
-                }
-                bool shared = false;
-                for (const auto& node : mNodes)
-                    shared |= node.id == object.node;
-                if (shared)
-                {
+                logWarning("{}: object '{}' is static and cannot move; build it as animated (e.g. "
+                           "addTriangleMesh(..., isAnimated=True) in a .pyscene).", pass, name);
+                continue;
+            }
+            // The objects of one node move together: only a different motion conflicts.
+            if (const int other = findNode(object.node); other >= 0)
+            {
+                if (!sameMotion(mNodes[other].motion, motion))
                     logWarning("{}: '{}' shares its scene-graph node with another moving object, so they cannot move "
                                "separately; load the scene with SceneBuilderFlags.DontOptimizeGraph.", pass, name);
-                    continue;
-                }
-                mNodes.push_back({object.node, mBaseTransforms[object.node], motion});
+                continue;
             }
+            const float4x4 parent = getBaseParentTransform(object.node);
+            mNodes.push_back({object.node, mBaseTransforms[object.node], parent, inverse(parent), motion, -1});
         }
+        for (auto& node : mNodes)
+            node.movingAncestor = findMovingAncestor(mpScene->getParentNodeID(NodeID{node.id}));
+        // An unlisted object on a moving node, or below one, moves with it here, but the velocity buffers leave it at
+        // rest.
+        for (const auto& object : objects)
+            if (object.movable && !findObjectMotion(motions, object) && findMovingAncestor(NodeID{object.node}) >= 0)
+                logWarning("{}: object #{} ('{}') is attached to a moving object in the scene graph and moves with it, "
+                           "but has no velocity of its own; list it with the same motion.", pass, object.instance,
+                           object.mesh.empty() ? object.material : object.mesh);
         warnUnmatchedObjects(objects, motions, pass);
     }
 
@@ -170,8 +196,17 @@ public:
     /// next bound, e.g. by Scene::bindShaderDataForRaytracing).
     void apply(RenderContext* pRenderContext, float t)
     {
-        for (const auto& node : mNodes)
-            mpScene->updateNodeTransform(node.id, mul(node.motion.transformAt(t), node.base));
+        std::vector<float4x4> motions(mNodes.size());
+        for (size_t i = 0; i < mNodes.size(); ++i)
+            motions[i] = mNodes[i].motion.transformAt(t);
+        for (size_t i = 0; i < mNodes.size(); ++i)
+        {
+            // World-space motion M of a node with parent P: local transform P^-1 M P base. Below a moving node A, the
+            // parent has moved by M_A, which M_A^-1 undoes.
+            const Node& node = mNodes[i];
+            const float4x4 motion = node.movingAncestor >= 0 ? mul(inverse(motions[node.movingAncestor]), motions[i]) : motions[i];
+            mpScene->updateNodeTransform(node.id, mul(node.parentInverse, mul(motion, mul(node.parent, node.base))));
+        }
         mpScene->update(pRenderContext, 0.0);
     }
 
@@ -196,9 +231,45 @@ private:
     struct Node
     {
         uint32_t id;
-        float4x4 base;
+        float4x4 base;          ///< Local transform at time 0.
+        float4x4 parent;        ///< World transform of the parent at time 0 (identity for a root node).
+        float4x4 parentInverse;
         ObjectMotion motion;
+        int movingAncestor;     ///< Index in mNodes of the nearest moving ancestor, or -1.
     };
+
+    static bool sameMotion(const ObjectMotion& a, const ObjectMotion& b)
+    {
+        return all(a.linear == b.linear) && all(a.angular == b.angular) && all(a.center == b.center);
+    }
+
+    /// Index in mNodes of scene-graph node `node`, or -1.
+    int findNode(uint32_t node) const
+    {
+        for (size_t i = 0; i < mNodes.size(); ++i)
+            if (mNodes[i].id == node)
+                return int(i);
+        return -1;
+    }
+
+    /// Index in mNodes of `node` or of its nearest ancestor that moves, or -1.
+    int findMovingAncestor(NodeID node) const
+    {
+        for (; node.isValid(); node = mpScene->getParentNodeID(node))
+            if (const int i = findNode(node.get()); i >= 0)
+                return i;
+        return -1;
+    }
+
+    /// World transform of the parent of `node` at time 0, from the base local transforms (identity for a root node).
+    float4x4 getBaseParentTransform(uint32_t node) const
+    {
+        float4x4 transform = float4x4::identity();
+        for (NodeID parent = mpScene->getParentNodeID(NodeID{node}); parent.isValid(); parent = mpScene->getParentNodeID(parent))
+            transform = mul(mBaseTransforms[parent.get()], transform);
+        return transform;
+    }
+
     ref<Scene> mpScene;
     std::vector<float4x4> mBaseTransforms;
     std::vector<Node> mNodes;

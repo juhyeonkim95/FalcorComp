@@ -102,12 +102,15 @@ acceleration structure, and puts the objects back at their pose at $t = 0$ after
 2. **One node per moving object.** Load the scene with
    `SceneBuilderFlags.DontMergeMaterials | SceneBuilderFlags.DontOptimizeGraph`; otherwise the graph optimizer can
    merge objects into one node, which then move together.
-3. **Rotations about a world-space center**, applied to the node's transform: give each moving object its own
-   top-level node.
 
-The pass warns when a named object is static or shares its node with another moving object;
-`get_object_names()` returns `(instance, mesh name, material name, movable)` for every object. The camera and the
-light do not move.
+Motions are in world space for every node, also one with a parent. A moving object below another moving object in
+the scene graph keeps its own motion: list both with the same motion to move them together. An object that is not
+listed but hangs below a moving object (or shares its node) moves with it here, while the Doppler passes, which only
+read the listed velocities, see it at rest.
+
+The pass warns when a named object is static, when two objects on one node are given different motions, and when an
+unlisted object moves with a listed one; `get_object_names()` returns `(instance, mesh name, material name, movable)`
+for every object. The camera and the light do not move.
 
 The scene changes every frame, so an `AccumulatePass` after this pass restarts every frame unless it is created with
 `"autoReset": False`.
