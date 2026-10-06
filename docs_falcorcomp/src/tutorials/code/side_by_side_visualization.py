@@ -5,11 +5,15 @@ import falcorcomp as falcor
 
 VIEW = "split"  # "split": SplitScreenPass; "side_by_side": SideBySidePass
 
-SIZE = 1024
-testbed = falcor.Testbed(create_window=True, width=SIZE, height=SIZE,
+# SideBySidePass shows half of each image's width, so for the side-by-side view the
+# window is twice as wide. The camera's vertical field of view stays the same, so the
+# middle half of each 2048 x 1024 image is the 1024 x 1024 view of the split screen.
+HEIGHT = 1024
+WIDTH = HEIGHT if VIEW == "split" else 2 * HEIGHT
+testbed = falcor.Testbed(create_window=True, width=WIDTH, height=HEIGHT,
                          title="Side-by-side visualization")
 testbed.load_scene("cornell-box/scene-v4-nolight.pbrt")
-testbed.scene.camera.aspectRatio = 1.0
+testbed.scene.camera.aspectRatio = WIDTH / HEIGHT
 testbed.clock.pause()
 
 # The same path tracer twice, with two gates: early light on the left, later light
@@ -44,9 +48,9 @@ if VIEW == "split":
     # Left input left of a divider, right input right of it, over the same pixels.
     graph.create_pass("Compare", "SplitScreenPass", {**labels, "splitLocation": 0.5})
 else:
-    # A half-width window of each input, next to each other: columns
-    # imageLeftBound to imageLeftBound + SIZE / 2 of both images (here the middle).
-    graph.create_pass("Compare", "SideBySidePass", {**labels, "imageLeftBound": SIZE // 4})
+    # A half-width window of each input, next to each other: columns imageLeftBound
+    # to imageLeftBound + WIDTH / 2 of both images, here their middle halves.
+    graph.create_pass("Compare", "SideBySidePass", {**labels, "imageLeftBound": WIDTH // 4})
 graph.add_edge("ToneMapEarly.dst", "Compare.leftInput")
 graph.add_edge("ToneMapLate.dst", "Compare.rightInput")
 graph.mark_output("Compare.output")

@@ -5,7 +5,8 @@ Falcor has two render passes that put two images next to each other in a window,
 - `SplitScreenPass` shows the two images over the same pixels, the first left of a divider and the second right of
   it. Drag the divider to compare the two over the same part of the image.
 - `SideBySidePass` shows a half-width window of each image, next to each other: the same columns of both, for
-  comparing two images in full rather than at a seam.
+  comparing two images in full rather than at a seam. To see each image whole, render the images twice as wide as
+  the views and show their middle halves.
 
 This tutorial uses them to compare two time gates of the Cornell box, rendered by two `TimeGatedPathTracerInline`
 passes. The two passes take any two images of the same size, so the same graph compares anything else: two
@@ -15,7 +16,7 @@ reference.
 It uses the same scene file as the other tutorials (see [ToF rendering](index.md)).
 
 ```{image} images/side_by_side_visualization.jpg
-:alt: Two time gates: left and right of SplitScreenPass's divider, and the middle halves of both next to each other with SideBySidePass
+:alt: Two time gates: left and right of SplitScreenPass's divider, and both in full next to each other with SideBySidePass
 :align: center
 ```
 
@@ -24,8 +25,11 @@ Falcor's panels on top.
 
 ## 1. Open a window and load the scene
 
-`VIEW` picks the pass. The two gates are box gates of width 0.1, at 16.9 and 17.337: the earlier one catches the
-light front close to the laser spot on the back wall, the later one light that bounced around longer.
+`VIEW` picks the pass. `SideBySidePass` shows half of each image's width, so for it the window is twice as wide,
+2048 x 1024, and the camera's aspect ratio follows the window. The vertical field of view does not change, so the
+images get wider, not taller: their middle halves are exactly the 1024 x 1024 view of the split screen, and those are
+what `SideBySidePass` shows. The two gates are box gates of width 0.1, at 16.9 and 17.337: the earlier one catches
+the light front close to the laser spot on the back wall, the later one light that bounced around longer.
 
 ```{literalinclude} code/side_by_side_visualization.py
 :language: python
