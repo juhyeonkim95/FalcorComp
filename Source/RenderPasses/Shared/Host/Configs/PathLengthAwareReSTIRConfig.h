@@ -2,6 +2,7 @@
 #include "ConfigUtils.h"
 #include "ShiftMappingConfig.h"
 #include "PathTracingConfig.h"
+#include "../InlinePassUtils.h"
 #include "Utils/Sampling/SampleGenerator.h"
 #include "RenderGraph/RenderPass.h"
 #include "Scene/Scene.h"
@@ -96,13 +97,19 @@ struct PathLengthAwareReSTIRConfig
         shiftMapping.bindShaderData(shiftmapVar);
     }
 
-    /// Sets the spatial reuse neighbor count, radius and reconnection threshold under `spatialVar`.
+    /// Sets a ReconnectionCriteria (Shared/Shaders/ReSTIR/PathReconstruction.slang) at `var`.
+    void bindReconnectionCriteria(const ShaderVar& var) const
+    {
+        var["roughnessThreshold"] = reconnectionRoughnessThreshold;
+        var["minDistance"] = reconnectionMinDistance;
+    }
+
+    /// Sets the spatial reuse neighbor count, radius and reconnection criteria under `spatialVar`.
     void bindSpatialReuse(const ShaderVar& spatialVar) const
     {
         spatialVar["neighborCount"] = spatialReuseNeighborCount;
         spatialVar["gatherRadius"] = spatialReuseGatherRadius;
-        spatialVar["reconnectionRoughnessThreshold"] = reconnectionRoughnessThreshold;
-        spatialVar["reconnectionMinDistance"] = reconnectionMinDistance;
+        bindReconnectionCriteria(spatialVar["reconnection"]);
     }
 
     /// Spatial and temporal reuse. `temporalNote` is appended to the Temporal reuse tooltip.
@@ -285,24 +292,32 @@ public:
         }
     }
 
-    /// Runs `iterations` spatial reuse passes, swapping the reservoirs before each. `spatialVar` receives
-    /// prevReservoirs, currReservoirs and a fresh gRandomSeed.
-    void runSpatialReuse(
-        RenderContext* pRenderContext,
-        const ref<ComputePass>& pPass,
-        const ShaderVar& spatialVar,
-        uint iterations,
-        uint& randomSeed,
-        uint2 frameDim
-    )
+    /// Binds what a spatial reuse pass (`rootVar`) reads from its SpatialReuse (CB.gSpatialReuse) and does not change
+    /// between iterations: the frame, the neighbor offsets, `config`'s reuse parameters, the primary hit, motion and
+    /// color channels, and with `usePairs` the pair records; and `config`'s shift mapping (ShiftMappingCB).
+    void bindSpatialReuse(
+        const ShaderVar& rootVar,
+        const RenderData& renderData,
+        const PathLengthAwareReSTIRConfig& config,
+        uint frameCount,
+        bool useBinReuse,
+        bool usePairs
+    ) const
     {
-        for (uint iteration = 0; iteration < iterations; iteration++)
+        const ShaderVar var = rootVar["CB"]["gSpatialReuse"];
+        var["gFrameCount"] = frameCount;
+        var["gFrameDim"] = renderData.getDefaultTextureDims();
+        var["neighborOffsets"] = neighborOffsets;
+        var["useBinReuse"] = useBinReuse;
+        config.bindSpatialReuse(var);
+        InlinePass::bindChannels(var, renderData, InlinePass::kPrimaryHitAndMotionInputChannels);
+        InlinePass::bindChannels(var, renderData, InlinePass::kColorOutputChannels);
+        if (usePairs)
         {
-            swapReservoirs();
-            spatialVar["gRandomSeed"] = randomSeed++;
-            bindReservoirs(spatialVar);
-            pPass->execute(pRenderContext, {frameDim.x, frameDim.y, 1});
+            var["pairs"] = reusePairs;
+            var["pairCandidateValid"] = spatialCandidateValid;
         }
+        config.bindShiftMapping(rootVar["ShiftMappingCB"]);
     }
 
     /// (Re)allocates reusePairs, the pair records (ReusePair; `pairsVar` is a shader buffer of them) of the two-pass
@@ -332,24 +347,36 @@ public:
                 false);
     }
 
-    /// Spatial reuse split into two passes (SPATIAL_REUSE_PAIRS) per iteration and chunk of `chunkBins` bins:
-    /// `pPairPass` with `pairsPerPixel` threads per pixel along x (a candidate each) and the chunk's bins along z, then
-    /// the resampling pass `pPass`.
-    /// Both get the reservoirs, the same seed and the chunk (pairFirstBin, pairBinCount).
+    /// Runs `iterations` spatial reuse iterations, swapping the reservoirs before each; the passes get them and a fresh
+    /// gRandomSeed in their CB.gSpatialReuse. Without `pPairPass`, an iteration is the resampling pass `pPass`. With
+    /// it, spatial reuse is split into two passes (SPATIAL_REUSE_PAIRS) per iteration and chunk of `chunkBins` of the
+    /// `binCount` bins: `pPairPass` with `pairsPerPixel` threads per pixel along x (a candidate each) and the chunk's
+    /// bins along z, then `pPass`; both get the same seed and the chunk (pairFirstBin, pairBinCount).
     void runSpatialReuse(
         RenderContext* pRenderContext,
         const ref<ComputePass>& pPairPass,
-        const ShaderVar& pairVar,
         uint pairsPerPixel,
         const ref<ComputePass>& pPass,
-        const ShaderVar& spatialVar,
         uint iterations,
         uint& randomSeed,
         uint2 frameDim,
-        uint binCount,
-        uint chunkBins
+        uint binCount = 1,
+        uint chunkBins = 1
     )
     {
+        const ShaderVar spatialVar = pPass->getRootVar()["CB"]["gSpatialReuse"];
+        if (!pPairPass)
+        {
+            for (uint iteration = 0; iteration < iterations; iteration++)
+            {
+                swapReservoirs();
+                spatialVar["gRandomSeed"] = randomSeed++;
+                bindReservoirs(spatialVar);
+                pPass->execute(pRenderContext, {frameDim.x, frameDim.y, 1});
+            }
+            return;
+        }
+        const ShaderVar pairVar = pPairPass->getRootVar()["CB"]["gSpatialReuse"];
         for (uint iteration = 0; iteration < iterations; iteration++)
         {
             swapReservoirs();

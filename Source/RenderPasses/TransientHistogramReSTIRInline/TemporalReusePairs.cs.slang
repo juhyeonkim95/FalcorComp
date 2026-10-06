@@ -33,9 +33,9 @@ void main(uint3 dispatchThreadId: SV_DispatchThreadID)
     SampleGenerator sg = createPixelSampleGenerator(pixel, gFrameCount, kTemporalReuseStream);
     ShiftMappingDebugInfo debugInfo = {};
     // History -> current, and current -> history for the canonical sample's weight.
-    IncomingCandidate incoming = evaluateIncomingCandidate(previous, current.M, getReconnectionCriteria(), primary,
+    IncomingCandidate incoming = evaluateIncomingCandidate(previous, current.M, gReconnection, primary,
         primaryMaterial, primaryLength, gateCenter, gateCenter, 1.f, gLaserOrigin, gLaserDirection, sg, debugInfo);
-    CanonicalCandidate canonical = evaluateCanonicalCandidate(current, previous.M, getReconnectionCriteria(),
+    CanonicalCandidate canonical = evaluateCanonicalCandidate(current, previous.M, gReconnection,
         history.primary, previousMaterial, history.primaryLength, gateCenter, gateCenter, 1.f, gLaserOrigin,
         gLaserDirection, sg, debugInfo);
 

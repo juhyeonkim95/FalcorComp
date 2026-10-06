@@ -32,8 +32,7 @@ cbuffer CB
     uint gFrameCount;    // Frame count since scene was loaded.
 
     uint gSamplesPerPixel;
-    float gReconnectionRoughnessThreshold;
-    float gReconnectionMinDistance;
+    ReconnectionCriteria gReconnection;
     float gEllipsoidRoughnessThreshold;
     float gTemporalHistoryLength;
     float gRoughTimeGateSampleRatio; // Shrink mapping: fraction of the paths traced with the wide gate, in [0, 1].
@@ -53,13 +52,6 @@ cbuffer PreviousLaser
     float gPreviousLaserCosAngle;
 }
 #endif
-
-
-ReconnectionCriteria getReconnectionCriteria()
-{
-    ReconnectionCriteria criteria = { gReconnectionRoughnessThreshold, gReconnectionMinDistance };
-    return criteria;
-}
 
 // Inputs
 Texture2D<PackedHitInfo> gVBuffer;
@@ -111,9 +103,9 @@ void submitEllipsoidalCandidate(inout Reservoir reservoir, ReconnectionState rc,
     proposal.wo = ellipsoidal.direction;
     proposal.pdf = ellipsoidal.pdf;
     proposal.weight = material.eval(origin, ellipsoidal.direction, rng) / ellipsoidal.pdf;
-    bool eligible = material.getProperties(origin).roughness > gReconnectionRoughnessThreshold &&
-        targetMaterial.getProperties(target).roughness > gReconnectionRoughnessThreshold &&
-        ellipsoidal.distance > gReconnectionMinDistance;
+    bool eligible = gReconnection.isRough(material.getProperties(origin).roughness) &&
+        gReconnection.isRough(targetMaterial.getProperties(target).roughness) &&
+        gReconnection.isLongEnough(ellipsoidal.distance);
     float suffixDirectionWeight = 0.f;
     if (rc.postBounce == 2) suffixDirectionWeight = shadingCosine(origin, material, ellipsoidal.direction) / ellipsoidal.pdf;
     rc.recordHit(ellipsoidal.hit, target, origin.posW, proposal, targetDepth, eligible, ellipsoidal.distance, origin.IoR,
@@ -148,7 +140,7 @@ Reservoir mergeGateReservoirs(Reservoir narrow, Reservoir wide, uint narrowCount
     // A failed expansion or no-RC path retains the full narrow contribution.
     ReuseDomain domain = { primary, primaryMaterial, primaryLength, gTimeCenter, gLaserOrigin, gLaserDirection, gLaserPower,
         gLaserCosAngle };
-    return mergeReservoirPair(narrow, domain, wide, domain, K, false, getReconnectionCriteria(), rng);
+    return mergeReservoirPair(narrow, domain, wide, domain, K, false, gReconnection, rng);
 }
 #endif
 
@@ -183,7 +175,7 @@ Reservoir reuseTemporalHistory(Reservoir fresh, uint2 pixel, ShadingData primary
     ReuseDomain last = { history.primary, previousMaterial, history.primaryLength, gPreviousTimeCenter, gLaserOrigin,
         gLaserDirection, gLaserPower, gLaserCosAngle };
 #endif
-    return mergeReservoirPair(fresh, current, previous, last, 1.f, true, getReconnectionCriteria(), rng);
+    return mergeReservoirPair(fresh, current, previous, last, 1.f, true, gReconnection, rng);
 }
 #endif
 
@@ -297,7 +289,7 @@ float3 tracePath(uint2 pixel, uint2 frameDim)
                     pathLength, throughput, depth, ellipseLightSeed, rng);
             }
 #endif
-            bool previousDiffuse = material.getProperties(surface).roughness > gReconnectionRoughnessThreshold;
+            bool previousDiffuse = gReconnection.isRough(material.getProperties(surface).roughness);
             uint sampleSeed = bsdfRng.getCurrentSeed();
             BSDFSample sample = {};
             if (!material.sample(surface, bsdfRng, sample, kUseImportanceSampling)) break;
@@ -327,8 +319,8 @@ float3 tracePath(uint2 pixel, uint2 frameDim)
             float segmentLength = length(surface.posW - previousPosition);
             pathLength += segmentLength * segmentIoR;
             if (!(pathLength < maxPathLength)) break;
-            bool currentDiffuse = material.getProperties(surface).roughness > gReconnectionRoughnessThreshold;
-            rc.recordHit(hit, surface, previousPosition, sample, depth, previousDiffuse && currentDiffuse && segmentLength > gReconnectionMinDistance,
+            bool currentDiffuse = gReconnection.isRough(material.getProperties(surface).roughness);
+            rc.recordHit(hit, surface, previousPosition, sample, depth, previousDiffuse && currentDiffuse && gReconnection.isLongEnough(segmentLength),
                 segmentLength, segmentIoR, suffixDirectionWeight, sampleSeed);
 
             LightSample light = {};

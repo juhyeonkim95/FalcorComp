@@ -36,8 +36,7 @@ cbuffer CB
     uint gFrameCount;    // Frame count since scene was loaded.
     
     uint gSamplesPerPixel;
-    float gReconnectionRoughnessThreshold;
-    float gReconnectionMinDistance;
+    ReconnectionCriteria gReconnection;
     float gTemporalHistoryLength;
 #if USE_TEMPORAL_REUSE
     bool gTemporalHistoryValid;
@@ -47,13 +46,6 @@ cbuffer CB
     uint gPairFirstBin; // Chunk of bins of the two-pass temporal reuse.
     uint gPairBinCount;
 #endif
-}
-
-
-ReconnectionCriteria getReconnectionCriteria()
-{
-    ReconnectionCriteria criteria = { gReconnectionRoughnessThreshold, gReconnectionMinDistance };
-    return criteria;
 }
 
 // Inputs

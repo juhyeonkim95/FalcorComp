@@ -121,7 +121,7 @@ float3 tracePath(uint2 pixel, uint2 frameDim)
             if (rc.bounce > 0) ++rc.postBounce;
             if (depth + 1 >= MAX_BOUNCES) break;
 
-            bool previousDiffuse = material.getProperties(surface).roughness > gReconnectionRoughnessThreshold;
+            bool previousDiffuse = gReconnection.isRough(material.getProperties(surface).roughness);
             uint sampleSeed = bsdfRng.getCurrentSeed();
             BSDFSample sample = {};
             if (!material.sample(surface, bsdfRng, sample, USE_IMPORTANCE_SAMPLING)) break;
@@ -142,9 +142,9 @@ float3 tracePath(uint2 pixel, uint2 frameDim)
             float segmentLength = length(surface.posW - previousPosition);
             // Match time-gated generation and shared prefix replay.
             pathLength += segmentLength * segmentIoR;
-            bool currentDiffuse = material.getProperties(surface).roughness > gReconnectionRoughnessThreshold;
+            bool currentDiffuse = gReconnection.isRough(material.getProperties(surface).roughness);
             rc.recordHit(hit, surface, previousPosition, sample, depth + 1,
-                previousDiffuse && currentDiffuse && segmentLength > gReconnectionMinDistance,
+                previousDiffuse && currentDiffuse && gReconnection.isLongEnough(segmentLength),
                 segmentLength, segmentIoR, suffixDirectionWeight, sampleSeed);
         }
     }
@@ -177,7 +177,7 @@ float3 tracePath(uint2 pixel, uint2 frameDim)
                 ReuseDomain last = { history.primary, previousMaterial, history.primaryLength, gateCenter, gLaserOrigin,
                     gLaserDirection, gLaserPower, gLaserCosAngle };
                 reservoir = mergeReservoirPair(reservoir, current, previous, last, 1.f, false,
-                    getReconnectionCriteria(), rng);
+                    gReconnection, rng);
             }
         }
 #endif

@@ -231,8 +231,7 @@ void TimeGatedReSTIRInline::bindShaderData(const ShaderVar& var, const RenderDat
 
     var["CB"]["gFrameCount"] = mFrameCount;
     var["CB"]["gFrameDim"] = renderData.getDefaultTextureDims();
-    var["CB"]["gReconnectionRoughnessThreshold"] = mOptions.restir.reconnectionRoughnessThreshold;
-    var["CB"]["gReconnectionMinDistance"] = mOptions.restir.reconnectionMinDistance;
+    mOptions.restir.bindReconnectionCriteria(var["CB"]["gReconnection"]);
     var["CB"]["gEllipsoidRoughnessThreshold"] = mOptions.ellipsoidalSampling.ellipsoidRoughnessThreshold;
     var["CB"]["gSamplesPerPixel"] = mOptions.pathTracing.samplesPerPixel;
     var["CB"]["gTemporalHistoryLength"] = mOptions.restir.temporalHistoryLength;
@@ -267,29 +266,14 @@ void TimeGatedReSTIRInline::bindShaderData(const ShaderVar& var, const RenderDat
 void TimeGatedReSTIRInline::bindSpatialReuse(const ref<ComputePass>& pass, const RenderData& renderData)
 {
     auto rootVar = pass->getRootVar();
-    auto var = rootVar["CB"]["gSpatialReuse"];
-    const uint2 frameDim = renderData.getDefaultTextureDims();
-
-    var["gFrameCount"] = mFrameCount;
-    var["gFrameDim"] = frameDim;
-    var["neighborOffsets"] = mReSTIR.neighborOffsets;
-    var["useBinReuse"] = false; // A time gate has a single bin.
-    mOptions.restir.bindSpatialReuse(var);
-
-    InlinePass::bindChannels(var, renderData, InlinePass::kPrimaryHitAndMotionInputChannels);
-    InlinePass::bindChannels(var, renderData, InlinePass::kColorOutputChannels);
+    // A time gate has a single bin: no bin reuse.
+    mReSTIR.bindSpatialReuse(rootVar, renderData, mOptions.restir, mFrameCount, false, useSpatialReusePairs());
     if (mOptions.debugNewtonIterations)
-        InlinePass::bindChannels(var, renderData, kDebugOutputChannels);
+        InlinePass::bindChannels(rootVar["CB"]["gSpatialReuse"], renderData, kDebugOutputChannels);
 
     mOptions.timeGate.bindShaderData(rootVar["TimeGate"], mGate);
     rootVar["TimeGate"]["gTimeGateWindowRough"] = mOptions.wideGateWindow();
     mLaser.bindShaderData(rootVar["Laser"]);
-    mOptions.restir.bindShiftMapping(rootVar["ShiftMappingCB"]);
-    if (useSpatialReusePairs())
-    {
-        var["pairs"] = mReSTIR.reusePairs;
-        var["pairCandidateValid"] = mReSTIR.spatialCandidateValid;
-    }
 }
 
 void TimeGatedReSTIRInline::spatialReuse(RenderContext* pRenderContext, const RenderData& renderData)
@@ -317,13 +301,8 @@ void TimeGatedReSTIRInline::spatialReuse(RenderContext* pRenderContext, const Re
         pRenderContext->clearUAV(renderData.getTexture("mappingDistance")->getUAV().get(), float4(0.f));
     }
 
-    auto var = mpSpatialReusePass->getRootVar()["CB"]["gSpatialReuse"];
-    if (useSpatialReusePairs())
-        mReSTIR.runSpatialReuse(pRenderContext, mpSpatialReusePairsPass,
-            mpSpatialReusePairsPass->getRootVar()["CB"]["gSpatialReuse"], candidateCount, mpSpatialReusePass, var,
-            mOptions.restir.spatialReuseIteration, mRandomSeed, frameDim, 1, 1);
-    else
-        mReSTIR.runSpatialReuse(pRenderContext, mpSpatialReusePass, var, mOptions.restir.spatialReuseIteration, mRandomSeed, frameDim);
+    mReSTIR.runSpatialReuse(pRenderContext, useSpatialReusePairs() ? mpSpatialReusePairsPass : ref<ComputePass>(),
+        candidateCount, mpSpatialReusePass, mOptions.restir.spatialReuseIteration, mRandomSeed, frameDim);
 }
 
 void TimeGatedReSTIRInline::addDirect(RenderContext* pRenderContext, const RenderData& renderData)

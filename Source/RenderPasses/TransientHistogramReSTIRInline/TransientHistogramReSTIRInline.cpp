@@ -215,8 +215,7 @@ void TransientHistogramReSTIRInline::bindShaderData(const ShaderVar& var, const 
 
     var["CB"]["gFrameCount"] = mFrameCount;
     var["CB"]["gFrameDim"] = renderData.getDefaultTextureDims();
-    var["CB"]["gReconnectionRoughnessThreshold"] = mOptions.restir.reconnectionRoughnessThreshold;
-    var["CB"]["gReconnectionMinDistance"] = mOptions.restir.reconnectionMinDistance;
+    mOptions.restir.bindReconnectionCriteria(var["CB"]["gReconnection"]);
     var["CB"]["gSamplesPerPixel"] = mOptions.pathTracing.samplesPerPixel;
     var["CB"]["gTemporalHistoryLength"] = mOptions.restir.temporalHistoryLength;
     mLaser.bindShaderData(var["Laser"]);
@@ -244,29 +243,14 @@ void TransientHistogramReSTIRInline::bindShaderData(const ShaderVar& var, const 
 void TransientHistogramReSTIRInline::bindSpatialReuse(const ref<ComputePass>& pass, const RenderData& renderData)
 {
     auto rootVar = pass->getRootVar();
-    auto var = rootVar["CB"]["gSpatialReuse"];
-    const uint2 frameDim = renderData.getDefaultTextureDims();
-
-    var["gFrameCount"] = mFrameCount;
-    var["gFrameDim"] = frameDim;
-    var["neighborOffsets"] = mReSTIR.neighborOffsets;
-    var["useBinReuse"] = mOptions.useBinReuse;
-    mOptions.restir.bindSpatialReuse(var);
-
-    InlinePass::bindChannels(var, renderData, InlinePass::kPrimaryHitAndMotionInputChannels);
-    InlinePass::bindChannels(var, renderData, InlinePass::kColorOutputChannels);
+    mReSTIR.bindSpatialReuse(rootVar, renderData, mOptions.restir, mFrameCount, mOptions.useBinReuse,
+        useSpatialReusePairs());
     // The histogram is a pass-level global, outside the shared SpatialReuse struct; only the resampling pass writes it.
     if (pass == mpSpatialReusePass)
         InlinePass::bindChannels(rootVar, renderData, histogramChannels());
 
     bindTimeGate(rootVar);
     mLaser.bindShaderData(rootVar["Laser"]);
-    mOptions.restir.bindShiftMapping(rootVar["ShiftMappingCB"]);
-    if (useSpatialReusePairs())
-    {
-        var["pairs"] = mReSTIR.reusePairs;
-        var["pairCandidateValid"] = mReSTIR.spatialCandidateValid;
-    }
 }
 
 void TransientHistogramReSTIRInline::preparePairs(uint2 frameDim, uint& spatialChunkBins, uint& temporalChunkBins)
@@ -332,13 +316,9 @@ void TransientHistogramReSTIRInline::spatialReuse(RenderContext* pRenderContext,
     }
     bindSpatialReuse(mpSpatialReusePass, renderData);
 
-    auto var = mpSpatialReusePass->getRootVar()["CB"]["gSpatialReuse"];
-    if (useSpatialReusePairs())
-        mReSTIR.runSpatialReuse(pRenderContext, mpSpatialReusePairsPass,
-            mpSpatialReusePairsPass->getRootVar()["CB"]["gSpatialReuse"], candidateCount, mpSpatialReusePass, var,
-            mOptions.restir.spatialReuseIteration, mRandomSeed, frameDim, binCount, chunkBins);
-    else
-        mReSTIR.runSpatialReuse(pRenderContext, mpSpatialReusePass, var, mOptions.restir.spatialReuseIteration, mRandomSeed, frameDim);
+    mReSTIR.runSpatialReuse(pRenderContext, useSpatialReusePairs() ? mpSpatialReusePairsPass : ref<ComputePass>(),
+        candidateCount, mpSpatialReusePass, mOptions.restir.spatialReuseIteration, mRandomSeed, frameDim, binCount,
+        chunkBins);
 }
 
 void TransientHistogramReSTIRInline::execute(RenderContext* pRenderContext, const RenderData& renderData)

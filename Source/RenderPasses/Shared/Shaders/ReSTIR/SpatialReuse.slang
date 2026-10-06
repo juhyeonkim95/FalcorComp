@@ -34,8 +34,7 @@ struct SpatialReuse
 
     Texture1D<float2> neighborOffsets;
     uint neighborCount;
-    float reconnectionRoughnessThreshold;
-    float reconnectionMinDistance;
+    ReconnectionCriteria reconnection;
     float gatherRadius;
     bool useBinReuse; // Histogram only: bin centers are binCenter(bin).
 
@@ -73,12 +72,6 @@ struct SpatialReuse
     uint pairFirstBin;
     uint pairBinCount;
 #endif
-
-    ReconnectionCriteria getReconnectionCriteria()
-    {
-        ReconnectionCriteria criteria = { reconnectionRoughnessThreshold, reconnectionMinDistance };
-        return criteria;
-    }
 
     // Reservoir accesses: with RESERVOIR_SUMMARIES, W and M come from the summaries and only non-empty reservoirs are
     // stored.
@@ -306,13 +299,13 @@ struct SpatialReuse
             // Central -> neighbor: accumulate the central sample's pairwise weight.
             ShiftMappingDebugInfo debugInfo;
             canonicalWeight += evaluateCanonicalShiftWeight(
-                centralReservoir, centralSuffix, centralVertex, neighborReservoir.M, getReconnectionCriteria(),
+                centralReservoir, centralSuffix, centralVertex, neighborReservoir.M, reconnection,
                 neighborPrimary, neighborMaterial, neighborDepth,
                 neighborGateCenter, gateCenter, sg, debugInfo);
 
             // Neighbor -> central: shift the neighbor sample and stream it into the reservoir.
             combineReservoirWithShiftMapping(
-                destination, neighborReservoir, centralReservoir.M, getReconnectionCriteria(),
+                destination, neighborReservoir, centralReservoir.M, reconnection,
                 primary, primaryMaterial, primaryDepth,
                 gateCenter, neighborGateCenter, 1.f, false,
                 gLaserOrigin, gLaserDirection, sg
@@ -377,13 +370,13 @@ struct SpatialReuse
                 centralVertex = gScene.getVertexData(centralReservoir.rcVertexHit.getTriangleHit());
             }
             pair.canonical = evaluateCanonicalShiftWeight(
-                centralReservoir, centralSuffix, centralVertex, neighborM, getReconnectionCriteria(),
+                centralReservoir, centralSuffix, centralVertex, neighborM, reconnection,
                 neighborPrimary, neighborMaterial, neighborDepth, neighborGateCenter, gateCenter, sg, debugInfo);
         }
         if (getPrevW(neighborReservoirIndex) != 0.f)
         {
             IncomingCandidate incoming = evaluateIncomingCandidate(loadPrevReservoir(neighborReservoirIndex), centralMass,
-                getReconnectionCriteria(), primary, primaryMaterial, primaryDepth, gateCenter, neighborGateCenter, 1.f,
+                reconnection, primary, primaryMaterial, primaryDepth, gateCenter, neighborGateCenter, 1.f,
                 gLaserOrigin, gLaserDirection, sg, debugInfo);
             pair.hit = incoming.hit;
             pair.f = incoming.f;
