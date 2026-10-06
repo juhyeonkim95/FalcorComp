@@ -30,6 +30,10 @@
 #include "RenderGraph/RenderPassStandardFlags.h"
 #include "Rendering/Lights/EmissiveUniformSampler.h"
 
+// PathTracerParams is uploaded with setBlob() into a constant buffer: the C++ layout must match the shader's, which
+// requires whole 16-byte rows (see Params.slang).
+static_assert(sizeof(PathTracerParams) % 16 == 0, "PathTracerParams must be a multiple of 16 bytes.");
+
 
 namespace
 {
@@ -351,6 +355,7 @@ Properties PathTracer::getProperties() const
     // Sampling parameters
     props[kSampleGenerator] = mStaticParams.sampleGenerator;
     if (mParams.useFixedSeed) props[kFixedSeed] = mParams.fixedSeed;
+    if (mParams.useReprojSeed) props[kUseReprojSeed] = mParams.useReprojSeed;
     props[kUseBSDFSampling] = mStaticParams.useBSDFSampling;
     props[kUseRussianRoulette] = mStaticParams.useRussianRoulette;
     props[kUseNEE] = mStaticParams.useNEE;
