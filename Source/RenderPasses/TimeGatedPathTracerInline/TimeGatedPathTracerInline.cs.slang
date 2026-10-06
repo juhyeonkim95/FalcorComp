@@ -226,8 +226,7 @@ EllipsoidalEstimate estimateEllipsoidalPath(
     if (!sampleEllipsoid(x, prefixLength, light, gTimeCenter, emissiveSampler, sg, ellipsoidal)) return estimate;
     ShadingData y = ellipsoidal.surface;
     let yMaterial = gScene.materials.getMaterialInstance(y, ExplicitLodTextureSampler(0.f));
-    estimate.ellipsePdf = ellipsoidal.pdf;
-    if (!(estimate.ellipsePdf > 1e-7f)) return estimate;
+    estimate.ellipsePdf = ellipsoidal.pdf; // Above kMinEllipsePdf, as evalEllipsoidPdf() requires too.
     // Match the cutoff that would stop the competing BSDF walk before reaching y.
     if (prefixLength + ellipsoidal.distance * x.IoR < getMaxPathLength(gTimeCenter))
         estimate.bsdfPdf = material.evalPdf(x, ellipsoidal.direction, kUseImportanceSampling);

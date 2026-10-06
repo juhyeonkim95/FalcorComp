@@ -43,6 +43,11 @@ struct ScatterRecord
     bool isDelta;            // The BSDF sample was a delta lobe.
 };
 
+// Ellipsoid samples whose solid-angle density at x is at most this are left to the BSDF technique: sampleEllipsoid()
+// rejects them and evalEllipsoidPdf() reports zero for them, so the two techniques still split every path between
+// them (no bias), while the near-degenerate configurations where f / pdf explodes never come from the ellipsoid.
+static const float kMinEllipsePdf = 1e-7f;
+
 float finitePositivePdf(float pdf)
 {
     return pdf > 0.f && !isinf(pdf) && !isnan(pdf) ? pdf : 0.f;
@@ -99,7 +104,7 @@ bool supportsEllipsoidTriangle(Ellipsoid ellipse, EmissiveTriangle triangle)
 
 // Sample the x -> y segment. The closest hit must be the sampled triangle; any
 // intervening surface (or a miss) rejects the sample. y -> light is not traced.
-// Consumes the length, triangle, and two point dimensions of rng, in that order.
+// Consumes rng for the length, the triangle (one number per BVH level) and the point, in that order.
 bool sampleEllipsoid(ShadingData x, float prefixLength, LightSample light, float gateCenter,
     EmissiveLightSampler sampler, inout SampleGenerator rng, out EllipsoidalSample sample)
 {
@@ -136,7 +141,7 @@ bool sampleEllipsoid(ShadingData x, float prefixLength, LightSample light, float
     sample.distance = length(sample.surface.posW - x.posW);
     sample.pdf = areaPdfToSolidAngle(areaPdf, x.posW, sample.surface.posW,
         sample.surface.getOrientedFaceNormal());
-    return sample.pdf > 0.f;
+    return sample.pdf > kMinEllipsePdf;
 }
 
 // Solid-angle density with which sampleEllipsoid() at x would have produced y.
@@ -164,7 +169,8 @@ float evalEllipsoidPdf(ScatterRecord x, ShadingData y, HitInfo yHit, LightSample
     float areaFactor = evalTriangleEllipsoidPdf(
         ellipse, triangle.posW[0], triangle.posW[1], triangle.posW[2], y.posW);
     float ellipseAreaPdf = finitePositivePdf(lengthPdf * trianglePdf * areaFactor);
-    return areaPdfToSolidAngle(ellipseAreaPdf, ellipse.p1, y.posW, y.getOrientedFaceNormal());
+    float pdf = areaPdfToSolidAngle(ellipseAreaPdf, ellipse.p1, y.posW, y.getOrientedFaceNormal());
+    return pdf > kMinEllipsePdf ? pdf : 0.f; // Mirrors sampleEllipsoid()'s cutoff.
 }
 
 // Weight of a BSDF-technique path x -> y -> light, evaluated at y.
