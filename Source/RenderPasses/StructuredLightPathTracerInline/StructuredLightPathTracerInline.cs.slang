@@ -57,15 +57,28 @@ bool isLit(ShadingData surface, ProjectorConnection connection)
     return traceVisibilityRay(surface.computeRayOrigin(), connection.direction, connection.distance);
 }
 
+/// Connection of `surface` to the projector, and whether the projector lights it (inside the frustum, not occluded).
+bool connectLit(ShadingData surface, ProjectorLight projector, out ProjectorConnection connection)
+{
+    return projector.connect(surface.posW, connection) && isLit(surface, connection);
+}
+
+/// BSDF * cosine * emitted radiance / distance^2 of a connection that lights `surface` (connectLit).
+float3 shadeProjectorConnection(ShadingData surface, IMaterialInstance material, ProjectorConnection connection,
+    inout SampleGenerator sg)
+{
+    return material.eval(surface, connection.direction, sg) * connection.radiance /
+        (connection.distance * connection.distance);
+}
+
 /// Connection of `surface` to the projector: BSDF * cosine * emitted radiance / distance^2, zero outside the
 /// frustum or when occluded.
 float3 evaluateProjectorConnection(ShadingData surface, IMaterialInstance material, ProjectorLight projector,
     inout SampleGenerator sg)
 {
     ProjectorConnection connection;
-    if (!projector.connect(surface.posW, connection) || !isLit(surface, connection)) return float3(0.f);
-    return material.eval(surface, connection.direction, sg) * connection.radiance /
-        (connection.distance * connection.distance);
+    if (!connectLit(surface, projector, connection)) return float3(0.f);
+    return shadeProjectorConnection(surface, material, connection, sg);
 }
 
 /// |dw / duv|, up to a constant: the solid angle at `previous` of the surface point hit by the projector ray
@@ -92,15 +105,15 @@ float solidAngleFromPreviousPerUV(float3 previous, ShadingData surface)
     projector lights on that side (isLit), checked for both points of a pair so that the map and its inverse fail
     together; elsewhere the primal estimate is returned alone.
     @param[in] primalEstimate throughput * f / p of the primal path, connected to the projector.
+    @param[in] primalLit, primal The primal's projector connection (connectLit), traced once for both uses.
 */
 float3 estimateWithAntithetic(ShadingData previous, IMaterialInstance previousMaterial, ShadingData surface,
-    BSDFSample bsdfSample, ProjectorLight projector, float3 throughput, float3 primalEstimate, inout SampleGenerator sg)
+    BSDFSample bsdfSample, ProjectorLight projector, float3 throughput, float3 primalEstimate, bool primalLit,
+    ProjectorConnection primal, inout SampleGenerator sg)
 {
     float mapChoice = sampleNext1D(sg);
     if (bsdfSample.isLobe(LobeType::Delta) || !(bsdfSample.pdf > 0.f)) return primalEstimate;
-
-    ProjectorConnection primal;
-    if (!projector.connect(surface.posW, primal) || !isLit(surface, primal)) return primalEstimate;
+    if (!primalLit) return primalEstimate;
 
     float3 projectorDir;
     if (!projector.uvToDirection(projector.pattern.antitheticCoord(primal.uv, mapChoice), projectorDir))
@@ -228,14 +241,16 @@ float3 tracePath(const uint2 pixel, const uint2 frameDim)
                 sd = loadShadingData(hit, rayOrigin, bsdfSample.wo);
                 mi = gScene.materials.getMaterialInstance(sd, ExplicitLodTextureSampler(0.f));
 
-#if SAMPLING_METHOD != SAMPLING_PROJECTOR
-                float3 primalEstimate = throughput * bsdfSample.weight * evaluateProjectorConnection(sd, mi, projector, sg);
 #if SAMPLING_METHOD == SAMPLING_ANTITHETIC
+                ProjectorConnection primal;
+                bool primalLit = connectLit(sd, projector, primal);
+                float3 primalValue = float3(0.f);
+                if (primalLit) primalValue = shadeProjectorConnection(sd, mi, primal, sg);
+                float3 primalEstimate = throughput * bsdfSample.weight * primalValue;
                 result += estimateWithAntithetic(previous, previousMaterial, sd, bsdfSample, projector, throughput,
-                    primalEstimate, sg);
-#else
-                result += primalEstimate;
-#endif
+                    primalEstimate, primalLit, primal, sg);
+#elif SAMPLING_METHOD != SAMPLING_PROJECTOR
+                result += throughput * bsdfSample.weight * evaluateProjectorConnection(sd, mi, projector, sg);
 #endif
                 throughput *= bsdfSample.weight;
                 if (!any(throughput > 0.f) || any(throughput < 0.f)) break;
