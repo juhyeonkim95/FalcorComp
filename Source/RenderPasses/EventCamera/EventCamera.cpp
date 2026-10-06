@@ -229,6 +229,7 @@ EventSVGF::EventSVGF(ref<Device> pDevice, const Properties& props) : RenderPass(
     parseProperties(props);
     validateOptions(mOptions);
     mpReproject = ComputePass::create(mpDevice, kSVGFShader, "reproject");
+    mpFilterMoments = ComputePass::create(mpDevice, kSVGFShader, "filterMoments");
     mpAtrous = ComputePass::create(mpDevice, kSVGFShader, "atrous");
     mpFinalize = ComputePass::create(mpDevice, kSVGFShader, "finalize");
 }
@@ -419,7 +420,17 @@ void EventSVGF::execute(RenderContext* pRenderContext, const RenderData& renderD
         std::swap(mpPrevFiltered, mpPrevPrevFiltered);
         pRenderContext->copyResource(mpPrevFiltered.get(), pSource.get());
     };
-    ref<Texture> pFiltered = mpIllumination;
+    // Spatial variance where a history is short, into the ping-pong texture the first a-trous iteration does not write.
+    {
+        auto var = bindCommon(mpFilterMoments);
+        var["gAtrousInput"] = mpIllumination;
+        var["gAtrousOutput"] = mpPingPong[1];
+        var["gMoments"] = mpMoments[0];
+        var["gHistory"] = mpHistory[0];
+        var["gEmitter"] = mpEmitter;
+        mpFilterMoments->execute(pRenderContext, uint3(dim, 1));
+    }
+    ref<Texture> pFiltered = mpPingPong[1];
     {
         auto var = bindCommon(mpAtrous);
         var["gEmitter"] = mpEmitter;

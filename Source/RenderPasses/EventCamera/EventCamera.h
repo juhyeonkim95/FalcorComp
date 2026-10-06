@@ -127,7 +127,7 @@ private:
     uint32_t mFrameCount = 0;
     bool mClearHistory = true;
     uint2 mDim = uint2(0);
-    ref<ComputePass> mpReproject, mpAtrous, mpFinalize;
+    ref<ComputePass> mpReproject, mpFilterMoments, mpAtrous, mpFinalize;
     // History: [0] the current frame, [1] the previous one; swapped every frame.
     ref<Texture> mpZN[2], mpMoments[2], mpHistory[2], mpReprojected[2];
     ref<Texture> mpPrevFiltered, mpPrevPrevFiltered; ///< Feedback-tap illumination of frames t-1 and t-2.

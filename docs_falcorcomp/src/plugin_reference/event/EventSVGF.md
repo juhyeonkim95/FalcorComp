@@ -17,15 +17,19 @@ Every frame:
    motion vectors, as in SVGF. The difference is blended with the previous difference there, plus the correction
    $I'_{t-2}[s + \Delta_t s] - I'_{t-2}[s + \Delta_{t-1} s]$, which turns the moved difference back into the change
    at the fixed pixel $s$ (Eq. 15-16 of the paper). The accumulation restarts where the pixel shows a different
-   surface than in the previous frame.
+   surface than in the previous frame. A non-finite sample (NaN or infinity) is replaced by the history's value.
 3. **Spatial filtering.** An à-trous wavelet filter with edge-stopping weights on depth, normal and luminance. The
    difference's weight is the primal's times a second weight (difference-aware weight, Eq. 12): on the previous
    frame's depth and normal, and on the difference's luminance, scaled by the difference's own variance. Emitters are
-   left out of the difference's filter.
+   left out of the difference's filter. Where the primal's or the difference's history is shorter than 4 frames
+   (after a reset, a resize, a disocclusion, or every frame without temporal accumulation), the variance comes from a
+   7 x 7 neighborhood instead of the history, as in SVGF, so that the filter works from the first frame.
 4. **Remodulation.** $\Delta I_t = A_t \Delta i_t + (A_t - A_{t-1}) i_{t-1} + (E_t - E_{t-1})$ and
    $\Delta L_t = \log(I_\epsilon + I_{t-1} + \Delta I_t) - \log(I_\epsilon + I_{t-1})$, with the denoised
    $I_{t-1} = A_{t-1} i_{t-1} + E_{t-1}$. Where the pixel shows a different surface or an emitter in either frame,
-   the difference of the denoised primals is used instead.
+   the difference of the denoised primals is used instead; so is it where $I_{t-1} + \Delta I_t \le 0$, a denoised
+   difference that would make the intensity negative (clamping it at 0 would give $\Delta L \approx \log I_\epsilon$,
+   a burst of events that later frames do not take back).
 
 Everything is computed on the luminance.
 
