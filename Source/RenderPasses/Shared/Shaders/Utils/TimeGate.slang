@@ -117,7 +117,7 @@ float getMaxPathLength(float target_distance, bool use_rough = false)
 			return 1.0;
 		}
 		case TIME_GATE_BOX:{
-			return abs(v) < 0.5 ? 1.0 : 0.0;
+			return (v >= -0.5 && v < 0.5) ? 1.0 : 0.0; // Half-open, like a histogram bin.
 		}
 		case TIME_GATE_TENT:{
 			return max(1.0 - abs(v), 0.0);
@@ -157,7 +157,7 @@ float getMaxPathLength(float target_distance, bool use_rough = false)
 			return 1.0;
 		}
 		case TIME_GATE_BOX:{
-			return abs(v) < 0.5 ? 1.0 : 0.0;
+			return (v >= -0.5 && v < 0.5) ? 1.0 : 0.0; // Half-open, like a histogram bin.
 		}
 		case TIME_GATE_TENT:{
 			return max(1.0 - abs(v), 0.0);
@@ -175,7 +175,7 @@ float getMaxPathLength(float target_distance, bool use_rough = false)
 		}
 	}
 	
-	return abs(v) < 0.5 ? 1.0 : 0.0;
+	return (v >= -0.5 && v < 0.5) ? 1.0 : 0.0; // Half-open, like a histogram bin.
  }
 
  inline float tentPdfTime(float tau, float t, float a)
@@ -194,7 +194,7 @@ float getMaxPathLength(float target_distance, bool use_rough = false)
     switch (gTimeGateMode)
     {
         case TIME_GATE_BOX:
-            return abs(distance - target_distance) <= 0.5f * width ? 1.f / width : 0.f;
+            return (distance - target_distance >= -0.5f * width && distance - target_distance < 0.5f * width) ? 1.f / width : 0.f;
         case TIME_GATE_TENT:
             return tentPdfTime(distance, target_distance, width); // The tent spans [-width, width].
         case TIME_GATE_GAUSSIAN:

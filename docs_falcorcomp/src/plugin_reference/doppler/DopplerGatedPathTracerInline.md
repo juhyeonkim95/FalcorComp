@@ -14,7 +14,8 @@ $$
 
 with the path velocity $u$ of the [Doppler spectrum path tracer](DopplerHistogramPathTracerInline.md), the gate
 center $f_c$ and the gate width $w$ (MHz). Dividing by $w$ gives radiance per MHz, the unit of the spectrum: a box
-gate one bin wide at the center of a bin gives that bin of the spectrum.
+gate one bin wide at the center of a bin gives that bin of the spectrum (the box is half-open, $[f_c - w/2, f_c + w/2)$,
+like the bins, so that a static path, at exactly 0 MHz, falls in one bin of both).
 
 The scene does not move. Every object is given an instantaneous velocity (see
 [Velocities](#doppler-velocities)), which only decides the shift of each path. A light connection outside the gate
