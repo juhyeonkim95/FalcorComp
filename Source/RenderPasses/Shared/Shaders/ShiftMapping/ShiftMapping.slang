@@ -9,9 +9,14 @@ import RenderPasses.Shared.Shaders.ShiftMapping.Charts.CartesianRayChart;
 
 import RenderPasses.Shared.Shaders.ShiftMapping.NewtonSolver;
 import RenderPasses.Shared.Shaders.Utils.RayUtils;
+import Utils.Math.HashUtils;
 
 #include "Scene/SceneDefines.slangh"
 #include "Utils/Math/MathConstants.slangh"
+
+#ifndef USE_ALPHA_TEST
+#define USE_ALPHA_TEST 0
+#endif
 
 #define SHIFT_MAPPING_NO 0
 #define SHIFT_MAPPING_LOCAL_TANGENT 1
@@ -130,7 +135,10 @@ HitInfo pathLengthAwareShiftMapping(
     }
     float2 a_const = gGaugeAxis;
     if(a_const.x == 0 && a_const.y == 0){
-        float phi = M_2PI * sampleNext1D(sg);
+        // Random axis per path, hashed from x3, which the shift and its inverse share: an axis drawn from sg differed
+        // between the two (the reverse shift rarely returned) and used random numbers the resampling relies on.
+        uint h = jenkinsHash(asuint(x3.posW.x) ^ jenkinsHash(asuint(x3.posW.y) ^ jenkinsHash(asuint(x3.posW.z))));
+        float phi = M_2PI * (float(h >> 8) * (1.f / 16777216.f));
         a_const = float2(cos(phi), sin(phi));
     }
 
@@ -177,7 +185,7 @@ HitInfo traceShiftEndpoint(ShadingData endpoint, bool isSurface, float3 destinat
     float3 segment = destination - origin;
     float distance = length(segment);
     if (!(distance > 1e-8f) || !isfinite(distance)) return HitInfo();
-    SceneRayQuery<0> query;
+    SceneRayQuery<USE_ALPHA_TEST> query; // As the paths are generated, so the shift and its inverse see the same hits.
     float hitT;
     HitInfo hit = query.traceRay(Ray(origin, segment / distance, 0.f, distance + 4.f * tol), hitT);
     if (!hit.isValid()) return HitInfo();

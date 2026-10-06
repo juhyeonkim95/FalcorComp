@@ -120,7 +120,7 @@ bool reconstructPrefix(
         }
         prefixThroughput *= bs.weight;
         Ray ray = Ray(a.computeRayOrigin(!bs.isLobe(LobeType::Transmission)), bs.wo, 0.f, FLT_MAX);
-        SceneRayQuery<0> query;
+        SceneRayQuery<USE_ALPHA_TEST> query; // As in generation.
         float hitT;
         HitInfo hit = query.traceRay(ray, hitT);
         if (!hit.isValid()) { prefixThroughput = 0.f; return false; }

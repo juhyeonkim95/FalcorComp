@@ -6,6 +6,9 @@ import Scene.RaytracingInline;
 // import LoadShadingData;
 
 #include "Scene/SceneDefines.slangh"
+#ifndef USE_ALPHA_TEST
+#define USE_ALPHA_TEST 0
+#endif
 #include "Utils/Math/MathConstants.slangh"
 
 export struct RayTraceHemisphereChart:IShiftChart
@@ -118,7 +121,7 @@ export struct RayTraceHemisphereChart:IShiftChart
         float3 d  = toWorld(dL); // unit
 
         Ray ray = Ray(p2o, d, 0.0f, FLT_MAX);
-        SceneRayQuery<0> sceneRayQuery;
+        SceneRayQuery<USE_ALPHA_TEST> sceneRayQuery;
         hit = sceneRayQuery.traceRay(ray, hitT);
         if (hit.isValid() && hit.getType() == HitType::Triangle)
         {
