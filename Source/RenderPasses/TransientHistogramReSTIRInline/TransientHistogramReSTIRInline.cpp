@@ -393,6 +393,13 @@ void TransientHistogramReSTIRInline::execute(RenderContext* pRenderContext, cons
 
     InlinePass::updateScenePassDefines(pRenderContext, mpComputePass, mpScene, mpSampleGenerator, getShaderDefines(renderData));
     bindShaderData(mpComputePass->getRootVar(), renderData);
+    // One bit per pixel and bin from 64 on (InitialSampleGeneration.cs.slang, TouchedBins).
+    const uint touchedWords = mOptions.histogram.timeBin > 64 ? (mOptions.histogram.timeBin - 64 + 31) / 32 : 0;
+    const uint32_t touchedCount = std::max(frameDim.x * frameDim.y * touchedWords, 1u);
+    if (!mpTouchedBins || mpTouchedBins->getElementCount() != touchedCount)
+        mpTouchedBins = mpDevice->createStructuredBuffer(sizeof(uint), touchedCount,
+            ResourceBindFlags::ShaderResource | ResourceBindFlags::UnorderedAccess, MemoryType::DeviceLocal, nullptr, false);
+    mpComputePass->getRootVar()["gTouchedBins"] = mpTouchedBins;
     mpComputePass->execute(pRenderContext, uint3(frameDim, 1));
 
     if (useTemporalReusePairs() && mReSTIR.temporalHistoryValid)

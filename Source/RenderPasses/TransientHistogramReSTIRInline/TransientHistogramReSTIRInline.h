@@ -133,6 +133,7 @@ private:
     ref<ComputePass> mpTemporalResamplePass;
     ref<Buffer> mpTemporalRandomState; ///< Each pixel's reservoir random state after initial generation.
     ref<Buffer> mpTemporalHistoryPixel; ///< Each pixel's history pixel, found by initial generation (two-pass temporal).
+    ref<Buffer> mpTouchedBins; ///< Initial generation's bits of the bins from 64 on that received a candidate.
     ref<ComputePass> mpSpatialReusePass;
     /// With SPATIAL_REUSE_PAIRS, the first pass of each spatial reuse iteration: one candidate's shifts per thread.
     ref<ComputePass> mpSpatialReusePairsPass;
