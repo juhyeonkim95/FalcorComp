@@ -169,14 +169,9 @@ Reservoir reuseTemporalHistory(Reservoir fresh, uint2 pixel, ShadingData primary
     if (!history.valid) return fresh;
     let previousMaterial = gScene.materials.getMaterialInstance(history.primary, ExplicitLodTextureSampler(0.f));
 
-#if IS_SCENE_DYNAMIC
-    // Match the old temporal disocclusion test before assigning history any mass.
-    // A valid previous hit can still belong to a different surface/material.
-    if (primary.materialID != history.primary.materialID ||
-        dot(primary.getOrientedFaceNormal(), history.primary.getOrientedFaceNormal()) <= 0.7f ||
-        abs(primaryLength - history.primaryLength) >= 0.1f * primaryLength)
+    // A valid previous hit can still belong to a different surface (a disocclusion): reuse only the same surface.
+    if (!isSameSurface(primary.materialID, primary.getOrientedFaceNormal(), primaryLength, history))
         return fresh;
-#endif
 
     Reservoir previous = gPrevReservoirs[history.pixelIndex];
     previous.M = temporalHistoryMass(previous.M, gTemporalHistoryLength, gSamplesPerPixel);

@@ -223,9 +223,14 @@ consecutive frames share paths.
 The temporal history is discarded, and the next frame starts from its own samples only, when:
 
 - an option changes in the UI,
-- the scene or the laser changes in any way other than camera motion,
+- the scene or the laser changes in any way other than camera motion, including a camera animated by
+  the scene,
 - the frame size changes, or
 - the camera uses depth of field.
+
+Per pixel, the history is reused only if it saw the same surface: the same material, an orientation
+within about 45 degrees and a distance within 10 % (otherwise, e.g. where the camera's motion uncovers
+a surface, the pixel starts from its own samples).
 
 (th-restir-memory)=
 ## Memory

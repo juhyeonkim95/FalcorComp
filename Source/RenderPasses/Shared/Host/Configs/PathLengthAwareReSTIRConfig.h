@@ -187,11 +187,13 @@ public:
     /// when `dynamicLight`), a light change otherwise, and depth of field.
     void invalidateHistory(const Scene& scene, bool lightChanged, bool dynamicLight)
     {
-        auto allowedUpdates =
-            IScene::UpdateFlags::CameraMoved | IScene::UpdateFlags::CameraPropertiesChanged | IScene::UpdateFlags::CameraSwitched;
+        // SceneGraphChanged comes with every animated node, also a camera animated by the scene itself; moving geometry
+        // or lights also raises GeometryMoved / LightsMoved, which stay disallowed.
+        auto allowedUpdates = IScene::UpdateFlags::CameraMoved | IScene::UpdateFlags::CameraPropertiesChanged |
+                              IScene::UpdateFlags::CameraSwitched | IScene::UpdateFlags::SceneGraphChanged;
         if (dynamicLight)
             allowedUpdates |= IScene::UpdateFlags::LightsMoved | IScene::UpdateFlags::LightIntensityChanged |
-                              IScene::UpdateFlags::LightPropertiesChanged | IScene::UpdateFlags::SceneGraphChanged;
+                              IScene::UpdateFlags::LightPropertiesChanged;
         if ((scene.getUpdates() & ~allowedUpdates) != IScene::UpdateFlags::None || (!dynamicLight && lightChanged) ||
             scene.getCamera()->getApertureRadius() > 0.f)
             temporalHistoryValid = false;

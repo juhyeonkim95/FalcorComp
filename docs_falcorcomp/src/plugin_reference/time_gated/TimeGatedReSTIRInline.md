@@ -269,10 +269,14 @@ Changing an option in the UI or with `set_properties()` discards the history.
 The temporal history is discarded, and the next frame starts from its own samples only, when:
 
 - an option changes in the UI or with `set_properties()`,
-- the scene changes in any way other than camera motion (without `isSceneDynamic`, a laser change
-  counts too),
+- the scene changes in any way other than camera motion, including a camera animated by the scene
+  (without `isSceneDynamic`, a laser change counts too),
 - the frame size changes, or
 - the camera uses depth of field.
+
+Per pixel, the history is reused only if it saw the same surface: the same material, an orientation
+within about 45 degrees and a distance within 10 % (otherwise, e.g. where the camera's motion uncovers
+a surface, the pixel starts from its own samples).
 
 ## Limitations
 

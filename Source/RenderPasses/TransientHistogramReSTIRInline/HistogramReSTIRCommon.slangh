@@ -141,6 +141,19 @@ TemporalHistory getTemporalHistory(uint2 pixel)
     TemporalHistory history = {};
     if (gTemporalHistoryValid && gTemporalHistoryLength != 0.f)
         history = findTemporalHistory(pixel, gFrameDim, gMotionVector, gTemporalVBuffer, gPreviousCameraPosition);
+    if (history.valid)
+    {
+        // Reuse only a history on the same surface (not a disocclusion), as TG ReSTIR does. Every kernel that merges
+        // the history decides the same way; the test needs only the primary hit's vertex data.
+        HitInfo primaryHit = HitInfo(gVBuffer[pixel]);
+        if (primaryHit.getType() != HitType::Triangle) return {};
+        TriangleHit triangleHit = primaryHit.getTriangleHit();
+        VertexData vertex = gScene.getVertexData(triangleHit);
+        float3 toCamera = gScene.camera.getPosition() - vertex.posW;
+        float3 orientedNormal = dot(vertex.faceNormalW, toCamera) >= 0.f ? vertex.faceNormalW : -vertex.faceNormalW;
+        if (!isSameSurface(gScene.getMaterialID(triangleHit.instanceID), orientedNormal, length(toCamera), history))
+            history.valid = false;
+    }
     return history;
 }
 #endif
