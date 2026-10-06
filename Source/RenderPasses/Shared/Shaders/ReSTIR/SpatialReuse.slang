@@ -266,7 +266,7 @@ struct SpatialReuse
         IMaterialInstance primaryMaterial = gScene.materials.getMaterialInstance(primary, ExplicitLodTextureSampler(0.f));
         float primaryDepth = length(primary.posW - cameraOrigin);
 
-        SampleGenerator sg = SampleGenerator(pixel, gRandomSeed);
+        SampleGenerator sg = createPixelSampleGenerator(pixel, gRandomSeed, kSpatialReuseStream);
         uint startIndex = sampleNext1D(sg) * kNeighborOffsetCount;
         uint validNeighborCount = 0;
         float canonicalWeight = 1.f;
@@ -408,7 +408,7 @@ struct SpatialReuse
         uint reservoirIndex = linearPixel * binCount + bin;
 
         // As resampleGate: the generator picks the neighbors; the shifts draw no random numbers.
-        SampleGenerator sg = SampleGenerator(pixel, gRandomSeed);
+        SampleGenerator sg = createPixelSampleGenerator(pixel, gRandomSeed, kSpatialReuseStream);
         uint startIndex = sampleNext1D(sg) * kNeighborOffsetCount;
         int2 neighborPixel;
         uint neighborBin;
@@ -465,7 +465,7 @@ struct SpatialReuse
             return float3(centralReservoir.W * centralReservoir.f);
         }
 
-        SampleGenerator sg = SampleGenerator(pixel, gRandomSeed);
+        SampleGenerator sg = createPixelSampleGenerator(pixel, gRandomSeed, kSpatialReuseStream);
         uint startIndex = sampleNext1D(sg) * kNeighborOffsetCount;
         uint validNeighborCount = 0;
         float canonicalWeight = 1.f;

@@ -30,7 +30,7 @@ void main(uint3 dispatchThreadId: SV_DispatchThreadID)
     float primaryLength = length(primary.posW - cameraPosition);
     let previousMaterial = gScene.materials.getMaterialInstance(history.primary, ExplicitLodTextureSampler(0.f));
     float gateCenter = binCenter(bin);
-    SampleGenerator sg = SampleGenerator(pixel, gFrameCount);
+    SampleGenerator sg = createPixelSampleGenerator(pixel, gFrameCount, kTemporalReuseStream);
     ShiftMappingDebugInfo debugInfo = {};
     // History -> current, and current -> history for the canonical sample's weight.
     IncomingCandidate incoming = evaluateIncomingCandidate(previous, current.M, getReconnectionCriteria(), primary,
