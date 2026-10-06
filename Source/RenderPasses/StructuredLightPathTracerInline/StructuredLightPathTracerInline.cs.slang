@@ -116,7 +116,8 @@ float3 estimateWithAntithetic(ShadingData previous, IMaterialInstance previousMa
     if (!traceVisibilityRay(rayOriginToward(previous, antitheticDir), antitheticDir, antitheticDistance))
         return primalEstimate;
 
-    ShadingData antithetic = loadShadingData(hit, previous.posW, antitheticDir);
+    // Found along the projector ray (which places SDF-grid hits), seen from `previous`.
+    ShadingData antithetic = loadShadingData(hit, projector.position(), projectorDir, antitheticDir);
     // The partner must pass the primal's test too (lit on the side `previous` sees): sampled itself, it would fail
     // there and never return its share of this pair.
     ProjectorConnection antitheticConnection;
