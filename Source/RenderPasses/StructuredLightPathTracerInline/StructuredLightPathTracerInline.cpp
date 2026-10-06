@@ -99,6 +99,7 @@ void StructuredLightPathTracerInline::parseProperties(const Properties& props)
         else
             logWarning("Unknown property '{}' in StructuredLightPathTracerInline properties.", key);
     }
+    mOptions.projector.applyCollocated(props);
 }
 
 Properties StructuredLightPathTracerInline::getProperties() const
@@ -147,7 +148,7 @@ void StructuredLightPathTracerInline::bindShaderData(const ShaderVar& var, const
     var["CB"]["gFrameDim"] = renderData.getDefaultTextureDims();
     var["CB"]["gSamplesPerPixel"] = mOptions.pathTracing.samplesPerPixel;
     var["CB"]["gProjectorSampleCount"] = mOptions.projectorSampleCount;
-    mOptions.projector.bindShaderData(var);
+    mOptions.projector.atCamera(*mpScene->getCamera()).bindShaderData(var);
     if (mOptions.projector.pattern == ProjectorPatternType::Arbitrary)
         mPatternData.bindShaderData(mpDevice, var);
 

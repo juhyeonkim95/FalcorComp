@@ -2,6 +2,7 @@
 #include "ConfigUtils.h"
 #include "Waveform.h"
 #include "RenderGraph/RenderPass.h"
+#include "Scene/Camera/Camera.h"
 #include <cmath>
 #include <vector>
 
@@ -41,6 +42,9 @@ inline const std::unordered_map<std::string, PatternAxis> kPatternAxes = {
 /// along its up, both over [0, 1] across the field of view.
 struct ProjectorConfig
 {
+    /// At the camera: the position, direction and up are the camera's, every frame (as LaserLight's laserCollocated).
+    /// Giving projectorPosition, projectorDirection or projectorUp turns it off, unless projectorCollocated is given.
+    bool collocated = true;
     float3 position = float3(0.f);
     float3 direction = float3(0.f, 0.f, -1.f);
     float3 up = float3(0.f, 1.f, 0.f); ///< Up hint; the projector's up is made orthogonal to the direction.
@@ -88,12 +92,24 @@ struct ProjectorConfig
 
     bool parse(const std::string& key, const Properties::ConstValue& value)
     {
+        // A pose given explicitly places the projector there rather than at the camera.
         if (key == "projectorPosition")
+        {
             position = value;
+            collocated = false;
+        }
         else if (key == "projectorDirection")
+        {
             direction = value;
+            collocated = false;
+        }
         else if (key == "projectorUp")
+        {
             up = value;
+            collocated = false;
+        }
+        else if (key == "projectorCollocated")
+            ; // Applied after all properties (applyCollocated), so that it wins over a given pose in any order.
         else if (key == "projectorFov")
             fov = value;
         else if (key == "projectorIntensity")
@@ -127,8 +143,29 @@ struct ProjectorConfig
         return true;
     }
 
+    /// Call after parse() of all properties: an explicit projectorCollocated wins over the pose's implicit one.
+    void applyCollocated(const Properties& props)
+    {
+        if (props.has("projectorCollocated"))
+            collocated = props.get<bool>("projectorCollocated");
+    }
+
+    /// This projector, at the camera's pose if collocated.
+    ProjectorConfig atCamera(const Camera& camera) const
+    {
+        ProjectorConfig projector = *this;
+        if (collocated)
+        {
+            projector.position = camera.getPosition();
+            projector.direction = camera.getTarget() - camera.getPosition();
+            projector.up = camera.getUpVector();
+        }
+        return projector;
+    }
+
     void serialize(Properties& props) const
     {
+        props["projectorCollocated"] = collocated;
         props["projectorPosition"] = position;
         props["projectorDirection"] = direction;
         props["projectorUp"] = up;
@@ -188,12 +225,17 @@ struct ProjectorConfig
     bool renderProjectorUI(Gui::Widgets& widget)
     {
         bool dirty = false;
-        dirty |= widget.var("Position", position);
-        widget.tooltip("Projector center, in world space.", true);
-        dirty |= widget.var("Direction", direction, -1.f, 1.f);
-        widget.tooltip("Viewing direction of the projector (normalized when used).", true);
-        dirty |= widget.var("Up", up, -1.f, 1.f);
-        widget.tooltip("Up hint: v runs along it, made orthogonal to the direction.", true);
+        dirty |= widget.checkbox("At the camera", collocated);
+        widget.tooltip("Place the projector at the camera, looking along its view direction with its up.", true);
+        if (!collocated)
+        {
+            dirty |= widget.var("Position", position);
+            widget.tooltip("Projector center, in world space.", true);
+            dirty |= widget.var("Direction", direction, -1.f, 1.f);
+            widget.tooltip("Viewing direction of the projector (normalized when used).", true);
+            dirty |= widget.var("Up", up, -1.f, 1.f);
+            widget.tooltip("Up hint: v runs along it, made orthogonal to the direction.", true);
+        }
         dirty |= widget.var("Field of view (deg)", fov, 1.f, 179.f);
         widget.tooltip("Full field of view along u and v, in degrees.", true);
         dirty |= widget.var("Intensity", intensity, 0.f, 1e6f);

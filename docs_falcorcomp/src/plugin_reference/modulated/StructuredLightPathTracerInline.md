@@ -26,6 +26,11 @@ projector's right and $v$ along its up. It emits $I_0\,P(\xi) / \cos^3\theta$ to
 coordinates $\xi$, where $\theta$ is the angle to its axis and $I_0$ is `projectorIntensity`, so that
 the image plane is lit uniformly.
 
+By default the projector sits at the camera and looks along its view (`projectorCollocated`), which
+lights what the camera sees but carries no depth information. Giving `projectorPosition`,
+`projectorDirection` or `projectorUp` places it there instead, unless `projectorCollocated` is also
+given.
+
 ```{list-table}
 :header-rows: 1
 :widths: 25 10 65
@@ -33,15 +38,20 @@ the image plane is lit uniformly.
 * - Parameter
   - Type
   - Description
+* - `projectorCollocated`
+  - boolean
+  - Place the projector at the camera, every frame: its position, view direction and up. (Default:
+    `true`, or `false` when `projectorPosition`, `projectorDirection` or `projectorUp` is given)
 * - `projectorPosition`
   - float3
-  - Projector center, in world space. (Default: `(0, 0, 0)`)
+  - Projector center, in world space, without `projectorCollocated`. (Default: `(0, 0, 0)`)
 * - `projectorDirection`
   - float3
-  - Viewing direction (normalized when used). (Default: `(0, 0, -1)`)
+  - Viewing direction (normalized when used), without `projectorCollocated`. (Default: `(0, 0, -1)`)
 * - `projectorUp`
   - float3
-  - Up hint: $v$ runs along it, made orthogonal to the direction. (Default: `(0, 1, 0)`)
+  - Up hint: $v$ runs along it, made orthogonal to the direction; without `projectorCollocated`.
+    (Default: `(0, 1, 0)`)
 * - `projectorFov`
   - float2
   - Full field of view along $u$ and $v$, in degrees. (Default: `(22.62, 22.62)`)

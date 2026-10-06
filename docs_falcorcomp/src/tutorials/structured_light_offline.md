@@ -45,7 +45,8 @@ needed:
 
 - `projectorPosition`, `projectorDirection`, `projectorFov`, `projectorIntensity`: a pinhole
   projector 0.4 to the right of the camera, looking the same way, with a 30-degree field of view,
-  wider than the camera's 19.5, so it covers the whole view.
+  wider than the camera's 19.5, so it covers the whole view. Without a position, the projector sits
+  at the camera itself (`projectorCollocated`).
 - `pattern`, `waveform`, `patternAxis`, `patternWavelength`: sinusoidal stripes along the
   projector's $u$ axis (vertical stripes), with a period of 0.01 in projector coordinates. Gray,
   XOR, checkerboard and arbitrary binary codes are also available (see the
