@@ -108,6 +108,8 @@ private:
     Options mOptions;
     /// Throws if `options` are invalid: checked on creation and UI edits.
     static void validateOptions(const Options& options);
+    /// Rebuilds what the new options need (after a UI edit or setProperties) and flags the change.
+    void onOptionsChanged(const Options& previous);
 
     ref<Scene> mpScene;
     ref<SampleGenerator> mpSampleGenerator;

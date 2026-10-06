@@ -97,6 +97,8 @@ private:
         float rangeFrequencyPerLength() const { return chirpBandwidth * 1000.f / (chirpDuration * 299.792458f); }
     };
     static void validateOptions(const Options& options);
+    /// Rebuilds what the new options need (after a UI edit or setProperties) and flags the change.
+    void onOptionsChanged(const Options& previous);
     void parseProperties(const Properties& props);
     const ChannelList& spectrumChannels() const;
     bool needsReset(const RenderData& renderData) const;

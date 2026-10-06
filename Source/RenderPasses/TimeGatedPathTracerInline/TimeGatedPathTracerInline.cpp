@@ -98,6 +98,17 @@ void TimeGatedPathTracerInline::parseProperties(const Properties& props)
     mOptions.timeGate.applyTimeCenter(props);
 }
 
+void TimeGatedPathTracerInline::onOptionsChanged(const Options& previous)
+{
+    // Rebuild the sampler and program: the emissive sampler's defines are only added when the program is created.
+    if (mOptions.ellipsoidalSampling.triSampler != previous.ellipsoidalSampling.triSampler)
+        mTriangleSampler.reset();
+    if (mOptions.ellipsoidalSampling.samplingMethod != previous.ellipsoidalSampling.samplingMethod ||
+        mOptions.ellipsoidalSampling.triSampler != previous.ellipsoidalSampling.triSampler)
+        mpComputePass = nullptr;
+    mOptionsChanged = true;
+}
+
 Properties TimeGatedPathTracerInline::getProperties() const
 {
     Properties props;
@@ -217,13 +228,9 @@ void TimeGatedPathTracerInline::renderUI(Gui::Widgets& widget)
             return;
         }
         mUIWarning.clear();
-        // Rebuild the sampler and program: the emissive sampler's defines are only added when the program is created.
-        if (options.ellipsoidalSampling.triSampler != mOptions.ellipsoidalSampling.triSampler)
-            mTriangleSampler.reset();
-        if (options.ellipsoidalSampling.samplingMethod != mOptions.ellipsoidalSampling.samplingMethod || options.ellipsoidalSampling.triSampler != mOptions.ellipsoidalSampling.triSampler)
-            mpComputePass = nullptr;
+        const Options previous = mOptions;
         mOptions = options;
-        mOptionsChanged = true;
+        onOptionsChanged(previous);
     }
     if (!mUIWarning.empty())
         widget.text(mUIWarning);

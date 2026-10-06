@@ -76,6 +76,8 @@ private:
         uint2 fixedOutputSize = {512, 512}; ///< Output size when outputSize is Fixed.
     };
     static void validateOptions(const Options& options);
+    /// Rebuilds what the new options need (after a UI edit or setProperties) and flags the change.
+    void onOptionsChanged(const Options& previous);
     void parseProperties(const Properties& props);
     const ChannelList& histogramChannels() const;
     bool needsReset(const RenderData& renderData) const;

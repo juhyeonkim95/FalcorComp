@@ -146,6 +146,17 @@ void DopplerHistogramPathTracerInline::validateOptions(const Options& options)
         FALCOR_THROW("The frequency range must be finite with frequencyMin < frequencyMax.");
 }
 
+void DopplerHistogramPathTracerInline::onOptionsChanged(const Options& previous)
+{
+    mOptionsChanged = true;
+    resetSpectrum();
+    // The spectrum textures depend on the bin count, the channel count and the chirp (a second spectrum).
+    if (mOptions.frequencyBin != previous.frequencyBin ||
+        mOptions.pathTracing.useSingleChannel != previous.pathTracing.useSingleChannel ||
+        mOptions.chirped() != previous.chirped())
+        requestRecompile();
+}
+
 Properties DopplerHistogramPathTracerInline::getProperties() const
 {
     Properties props;
@@ -368,15 +379,9 @@ void DopplerHistogramPathTracerInline::renderUI(Gui::Widgets& widget)
             return;
         }
         mUIWarning.clear();
-        // The spectrum texture depends on the bin count and channel count.
-        const bool resize = options.frequencyBin != mOptions.frequencyBin ||
-                            options.pathTracing.useSingleChannel != mOptions.pathTracing.useSingleChannel ||
-                            options.chirped() != mOptions.chirped();
+        const Options previous = mOptions;
         mOptions = options;
-        mOptionsChanged = true;
-        resetSpectrum();
-        if (resize)
-            requestRecompile();
+        onOptionsChanged(previous);
     }
     if (!mUIWarning.empty())
         widget.text(mUIWarning);

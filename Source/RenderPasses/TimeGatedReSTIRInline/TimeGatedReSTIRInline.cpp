@@ -153,7 +153,12 @@ void TimeGatedReSTIRInline::setProperties(const Properties& props)
     const Options previous = mOptions;
     // Invalid properties throw and leave the options unchanged.
     InlinePass::applyProperties(mOptions, [&] { parseProperties(props); }, [](const Options& options) { validateOptions(options); });
-    // Same rebuilds as a UI edit: the emissive sampler's defines are only added when the programs are created.
+    onOptionsChanged(previous);
+}
+
+void TimeGatedReSTIRInline::onOptionsChanged(const Options& previous)
+{
+    // Rebuild the sampler and programs: the emissive sampler's defines are only added when they are created.
     if (mOptions.ellipsoidalSampling.triSampler != previous.ellipsoidalSampling.triSampler)
         mTriangleSampler.reset();
     if (mOptions.ellipsoidalSampling.samplingMethod != previous.ellipsoidalSampling.samplingMethod ||
@@ -166,6 +171,7 @@ void TimeGatedReSTIRInline::setProperties(const Properties& props)
     // The debug outputs are part of the reflection.
     if (mOptions.debugNewtonIterations != previous.debugNewtonIterations)
         requestRecompile();
+    // Pass the flag to downstream passes (accumulation reset) and discard the ReSTIR history.
     mOptionsChanged = true;
 }
 
@@ -482,24 +488,13 @@ void TimeGatedReSTIRInline::renderUI(Gui::Widgets& widget)
         {
             validateOptions(mOptions);
             mUIWarning.clear();
+            onOptionsChanged(previous);
         }
         catch (const std::exception& e)
         {
             mUIWarning = e.what();
             mOptions = previous;
         }
-        // Rebuild the sampler and programs: the emissive sampler's defines are only added when they are created.
-        if (mOptions.ellipsoidalSampling.triSampler != previous.ellipsoidalSampling.triSampler)
-            mTriangleSampler.reset();
-        if (mOptions.ellipsoidalSampling.samplingMethod != previous.ellipsoidalSampling.samplingMethod ||
-            mOptions.ellipsoidalSampling.triSampler != previous.ellipsoidalSampling.triSampler)
-        {
-            mpComputePass = nullptr;
-            mpSpatialReusePass = nullptr;
-            mpSpatialReusePairsPass = nullptr;
-        }
-        // Pass the flag to downstream passes (accumulation reset) and discard the ReSTIR history.
-        mOptionsChanged = true;
     }
     if (!mUIWarning.empty())
         widget.text(mUIWarning);

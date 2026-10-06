@@ -105,6 +105,16 @@ void TransientHistogramPathTracerInline::validateOptions(const Options& options)
         FALCOR_THROW("Without KDE, histogram filtering supports box or tent.");
 }
 
+void TransientHistogramPathTracerInline::onOptionsChanged(const Options& previous)
+{
+    mOptionsChanged = true;
+    resetHistogram();
+    // The histogram texture depends on the bin count and channel count.
+    if (mOptions.histogram.timeBin != previous.histogram.timeBin ||
+        mOptions.pathTracing.useSingleChannel != previous.pathTracing.useSingleChannel)
+        requestRecompile();
+}
+
 Properties TransientHistogramPathTracerInline::getProperties() const
 {
     Properties props;
@@ -302,13 +312,9 @@ void TransientHistogramPathTracerInline::renderUI(Gui::Widgets& widget)
             return;
         }
         mUIWarning.clear();
-        // The histogram texture depends on the bin count and channel count.
-        const bool resize = options.histogram.timeBin != mOptions.histogram.timeBin || options.pathTracing.useSingleChannel != mOptions.pathTracing.useSingleChannel;
+        const Options previous = mOptions;
         mOptions = options;
-        mOptionsChanged = true;
-        resetHistogram();
-        if (resize)
-            requestRecompile();
+        onOptionsChanged(previous);
     }
     if (!mUIWarning.empty())
         widget.text(mUIWarning);

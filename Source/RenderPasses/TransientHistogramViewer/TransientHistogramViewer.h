@@ -73,16 +73,22 @@ private:
     void readProfile(RenderContext* pRenderContext, const ref<Texture>& pHistogram, float frameScale);
     void renderProfileUI(Gui::Widgets& widget);
 
-    uint mFirstBin = 0;
-    int mLastBin = -1;         ///< Last bin shown in the grid; negative counts from the end (-1 = last bin).
-    float mBinExposure = 0.f;  ///< Extra exposure of the bin images (tiles and a bin on the left), in stops.
-    bool mLeftShowsBin = false; ///< Left half: mLeftBin instead of the sum over all bins.
-    uint mLeftBin = 0;
+    struct Options
+    {
+        uint firstBin = 0;
+        int lastBin = -1;            ///< Last bin shown in the grid; negative counts from the end (-1 = last bin).
+        float binExposure = 0.f;     ///< Extra exposure of the bin images (tiles and a bin on the left), in stops.
+        bool leftShowsBin = false;   ///< Left half: leftBin instead of the sum over all bins.
+        uint leftBin = 0;
+        int2 selectedPixel = {-1, -1}; ///< Histogram pixel of the transient profile; negative if none.
+        uint profileRadius = 1;      ///< The profile averages a (2r + 1)^2 patch.
+    };
+    void parseProperties(const Properties& props);
 
-    // Transient profile of a selected pixel.
-    int2 mSelectedPixel = {-1, -1}; ///< Histogram pixel; negative if none.
+    Options mOptions;
+
+    // Transient profile of the selected pixel.
     bool mPicking = false;          ///< Shift+drag in progress.
-    uint mProfileRadius = 1;        ///< The profile averages a (2r + 1)^2 patch.
     ProfileChannel mProfileChannel = ProfileChannel::Luminance;
     std::vector<float4> mProfile;   ///< Per bin, radiance per unit path length.
     std::vector<float> mPlotValues; ///< mProfile in the plotted channel.

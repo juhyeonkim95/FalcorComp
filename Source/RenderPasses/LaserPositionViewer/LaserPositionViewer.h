@@ -65,16 +65,21 @@ public:
     void setScene(RenderContext* pRenderContext, const ref<Scene>& pScene) override;
 
 private:
-    bool mShowSpot = true;
-    float mSpotScale = 20.f;              ///< Multiplies the spot's radiance (average of RGB).
-    float3 mSpotColor = float3(1, 0, 0);  ///< Tint of the spot.
-    bool mShowCone = false;
-    float3 mConeColor = float3(1, 0, 0);
-    float mConeDensity = 5.f;             ///< Opacity per unit length inside the cone: 1 - exp(-density * length).
-    float mBeamRadius = 0.01f;            ///< Cone radius at the laser, in scene units.
+    struct Options
+    {
+        bool showSpot = true;
+        float spotScale = 20.f;              ///< Multiplies the spot's radiance (average of RGB).
+        float3 spotColor = float3(1, 0, 0);  ///< Tint of the spot.
+        bool showCone = false;
+        float3 coneColor = float3(1, 0, 0);
+        float coneDensity = 5.f;             ///< Opacity per unit length inside the cone: 1 - exp(-density * length).
+        float beamRadius = 0.01f;            ///< Cone radius at the laser, in scene units.
+        RenderPassHelpers::IOSize outputSize = RenderPassHelpers::IOSize::Default;
+        uint2 fixedOutputSize = {512, 512};  ///< Output size when outputSize is Fixed; must match the vbuffer.
+    };
+    void parseProperties(const Properties& props);
 
-    RenderPassHelpers::IOSize mOutputSize = RenderPassHelpers::IOSize::Default;
-    uint2 mFixedOutputSize = {512, 512}; ///< Output size when mOutputSize is Fixed; must match the vbuffer.
+    Options mOptions;
     uint mFrameCount = 0;
     ref<Scene> mpScene;
     ref<SampleGenerator> mpSampleGenerator;

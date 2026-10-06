@@ -67,14 +67,19 @@ public:
     std::vector<std::tuple<uint32_t, std::string, std::string, bool>> getObjectNames() const;
 
 private:
+    struct Options
+    {
+        Mode mode = Mode::Doppler;
+        float dt = 1e-3f;                        ///< path_length: time step, s.
+        float3 direction = float3(0.f, 0.f, 1.f); ///< projection: direction (normalized when used).
+        float3 sensorVelocity = float3(0.f);     ///< doppler: camera velocity, m/s.
+        float3 lightVelocity = float3(0.f);      ///< doppler: light origin velocity, m/s.
+        ObjectMotions velocities;
+    };
+    static void validateOptions(const Options& options);
     void parseProperties(const Properties& props);
 
-    Mode mMode = Mode::Doppler;
-    float mDt = 1e-3f;                        ///< path_length: time step, s.
-    float3 mDirection = float3(0.f, 0.f, 1.f); ///< projection: direction (normalized).
-    float3 mSensorVelocity = float3(0.f);     ///< doppler: camera velocity, m/s.
-    float3 mLightVelocity = float3(0.f);      ///< doppler: light origin velocity, m/s.
-    ObjectMotions mVelocities;
+    Options mOptions;
     bool mVelocitiesDirty = true;
     ref<Scene> mpScene;
     ref<SampleGenerator> mpSampleGenerator;

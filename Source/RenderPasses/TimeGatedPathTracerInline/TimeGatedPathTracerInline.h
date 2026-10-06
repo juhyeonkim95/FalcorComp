@@ -75,6 +75,8 @@ private:
     };
 
     static void validateOptions(const Options& options);
+    /// Rebuilds what the new options need (after a UI edit or setProperties) and flags the change.
+    void onOptionsChanged(const Options& previous);
 
     Options mOptions;
     uint mFrameCount = 0;

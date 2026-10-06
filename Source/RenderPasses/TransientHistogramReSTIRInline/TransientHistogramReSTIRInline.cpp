@@ -110,6 +110,15 @@ void TransientHistogramReSTIRInline::parseProperties(const Properties& props)
     }
 }
 
+void TransientHistogramReSTIRInline::onOptionsChanged(const Options& previous)
+{
+    mOptionsChanged = true;
+    // The histogram texture depends on the bin count and channel count.
+    if (mOptions.histogram.timeBin != previous.histogram.timeBin ||
+        mOptions.pathTracing.useSingleChannel != previous.pathTracing.useSingleChannel)
+        requestRecompile();
+}
+
 Properties TransientHistogramReSTIRInline::getProperties() const
 {
     Properties props;
@@ -444,11 +453,7 @@ void TransientHistogramReSTIRInline::renderUI(Gui::Widgets& widget)
         {
             validateOptions(mOptions);
             mUIWarning.clear();
-            mOptionsChanged = true;
-            // The histogram texture depends on the bin count and channel count.
-            if (mOptions.histogram.timeBin != previous.histogram.timeBin ||
-                mOptions.pathTracing.useSingleChannel != previous.pathTracing.useSingleChannel)
-                requestRecompile();
+            onOptionsChanged(previous);
         }
         catch (const std::exception& e)
         {

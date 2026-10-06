@@ -58,9 +58,16 @@ public:
     uint32_t getEventFrame() const { return mEventFrame; }
 
 private:
-    bool mCorrelated = true;
-    float mIntensityBias = 1e-8f;
-    uint32_t mSubframes = 1;
+    struct Options
+    {
+        bool correlated = true;
+        float intensityBias = 1e-8f;
+        uint32_t subframes = 1;
+    };
+    static void validateOptions(const Options& options);
+    void parseProperties(const Properties& props);
+
+    Options mOptions;
 
     uint32_t mSubframe = 0;   ///< Index of the next execution within the event frame.
     uint32_t mEventFrame = 0; ///< Completed event frames since the last reset.
@@ -92,21 +99,27 @@ public:
     void reset() { mFrameCount = 0; mClearHistory = true; }
 
 private:
+    struct Options
+    {
+        uint32_t iterations = 4;
+        int32_t feedbackTap = 1; ///< a-trous iteration fed back to the next frame (-1: the unfiltered accumulation).
+        float phiColor = 10.f;
+        float phiNormal = 128.f;
+        float alpha = 0.1f;
+        float momentsAlpha = 0.2f;
+        float intensityBias = 1e-8f;
+        bool useDemodulation = true;
+        bool useDifferenceAwareFiltering = true;
+        bool useTemporalAccumulation = true;
+        bool useDenoisedDifference = true;
+        bool useDifferenceVariance = true; ///< The difference's own variance sets its edge-stopping width.
+    };
+    static void validateOptions(const Options& options);
+    void parseProperties(const Properties& props);
     void allocate(uint2 dim);
     void clearHistory(RenderContext* pRenderContext);
 
-    uint32_t mIterations = 4;
-    int32_t mFeedbackTap = 1; ///< a-trous iteration fed back to the next frame (-1: the unfiltered accumulation).
-    float mPhiColor = 10.f;
-    float mPhiNormal = 128.f;
-    float mAlpha = 0.1f;
-    float mMomentsAlpha = 0.2f;
-    float mIntensityBias = 1e-8f;
-    bool mUseDemodulation = true;
-    bool mUseDifferenceAwareFiltering = true;
-    bool mUseTemporalAccumulation = true;
-    bool mUseDenoisedDifference = true;
-    bool mUseDifferenceVariance = true; ///< The difference's own variance sets its edge-stopping width.
+    Options mOptions;
 
     uint32_t mFrameCount = 0;
     bool mClearHistory = true;
@@ -144,9 +157,16 @@ public:
     enum class Mode { Probabilistic = 0, Accumulate = 1 };
 
 private:
-    Mode mMode = Mode::Probabilistic;
-    float mThreshold = 0.2f;
-    uint32_t mSeed = 0;
+    struct Options
+    {
+        Mode mode = Mode::Probabilistic;
+        float threshold = 0.2f;
+        uint32_t seed = 0;
+    };
+    static void validateOptions(const Options& options);
+    void parseProperties(const Properties& props);
+
+    Options mOptions;
 
     uint32_t mFrame = 0;
     bool mClearResidual = true;
