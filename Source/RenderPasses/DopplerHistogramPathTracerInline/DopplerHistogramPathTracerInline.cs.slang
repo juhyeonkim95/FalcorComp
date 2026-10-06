@@ -133,6 +133,7 @@ bool frequencyBin(float frequency, out uint bin)
 // values are radiance density per unit frequency (MHz), summed across frames.
 void accumulateToSpectrum(uint2 pixel, float pathLength, float pathVelocity, float3 radiance)
 {
+    if (all(radiance == 0.f)) return; // E.g. a blocked connection: no texel to update.
     HistogramTexel value = toHistogramTexel(radiance / (gFrequencyBinWidth * gSamplesPerPixel));
     float doppler = pathVelocity * gShiftPerVelocity; // f_D
     uint bin;

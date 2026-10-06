@@ -150,8 +150,8 @@ the camera: `isLightSourceLaser = false` with `laserCollocated = true` puts a po
   - Primary ray directions, from `VBufferRT`.
 * - `spectrum` (output)
   - Doppler spectrum (with a chirp, the up-chirp spectrum), `width x height x frequencyBin`, radiance per MHz.
-    RGBA32Float, or R32Float with `useSingleChannel`. `to_numpy()` returns `(frequencyBin, height, width, 4)` (or
-    without the last axis).
+    RGBA32Float (the alpha channel counts the samples that added light to the bin), or R32Float with
+    `useSingleChannel`. `to_numpy()` returns `(frequencyBin, height, width, 4)` (or without the last axis).
 * - `spectrumDown` (output, with a chirp)
   - The down-chirp spectrum, as `spectrum`.
 * - `color` (output)
