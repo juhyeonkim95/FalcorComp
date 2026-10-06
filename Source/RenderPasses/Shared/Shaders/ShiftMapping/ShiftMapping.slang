@@ -1,5 +1,6 @@
 import Utils.Sampling.SampleGenerator;
 import Utils.Math.MathHelpers;
+import RenderPasses.Shared.Shaders.Utils.Frames;
 import Scene.RaytracingInline;
 import RenderPasses.Shared.Shaders.Utils.LoadShadingData;
 import RenderPasses.Shared.Shaders.ShiftMapping.Charts.LocalPlaneChart;

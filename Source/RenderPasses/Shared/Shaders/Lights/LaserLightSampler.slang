@@ -3,6 +3,7 @@ import Scene.RaytracingInline;
 import Utils.Sampling.SampleGenerator;
 import Rendering.Lights.LightHelpers;
 import Utils.Math.MathHelpers;
+import RenderPasses.Shared.Shaders.Utils.Frames;
 import RenderPasses.Shared.Shaders.Utils.LoadShadingData;
 
 /** Describes a light sample.

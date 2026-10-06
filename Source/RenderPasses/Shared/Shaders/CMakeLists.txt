@@ -9,6 +9,7 @@ set(shared_shaders
     Utils/TransientHistogram.slang
     Utils/Waveform.slang
     Utils/ContinuousWave.slang
+    Utils/Frames.slang
     Lights/Laser.slang
     Lights/LaserLightSampler.slang
     Lights/LightConnection.slang
