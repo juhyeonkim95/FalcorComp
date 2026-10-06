@@ -28,7 +28,8 @@ and they differ:
   - no
 ```
 
-The visibility of the light is ignored. Pixels without a hit are NaN.
+The visibility of the light is ignored. Pixels without a hit are NaN; with `path_length`, so are pixels whose ray
+hits another object at `dt` than at time 0 (an object edge, where the length difference is not a velocity).
 
 ## Parameters
 

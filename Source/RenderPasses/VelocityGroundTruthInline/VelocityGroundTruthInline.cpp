@@ -153,7 +153,7 @@ void VelocityGroundTruthInline::execute(RenderContext* pRenderContext, const Ren
 
     const uint2 frameDim = uint2(pVelocity->getWidth(), pVelocity->getHeight());
     if (!mpFirstLength || mpFirstLength->getWidth() != frameDim.x || mpFirstLength->getHeight() != frameDim.y)
-        mpFirstLength = mpDevice->createTexture2D(frameDim.x, frameDim.y, ResourceFormat::R32Float, 1, 1, nullptr,
+        mpFirstLength = mpDevice->createTexture2D(frameDim.x, frameDim.y, ResourceFormat::RG32Float, 1, 1, nullptr,
             ResourceBindFlags::UnorderedAccess | ResourceBindFlags::ShaderResource);
 
     auto var = mpComputePass->getRootVar();

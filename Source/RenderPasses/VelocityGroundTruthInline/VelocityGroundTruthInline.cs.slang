@@ -54,7 +54,7 @@ cbuffer CB
 
 StructuredBuffer<InstanceVelocity> gInstanceVelocities;
 RWTexture2D<float> gVelocity;
-RWTexture2D<float> gFirstLength;
+RWTexture2D<float2> gFirstLength; // path_length: stage 0's path length and instance (asfloat).
 
 float3 surfaceVelocity(HitInfo hit, float3 posW)
 {
@@ -75,6 +75,8 @@ void main(uint3 dispatchThreadId: SV_DispatchThreadID)
 {
     uint2 pixel = dispatchThreadId.xy;
     if (any(pixel >= gFrameDim)) return;
+    // Stage 0 always writes: NaN unless it hits (overwritten below), so stage 1 never reads a stale length.
+    if (gMode == kModePathLength && gStage == 0) gFirstLength[pixel] = float2(asfloat(0x7fc00000), asfloat(~0u));
     Ray cameraRay = gScene.camera.computeRayPinhole(pixel, gFrameDim, false);
     float hitT;
     HitInfo hit = traceRay(cameraRay.origin, cameraRay.dir, hitT);
@@ -116,8 +118,15 @@ void main(uint3 dispatchThreadId: SV_DispatchThreadID)
     }
     // path_length
     float pathLength = hitT + length(light.posW() - surface.posW) + light.laserT;
+    const uint instance = hit.getInstanceID().index;
     if (gStage == 0)
-        gFirstLength[pixel] = pathLength;
+    {
+        gFirstLength[pixel] = float2(pathLength, asfloat(instance));
+    }
     else
-        gVelocity[pixel] = -(pathLength - gFirstLength[pixel]) / (2.f * gDt);
+    {
+        // A difference across two objects (a depth discontinuity) is not a velocity.
+        float2 first = gFirstLength[pixel];
+        gVelocity[pixel] = asuint(first.y) == instance ? -(pathLength - first.x) / (2.f * gDt) : asfloat(0x7fc00000);
+    }
 }
