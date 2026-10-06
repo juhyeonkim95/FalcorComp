@@ -210,10 +210,10 @@ struct ProjectorConfig
         auto patternVar = var["ProjectorPatternCB"];
         patternVar["gPatternAxis"] = uint(patternAxis);
         patternVar["gPatternSign"] = invertPattern ? -1.f : 1.f;
-        patternVar["gUnsignedModulation"] = uint(unsignedModulation);
-        patternVar["gWaveform"] = uint(waveform);
-        patternVar["gWavelength"] = patternWavelength;
-        patternVar["gPhase"] = patternPhase;
+        patternVar["gPatternUnsigned"] = uint(unsignedModulation);
+        patternVar["gPatternWaveform"] = uint(waveform);
+        patternVar["gPatternWavelength"] = patternWavelength;
+        patternVar["gPatternPhase"] = patternPhase;
         patternVar["gPatternBits"] = patternBits;
         patternVar["gPatternBit"] = patternBit;
         patternVar["gPatternBaseBit"] = patternBaseBit;
