@@ -89,8 +89,9 @@ float solidAngleFromPreviousPerUV(float3 previous, ShadingData surface)
 
 /** Estimate of the BSDF-sampled segment previous -> surface and its antithetic partner, each connected to the
     projector (AntitheticMIS). The partner is where the projector ray through the pattern's antithetic uv lands,
-    so the pattern has the opposite sign there. The map is defined on points the projector lights that `previous`
-    sees directly, which holds for both points of a pair; elsewhere the primal estimate is returned alone.
+    so the pattern has the opposite sign there. The map is defined on points that `previous` sees directly and the
+    projector lights on that side (isLit), checked for both points of a pair so that the map and its inverse fail
+    together; elsewhere the primal estimate is returned alone.
     @param[in] primalEstimate throughput * f / p of the primal path, connected to the projector.
 */
 float3 estimateWithAntithetic(ShadingData previous, IMaterialInstance previousMaterial, ShadingData surface,
@@ -116,6 +117,11 @@ float3 estimateWithAntithetic(ShadingData previous, IMaterialInstance previousMa
         return primalEstimate;
 
     ShadingData antithetic = loadShadingData(hit, previous.posW, antitheticDir);
+    // The partner must pass the primal's test too (lit on the side `previous` sees): sampled itself, it would fail
+    // there and never return its share of this pair.
+    ProjectorConnection antitheticConnection;
+    if (!projector.connect(antithetic.posW, antitheticConnection) || !isLit(antithetic, antitheticConnection))
+        return primalEstimate;
     let antitheticMaterial = gScene.materials.getMaterialInstance(antithetic, ExplicitLodTextureSampler(0.f));
 
     // |dw_a / dw| = (dw_a / duv_a) / (dw / duv) * |duv_a / duv|.
@@ -127,7 +133,8 @@ float3 estimateWithAntithetic(ShadingData previous, IMaterialInstance previousMa
 
     float antitheticBsdfPdf = previousMaterial.evalPdf(previous, antitheticDir, kUseImportanceSampling);
     float3 antitheticValue = throughput * previousMaterial.eval(previous, antitheticDir, sg) *
-        evaluateProjectorConnection(antithetic, antitheticMaterial, projector, sg);
+        antitheticMaterial.eval(antithetic, antitheticConnection.direction, sg) * antitheticConnection.radiance /
+        (antitheticConnection.distance * antitheticConnection.distance);
     return combineAntithetic(primalEstimate, bsdfSample.pdf, antitheticValue, antitheticBsdfPdf, jacobian);
 }
 
