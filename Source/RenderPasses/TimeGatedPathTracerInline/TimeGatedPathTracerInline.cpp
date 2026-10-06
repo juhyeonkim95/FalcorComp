@@ -84,6 +84,7 @@ void TimeGatedPathTracerInline::validateOptions(const Options& options)
 {
     options.timeGate.validate();
     options.pathTracing.validate();
+    options.ellipsoidalSampling.validate();
 }
 
 void TimeGatedPathTracerInline::parseProperties(const Properties& props)
@@ -196,7 +197,7 @@ void TimeGatedPathTracerInline::renderUI(Gui::Widgets& widget)
     if (auto group = widget.group("Sampling", true))
     {
         dirty |= options.pathTracing.renderSamplingUI(group, " Each vertex is connected to the laser spot.");
-        dirty |= options.ellipsoidalSampling.renderUI(group, true);
+        dirty |= options.ellipsoidalSampling.renderUI(group);
     }
 
     if (auto group = widget.group("Output", true))

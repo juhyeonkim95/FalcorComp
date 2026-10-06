@@ -1,7 +1,6 @@
 #pragma once
 #include "ConfigUtils.h"
 #include "Rendering/Lights/EmissiveLightSamplerType.slangh"
-#include "Rendering/Lights/EmissivePowerSampler.h"
 #include "Rendering/Lights/EmissiveUniformSampler.h"
 #include "Rendering/Lights/LightBVHSampler.h"
 #include "Scene/Scene.h"
@@ -43,6 +42,13 @@ struct EllipsoidalSamplingConfig
         return true;
     }
 
+    /// The triangle sampler must implement the ellipsoid queries: Uniform or LightBVH.
+    void validate() const
+    {
+        if (usesEllipsoid() && triSampler != EmissiveLightSamplerType::Uniform && triSampler != EmissiveLightSamplerType::LightBVH)
+            FALCOR_THROW("emissiveSampler must be Uniform or LightBVH for ellipsoidal sampling.");
+    }
+
     void serialize(Properties& props) const
     {
         props["samplingMethod"] = enumPropertyName(kEllipsoidalSamplingMethods, samplingMethod);
@@ -51,7 +57,7 @@ struct EllipsoidalSamplingConfig
     }
 
     /// Sampling method, and the ellipsoid threshold and triangle sampler when they apply.
-    bool renderUI(Gui::Widgets& widget, bool allowPowerSampler)
+    bool renderUI(Gui::Widgets& widget)
     {
         bool dirty = false;
         static const Gui::DropdownList kSamplingMethodList = {
@@ -80,14 +86,12 @@ struct EllipsoidalSamplingConfig
 
         if (usesEllipsoid())
         {
-            Gui::DropdownList samplers = {
+            static const Gui::DropdownList kSamplerList = {
                 {(uint32_t)EmissiveLightSamplerType::Uniform, "Uniform"},
                 {(uint32_t)EmissiveLightSamplerType::LightBVH, "LightBVH"},
             };
-            if (allowPowerSampler)
-                samplers.push_back({(uint32_t)EmissiveLightSamplerType::Power, "Power"});
             uint32_t sampler = (uint32_t)triSampler;
-            if (widget.dropdown("Ellipsoid triangle sampler", samplers, sampler))
+            if (widget.dropdown("Ellipsoid triangle sampler", kSamplerList, sampler))
             {
                 triSampler = (EmissiveLightSamplerType)sampler;
                 dirty = true;
@@ -119,9 +123,6 @@ public:
                 break;
             case EmissiveLightSamplerType::LightBVH:
                 mpSampler = std::make_unique<LightBVHSampler>(pRenderContext, pTriangles, mLightBVHOptions);
-                break;
-            case EmissiveLightSamplerType::Power:
-                mpSampler = std::make_unique<EmissivePowerSampler>(pRenderContext, pTriangles);
                 break;
             default:
                 FALCOR_THROW("Unknown emissive light sampler type");

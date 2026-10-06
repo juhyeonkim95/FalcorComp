@@ -108,9 +108,7 @@ void TimeGatedReSTIRInline::parseProperties(const Properties& props)
             logWarning("Unknown property '{}' in TimeGatedReSTIRInline properties.", key);
     }
     mOptions.timeGate.applyTimeCenter(props);
-    if (mOptions.ellipsoidalSampling.samplingMethod != EllipsoidalSamplingMethod::Direct &&
-        mOptions.ellipsoidalSampling.triSampler != EmissiveLightSamplerType::Uniform && mOptions.ellipsoidalSampling.triSampler != EmissiveLightSamplerType::LightBVH)
-        FALCOR_THROW("Ellipsoidal initial sampling requires the Uniform or LightBVH triangle sampler.");
+    mOptions.ellipsoidalSampling.validate();
     // Dynamic suffix replay reconstructs BSDF steps after y only. An ellipsoidal candidate
     // inserts x or y (both reevaluated exactly); inserting a vertex after y needs a walk
     // that reaches y and continues, i.e. maxBounces >= 4.
@@ -418,8 +416,7 @@ void TimeGatedReSTIRInline::renderUI(Gui::Widgets& widget)
     if (auto group = widget.group("Initial sampling", true))
     {
         dirty |= mOptions.pathTracing.renderSamplingUI(group, " The primary hit is not connected to the laser spot.");
-        // Ellipsoidal initial sampling supports the Uniform and LightBVH triangle samplers only.
-        dirty |= mOptions.ellipsoidalSampling.renderUI(group, false);
+        dirty |= mOptions.ellipsoidalSampling.renderUI(group);
 
         if (mOptions.ellipsoidalSampling.samplingMethod == EllipsoidalSamplingMethod::Direct)
         {

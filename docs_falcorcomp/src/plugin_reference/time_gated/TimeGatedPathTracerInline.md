@@ -93,8 +93,8 @@ Sampling:
     this value. (Default: `0.25`)
 * - `emissiveSampler`
   - string
-  - How an ellipsoidal connection picks the scene triangle to place its vertex on: `Uniform`,
-    `LightBVH` or `Power`. Unused with `direct`. (Default: `LightBVH`)
+  - How an ellipsoidal connection picks the scene triangle to place its vertex on: `Uniform` or
+    `LightBVH`. Unused with `direct`. (Default: `LightBVH`)
 * - `useImportanceSampling`
   - boolean
   - Importance-sample the BSDF when extending the camera path; otherwise use the material's
