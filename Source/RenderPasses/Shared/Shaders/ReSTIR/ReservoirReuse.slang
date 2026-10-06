@@ -157,7 +157,10 @@ bool shiftToPrefix(Reservoir source, VertexData x, ReconnectionSuffix suffix, Sh
         jacobian, shiftedData, debugInfo, sg);
     shifted.prefixEnd = a.posW;
     shifted.mappingJacobian = jacobian;
-    jacobian *= K;
+    // A length-aware shift scales the path length's distance from the gate by K (shrink mapping; K = 1 otherwise),
+    // which scales the Jacobian by K. The identity shift moves nothing, so its Jacobian stays 1.
+    if (!kShiftMappingIsIdentity)
+        jacobian *= K;
     // A rejected/non-finite shift must have zero support, not NaN weight.
     jacobian = select(isfinite(jacobian), max(jacobian, 0.f), 0.f);
     if (jacobian == 0.f)

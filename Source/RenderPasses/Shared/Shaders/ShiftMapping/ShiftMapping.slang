@@ -21,6 +21,13 @@ import RenderPasses.Shared.Shaders.Utils.RayUtils;
 #define SHIFT_MAPPING_RAY_TRACE_CHART 5
 #define SHIFT_MAPPING_RADIAL 6
 
+/// The identity shift (`no`) leaves the path unchanged; it maps no path lengths (e.g. shrink mapping's K).
+#if SHIFT_MAPPING_METHOD == SHIFT_MAPPING_NO
+static const bool kShiftMappingIsIdentity = true;
+#else
+static const bool kShiftMappingIsIdentity = false;
+#endif
+
 cbuffer ShiftMappingCB
 {
     float2 gGaugeAxis;
