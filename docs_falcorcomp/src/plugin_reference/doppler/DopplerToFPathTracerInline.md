@@ -74,7 +74,8 @@ Time sampling:
     which covers the exposure more evenly). Every pixel of a frame shares its time. (Default: `stratified`)
 * - `antithetic`
   - string
-  - `none` (one time per frame), `half_period` (also $t + 1/(2\Delta f)$; needs a nonzero `heterodyneFrequency`) or
+  - `none` (one time per frame), `half_period` (also $t + 1/(2\Delta f)$, modulo $T$, for either sign of $\Delta f$;
+    needs a nonzero `heterodyneFrequency`) or
     `mirror` (also $T - t$, which does not change the sign of the heterodyne term and so does not cancel static
     light). See [Antithetic time pairs](#doppler-tof-antithetic). (Default: `half_period`)
 * - `randomReplay`

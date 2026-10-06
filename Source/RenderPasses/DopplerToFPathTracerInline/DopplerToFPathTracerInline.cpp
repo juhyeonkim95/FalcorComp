@@ -235,7 +235,14 @@ void DopplerToFPathTracerInline::execute(RenderContext* pRenderContext, const Re
     std::vector<float> times = {sampleTime(pair)};
     const float T = mOptions.exposureTime;
     if (mOptions.antithetic == Antithetic::HalfPeriod)
-        times.push_back(float(std::fmod(double(times[0]) + 0.5 / mOptions.heterodyneFrequency, double(T))));
+    {
+        // Half a heterodyne period away, wrapped into [0, T) with a positive modulo: with a negative frequency the
+        // offset is negative, and fmod would have left the partner before the exposure.
+        double partner = double(times[0]) + 0.5 / mOptions.heterodyneFrequency;
+        partner -= double(T) * std::floor(partner / double(T));
+        const float partnerTime = float(partner);
+        times.push_back(partnerTime < T ? partnerTime : 0.f);
+    }
     else if (mOptions.antithetic == Antithetic::Mirror)
         times.push_back(T - times[0]);
 
