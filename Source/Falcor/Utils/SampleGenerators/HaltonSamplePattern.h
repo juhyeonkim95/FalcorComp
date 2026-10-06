@@ -38,6 +38,7 @@ public:
     /**
      * Create Halton sample pattern generator.
      * @param[in] sampleCount The pattern repeats every 'sampleCount' samples. Zero means no repeating.
+     * @param[in] sampleOffset Index of the first sample, also after reset() (FalcorComp: GBuffer sampleOffset).
      * @return New object, or throws an exception on error.
      */
     static ref<HaltonSamplePattern> create(uint32_t sampleCount = 0, uint32_t sampleOffset = 0) { return make_ref<HaltonSamplePattern>(sampleCount, sampleOffset); }
@@ -47,13 +48,13 @@ public:
 
     virtual uint32_t getSampleCount() const override { return mSampleCount; }
 
-    virtual void reset(uint32_t startID = 0) override { mCurSample = 0; }
+    virtual void reset(uint32_t startID = 0) override { mCurSample = mSampleOffset; }
 
     virtual float2 next() override;
 
 protected:
     uint32_t mCurSample = 0;
     uint32_t mSampleCount;
-    uint32_t mSampleOffset;
+    uint32_t mSampleOffset = 0;
 };
 } // namespace Falcor
