@@ -37,7 +37,7 @@ Histogram:
     (Default: `9`, `12`)
 * - `timeBin`
   - integer
-  - Number of bins $B$. (Default: `512`)
+  - Number of bins $B$. (Default: `64`)
 * - `histogramFilter`
   - string
   - The bin filter: `box` or `tent`; with kernel density estimation, the kernel: `box`, `tent`,

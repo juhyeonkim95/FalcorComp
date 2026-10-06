@@ -18,7 +18,7 @@ struct TransientHistogramConfig
 
     float timeMin = 9.f;
     float timeMax = 12.f;
-    uint timeBin = 512;
+    uint timeBin = 64; ///< Memory grows with W x H x bins (ReSTIR: two reservoirs of ~100 B per bin and pixel).
     TimeGateMode filter = TimeGateMode::Box; ///< Bin filter (Box/Tent), or the kernel with KDE.
     bool useKernelDensityEstimation = false;
     float initialWindowRatio = 1.f;          ///< KDE: kernel width of a frame's first sample / histogram range, in (0, 1].

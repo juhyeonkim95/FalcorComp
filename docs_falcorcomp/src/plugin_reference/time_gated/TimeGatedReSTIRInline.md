@@ -274,6 +274,12 @@ The temporal history is discarded, and the next frame starts from its own sample
 - the frame size changes, or
 - the camera uses depth of field.
 
+## Limitations
+
+- Static scene geometry: the camera may move (and, with `isSceneDynamic`, the laser), but objects may not move or
+  deform; the history is discarded when geometry changes, as above.
+- Layered materials (for example pbrt's `coateddiffuse` and `coatedconductor`) are not supported.
+
 (restir-wide-gate)=
 ## Shrink mapping
 

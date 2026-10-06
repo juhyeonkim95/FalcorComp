@@ -29,7 +29,7 @@ Histogram:
 * - `timeBin`
   - integer
   - Number of bins. Every bin has its own reservoir, so the pass's memory and most of its work grow
-    with this; see [Memory](#th-restir-memory). (Default: `512`)
+    with this; see [Memory](#th-restir-memory). (Default: `64`)
 * - `histogramFilter`
   - string
   - The bin filter: `box` (a path counts for the bin that contains its length) or `tent` (a path is
@@ -234,6 +234,12 @@ The pass keeps two sets of reservoirs, this frame's and the previous one's, each
 reservoirs of about 100 bytes per pixel: at 480 x 270 with 64 bins that is about 1.8 GB. The
 two-pass reuse adds up to 512 MB of intermediate results, processing the bins in chunks when they
 do not fit at once.
+
+## Limitations
+
+- Static scene geometry: the camera may move, but objects may not move or deform (the history is discarded when
+  geometry changes, as above), and the laser is assumed static.
+- Layered materials (for example pbrt's `coateddiffuse` and `coatedconductor`) are not supported.
 
 ## Laser
 
