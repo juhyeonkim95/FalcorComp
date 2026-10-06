@@ -80,7 +80,9 @@ times.
     [`DopplerHistogramPathTracerInline`](../plugin_reference/doppler/DopplerHistogramPathTracerInline.md)
   - $$S(\nu_b) = \int_\mathcal{P} f(\bar{\mathbf{x}})\, w_{\nu_b}\!\left(f_D(\bar{\mathbf{x}})\right) \mathrm{d}\bar{\mathbf{x}}, \quad b = 1, \dots, B$$
 
-    Doppler-gated spectra at $B$ frequencies at once. Shown: 4 of the bins.
+    Doppler-gated spectra at $B$ frequencies at once. Shown: 4 of the bins. With a chirped laser (FMCW), the weight
+    is on the beat frequency $f_R(\ell) \mp f_D$ instead, with a range term $f_R$ proportional to the path length, in
+    an up- and a down-chirp spectrum.
 * - **Doppler ToF**
 
     ![Doppler ToF](images/measurements/doppler_tof.jpg)
@@ -115,7 +117,8 @@ Time of flight and Doppler measurements have the same form, with the Doppler shi
 | Doppler shift $f_D(\bar{\mathbf{x}})$ | Doppler-gated PSD $S(\nu)$ | Doppler spectrum $S(\nu_b)$ |
 
 The gated passes use the same gate kernels, and a box gate one bin wide at the center of a bin gives that bin of the
-histogram. The other measurements weight the path by a modulation instead of a gate: CW-ToF by a periodic function of
+histogram. An FMCW lidar's spectra weight both at once: their beat frequency $f_R(\ell) \mp f_D$ grows with the path
+length and shifts with the Doppler shift. The other measurements weight the path by a modulation instead of a gate: CW-ToF by a periodic function of
 its length, Doppler ToF by one that also changes over the exposure, structured light by the projected pattern.
 
 The images are the Cornell box, with the settings of the [overview](overview.md).

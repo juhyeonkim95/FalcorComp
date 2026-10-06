@@ -48,12 +48,14 @@ with a narrow time gate or in online rendering. The modulated-light renderers su
 sampling, which pairs every sampled path with a nearby one of opposite modulation, so that the
 indirect light cancels the way it does in the real measurement.
 
-- **Doppler**: the measurement depends on how fast each path's length changes as the scene moves.
+- **Doppler**: the measurement depends on how fast each path's length changes as the scene moves (with FMCW, also on
+  the length itself).
 
 | Measurement | Output | Render pass |
 |---|---|---|
 | **Doppler-gated image (OHD)** | `H × W`: the light whose Doppler shift falls inside a gate | [`DopplerGatedPathTracerInline`](../plugin_reference/doppler/DopplerGatedPathTracerInline.md) |
 | **Doppler spectrum (OHD)** | `H × W × B`: for every pixel, the light at each Doppler shift, in `B` bins | [`DopplerHistogramPathTracerInline`](../plugin_reference/doppler/DopplerHistogramPathTracerInline.md) |
+| **FMCW spectra (OHD)** | `H × W × B`, for the up- and the down-chirp: the light at each beat frequency, which depends on the path length and the Doppler shift | [`DopplerHistogramPathTracerInline`](../plugin_reference/doppler/DopplerHistogramPathTracerInline.md) with a chirp |
 | **Doppler ToF** | `H × W`: a CW-ToF measurement with slightly different light and sensor frequencies, over an exposure in which the objects move | [`DopplerToFPathTracerInline`](../plugin_reference/doppler/DopplerToFPathTracerInline.md) |
 
 - **Event cameras**: each pixel reports when its brightness $\log(I_\epsilon + I)$ changes by more than a

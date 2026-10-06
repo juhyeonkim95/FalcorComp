@@ -54,12 +54,13 @@ The light varies in time or in space, and the measurement weights each path by t
 
 ### Doppler
 
-The measurement depends on how fast each path's length changes as the scene moves.
+The measurement depends on how fast each path's length changes as the scene moves (with FMCW, also on the length itself).
 
 | Measurement | Output | Render pass |
 |---|---|---|
 | **Doppler-gated image (OHD)** | `H × W`: the light whose Doppler shift falls inside a gate | [`DopplerGatedPathTracerInline`](https://falcorcomp.readthedocs.io/en/latest/src/plugin_reference/doppler/DopplerGatedPathTracerInline.html) |
 | **Doppler spectrum (OHD)** | `H × W × B`: for every pixel, the light at each Doppler shift, in `B` bins | [`DopplerHistogramPathTracerInline`](https://falcorcomp.readthedocs.io/en/latest/src/plugin_reference/doppler/DopplerHistogramPathTracerInline.html) |
+| **FMCW spectra (OHD)** | `H × W × B`, for the up- and the down-chirp: the light at each beat frequency, which depends on the path length and the Doppler shift | [`DopplerHistogramPathTracerInline`](https://falcorcomp.readthedocs.io/en/latest/src/plugin_reference/doppler/DopplerHistogramPathTracerInline.html) with a chirp |
 | **Doppler ToF** | `H × W`: a CW-ToF measurement with slightly different light and sensor frequencies, over an exposure in which the objects move | [`DopplerToFPathTracerInline`](https://falcorcomp.readthedocs.io/en/latest/src/plugin_reference/doppler/DopplerToFPathTracerInline.html) |
 
 The [Doppler rendering tutorial](https://juhyeonkim95.github.io/project-pages/doppler_tutorial/) compares OHD and Doppler ToF side by side.

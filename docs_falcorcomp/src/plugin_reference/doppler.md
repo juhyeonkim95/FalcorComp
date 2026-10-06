@@ -3,8 +3,8 @@
 These render passes simulate measurements of moving scenes:
 
 - [`DopplerHistogramPathTracerInline`](doppler/DopplerHistogramPathTracerInline.md): the Doppler spectrum of optical
-  heterodyne detection (OHD), as in coherent lidar. Nothing moves; each path's Doppler shift follows from the
-  velocities of its vertices.
+  heterodyne detection (OHD), as in coherent lidar, or with a chirped laser the up- and down-chirp spectra of an FMCW
+  lidar. Nothing moves; each path's Doppler shift follows from the velocities of its vertices.
 - [`DopplerGatedPathTracerInline`](doppler/DopplerGatedPathTracerInline.md): the light whose Doppler shift falls in
   a gate, one image instead of the spectrum, as the time-gated path tracer is to the transient histogram.
 - [`DopplerToFPathTracerInline`](doppler/DopplerToFPathTracerInline.md): Doppler time-of-flight, a continuous-wave

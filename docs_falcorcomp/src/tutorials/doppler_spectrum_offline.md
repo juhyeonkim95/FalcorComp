@@ -102,3 +102,8 @@ graph.mark_output("Accumulate.output")
 Connections whose shift falls outside the gate are skipped before they are shaded, so a narrow gate renders faster
 than the spectrum. See [`DopplerGatedPathTracerInline`](../plugin_reference/doppler/DopplerGatedPathTracerInline.md)
 for the gate kernels and the gate sweep.
+
+## An FMCW lidar
+
+With `chirpBandwidth`, the same pass renders the up- and down-chirp spectra of an FMCW lidar, whose beat frequencies
+also depend on the path length; see the [FMCW lidar tutorial](fmcw_lidar_offline.md).
