@@ -6,7 +6,7 @@
 // TimeGate.slang over the shift instead of the path length: gTimeCenter is the gate center and gTimeGateWindow its
 // width, in MHz. As in the time-gated path tracer, the image is divided by the width: radiance per MHz.
 import RenderPasses.Shared.Shaders.Utils.LoadShadingData;
-import RenderPasses.Shared.Shaders.Utils.InstanceVelocity;
+import RenderPasses.Shared.Shaders.Utils.PathVelocity;
 import RenderPasses.Shared.Shaders.Utils.SingleChannel;
 import RenderPasses.Shared.Shaders.Lights.LaserLightSampler;
 import RenderPasses.Shared.Shaders.Lights.LightConnection;
@@ -32,7 +32,6 @@ cbuffer CB
 // Inputs
 Texture2D<PackedHitInfo> gVBuffer;
 Texture2D<float4> gViewW; // Optional
-StructuredBuffer<InstanceVelocity> gInstanceVelocities;
 
 // Outputs
 RWTexture2D<float4> gOutputColor;
@@ -42,35 +41,6 @@ static const uint kMaxBounces = MAX_BOUNCES;
 static const bool kComputeDirect = COMPUTE_DIRECT;
 static const bool kUseImportanceSampling = USE_IMPORTANCE_SAMPLING;
 
-// Velocity of the scene surface point posW, hit by `hit`.
-float3 surfaceVelocity(HitInfo hit, float3 posW)
-{
-    if (!hit.isValid() || hit.getType() != HitType::Triangle) return float3(0.f);
-    return gInstanceVelocities[hit.getInstanceID().index].at(posW);
-}
-
-// Path-velocity term of the segment between q (the light side) and p (the camera side), with refractive index eta:
-// eta (v_q - v_p) . (p - q) / |p - q|.
-float segmentVelocity(float3 p, float3 vp, float3 q, float3 vq, float eta)
-{
-    float3 d = p - q;
-    float len = length(d);
-    return len > 0.f ? eta * dot(vq - vp, d / len) : 0.f;
-}
-
-// Path-velocity terms of the connection from surface point s (velocity vs) to the light: to the laser spot and on to
-// the laser origin, or to the point light.
-float connectionVelocity(float3 s, float3 vs, LightSample light, float3 lightOrigin)
-{
-#if IS_LIGHT_SOURCE_LASER
-    float3 spot = light.posW();
-    float3 vSpot = surfaceVelocity(light.hit, spot);
-    return segmentVelocity(s, vs, spot, vSpot, 1.f) + segmentVelocity(spot, vSpot, lightOrigin, gLightVelocity, 1.f);
-#else
-    return segmentVelocity(s, vs, light.posW(), gLightVelocity, 1.f);
-#endif
-}
-
 float3 tracePath(const uint2 pixel, const uint2 frameDim)
 {
     HitInfo primaryHit = HitInfo(gVBuffer[pixel]);
@@ -79,7 +49,7 @@ float3 tracePath(const uint2 pixel, const uint2 frameDim)
     ShadingData primary = loadShadingData(primaryHit, cameraOrigin, getPrimaryRayDir(pixel, frameDim, gViewW));
     float3 primaryVelocity = surfaceVelocity(primaryHit, primary.posW);
     // The camera segment (primary hit -> camera), in air.
-    float primarySegment = segmentVelocity(cameraOrigin, gSensorVelocity, primary.posW, primaryVelocity, 1.f);
+    float primarySegment = segmentVelocity(cameraOrigin, gSensorVelocity, primary.posW, primaryVelocity);
     SampleGenerator sg = createPixelSampleGenerator(pixel, gFrameCount, kPathSampleStream);
     LaserLightSampler lightSampler = createLaserLightSampler();
     float3 radiance = 0.f;
@@ -101,7 +71,7 @@ float3 tracePath(const uint2 pixel, const uint2 frameDim)
                 LightConnection connection = connectToLight(surface, light, connected);
                 if (connected)
                 {
-                    float shift = (pathVelocity + connectionVelocity(surface.posW, velocity, light, lightSampler.laserOrigin)) *
+                    float shift = (pathVelocity + connectionVelocity(surface.posW, velocity, light, lightSampler.laserOrigin, gLightVelocity)) *
                                   gShiftPerVelocity;
                     float gate = pathLengthImportance(shift, gTimeCenter);
                     // Outside the gate the connection contributes zero: skip its visibility ray and BSDF.

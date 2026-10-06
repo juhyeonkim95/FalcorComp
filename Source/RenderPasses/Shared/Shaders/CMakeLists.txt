@@ -1,7 +1,7 @@
 # Slang modules shared by the render passes. They are imported as RenderPasses.Shared.Shaders.<Folder>.<Module>,
 # so they are copied to the shader output directory with their folders kept.
 set(shared_shaders
-    Utils/InstanceVelocity.slang
+    Utils/PathVelocity.slang
     Utils/LoadShadingData.slang
     Utils/RayUtils.slang
     Utils/SingleChannel.slang

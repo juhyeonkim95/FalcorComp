@@ -28,7 +28,7 @@
 // Ground-truth velocity of the direct path camera -> primary hit (pixel-center ray) -> light; see
 // VelocityGroundTruthInline.h for the modes.
 import RenderPasses.Shared.Shaders.Utils.LoadShadingData;
-import RenderPasses.Shared.Shaders.Utils.InstanceVelocity;
+import RenderPasses.Shared.Shaders.Utils.PathVelocity;
 import RenderPasses.Shared.Shaders.Lights.LaserLightSampler;
 #include "Scene/SceneDefines.slangh"
 
@@ -52,23 +52,8 @@ cbuffer CB
     float3 gLightVelocity;
 }
 
-StructuredBuffer<InstanceVelocity> gInstanceVelocities;
 RWTexture2D<float> gVelocity;
 RWTexture2D<float2> gFirstLength; // path_length: stage 0's path length and instance (asfloat).
-
-float3 surfaceVelocity(HitInfo hit, float3 posW)
-{
-    if (!hit.isValid() || hit.getType() != HitType::Triangle) return float3(0.f);
-    return gInstanceVelocities[hit.getInstanceID().index].at(posW);
-}
-
-// Path-velocity term of the segment from q (the light side) to p (the camera side): (v_q - v_p) . (p - q) / |p - q|.
-float segmentVelocity(float3 p, float3 vp, float3 q, float3 vq)
-{
-    float3 d = p - q;
-    float len = length(d);
-    return len > 0.f ? dot(vq - vp, d / len) : 0.f;
-}
 
 [numthreads(16, 16, 1)]
 void main(uint3 dispatchThreadId: SV_DispatchThreadID)
@@ -105,14 +90,8 @@ void main(uint3 dispatchThreadId: SV_DispatchThreadID)
     if (gMode == kModeDoppler)
     {
         float3 v = surfaceVelocity(hit, surface.posW);
-        float u = segmentVelocity(cameraRay.origin, gSensorVelocity, surface.posW, v);
-#if IS_LIGHT_SOURCE_LASER
-        float3 vSpot = surfaceVelocity(light.hit, light.posW());
-        u += segmentVelocity(surface.posW, v, light.posW(), vSpot) +
-             segmentVelocity(light.posW(), vSpot, lightSampler.laserOrigin, gLightVelocity);
-#else
-        u += segmentVelocity(surface.posW, v, light.posW(), gLightVelocity);
-#endif
+        float u = segmentVelocity(cameraRay.origin, gSensorVelocity, surface.posW, v) +
+                  connectionVelocity(surface.posW, v, light, lightSampler.laserOrigin, gLightVelocity);
         gVelocity[pixel] = 0.5f * u;
         return;
     }
