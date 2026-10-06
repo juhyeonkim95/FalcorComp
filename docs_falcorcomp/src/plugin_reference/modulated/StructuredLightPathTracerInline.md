@@ -152,7 +152,8 @@ tracer.set_pattern_data(values, antithetic_index=matching)
 tracer.set_pattern_data(values, interval_ids=ids, intervals=intervals)
 ```
 
-- `values`: `0` or `1` per column (along `patternAxis`), shown as $-1$ and $+1$.
+- `values`: `0` or `1` per column (along `patternAxis`), shown as $-1$ and $+1$; other values raise an
+  error.
 - `antithetic_index`: for each column, the column it is paired with, of the opposite value (for
   example the optimal-transport matching of the 0s and 1s). The pairing must be symmetric.
 - `interval_ids` and `intervals`: for each column, the interval it belongs to, and for each interval
@@ -162,7 +163,8 @@ tracer.set_pattern_data(values, interval_ids=ids, intervals=intervals)
 Give the matching or the intervals (`interval_ids` and `intervals` together), or neither (no
 antithetic map), not both. It raises an error when an entry is out of range: a partner or interval
 id past the last column or interval, an interval with start >= end or past the last column, or a
-column outside its interval's source range. It warns when the matching is not symmetric or does not pair opposite values, or when the intervals do
+column outside its interval's source range or not assigned to the interval whose source contains it
+(the source ranges must partition the columns). It warns when the matching is not symmetric or does not pair opposite values, or when the intervals do
 not map back onto themselves, which makes antithetic sampling biased or ineffective. Rendering with
 `pattern = arbitrary` before `set_pattern_data` is called raises an error.
 

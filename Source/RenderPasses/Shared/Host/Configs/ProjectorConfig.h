@@ -332,6 +332,9 @@ public:
             FALCOR_THROW("antithetic_index must have one entry per column.");
         if (intervalIds.empty() != intervals.empty())
             FALCOR_THROW("Give interval_ids and intervals together.");
+        for (size_t column = 0; column < width; column++)
+            if (values[column] > 1)
+                FALCOR_THROW("values[{}] = {}: the pattern values must be 0 or 1.", column, values[column]);
         if (!intervalIds.empty() && (intervalIds.size() != width || intervals.size() % 4 != 0))
             FALCOR_THROW("interval_ids must have one entry per column and intervals four entries per interval.");
 
@@ -361,6 +364,12 @@ public:
             if (column < entry[0] || column >= entry[1])
                 FALCOR_THROW("Column {} lies outside its source interval {}.", column, intervalIds[column]);
         }
+        // Conversely, every column of an interval's source belongs to it: the sources partition the columns.
+        for (size_t interval = 0; interval < intervalCount; interval++)
+            for (uint32_t column = intervals[4 * interval]; column < intervals[4 * interval + 1]; column++)
+                if (intervalIds[column] != interval)
+                    FALCOR_THROW("Column {} lies in the source of interval {} but interval_ids gives {}.", column,
+                        interval, intervalIds[column]);
         for (size_t interval = 0; interval < intervalCount; interval++)
         {
             const uint32_t* entry = &intervals[4 * interval];
