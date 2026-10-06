@@ -62,6 +62,9 @@ float3 tracePath(uint2 pixel, uint2 frameDim)
     HitInfo primaryHit = HitInfo(gVBuffer[pixel]);
     if (!primaryHit.isValid())
     {
+#if TEMPORAL_REUSE_PAIRS
+        gTemporalHistoryPixel[pixelIndex] = kNoHistory;
+#endif
         for (uint bin = 0; bin < gTimeBin; ++bin)
         {
             storeReservoir(pixelIndex * gTimeBin + bin, Reservoir());
@@ -154,6 +157,12 @@ float3 tracePath(uint2 pixel, uint2 frameDim)
     IMaterialInstance previousMaterial = primaryMaterial;
     if (history.valid)
         previousMaterial = gScene.materials.getMaterialInstance(history.primary, ExplicitLodTextureSampler(0.f));
+#elif TEMPORAL_REUSE_PAIRS
+    // Found once here for the temporal kernels, which run one thread per pixel and bin.
+    {
+        TemporalHistory history = getTemporalHistory(pixel);
+        gTemporalHistoryPixel[pixelIndex] = history.valid ? history.pixelIndex : kNoHistory;
+    }
 #endif
 
     float3 integratedRadiance = 0.f;

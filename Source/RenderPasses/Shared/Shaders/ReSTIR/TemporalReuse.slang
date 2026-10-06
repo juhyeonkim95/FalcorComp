@@ -24,7 +24,15 @@ TemporalHistory findTemporalHistory(uint2 pixel, uint2 frameDim, Texture2D<float
 #endif
     if (!all(isfinite(previousPosition)) || any(previousPosition < 0.f) ||
         any(previousPosition >= float2(frameDim))) return history;
-    uint2 previousPixel = uint2(floor(previousPosition));
+    return loadTemporalHistory(uint2(floor(previousPosition)), frameDim, previousVBuffer, previousCameraPosition);
+}
+
+// The history at previousPixel of last frame's V-buffer (as findTemporalHistory finds it), e.g. to reload a history
+// whose pixel was found earlier.
+TemporalHistory loadTemporalHistory(uint2 previousPixel, uint2 frameDim, Texture2D<PackedHitInfo> previousVBuffer,
+    float3 previousCameraPosition)
+{
+    TemporalHistory history = {};
     HitInfo previousHit = HitInfo(previousVBuffer[previousPixel]);
     if (!previousHit.isValid()) return history;
     float3 previousPoint = gScene.getVertexData(previousHit.getTriangleHit()).posW;

@@ -233,6 +233,7 @@ void TransientHistogramReSTIRInline::bindShaderData(const ShaderVar& var, const 
     {
         var["gTemporalPairs"] = mReSTIR.reusePairs;
         var["gTemporalRandomState"] = mpTemporalRandomState;
+        var["gTemporalHistoryPixel"] = mpTemporalHistoryPixel;
     }
 
     InlinePass::bindChannels(var, renderData, InlinePass::kPrimaryHitAndMotionInputChannels);
@@ -376,8 +377,12 @@ void TransientHistogramReSTIRInline::execute(RenderContext* pRenderContext, cons
     uint spatialChunkBins, temporalChunkBins;
     preparePairs(frameDim, spatialChunkBins, temporalChunkBins);
     if (useTemporalReusePairs() && (!mpTemporalRandomState || mpTemporalRandomState->getElementCount() != frameDim.x * frameDim.y))
-        mpTemporalRandomState = mpDevice->createStructuredBuffer(sizeof(uint), frameDim.x * frameDim.y,
-            ResourceBindFlags::ShaderResource | ResourceBindFlags::UnorderedAccess, MemoryType::DeviceLocal, nullptr, false);
+    {
+        for (ref<Buffer>* pBuffer : {&mpTemporalRandomState, &mpTemporalHistoryPixel})
+            *pBuffer = mpDevice->createStructuredBuffer(sizeof(uint), frameDim.x * frameDim.y,
+                ResourceBindFlags::ShaderResource | ResourceBindFlags::UnorderedAccess, MemoryType::DeviceLocal, nullptr,
+                false);
+    }
 
     InlinePass::checkScene(*mpScene, renderData);
     if (mpScene->getRenderSettings().useEmissiveLights)

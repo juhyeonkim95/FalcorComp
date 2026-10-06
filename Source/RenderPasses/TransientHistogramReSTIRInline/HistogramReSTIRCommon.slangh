@@ -71,6 +71,10 @@ RWStructuredBuffer<float2> gCurrSummaries;
 // random state after path tracing, which the merges continue.
 RWStructuredBuffer<ReusePair> gTemporalPairs;
 RWStructuredBuffer<uint> gTemporalRandomState;
+// The history pixel of each pixel this frame (getTemporalHistory), found once by initial generation; kNoHistory without
+// one (also without a primary hit). The temporal kernels skip such pixels and reload the others' history.
+RWStructuredBuffer<uint> gTemporalHistoryPixel;
+static const uint kNoHistory = 0xffffffffu;
 #endif
 
 // Outputs
@@ -151,6 +155,13 @@ TemporalHistory getTemporalHistory(uint2 pixel)
 #endif
 
 #if TEMPORAL_REUSE_PAIRS
+// The history whose pixel initial generation found (gTemporalHistoryPixel), reloaded from last frame's V-buffer.
+TemporalHistory loadPixelHistory(uint historyPixel)
+{
+    uint2 previousPixel = uint2(historyPixel % gFrameDim.x, historyPixel / gFrameDim.x);
+    return loadTemporalHistory(previousPixel, gFrameDim, gTemporalVBuffer, gPreviousCameraPosition);
+}
+
 uint getTemporalPairIndex(uint pixelIndex, uint bin)
 {
     return (bin - gPairFirstBin) * gFrameDim.x * gFrameDim.y + pixelIndex;

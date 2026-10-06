@@ -41,16 +41,16 @@ void main(uint3 dispatchThreadId: SV_DispatchThreadID)
 {
     uint2 pixel = dispatchThreadId.xy;
     if (any(pixel >= gFrameDim)) return;
-    if (!HitInfo(gVBuffer[pixel]).isValid()) return;
-    TemporalHistory history = getTemporalHistory(pixel);
-    if (!history.valid) return;
     uint pixelIndex = pixel.y * gFrameDim.x + pixel.x;
+    // Initial generation found the history (none without a primary hit).
+    uint historyPixel = gTemporalHistoryPixel[pixelIndex];
+    if (historyPixel == kNoHistory) return;
     SampleGenerator rng = SampleGenerator(gTemporalRandomState[pixelIndex]);
     float3 integratedRadiance = gPairFirstBin == 0 ? float3(0.f) : gOutputColor[pixel].xyz;
     for (uint bin = gPairFirstBin; bin < gPairFirstBin + gPairBinCount; ++bin)
     {
         uint index = pixelIndex * gTimeBin + bin;
-        uint previousIndex = history.pixelIndex * gTimeBin + bin;
+        uint previousIndex = historyPixel * gTimeBin + bin;
         Reservoir reservoir = loadCurrReservoir(index);
         float historyMass = getHistoryMass(getPrevSummary(previousIndex));
         if (historyMass > 0.f)
