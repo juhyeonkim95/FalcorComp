@@ -108,7 +108,8 @@ Output:
 * - `outputSize`
   - string
   - Size of the outputs: `Default` (the size of the render graph's output), `Fixed`, `Full`,
-    `Half`, `Quarter` or `Double`. (Default: `Default`)
+    `Half`, `Quarter` or `Double`. The `vbuffer` input must have the same size: give `VBufferRT`
+    the same `outputSize` (the pass raises an error otherwise). (Default: `Default`)
 * - `fixedOutputSize`
   - integer pair
   - Output size with `outputSize` `Fixed`. (Default: `[512, 512]`)

@@ -127,7 +127,8 @@ Sampling and output, as for the [transient histogram path tracer](../transient/T
   - Honor alpha-tested materials when tracing rays. (Default: `false`)
 * - `outputSize`, `fixedOutputSize`
   - string, integer pair
-  - Size of the outputs, as for the transient histogram path tracer. (Default: `Default`, `[512, 512]`)
+  - Size of the outputs, as for the transient histogram path tracer; the `vbuffer` input must have the same size.
+    (Default: `Default`, `[512, 512]`)
 ```
 
 ## Light

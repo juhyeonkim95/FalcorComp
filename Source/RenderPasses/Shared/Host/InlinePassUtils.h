@@ -149,6 +149,12 @@ inline void checkScene(const Scene& scene, const RenderData& renderData)
     if (is_set(scene.getUpdates(), IScene::UpdateFlags::RecompileNeeded) ||
         is_set(scene.getUpdates(), IScene::UpdateFlags::GeometryChanged))
         FALCOR_THROW("This render pass does not support scene changes that require shader recompilation.");
+    // The passes dispatch over their output and read the V-buffer at the same pixel.
+    const auto pVBuffer = renderData.getTexture("vbuffer");
+    const auto pColor = renderData.getTexture("color");
+    if (pVBuffer && pColor && (pVBuffer->getWidth() != pColor->getWidth() || pVBuffer->getHeight() != pColor->getHeight()))
+        FALCOR_THROW("The vbuffer input ({}x{}) must have the output's size ({}x{}): set the same outputSize on VBufferRT.",
+            pVBuffer->getWidth(), pVBuffer->getHeight(), pColor->getWidth(), pColor->getHeight());
     if (scene.getCamera()->getApertureRadius() > 0.f && renderData[kViewDirChannel] == nullptr)
         logWarning("Depth-of-field requires the '{}' input. Expect incorrect shading.", kViewDirChannel);
 }
