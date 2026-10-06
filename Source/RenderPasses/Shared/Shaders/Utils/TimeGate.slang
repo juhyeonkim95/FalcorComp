@@ -196,7 +196,7 @@ float getMaxPathLength(float target_distance, bool use_rough = false)
         case TIME_GATE_BOX:
             return abs(distance - target_distance) <= 0.5f * width ? 1.f / width : 0.f;
         case TIME_GATE_TENT:
-            return tentPdfTime(distance, target_distance, 0.5f * width);
+            return tentPdfTime(distance, target_distance, width); // The tent spans [-width, width].
         case TIME_GATE_GAUSSIAN:
             return gaussianGate((distance - target_distance) / width) / width;
         case TIME_GATE_EXP:
@@ -223,19 +223,21 @@ float getMaxPathLength(float target_distance, bool use_rough = false)
 			return;
 		}
 		case TIME_GATE_TENT:{
+			// The tent max(1 - |v|, 0) spans v in [-1, 1]: its half-width is the whole window, twice the box's.
+			float halfWidth = target_time_gate_window;
 			float x;
 			if (u < 0.5)
 			{
-				// u ∈ (0, 0.5): x ∈ [-a, 0]
-				x = -a + a * sqrt(2.0 * u);
+				// u ∈ (0, 0.5): x ∈ [-halfWidth, 0]
+				x = -halfWidth + halfWidth * sqrt(2.0 * u);
 			}
 			else
 			{
-				// u ∈ [0.5, 1): x ∈ [0, a]
-				x =  a - a * sqrt(2.0 * (1.0 - u));
+				// u ∈ [0.5, 1): x ∈ [0, halfWidth]
+				x =  halfWidth - halfWidth * sqrt(2.0 * (1.0 - u));
 			}
 			tau = t + x;
-			pdf = tentPdfTime(tau, t, a); // equals (a - |x|) / a^2; peak = 1/a = 2/w
+			pdf = tentPdfTime(tau, t, halfWidth); // (halfWidth - |x|) / halfWidth^2 = gate / window
 			return;
 		}
 		case TIME_GATE_GAUSSIAN:{
