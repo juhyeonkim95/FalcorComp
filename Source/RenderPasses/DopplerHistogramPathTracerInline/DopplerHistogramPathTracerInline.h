@@ -82,7 +82,11 @@ private:
     {
         PathTracingConfig pathTracing;
         float wavelength = 1550.f;      ///< Laser wavelength, nm.
-        float frequencyMin = -50.f;     ///< Range of Doppler frequency shifts, MHz.
+        /// Linear chirp (FMCW): the laser frequency sweeps by chirpBandwidth over chirpDuration, up and then down
+        /// (a triangular chirp). 0: a single-frequency laser.
+        float chirpBandwidth = 0.f;     ///< GHz.
+        float chirpDuration = 10.f;     ///< Microseconds.
+        float frequencyMin = -50.f;     ///< Range of (beat) frequencies, MHz.
         float frequencyMax = 50.f;
         uint frequencyBin = 256;        ///< Number of bins over [frequencyMin, frequencyMax).
         float3 sensorVelocity = float3(0.f); ///< Velocity of the camera, m/s.
@@ -93,6 +97,9 @@ private:
         uint2 fixedOutputSize = {512, 512}; ///< Output size when outputSize is Fixed.
 
         float binWidth() const { return (frequencyMax - frequencyMin) / float(frequencyBin); }
+        bool chirped() const { return chirpBandwidth > 0.f; }
+        /// Range term of the beat frequency per unit optical path length, B / (T c): MHz per meter.
+        float rangeFrequencyPerLength() const { return chirpBandwidth * 1000.f / (chirpDuration * 299.792458f); }
     };
     static void validateOptions(const Options& options);
     void parseProperties(const Properties& props);

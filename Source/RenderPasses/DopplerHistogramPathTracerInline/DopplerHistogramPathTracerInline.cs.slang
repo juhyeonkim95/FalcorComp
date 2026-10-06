@@ -25,13 +25,18 @@
  # (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
  # OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  **************************************************************************/
-// Doppler spectrum of optical heterodyne detection with a single-frequency laser (OHD path integral, Kim et al. 2025,
-// Eq. 26 with B = 0): every path adds its contribution to the bin of its Doppler frequency shift
-//     df(x) = f0 u(x) / c = u(x) / wavelength,
-// where the path velocity u(x) = sum_k eta_k (v_k - v_{k+1}) . d_k (Eq. 32) sums, over the segments x_k -> x_{k+1}
-// (from the light towards the camera), the velocity of their endpoints along the segment. It is positive when the
-// path shortens (e.g. an object approaching a collocated camera and light). Vertices do not move: their instantaneous
-// velocities only select the bin; the contribution is that of the static path.
+// Power spectrum of optical heterodyne detection (OHD path integral, Kim et al. 2025, Eq. 26): every path adds its
+// contribution to the bin of its frequency.
+// - Single-frequency laser (B = 0): the Doppler frequency shift
+//       f_D(x) = f0 u(x) / c = u(x) / wavelength,
+//   where the path velocity u(x) = sum_k eta_k (v_k - v_{k+1}) . d_k (Eq. 32) sums, over the segments x_k -> x_{k+1}
+//   (from the light towards the camera), the velocity of their endpoints along the segment. It is positive when the
+//   path shortens (e.g. an object approaching a collocated camera and light).
+// - Linear chirp (FMCW, CHIRPED): the laser sweeps by B over T, up and then down (a triangular chirp). The beat
+//   frequency also has a range term f_R(x) = B / T * l(x) / c, with l(x) the optical path length (Eq. 33): it is
+//   f_R - f_D on the up-chirp (gSpectrum) and f_R + f_D on the down-chirp (gSpectrumDown) (Eq. 9).
+// Vertices do not move: their instantaneous velocities only select the bin; the contribution is that of the static
+// path.
 import RenderPasses.Shared.Shaders.Utils.LoadShadingData;
 import RenderPasses.Shared.Shaders.Lights.LaserLightSampler;
 import RenderPasses.Shared.Shaders.Lights.LightConnection;
@@ -54,6 +59,7 @@ cbuffer CB
     float gFrequencyBinWidth;         // MHz
     uint gFrequencyBin;
     float gShiftPerVelocity; // MHz per m/s: 1 / wavelength.
+    float gRangeFrequencyPerLength; // MHz per meter of optical path length: B / (T c) (CHIRPED).
     float3 gSensorVelocity;  // m/s
     float3 gLightVelocity;   // m/s
 }
@@ -74,6 +80,9 @@ StructuredBuffer<InstanceVelocity> gInstanceVelocities;
 // Outputs
 RWTexture2D<float4> gOutputColor;
 RWTexture3D<HistogramTexel> gSpectrum;
+#if CHIRPED
+RWTexture3D<HistogramTexel> gSpectrumDown;
+#endif
 
 // Static configuration based on defines set from the host.
 static const uint kMaxBounces = MAX_BOUNCES;
@@ -110,14 +119,30 @@ float connectionVelocity(float3 s, float3 vs, LightSample light, float3 lightOri
 #endif
 }
 
-// Spectrum values are radiance density per unit frequency (MHz), summed across frames.
-void accumulateToSpectrum(uint2 pixel, float shift, float3 radiance)
+// The bin of `frequency` in the half-open range [frequencyMin, frequencyMax); false outside it.
+bool frequencyBin(float frequency, out uint bin)
 {
-    float coordinate = (shift - gFrequencyMin) / gFrequencyBinWidth;
-    // Half-open range [frequencyMin, frequencyMax).
-    if (!(coordinate >= 0.f && coordinate < float(gFrequencyBin))) return;
-    uint bin = min(uint(coordinate), gFrequencyBin - 1);
-    gSpectrum[uint3(pixel, bin)] += toHistogramTexel(radiance / (gFrequencyBinWidth * gSamplesPerPixel));
+    float coordinate = (frequency - gFrequencyMin) / gFrequencyBinWidth;
+    bin = 0;
+    if (!(coordinate >= 0.f && coordinate < float(gFrequencyBin))) return false;
+    bin = min(uint(coordinate), gFrequencyBin - 1);
+    return true;
+}
+
+// Adds a path with optical length `pathLength` (m) and path velocity `pathVelocity` (m/s) to the spectra. Spectrum
+// values are radiance density per unit frequency (MHz), summed across frames.
+void accumulateToSpectrum(uint2 pixel, float pathLength, float pathVelocity, float3 radiance)
+{
+    HistogramTexel value = toHistogramTexel(radiance / (gFrequencyBinWidth * gSamplesPerPixel));
+    float doppler = pathVelocity * gShiftPerVelocity; // f_D
+    uint bin;
+#if CHIRPED
+    float range = pathLength * gRangeFrequencyPerLength; // f_R
+    if (frequencyBin(range - doppler, bin)) gSpectrum[uint3(pixel, bin)] += value;
+    if (frequencyBin(range + doppler, bin)) gSpectrumDown[uint3(pixel, bin)] += value;
+#else
+    if (frequencyBin(doppler, bin)) gSpectrum[uint3(pixel, bin)] += value;
+#endif
 }
 
 // Each pixel owns all of its bins, so spectrum updates require no atomics.
@@ -130,6 +155,7 @@ float3 tracePath(const uint2 pixel, const uint2 frameDim)
     float3 primaryVelocity = surfaceVelocity(primaryHit, primary.posW);
     // The camera segment (primary hit -> camera), in air.
     float primarySegment = segmentVelocity(cameraOrigin, gSensorVelocity, primary.posW, primaryVelocity, 1.f);
+    float primaryLength = length(primary.posW - cameraOrigin);
     SampleGenerator sg = createPixelSampleGenerator(pixel, gFrameCount, kPathSampleStream);
     LaserLightSampler lightSampler = createLaserLightSampler();
     float3 radiance = 0.f;
@@ -138,6 +164,7 @@ float3 tracePath(const uint2 pixel, const uint2 frameDim)
         ShadingData surface = primary;
         float3 velocity = primaryVelocity;
         float pathVelocity = primarySegment; // Of the camera path so far, m/s.
+        float pathLength = primaryLength;    // Optical length of the camera path so far, m.
         float3 throughput = 1.f;
         // As the transient histogram path tracer: the primary vertex is depth zero.
         for (uint depth = 0; depth < max(1u, kMaxBounces) && any(throughput > 0.f); ++depth)
@@ -154,7 +181,9 @@ float3 tracePath(const uint2 pixel, const uint2 frameDim)
                     radiance += contribution;
                     float totalVelocity =
                         pathVelocity + connectionVelocity(surface.posW, velocity, light, lightSampler.laserOrigin);
-                    accumulateToSpectrum(pixel, totalVelocity * gShiftPerVelocity, contribution);
+                    // The connection to the light, in air, and on to the laser origin.
+                    float totalLength = pathLength + connection.distance + light.laserT;
+                    accumulateToSpectrum(pixel, totalLength, totalVelocity, contribution);
                 }
             }
             if (depth + 1 >= kMaxBounces) break;
@@ -169,6 +198,7 @@ float3 tracePath(const uint2 pixel, const uint2 frameDim)
             float3 nextVelocity = surfaceVelocity(hit, next.posW);
             // As the optical path length: the segment's refractive index is that of the surface it leaves.
             pathVelocity += segmentVelocity(surface.posW, velocity, next.posW, nextVelocity, surface.IoR);
+            pathLength += length(next.posW - surface.posW) * surface.IoR;
             surface = next;
             velocity = nextVelocity;
         }
