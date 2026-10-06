@@ -162,7 +162,7 @@ void TransientHistogramViewer::execute(RenderContext* pRenderContext, const Rend
     const ref<Texture> pOverlay = renderData.getTexture(kOverlay);
     const bool hasOverlay = pOverlay && pOverlay->getWidth() == histogramDim.x && pOverlay->getHeight() == histogramDim.y;
     if (pOverlay && !hasOverlay)
-        logWarning("TransientHistogramViewer: the overlay must be {}x{}; it is ignored.", histogramDim.x, histogramDim.y);
+        logWarningOnce("TransientHistogramViewer: the overlay must be {}x{}; it is ignored.", histogramDim.x, histogramDim.y);
 
     DefineList defines;
     defines.add("SINGLE_CHANNEL", getFormatChannelCount(pHistogram->getFormat()) == 1 ? "1" : "0");

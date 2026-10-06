@@ -41,7 +41,7 @@ void main(uint3 dispatchThreadId: SV_DispatchThreadID)
     }
     else
     {
-        float residual = gClearResidual ? 0.f : gResidual[pixel];
+        float residual = gClearResidual != 0 ? 0.f : gResidual[pixel];
         if (!isfinite(residual))
             residual = 0.f;
         residual += deltaL;

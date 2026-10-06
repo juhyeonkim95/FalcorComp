@@ -70,7 +70,7 @@ RWTexture2D<float4> gPrimal;
 /// (albedo, emission) luminance used to demodulate and remodulate; (1, 0) without demodulation.
 float2 modulation(float3 albedo, float3 emission)
 {
-    if (!gUseDemodulation)
+    if (gUseDemodulation == 0)
         return float2(1.0, 0.0);
     return float2(max(luminance(albedo), kMinAlbedo), luminance(emission));
 }
@@ -227,7 +227,7 @@ void reproject(uint3 dispatchThreadId: SV_DispatchThreadID)
     // position, minus frame t-2's feedback where frame t-1 reprojected this pixel.
     const float predicted = prev.difference + prev.prevPrevIllumination - gPrevReprojected[pixel];
     const bool prevReprojected = gPrevHistory[pixel].x >= 2; // Frame t-1 reprojected this pixel: the third term exists.
-    const bool accumulate = historyLength >= 3 && sameSurface && prev.diffValid && prevReprojected && gUseTemporalAccumulation;
+    const bool accumulate = historyLength >= 3 && sameSurface && prev.diffValid && prevReprojected && gUseTemporalAccumulation != 0;
     // The difference exists from the second frame on: its samples number historyLength - 1.
     const float alphaDifference = (prev.valid && historyLength >= 2) ? max(gAlpha, 1.0 / (historyLength - 1)) : 1.0;
     // Frames the difference has been accumulated over, for its moments.
@@ -365,7 +365,7 @@ void atrous(uint3 dispatchThreadId: SV_DispatchThreadID)
 
     const float2 variance = filteredVariance(pixel);
     const float phiLuminance = gPhiColor * sqrt(max(0.0, 1e-10 + variance.y));
-    const float phiDifference = gUseDifferenceVariance ? gPhiColor * sqrt(max(0.0, 1e-10 + variance.x)) : phiLuminance * 0.5;
+    const float phiDifference = gUseDifferenceVariance != 0 ? gPhiColor * sqrt(max(0.0, 1e-10 + variance.x)) : phiLuminance * 0.5;
     const float phiDepth = max(zCenter.y, 1e-8) * gStepSize;
     const float phiDepthPrev = max(znCenterPrev.y, 1e-8) * gStepSize;
     const float kernelWeights[3] = { 1.0, 2.0 / 3.0, 1.0 / 6.0 };
@@ -392,7 +392,7 @@ void atrous(uint3 dispatchThreadId: SV_DispatchThreadID)
                 gPhiNormal, center.r, illuminationP.r, phiLuminance);
             // Difference (Eq. 12): also the previous frame's features, and the difference itself.
             float wPrev = 1.0;
-            if (gUseDifferenceAwareFiltering)
+            if (gUseDifferenceAwareFiltering != 0)
                 wPrev = computeWeight(znCenterPrev.x, znPPrev.x, phiDepthPrev * distance, nCenterPrev,
                     oct_to_ndir_snorm(znPPrev.zw), gPhiNormal, center.g, illuminationP.g, phiDifference);
             // Emitters carry no difference (finalize uses the primal difference there): leave them out.
@@ -443,7 +443,7 @@ void finalize(uint3 dispatchThreadId: SV_DispatchThreadID)
         // of the denoised primals (exact for the remodulated primals).
         const bool sameSurface = isSameSurface(zn.x, znPrev.x, oct_to_ndir_snorm(zn.zw), oct_to_ndir_snorm(znPrev.zw)) &&
             emitted == 0 && prevEmitted == 0;
-        deltaIllumination = (sameSurface && gUseDenoisedDifference) ? illuminationDifference : illumination - prevIllumination;
+        deltaIllumination = (sameSurface && gUseDenoisedDifference != 0) ? illuminationDifference : illumination - prevIllumination;
         // Eq. 19 and 21.
         deltaI = albedo * deltaIllumination + (albedo - prevAlbedo) * prevIllumination + (emission - prevEmission);
         const float prevI = prevAlbedo * prevIllumination + prevEmission;
@@ -467,6 +467,6 @@ void finalize(uint3 dispatchThreadId: SV_DispatchThreadID)
     gDeltaIllumination[pixel] = deltaIllumination;
     gDeltaI[pixel] = float4(deltaI, deltaI, deltaI, 0.0);
     gDeltaL[pixel] = deltaL;
-    const float3 primal = gUseDemodulation ? gAlbedo[pixel].rgb * illumination + gEmission[pixel].rgb : float3(illumination);
+    const float3 primal = gUseDemodulation != 0 ? gAlbedo[pixel].rgb * illumination + gEmission[pixel].rgb : float3(illumination);
     gPrimal[pixel] = float4(primal, 1.0);
 }

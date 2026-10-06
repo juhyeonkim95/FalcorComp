@@ -6,6 +6,10 @@ import Utils.Math.MathHelpers;
 import RenderPasses.Shared.Shaders.Utils.Frames;
 import RenderPasses.Shared.Shaders.Utils.LoadShadingData;
 
+#ifndef IS_LIGHT_SOURCE_LASER
+#define IS_LIGHT_SOURCE_LASER 0 // Set by the host (LaserState); 0 is the point light.
+#endif
+
 /** Describes a light sample.
 */
 struct LightSample

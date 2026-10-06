@@ -161,7 +161,7 @@ float3 tracePath(const uint2 pixel, const uint2 frameDim)
                 }
             }
             if (depth + 1 >= kMaxBounces) break;
-            BSDFSample bsdfSample;
+            BSDFSample bsdfSample = {};
             if (!material.sample(surface, sg, bsdfSample, kUseImportanceSampling)) break;
             throughput *= bsdfSample.weight;
             float3 origin = surface.computeRayOrigin(!bsdfSample.isLobe(LobeType::Transmission));

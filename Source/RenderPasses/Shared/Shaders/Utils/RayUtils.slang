@@ -20,6 +20,9 @@ HitInfo traceRay(const float3 origin, const float3 dir, out float hitT)
 
 /// Direction of the camera's primary ray through `pixel`: from the optional viewW input (`viewW`) when it is
 /// connected, otherwise a pinhole ray. The pinhole ray does not follow depth of field; the passes warn about it.
+#ifndef is_valid_gViewW
+#define is_valid_gViewW 0 // Set by passes that bind the optional viewW input (getValidResourceDefines).
+#endif
 float3 getPrimaryRayDir(uint2 pixel, uint2 frameDim, Texture2D<float4> viewW)
 {
 #if is_valid_gViewW

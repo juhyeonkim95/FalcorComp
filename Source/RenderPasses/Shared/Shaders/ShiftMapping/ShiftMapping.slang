@@ -18,6 +18,9 @@ import Utils.Math.HashUtils;
 #ifndef USE_ALPHA_TEST
 #define USE_ALPHA_TEST 0
 #endif
+#ifndef DEBUG_NEWTON_ITERATIONS
+#define DEBUG_NEWTON_ITERATIONS 0
+#endif
 
 #define SHIFT_MAPPING_NO 0
 #define SHIFT_MAPPING_LOCAL_TANGENT 1
@@ -156,10 +159,11 @@ HitInfo pathLengthAwareShiftMapping(
     return shiftAreaAdaptive(x1, x2, v2, x3, source, condition, a_const, jacobian, shiftedVertex, debuginfo, tol);
 #elif SHIFT_MAPPING_METHOD == SHIFT_MAPPING_RADIAL
     return shiftRadial(x1, x2, v2, x3, source, condition, jacobian, shiftedVertex, debuginfo, tol);
-#endif
+#else
     jacobian = 1.0;
     shiftedVertex = v2;
     return x2;
+#endif
 }
 
 // Same source and target endpoints, with a fixed length change: ell(x2') = ell(x2) + dt (e.g. antithetic sampling).

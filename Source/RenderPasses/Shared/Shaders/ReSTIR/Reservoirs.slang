@@ -138,6 +138,7 @@ struct Reservoir
         this.rcNextVertexIrradiance = float3(0.0);
         this.rcNextVertexPathLength = 0.0;
         this.rcVertexBounce = 0;
+        this.initRandomSeed = 0;
         this.rcPrevVertexPosition = float3(0.f);
         this.totalPathLength = 0;
         this.rcNextVertexBounce = 0;

@@ -25,7 +25,7 @@ LightBVH gSceneTriangleBVH; // ELLIPSOID_TRIANGLE_SAMPLER_BVH only.
 float computeEllipsoidNodeImportance(const Ellipsoid E, const uint nodeIndex)
 {
     const SharedNodeAttributes nodeAttribs = gSceneTriangleBVH.getNodeAttributes(nodeIndex);
-    return nodeAttribs.flux * isAABBValidForEllipoid(E, nodeAttribs.origin, nodeAttribs.extent);
+    return nodeAttribs.flux * float(isAABBValidForEllipoid(E, nodeAttribs.origin, nodeAttribs.extent));
 }
 
 /// Descends from the root to a leaf, choosing each child in proportion to its importance. Each level draws its own

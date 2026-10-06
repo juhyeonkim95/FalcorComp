@@ -5,6 +5,7 @@
 #include "Rendering/Lights/LightBVH.h"
 #include "Rendering/Lights/LightBVHBuilder.h"
 #include "Scene/Scene.h"
+#include <algorithm>
 #include <memory>
 
 /// How a camera-path vertex x is connected to the laser spot: directly, through a vertex y placed on the
@@ -141,7 +142,20 @@ public:
             LightBVHBuilder::Options options;
             options.maxTriangleCountPerLeaf = 1;
             mpBVH = std::make_unique<LightBVH>(pScene->getDevice(), pTriangles);
-            LightBVHBuilder(options).build(pRenderContext, *mpBVH);
+            // With one triangle per leaf, the binned split cannot separate triangles whose centroids share a bin (e.g.
+            // the two of a quad): the builder then splits them equally, as wanted here, but warns at every such node.
+            const Logger::Level verbosity = Logger::getVerbosity();
+            Logger::setVerbosity(std::min(verbosity, Logger::Level::Error));
+            try
+            {
+                LightBVHBuilder(options).build(pRenderContext, *mpBVH);
+            }
+            catch (...)
+            {
+                Logger::setVerbosity(verbosity);
+                throw;
+            }
+            Logger::setVerbosity(verbosity);
         }
     }
 

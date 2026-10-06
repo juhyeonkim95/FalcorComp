@@ -103,7 +103,7 @@ float3 tracePath(uint2 pixel, uint2 frameDim)
         for (uint depth = 0; depth < max(1u, uint(MAX_BOUNCES)) &&
             pathLength < maxPathLength && any(throughput > 0.f); ++depth)
         {
-            if (depth > 0 || COMPUTE_DIRECT)
+            if (depth > 0 || COMPUTE_DIRECT != 0)
             {
                 LightSample light = {};
                 uint lightSeed = lightRng.getCurrentSeed();

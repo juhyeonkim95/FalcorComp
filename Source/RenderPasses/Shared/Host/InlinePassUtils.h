@@ -156,6 +156,6 @@ inline void checkScene(const Scene& scene, const RenderData& renderData)
         FALCOR_THROW("The vbuffer input ({}x{}) must have the output's size ({}x{}): set the same outputSize on VBufferRT.",
             pVBuffer->getWidth(), pVBuffer->getHeight(), pColor->getWidth(), pColor->getHeight());
     if (scene.getCamera()->getApertureRadius() > 0.f && renderData[kViewDirChannel] == nullptr)
-        logWarning("Depth-of-field requires the '{}' input. Expect incorrect shading.", kViewDirChannel);
+        logWarningOnce("Depth-of-field requires the '{}' input. Expect incorrect shading.", kViewDirChannel);
 }
 } // namespace InlinePass

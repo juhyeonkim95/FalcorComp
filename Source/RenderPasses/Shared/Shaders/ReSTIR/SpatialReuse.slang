@@ -24,6 +24,9 @@ import RenderPasses.Shared.Shaders.Lights.Laser;
 #ifndef RESERVOIR_SUMMARIES
 #define RESERVOIR_SUMMARIES 0
 #endif
+#ifndef DEBUG_NEWTON_ITERATIONS
+#define DEBUG_NEWTON_ITERATIONS 0
+#endif
 
 struct SpatialReuse
 {
@@ -260,7 +263,7 @@ struct SpatialReuse
         float primaryDepth = length(primary.posW - cameraOrigin);
 
         SampleGenerator sg = createPixelSampleGenerator(pixel, gRandomSeed, kSpatialReuseStream);
-        uint startIndex = sampleNext1D(sg) * kNeighborOffsetCount;
+        uint startIndex = uint(sampleNext1D(sg) * kNeighborOffsetCount);
         uint validNeighborCount = 0;
         float canonicalWeight = 1.f;
         Reservoir destination;
@@ -402,7 +405,7 @@ struct SpatialReuse
 
         // As resampleGate: the generator picks the neighbors; the shifts draw no random numbers.
         SampleGenerator sg = createPixelSampleGenerator(pixel, gRandomSeed, kSpatialReuseStream);
-        uint startIndex = sampleNext1D(sg) * kNeighborOffsetCount;
+        uint startIndex = uint(sampleNext1D(sg) * kNeighborOffsetCount);
         int2 neighborPixel;
         uint neighborBin;
         getCandidate(pixel, bin, startIndex, i, neighborPixel, neighborBin);
@@ -459,7 +462,7 @@ struct SpatialReuse
         }
 
         SampleGenerator sg = createPixelSampleGenerator(pixel, gRandomSeed, kSpatialReuseStream);
-        uint startIndex = sampleNext1D(sg) * kNeighborOffsetCount;
+        uint startIndex = uint(sampleNext1D(sg) * kNeighborOffsetCount);
         uint validNeighborCount = 0;
         float canonicalWeight = 1.f;
         Reservoir destination;

@@ -5,7 +5,7 @@
 __exported import Scene.Lights.LightCollection;
 import Scene.HitInfo;
 
-LightCollection gSceneTriangles;
+uniform LightCollection gSceneTriangles;
 
 /// Index in gSceneTriangles of the triangle that `hit` landed on; LightCollection::kInvalidIndex for other geometry.
 uint getSceneTriangleIndex(HitInfo hit)
