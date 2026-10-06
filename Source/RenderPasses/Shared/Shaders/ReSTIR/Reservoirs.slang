@@ -96,9 +96,13 @@ struct Reservoir
 
     [mutating]
     bool update(float3 newf, float weight, float M, inout SampleGenerator sg){
-        this.wSum += weight;
+        // Same random number either way, so skipping a candidate does not shift later draws.
+        float u = sampleNext1D(sg);
         this.M += M;
-        if(sampleNext1D(sg) * this.wSum < weight){
+        // A NaN, infinite or negative weight (e.g. an overflowing contribution) would spread through reuse: skip it.
+        if (!(weight >= 0.f) || isinf(weight)) return false;
+        this.wSum += weight;
+        if(u * this.wSum < weight){
 #if RESERVOIR_SCALAR_TARGET
             this.f = getReservoirWeight(newf);
 #else
@@ -115,6 +119,13 @@ struct Reservoir
     {
         float target = getReservoirWeight(f);
         W = target > 0.f ? wSum / target : 0.f;
+        // Never store a non-finite sample, which reuse would spread to the neighbors and the history; keep M.
+        if (!isfinite(W) || !isfinite(wSum) || !isfinite(target))
+        {
+            W = 0.f;
+            wSum = 0.f;
+            f = 0.f;
+        }
     }
 
     __init()
