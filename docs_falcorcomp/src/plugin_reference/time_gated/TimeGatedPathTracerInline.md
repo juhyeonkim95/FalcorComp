@@ -21,11 +21,14 @@ length averaged over the gate. The other kernels:
   decays over one gate width, cut off at three.
 - `exp_two_side`: $w(v) \propto e^{-2|v|}$ for $|v| \le 1.5$: a two-sided exponential that decays over
   half a gate width on each side, cut off at three decay lengths.
+- `epanechnikov`: $w(v) = \tfrac{3}{2}\,(1 - 4v^2)$ for $|v| \le 1/2$, the full width $\Delta$ as for the box.
+- `perlin`: $w(v) = 2\,(1 - u)^3 (1 + 3u + 6u^2)$ with $u = 2|v| \le 1$, Perlin's smooth step
+  $1 - 10u^3 + 15u^4 - 6u^5$ (the kernel of Hachisuka et al. 2010), again over the full width $\Delta$.
 - `cos`: $w(v) = \cos(2\pi v)$ over all path lengths.
 - `all`: no gating ($w = 1$), so the output is the steady-state radiance divided by $\Delta$.
 
-`box`, `tent`, `gaussian`, `exp` and `exp_two_side` integrate to 1 over $v$ (the truncated kernels are
-rescaled), so they give images on the same scale.
+`box`, `tent`, `gaussian`, `exp`, `exp_two_side`, `epanechnikov` and `perlin` integrate to 1 over $v$
+(the truncated kernels are rescaled), so they give images on the same scale.
 
 Camera paths start at the primary hits from `VBufferRT`. With every kernel but `cos` and `all`, a
 path stops once it is longer than the end of the kernel.
@@ -44,8 +47,8 @@ Time gate:
 * - `timeGateMode`
   - string
   - Gate kernel: `box`, `tent`, `gaussian`, `exp` (one-sided exponential), `exp_two_side`
-    (two-sided exponential), `cos` or `all` (no gating). See [the kernels](#gate-kernels).
-    (Default: `box`)
+    (two-sided exponential), `epanechnikov`, `perlin`, `cos` or `all` (no gating). See
+    [the kernels](#gate-kernels). (Default: `box`)
 * - `timeGateWindow`
   - float
   - Gate width $\Delta$, in path-length units. (Default: `0.05`)
@@ -148,8 +151,8 @@ Every camera-path vertex $x$ is connected to the laser spot:
   `emissiveSampler`. This finds the rare paths that fit a narrow gate.
 - `ellipsoidal_direct_mis`: both, combined with the balance heuristic.
 
-The `cos` and `all` kernels have no length to draw from, so with them no ellipsoidal connections
-are made and both ellipsoidal methods behave like `direct`.
+The `cos` and `all` kernels have no length to draw from, and `perlin` has no length sampler, so with
+them no ellipsoidal connections are made and both ellipsoidal methods behave like `direct`.
 
 (laser)=
 ## Laser

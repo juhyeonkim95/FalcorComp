@@ -51,6 +51,24 @@ float exponentialTwoSideGate(float v)
 	return abs(v) <= kExpTwoSideGateHalfWidth ? exp(-2.f * abs(v)) / kExpTwoSideGateMass : 0.f;
 }
 
+// Epanechnikov and Perlin kernels on |v| <= 1/2 like the box (the width is the full support), with unit integral.
+// Epanechnikov: 1.5 (1 - (2v)^2).
+float epanechnikovGate(float v)
+{
+	float u = 2.f * v;
+	return abs(u) <= 1.f ? 1.5f * (1.f - u * u) : 0.f;
+}
+
+// Perlin smoothing profile 1 - 6u^5 + 15u^4 - 10u^3 with u = 2|v| (Hachisuka et al. 2010, Appendix A, Eq. 34), in
+// the factored form (1 - u)^3 (1 + 3u + 6u^2), which avoids cancellation near the boundary; the factor 2 normalizes it.
+float perlinGate(float v)
+{
+	float u = 2.f * abs(v);
+	if (u >= 1.f) return 0.f;
+	float s = 1.f - u;
+	return 2.f * s * s * s * (1.f + 3.f * u + 6.f * u * u);
+}
+
 float getMaxPathLength(float target_distance, bool use_rough = false)
 {
 	float target_time_gate_window = use_rough ? gTimeGateWindowRough : gTimeGateWindow;
@@ -67,6 +85,10 @@ float getMaxPathLength(float target_distance, bool use_rough = false)
 		}
 		case TIME_GATE_GAUSSIAN:{
 			return target_distance + kGaussianGateHalfWidth * target_time_gate_window;
+		}
+		case TIME_GATE_EPANECHNIKOV:
+		case TIME_GATE_PERLIN:{
+			return target_distance + 0.5 * target_time_gate_window;
 		}
 		case TIME_GATE_EXP:{
 			return target_distance + kExponentialGateLength * target_time_gate_window;
@@ -112,6 +134,12 @@ float getMaxPathLength(float target_distance, bool use_rough = false)
 		case TIME_GATE_EXP_TWO_SIDE:{
 			return exponentialTwoSideGate(v);
 		}
+		case TIME_GATE_EPANECHNIKOV:{
+			return epanechnikovGate(v);
+		}
+		case TIME_GATE_PERLIN:{
+			return perlinGate(v);
+		}
 	}
 	return 1.0;
  }
@@ -139,24 +167,11 @@ float getMaxPathLength(float target_distance, bool use_rough = false)
 			const float invSigma2 = 1.0f / (sigma * sigma);
 			return exp(-0.5f * v * v * invSigma2);
 		}
-        case TIME_GATE_PERLIN:
-        {
-            // Perlin smoothing profile: 1 - 6u^5 + 15u^4 - 10u^3, 0 <= u <= 1.
-            // Hachisuka et al. 2010, Appendix A, Eq. (34).
-            // Here window is full support width, as for box/Epanechnikov.
-            // Factor 2 normalizes the 1D kernel on v in [-0.5, 0.5].
-            float u = 2.f * abs(v);
-            if (u >= 1.f) return 0.f;
-            float s = 1.f - u;
-            // Equivalent factored polynomial avoids cancellation near the boundary.
-            return 2.f * s * s * s * (1.f + 3.f * u + 6.f * u * u);
+        case TIME_GATE_PERLIN:{
+            return perlinGate(v);
         }
 		case TIME_GATE_EPANECHNIKOV:{
-			// Support exactly [-0.5, 0.5], integral = 1
-			float a = abs(v);
-			if (a > 0.5f) return 0.0f;
-			float t = 2.0f * v;                 // u = 2v in [-1,1]
-			return 1.5f * (1.0f - t * t);       // 2 * (3/4) * (1 - u^2)
+			return epanechnikovGate(v);
 		}
 	}
 	
@@ -188,8 +203,10 @@ float getMaxPathLength(float target_distance, bool use_rough = false)
             return exponentialGate((distance - target_distance) / width) / width;
         case TIME_GATE_EXP_TWO_SIDE:
             return exponentialTwoSideGate((distance - target_distance) / width) / width;
+        case TIME_GATE_EPANECHNIKOV:
+            return epanechnikovGate((distance - target_distance) / width) / width;
     }
-    return 0.f; // No length sampler is implemented for the other gate modes.
+    return 0.f; // No length sampler is implemented for the other gate modes (all, cos, Perlin).
  }
 
  void samplePathLength(float t, float u, out float tau, out float pdf, bool use_rough = false)
@@ -243,6 +260,13 @@ float getMaxPathLength(float target_distance, bool use_rough = false)
 			float v = side * 0.5f * -log(1.f - w * kExpTwoSideGateMass);
 			tau = t + v * target_time_gate_window;
 			pdf = exponentialTwoSideGate(v) / target_time_gate_window;
+			return;
+		}
+		case TIME_GATE_EPANECHNIKOV:{
+			// Inverse CDF of 0.75 (1 - x^2) on [-1, 1]: x = 2 sin(asin(2u - 1) / 3), and v = x / 2.
+			float v = sin(asin(2.f * u - 1.f) / 3.f);
+			tau = t + v * target_time_gate_window;
+			pdf = epanechnikovGate(v) / target_time_gate_window;
 			return;
 		}
 	}

@@ -22,8 +22,9 @@ The time gate is set as for the path tracer:
 * - `timeGateMode`
   - string
   - Gate kernel: `box`, `tent`, `gaussian`, `exp` (one-sided exponential), `exp_two_side`
-    (two-sided exponential) or `all` (no gating). See [the kernels](#gate-kernels). `cos` is not
-    available: its negative weights cannot be resampled. (Default: `box`)
+    (two-sided exponential), `epanechnikov`, `perlin` or `all` (no gating). See
+    [the kernels](#gate-kernels). `cos` is not available: its negative weights cannot be resampled.
+    (Default: `box`)
 * - `timeGateWindow`
   - float
   - Gate width $\Delta$, in path-length units. (Default: `0.05`)

@@ -41,7 +41,7 @@ Gate:
 * - `frequencyGateMode`
   - string
   - Gate kernel, the same as the time-gated path tracer's: `box`, `tent`, `gaussian`, `exp` (one-sided
-    exponential), `exp_two_side` (two-sided exponential), `cos` or `all` (no gating); see
+    exponential), `exp_two_side` (two-sided exponential), `epanechnikov`, `perlin`, `cos` or `all` (no gating); see
     [the kernels](#gate-kernels), with the shift in place of the path length. (Default: `box`)
 * - `shiftGate`
   - boolean

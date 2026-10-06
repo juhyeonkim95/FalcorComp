@@ -49,9 +49,6 @@ struct TimeGateConfig
             FALCOR_THROW("timeGateWindow must be finite and greater than zero.");
         if (!std::isfinite(timeMin) || !std::isfinite(timeMax) || timeMin > timeMax)
             FALCOR_THROW("The gate range must be finite with timeMin <= timeMax.");
-        if (!isGateKernel(timeGateMode))
-            FALCOR_THROW("The '{}' kernel is not available for a gate, only for a transient histogram with kernel "
-                         "density estimation.", enumPropertyName(kTimeGateModes, timeGateMode));
         if (resampling && timeGateMode == TimeGateMode::Cos)
             FALCOR_THROW("The 'cos' gate takes negative values, which ReSTIR cannot resample.");
     }

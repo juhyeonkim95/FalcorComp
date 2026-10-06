@@ -27,12 +27,6 @@ inline const std::unordered_map<std::string, TimeGateMode> kTimeGateModes = {
     {"exp_two_side", TimeGateMode::ExpTwoSide},
 };
 
-/// Whether pathLengthImportance() implements `mode` as a gate. Epanechnikov and Perlin are histogram (KDE) kernels only.
-inline bool isGateKernel(TimeGateMode mode)
-{
-    return mode != TimeGateMode::Epanechnikov && mode != TimeGateMode::Perlin;
-}
-
 /// Gate kernel dropdown, with the kernels implemented by pathLengthImportance(). Returns true when the kernel changed.
 inline bool renderTimeGateModeUI(Gui::Widgets& widget, TimeGateMode& mode)
 {
@@ -42,6 +36,8 @@ inline bool renderTimeGateModeUI(Gui::Widgets& widget, TimeGateMode& mode)
         {(uint32_t)TimeGateMode::Gaussian, "Gaussian"},
         {(uint32_t)TimeGateMode::Exp, "Exponential (one-sided)"},
         {(uint32_t)TimeGateMode::ExpTwoSide, "Exponential (two-sided)"},
+        {(uint32_t)TimeGateMode::Epanechnikov, "Epanechnikov"},
+        {(uint32_t)TimeGateMode::Perlin, "Perlin"},
         {(uint32_t)TimeGateMode::Cos, "Cos"},
         {(uint32_t)TimeGateMode::All, "All (no gating)"},
     };
