@@ -12,12 +12,12 @@ def render(testbed, *, threshold=0.25, single=True, laser=True, direct=False, mo
     graph.create_pass("V", "VBufferRT", {"samplePattern": "Center", "sampleCount": 1})
     graph.create_pass("L", "LaserLight", {
         "laserPosition": [0., 1.7, 6.8], "laserDirection": [0., 0., -1.],
-        "laserPower": [170., 120., 40.], "laserAngle": 0.,
+        "laserPower": [170., 120., 40.], "laserAngle": 0., "isLightSourceLaser": laser,
     })
     graph.create_pass("P", "TransientHistogramReSTIRInline", {
         "samplesPerPixel": 32, "maxBounces": 6, "computeDirect": direct,
         "timeMin": 0., "timeMax": 40., "timeBin": 8, "histogramFilter": mode,
-        "useSingleChannel": single, "isLightSourceLaser": laser,
+        "useSingleChannel": single,
         "reconnectionRoughnessThreshold": threshold, "spatialReuseIteration": 0,
     })
     for source, target in [("V.vbuffer", "P.vbuffer"), ("V.viewW", "P.viewW"),
@@ -43,7 +43,7 @@ def render(testbed, *, threshold=0.25, single=True, laser=True, direct=False, mo
 def main():
     falcor.Logger.verbosity = falcor.Logger.Level.Error
     testbed = falcor.Testbed(create_window=False)
-    testbed.load_scene(str(ROOT / "experiments/scene/cornell-box/scene-v4-nolight.pbrt"))
+    testbed.load_scene(str(ROOT / "docs_falcorcomp/src/tutorials/scenes/cornell-box/scene-v4-nolight.pbrt"))
     testbed.resize_frame_buffer(17, 13)
     testbed.scene.camera.aspectRatio = 17 / 13
     # In scalar RIS, W*f equals the sum of candidate contributions exactly.

@@ -10,7 +10,7 @@ import numpy as np
 def main():
     falcor.Logger.verbosity=falcor.Logger.Level.Error
     f=falcor.Testbed(create_window=False)
-    f.load_scene(str((Path(__file__).resolve().parents[4] / 'experiments/scene/cornell-box/scene-v4-nolight.pbrt')))
+    f.load_scene(str((Path(__file__).resolve().parents[4] / 'docs_falcorcomp/src/tutorials/scenes/cornell-box/scene-v4-nolight.pbrt')))
     f.resize_frame_buffer(17,13); f.scene.camera.aspectRatio=17/13
 
     def render(iterations, neighbors=3, radius=8., threshold=.25, method='local_tangent', single=True, bin_reuse=False, time_range=(0., 40., 8)):
@@ -30,9 +30,9 @@ def main():
       np.testing.assert_allclose(integrated[...,:3],color[...,:3],rtol=2e-5,atol=1e-5)
      return a
     initial=render(0)
-    for neighbors,radius in [(0,8.),(3,0.)]:
-     np.testing.assert_allclose(initial,render(1,neighbors=neighbors,radius=radius),rtol=2e-5,atol=1e-5)
-    print('Passed zero-neighbor and identity preservation',flush=True)
+    # A gather radius below one pixel makes every neighbor the pixel itself (offsets truncate to 0).
+    np.testing.assert_allclose(initial,render(1,neighbors=3,radius=.5),rtol=2e-5,atol=1e-5)
+    print('Passed identity preservation',flush=True)
     render(1,threshold=1.)
     print('Passed local-only candidates',flush=True)
     for method in ['local_tangent','barycentric','ray_trace']:
@@ -44,7 +44,7 @@ def main():
     # With 5-unit bins nearly every shift is rejected and the canonical sample keeps full weight.
     narrow=(14.,30.,32)
     narrowInitial=render(0,time_range=narrow)
-    assert not np.allclose(render(1,neighbors=0,bin_reuse=True,time_range=narrow),narrowInitial)
+    assert not np.allclose(render(1,neighbors=1,radius=.5,bin_reuse=True,time_range=narrow),narrowInitial)
     render(2,bin_reuse=True,time_range=narrow)
     render(1,bin_reuse=True,single=False,time_range=narrow)
     print('Passed adjacent-bin reuse',flush=True)

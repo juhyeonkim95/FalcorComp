@@ -16,7 +16,7 @@ import sys
 import tempfile
 import numpy as np
 
-SCENE = Path(__file__).resolve().parents[4] / 'experiments/scene/cornell-box/scene-v4-nolight.pbrt'
+SCENE = Path(__file__).resolve().parents[4] / 'docs_falcorcomp/src/tutorials/scenes/cornell-box/scene-v4-nolight.pbrt'
 TIME_RANGE = (14., 30., 32)
 
 # Render stages: frames, temporal reuse, spatial reuse iterations, moving camera.

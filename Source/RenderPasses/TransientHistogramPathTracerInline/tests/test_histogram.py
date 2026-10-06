@@ -36,7 +36,7 @@ def create_graph(testbed, method, single_channel, kde, laser, filter_mode="box",
 def main():
     falcor.Logger.verbosity = falcor.Logger.Level.Error
     testbed = falcor.Testbed(create_window=False)
-    testbed.load_scene(str(ROOT / "experiments/scene/cornell-box/scene-v4-nolight.pbrt"))
+    testbed.load_scene(str(ROOT / "docs_falcorcomp/src/tutorials/scenes/cornell-box/scene-v4-nolight.pbrt"))
     testbed.resize_frame_buffer(17, 13)  # Exercise partial thread groups.
     testbed.scene.camera.aspectRatio = 17 / 13
     variants = [

@@ -144,6 +144,22 @@ Then install the wheel it writes to `build\windows-ninja-msvc\falcorcomp\dist\` 
 
 Run `build_wheel.py` with the same Python the build used: the wheel only works with that version.
 
+### Tests
+
+The render passes come with regression tests in `Source/RenderPasses/<Pass>/tests/`. All but
+`TimeGatedReSTIRInline/tests/test_paired_shift_math.py`, which checks the shift equations in NumPy,
+render on the GPU. Continuous integration builds the source and runs only that NumPy test: run the
+GPU tests yourself after a change to the passes. From the repository root, with a source build:
+
+```bash
+source build/linux-gcc/bin/Release/setpath.sh  # Or your build's bin/setpath.sh.
+python Source/RenderPasses/TimeGatedReSTIRInline/tests/test_initial_sampling.py
+```
+
+The tests render the tutorial Cornell box in `docs_falcorcomp/src/tutorials/scenes/`.
+`test_surface_reuse.py` also renders the Cornell box with the dragon, and skips it without the dragon
+mesh (`meshes/dragon.ply` next to its `.pbrt` file, not in the repository).
+
 ## Troubleshooting
 
 `ERROR: No matching distribution found for falcorcomp`
