@@ -135,10 +135,11 @@ struct EmissiveUniformSampler : IEmissiveLightSampler
     {
         triangleIndex = LightCollection::kInvalidIndex;
         pdf = 0.f;
-        float uLight = sampleNext1D(sg);
         uint triangleCount = gScene.triCollection.getActiveTriangleCount();
         if (triangleCount == 0) return false;
-        uint idx = min((uint)(uLight * triangleCount), triangleCount - 1);
+        // A 32-bit random number scaled in integers: with a float u, u * count gives the indices counts that differ by
+        // about count / 2^24 relatively, and some indices are unreachable past 2^24 triangles.
+        uint idx = uint((uint64_t(sg.next()) * uint64_t(triangleCount)) >> 32);
         triangleIndex = gScene.triCollection.activeTriangles[idx];
         pdf = 1.f / (float)triangleCount;
         return true;

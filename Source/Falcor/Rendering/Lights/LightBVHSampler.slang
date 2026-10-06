@@ -725,14 +725,19 @@ struct LightBVHSampler : IEmissiveLightSampler
         return flux * isAABBValidForEllipoid(E, nodeAttribs.origin, nodeAttribs.extent);
     }
 
-    bool traverseTreeEllipsoid(Ellipsoid E, inout float u, out float pdf, out uint nodeIndex)
+    /// Descends from the root to a leaf, choosing each child in proportion to its importance. Each level draws its
+    /// own random number: rescaling one number over the 20-40 levels of a BVH over every scene triangle would run out
+    /// of its 24 bits, making leaves below ~2^-24 unreachable. The choice probabilities are the same either way.
+    bool traverseTreeEllipsoid<S : ISampleGenerator>(Ellipsoid E, inout S sg, out float u, out float pdf, out uint nodeIndex)
     {
         pdf = 1.0f;
         nodeIndex = 0;
+        u = sampleNext1D(sg);
         bool isLeaf = _lightBVH.isLeaf(nodeIndex);
 
         while (!isLeaf)
         {
+            if (nodeIndex != 0) u = sampleNext1D(sg);
             uint leftNodeIndex = nodeIndex + 1;
             uint rightNodeIndex = _lightBVH.getInternalNode(nodeIndex).rightChildIdx;
 
@@ -823,9 +828,9 @@ struct LightBVHSampler : IEmissiveLightSampler
         // Traverse BVH to select a leaf node with N triangles based on estimated probabilities during traversal.
         float leafPdf;
         uint leafNodeIndex;
-        float u = sampleNext1D(sg);
+        float u;
 
-        if (!traverseTreeEllipsoid(E, u, leafPdf, leafNodeIndex)) return false;
+        if (!traverseTreeEllipsoid(E, sg, u, leafPdf, leafNodeIndex)) return false;
 
         // Within the selected leaf, pick one out of the N triangles to sample.
         float trianglePdf;
