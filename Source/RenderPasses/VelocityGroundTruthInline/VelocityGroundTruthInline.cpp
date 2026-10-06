@@ -169,6 +169,10 @@ void VelocityGroundTruthInline::execute(RenderContext* pRenderContext, const Ren
     var["CB"]["gDt"] = mDt;
 
     // path_length: the path length at time 0 (the scene's pose), then again at dt, along the same pixel rays.
+    // Rebind the scene first: the last frame moved it to dt and back, and the binding still holds the TLAS of the
+    // moved pose.
+    if (mMode == Mode::PathLength && !mMover.empty())
+        mpScene->bindShaderDataForRaytracing(pRenderContext, var["gScene"]);
     var["CB"]["gStage"] = 0u;
     mpComputePass->execute(pRenderContext, uint3(frameDim, 1));
     if (mMode == Mode::PathLength)
