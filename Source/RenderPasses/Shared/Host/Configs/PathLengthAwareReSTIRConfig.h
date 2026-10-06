@@ -239,14 +239,20 @@ public:
             desc.addTypeConformances(pScene->getTypeConformances());
             desc.addShaderLibrary(kReflectTypesFile).csEntry("main");
             mpReflectTypes = ComputePass::create(pDevice, desc, DefineList(), false);
+            mReflectDefines.clear();
         }
         DefineList reflectDefines = pScene->getSceneDefines();
         reflectDefines.add(pSampleGenerator->getDefines());
         reflectDefines.add(pathTracing.getDefines());
         reflectDefines.add(getReservoirDefines(pathTracing, isSceneDynamic));
-        // Set (not add) the defines to replace stale state; recreating the vars recompiles if needed.
-        mpReflectTypes->getProgram()->setDefines(reflectDefines);
-        mpReflectTypes->setVars(nullptr);
+        // Set (not add) the defines to replace stale state; recreating the vars recompiles if needed. Only when they
+        // change: new vars every frame cost CPU time.
+        if (reflectDefines != mReflectDefines)
+        {
+            mpReflectTypes->getProgram()->setDefines(reflectDefines);
+            mpReflectTypes->setVars(nullptr);
+            mReflectDefines = reflectDefines;
+        }
 
         if (any(mHistoryDim != frameDim))
             temporalHistoryValid = false;
@@ -464,5 +470,6 @@ private:
     }
 
     ref<ComputePass> mpReflectTypes;
+    DefineList mReflectDefines; ///< The defines mpReflectTypes was last set up with.
     uint2 mHistoryDim = uint2(0);
 };
