@@ -36,8 +36,8 @@ Histogram:
     split between the two bins whose centers are nearest to its length). (Default: `box`)
 ```
 
-Kernel density estimation is not supported: `useKernelDensityEstimation` and `initialWindowRatio`
-are accepted but have no effect.
+Kernel density estimation is not supported: `useKernelDensityEstimation` must be `false`
+(`initialWindowRatio` has no effect).
 
 Initial sampling, the candidate paths each pixel starts from in every frame:
 
@@ -89,8 +89,8 @@ Reuse:
     input is connected. (Default: `false`)
 * - `temporalHistoryLength`
   - float
-  - Cap on the history's sample count, in frames of `samplesPerPixel`. 0 ignores the history; a
-    negative value leaves it uncapped. (Default: `20`)
+  - Cap on the history's sample count, in frames of `samplesPerPixel`; 0 ignores the history.
+    Must not be negative. (Default: `20`)
 * - `randomSeed`
   - integer
   - Seed of the random numbers in spatial reuse; it advances with every round. (Default: `0`)

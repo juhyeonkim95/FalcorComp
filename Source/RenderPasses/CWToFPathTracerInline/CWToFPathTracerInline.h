@@ -82,6 +82,7 @@ private:
     Options mOptions;
     uint mFrameCount = 0;
     bool mOptionsChanged = false;
+    std::string mUIWarning; ///< Why the last UI edit was rejected.
 
     ref<Scene> mpScene;
     ref<SampleGenerator> mpSampleGenerator;

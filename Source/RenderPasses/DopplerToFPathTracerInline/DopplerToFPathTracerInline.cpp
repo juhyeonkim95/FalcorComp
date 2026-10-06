@@ -146,8 +146,11 @@ void DopplerToFPathTracerInline::parseProperties(const Properties& props)
 void DopplerToFPathTracerInline::validateOptions(const Options& options)
 {
     options.pathTracing.validate();
-    if (!(options.modulationFrequency > 0.f) || !(options.exposureTime > 0.f))
-        FALCOR_THROW("modulationFrequency and exposureTime must be positive.");
+    if (!(options.modulationFrequency > 0.f) || !(options.exposureTime > 0.f) || !std::isfinite(options.modulationFrequency) ||
+        !std::isfinite(options.exposureTime))
+        FALCOR_THROW("modulationFrequency and exposureTime must be finite and positive.");
+    if (!std::isfinite(options.heterodyneFrequency) || !std::isfinite(options.phase))
+        FALCOR_THROW("heterodyneFrequency and phase must be finite.");
     if (options.antithetic == Antithetic::HalfPeriod && !(options.heterodyneFrequency != 0.f))
         FALCOR_THROW("The half_period antithetic pairing needs a nonzero heterodyneFrequency.");
     const double periods = double(options.exposureTime) * options.heterodyneFrequency;
@@ -367,15 +370,31 @@ void DopplerToFPathTracerInline::execute(RenderContext* pRenderContext, const Re
 void DopplerToFPathTracerInline::renderUI(Gui::Widgets& widget)
 {
     bool dirty = false;
-    dirty |= widget.var("Modulation frequency (MHz)", mOptions.modulationFrequency, 0.001f, 1e5f);
-    dirty |= widget.var("Heterodyne frequency (Hz)", mOptions.heterodyneFrequency, -1e6f, 1e6f);
-    dirty |= widget.var("Exposure time (s)", mOptions.exposureTime, 1e-6f, 10.f);
-    dirty |= widget.var("Phase (periods)", mOptions.phase, -1.f, 1.f);
+    auto options = mOptions;
+    dirty |= widget.var("Modulation frequency (MHz)", options.modulationFrequency, 0.001f, 1e5f);
+    dirty |= widget.var("Heterodyne frequency (Hz)", options.heterodyneFrequency, -1e6f, 1e6f);
+    dirty |= widget.var("Exposure time (s)", options.exposureTime, 1e-6f, 10.f);
+    dirty |= widget.var("Phase (periods)", options.phase, -1.f, 1.f);
     widget.text(fmt::format("Frame (time pair): {}", mFrameCount));
     if (auto group = widget.group("Sampling", true))
-        dirty |= mOptions.pathTracing.renderSamplingUI(group, " Each vertex is connected to the light.");
+        dirty |= options.pathTracing.renderSamplingUI(group, " Each vertex is connected to the light.");
     if (dirty)
+    {
+        try
+        {
+            validateOptions(options);
+        }
+        catch (const std::exception& e)
+        {
+            mUIWarning = e.what();
+            return;
+        }
+        mUIWarning.clear();
+        mOptions = options;
         mOptionsChanged = true;
+    }
+    if (!mUIWarning.empty())
+        widget.text(mUIWarning);
 }
 
 void DopplerToFPathTracerInline::setScene(RenderContext* pRenderContext, const ref<Scene>& pScene)

@@ -1,6 +1,7 @@
 #pragma once
 #include "ConfigUtils.h"
 #include "RenderGraph/RenderPass.h"
+#include <cmath>
 
 /// Path-length-aware shift mapping: the chart on which the shifted vertex is moved.
 enum class ShiftMappingMethod
@@ -49,6 +50,18 @@ struct ShiftMappingConfig
     /// Ray charts only: rejects shifts that move the vertex farther than this in chart coordinates (0 disables).
     /// The gauge system can have several roots for large moves, so the reverse solve may not return; see ShiftMapping.slang.
     float rayChartMaxDisplacement = 0.f;
+
+    void validate() const
+    {
+        if (newtonMaxIteration < 1 || newtonMaxIteration > 64)
+            FALCOR_THROW("NewtonMaxIteration must be in [1, 64].");
+        if (!std::isfinite(newtonRelativeTolerance) || newtonRelativeTolerance <= 0.f)
+            FALCOR_THROW("NewtonRelativeTolerance must be finite and greater than zero.");
+        if (!std::isfinite(gaugeAxis.x) || !std::isfinite(gaugeAxis.y))
+            FALCOR_THROW("gaugeAxis must be finite.");
+        if (!std::isfinite(rayChartMaxDisplacement) || rayChartMaxDisplacement < 0.f)
+            FALCOR_THROW("rayChartMaxDisplacement must be finite and non-negative (0 disables it).");
+    }
 
     bool parse(const std::string& key, const Properties::ConstValue& value)
     {

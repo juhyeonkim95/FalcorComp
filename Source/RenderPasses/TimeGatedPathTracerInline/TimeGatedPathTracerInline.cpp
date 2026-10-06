@@ -207,7 +207,16 @@ void TimeGatedPathTracerInline::renderUI(Gui::Widgets& widget)
     // In execute() we will pass the flag to other passes for reset of temporal data etc.
     if (dirty)
     {
-        validateOptions(options);
+        try
+        {
+            validateOptions(options);
+        }
+        catch (const std::exception& e)
+        {
+            mUIWarning = e.what();
+            return;
+        }
+        mUIWarning.clear();
         // Rebuild the sampler and program: the emissive sampler's defines are only added when the program is created.
         if (options.ellipsoidalSampling.triSampler != mOptions.ellipsoidalSampling.triSampler)
             mTriangleSampler.reset();
@@ -216,6 +225,8 @@ void TimeGatedPathTracerInline::renderUI(Gui::Widgets& widget)
         mOptions = options;
         mOptionsChanged = true;
     }
+    if (!mUIWarning.empty())
+        widget.text(mUIWarning);
 }
 
 void TimeGatedPathTracerInline::setScene(RenderContext* pRenderContext, const ref<Scene>& pScene)

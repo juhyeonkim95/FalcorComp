@@ -70,6 +70,7 @@ const char kRandomSeed[] = "randomSeed";
 TransientHistogramReSTIRInline::TransientHistogramReSTIRInline(ref<Device> pDevice, const Properties& props) : RenderPass(pDevice)
 {
     parseProperties(props);
+    validateOptions(mOptions);
 
     // Create a sample generator.
     mpSampleGenerator = SampleGenerator::create(mpDevice, SAMPLE_GENERATOR_TINY_UNIFORM);
@@ -79,6 +80,14 @@ TransientHistogramReSTIRInline::TransientHistogramReSTIRInline(ref<Device> pDevi
 void TransientHistogramReSTIRInline::resetHistogram()
 {
     mNeedToClearHistogram = true;
+}
+
+void TransientHistogramReSTIRInline::validateOptions(const Options& options)
+{
+    // The ReSTIR bins use the Box or Tent filter; kernel density estimation is the path tracer's.
+    options.histogram.validate(false);
+    options.pathTracing.validate();
+    options.restir.validate();
 }
 
 void TransientHistogramReSTIRInline::parseProperties(const Properties& props)
@@ -387,8 +396,8 @@ void TransientHistogramReSTIRInline::execute(RenderContext* pRenderContext, cons
 void TransientHistogramReSTIRInline::renderUI(Gui::Widgets& widget)
 {
     bool dirty = false;
-    const uint previousBins = mOptions.histogram.timeBin;
-    const bool previousSingleChannel = mOptions.pathTracing.useSingleChannel;
+    // An edit that fails validation is undone.
+    const Options previous = mOptions;
 
     if (auto group = widget.group("Histogram", true))
         dirty |= mOptions.histogram.renderUI(group, false);
@@ -427,11 +436,24 @@ void TransientHistogramReSTIRInline::renderUI(Gui::Widgets& widget)
     // In execute() we will pass the flag to other passes for reset of temporal data etc.
     if (dirty)
     {
-        mOptionsChanged = true;
-        // The histogram texture depends on the bin count and channel count.
-        if (mOptions.histogram.timeBin != previousBins || mOptions.pathTracing.useSingleChannel != previousSingleChannel)
-            requestRecompile();
+        try
+        {
+            validateOptions(mOptions);
+            mUIWarning.clear();
+            mOptionsChanged = true;
+            // The histogram texture depends on the bin count and channel count.
+            if (mOptions.histogram.timeBin != previous.histogram.timeBin ||
+                mOptions.pathTracing.useSingleChannel != previous.pathTracing.useSingleChannel)
+                requestRecompile();
+        }
+        catch (const std::exception& e)
+        {
+            mUIWarning = e.what();
+            mOptions = previous;
+        }
     }
+    if (!mUIWarning.empty())
+        widget.text(mUIWarning);
 }
 
 void TransientHistogramReSTIRInline::setScene(RenderContext* pRenderContext, const ref<Scene>& pScene)

@@ -90,11 +90,11 @@ the image plane is lit uniformly.
   - `gray`, `xor`: the pattern has $2^\text{bits}$ columns. (Default: `10`)
 * - `patternBit`
   - integer
-  - `gray`, `xor`: the bit shown, `0` for the finest stripes. (Default: `0`)
+  - `gray`, `xor`: the bit shown, `0` for the finest stripes; below `patternBits`. (Default: `0`)
 * - `patternBaseBit`
   - integer
-  - `xor`: the base bit XORed with the higher bits (`0` for XOR-02, `1` for XOR-04, ...).
-    (Default: `0`)
+  - `xor`: the base bit XORed with the higher bits (`0` for XOR-02, `1` for XOR-04, ...); below
+    `patternBits`. (Default: `0`)
 * - `checkerCells`
   - uint2
   - `checkerboard`: cells along $u$ and $v$. (Default: `(16, 16)`)
@@ -149,8 +149,10 @@ tracer.set_pattern_data(values, interval_ids=ids, intervals=intervals)
   `(srcStart, srcEnd, dstStart, dstEnd)`, in columns: the interval is mapped linearly onto another
   one, which must map back onto it.
 
-Give the matching or the intervals, or neither (no antithetic map), not both. `set_pattern_data`
-warns when the matching is not symmetric or does not pair opposite values, or when the intervals do
+Give the matching or the intervals (`interval_ids` and `intervals` together), or neither (no
+antithetic map), not both. It raises an error when an entry is out of range: a partner or interval
+id past the last column or interval, an interval with start >= end or past the last column, or a
+column outside its interval's source range. It warns when the matching is not symmetric or does not pair opposite values, or when the intervals do
 not map back onto themselves, which makes antithetic sampling biased or ineffective. Rendering with
 `pattern = arbitrary` before `set_pattern_data` is called raises an error.
 

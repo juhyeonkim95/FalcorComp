@@ -26,6 +26,7 @@
  # OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  **************************************************************************/
 #include "EventCamera.h"
+#include <cmath>
 #include "RenderGraph/RenderPassHelpers.h"
 
 static void regEventCamera(pybind11::module& m)
@@ -118,10 +119,11 @@ EventDifference::EventDifference(ref<Device> pDevice, const Properties& props) :
         else
             logWarning("Unknown property '{}' in EventDifference properties.", key);
     }
-    if (mSubframes < 1)
-        FALCOR_THROW("subframes must be at least 1.");
-    if (!(mIntensityBias > 0.f))
-        FALCOR_THROW("intensityBias must be positive.");
+    // Upper bounds also catch negative values, which wrap around in the unsigned properties.
+    if (mSubframes < 1 || mSubframes > (1u << 24))
+        FALCOR_THROW("subframes must be in [1, 2^24].");
+    if (!(mIntensityBias > 0.f) || !std::isfinite(mIntensityBias))
+        FALCOR_THROW("intensityBias must be finite and positive.");
     mpPass = ComputePass::create(mpDevice, kDifferenceShader, "main");
 }
 
@@ -234,10 +236,17 @@ EventSVGF::EventSVGF(ref<Device> pDevice, const Properties& props) : RenderPass(
         else
             logWarning("Unknown property '{}' in EventSVGF properties.", key);
     }
-    if (mIterations < 1)
-        FALCOR_THROW("iterations must be at least 1.");
-    if (!(mIntensityBias > 0.f))
-        FALCOR_THROW("intensityBias must be positive.");
+    // The a-trous step doubles each iteration; the upper bound also catches negative values, which wrap around.
+    if (mIterations < 1 || mIterations > 10)
+        FALCOR_THROW("iterations must be in [1, 10].");
+    if (mFeedbackTap < -1)
+        FALCOR_THROW("feedbackTap must be at least -1 (-1 feeds back the unfiltered accumulation).");
+    if (!(mPhiColor > 0.f) || !std::isfinite(mPhiColor) || !(mPhiNormal >= 0.f) || !std::isfinite(mPhiNormal))
+        FALCOR_THROW("phiColor must be finite and positive, phiNormal finite and non-negative.");
+    if (!(mAlpha > 0.f && mAlpha <= 1.f) || !(mMomentsAlpha > 0.f && mMomentsAlpha <= 1.f))
+        FALCOR_THROW("alpha and momentsAlpha must be in (0, 1].");
+    if (!(mIntensityBias > 0.f) || !std::isfinite(mIntensityBias))
+        FALCOR_THROW("intensityBias must be finite and positive.");
     mpReproject = ComputePass::create(mpDevice, kSVGFShader, "reproject");
     mpAtrous = ComputePass::create(mpDevice, kSVGFShader, "atrous");
     mpFinalize = ComputePass::create(mpDevice, kSVGFShader, "finalize");
@@ -430,8 +439,8 @@ EventGenerator::EventGenerator(ref<Device> pDevice, const Properties& props) : R
         else
             logWarning("Unknown property '{}' in EventGenerator properties.", key);
     }
-    if (!(mThreshold > 0.f))
-        FALCOR_THROW("threshold must be positive.");
+    if (!(mThreshold > 0.f) || !std::isfinite(mThreshold))
+        FALCOR_THROW("threshold must be finite and positive.");
     mpPass = ComputePass::create(mpDevice, kGeneratorShader, "main");
 }
 

@@ -106,6 +106,8 @@ private:
         bool temporalReuseTwoPass = true;
     };
     Options mOptions;
+    /// Throws if `options` are invalid: checked on creation and UI edits.
+    static void validateOptions(const Options& options);
 
     ref<Scene> mpScene;
     ref<SampleGenerator> mpSampleGenerator;
@@ -119,6 +121,7 @@ private:
     uint mRandomSeed = 0;
     bool mOptionsChanged = false;
     bool mNeedToClearHistogram = false;
+    std::string mUIWarning; ///< Why the last UI edit was rejected.
 
     ref<ComputePass> mpComputePass;      ///< Initial candidates (and temporal reuse), written to the histogram.
     /// With TEMPORAL_REUSE_PAIRS, the temporal reuse after initial generation: the merge shifts of one pixel and bin per

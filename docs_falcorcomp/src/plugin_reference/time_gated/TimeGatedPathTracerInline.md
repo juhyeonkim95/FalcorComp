@@ -45,8 +45,7 @@ Time gate:
   - string
   - Gate kernel: `box`, `tent`, `gaussian`, `exp` (one-sided exponential), `exp_two_side`
     (two-sided exponential), `cos` or `all` (no gating). See [the kernels](#gate-kernels).
-    `epanechnikov` and `perlin` are also accepted, but this pass does not implement them: they act
-    like `all`. (Default: `box`)
+    (Default: `box`)
 * - `timeGateWindow`
   - float
   - Gate width $\Delta$, in path-length units. (Default: `0.05`)

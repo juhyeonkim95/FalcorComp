@@ -74,6 +74,16 @@ struct ProjectorConfig
             FALCOR_THROW("checkerCells must be greater than zero.");
         if (checkerShift >= 25)
             FALCOR_THROW("checkerShift must be in [0, 24].");
+        // Out-of-range bits would map every column to the last one (a collapsed, biased antithetic map).
+        if ((pattern == ProjectorPatternType::Gray || pattern == ProjectorPatternType::XOR) && patternBit >= patternBits)
+            FALCOR_THROW("patternBit must be less than patternBits.");
+        if (pattern == ProjectorPatternType::XOR && patternBaseBit >= patternBits)
+            FALCOR_THROW("patternBaseBit must be less than patternBits.");
+        if (!std::isfinite(patternPhase))
+            FALCOR_THROW("patternPhase must be finite.");
+        for (int i = 0; i < 3; i++)
+            if (!std::isfinite(position[i]) || !std::isfinite(intensity[i]) || intensity[i] < 0.f)
+                FALCOR_THROW("projectorPosition must be finite and projectorIntensity finite and non-negative.");
     }
 
     bool parse(const std::string& key, const Properties::ConstValue& value)
@@ -278,7 +288,9 @@ public:
             FALCOR_THROW("Give either antithetic_index or interval_ids and intervals, not both.");
         if (!antitheticIndex.empty() && antitheticIndex.size() != width)
             FALCOR_THROW("antithetic_index must have one entry per column.");
-        if (!intervalIds.empty() && (intervalIds.size() != width || intervals.empty() || intervals.size() % 4 != 0))
+        if (intervalIds.empty() != intervals.empty())
+            FALCOR_THROW("Give interval_ids and intervals together.");
+        if (!intervalIds.empty() && (intervalIds.size() != width || intervals.size() % 4 != 0))
             FALCOR_THROW("interval_ids must have one entry per column and intervals four entries per interval.");
 
         for (size_t column = 0; column < antitheticIndex.size(); column++)
@@ -293,9 +305,20 @@ public:
             }
         }
         const size_t intervalCount = intervals.size() / 4;
+        for (size_t interval = 0; interval < intervalCount; interval++)
+        {
+            const uint32_t* entry = &intervals[4 * interval];
+            if (!(entry[0] < entry[1] && entry[1] <= width && entry[2] < entry[3] && entry[3] <= width))
+                FALCOR_THROW("intervals[{}] must have start < end <= {} for its source and destination.", interval, width);
+        }
         for (size_t column = 0; column < intervalIds.size(); column++)
+        {
             if (intervalIds[column] >= intervalCount)
                 FALCOR_THROW("interval_ids[{}] = {} is out of range.", column, intervalIds[column]);
+            const uint32_t* entry = &intervals[4 * intervalIds[column]];
+            if (column < entry[0] || column >= entry[1])
+                FALCOR_THROW("Column {} lies outside its source interval {}.", column, intervalIds[column]);
+        }
         for (size_t interval = 0; interval < intervalCount; interval++)
         {
             const uint32_t* entry = &intervals[4 * interval];

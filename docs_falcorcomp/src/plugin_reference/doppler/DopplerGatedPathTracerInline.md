@@ -42,8 +42,7 @@ Gate:
   - string
   - Gate kernel, the same as the time-gated path tracer's: `box`, `tent`, `gaussian`, `exp` (one-sided
     exponential), `exp_two_side` (two-sided exponential), `cos` or `all` (no gating); see
-    [the kernels](#gate-kernels), with the shift in place of the path length. `epanechnikov` and `perlin` are also
-    accepted, but act like `all`. (Default: `box`)
+    [the kernels](#gate-kernels), with the shift in place of the path length. (Default: `box`)
 * - `shiftGate`
   - boolean
   - Move the gate one step per frame from `frequencyMin` towards `frequencyMax`, then start again. (Default: `false`)

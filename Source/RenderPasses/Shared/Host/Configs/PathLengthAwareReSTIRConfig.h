@@ -6,6 +6,7 @@
 #include "RenderGraph/RenderPass.h"
 #include "Scene/Scene.h"
 #include <algorithm>
+#include <cmath>
 #include <memory>
 #include <utility>
 
@@ -19,11 +20,29 @@ struct PathLengthAwareReSTIRConfig
     /// single-pass kernel. Same results either way; the shift `no` always uses the single pass.
     bool spatialReuseTwoPass = true;
     bool useTemporalReuse = false;
-    float temporalHistoryLength = 20.0f;    ///< History cap in frames of samples; 0 ignores it, negative is uncapped.
+    float temporalHistoryLength = 20.0f;    ///< History cap in frames of samples; 0 ignores the history.
 
     ShiftMappingConfig shiftMapping;
     float reconnectionRoughnessThreshold = 0.25f; ///< Both vertices of a reconnection segment must be rougher.
     float reconnectionMinDistance = 0.f;          ///< A reconnection segment must be longer (scene units).
+
+    void validate() const
+    {
+        shiftMapping.validate();
+        if (spatialReuseIteration > 16)
+            FALCOR_THROW("spatialReuseIteration must be in [0, 16].");
+        if (spatialReuseNeighborCount < 1 || spatialReuseNeighborCount > 64)
+            FALCOR_THROW("spatialReuseNeighborCount must be in [1, 64].");
+        if (!std::isfinite(spatialReuseGatherRadius) || spatialReuseGatherRadius <= 0.f)
+            FALCOR_THROW("spatialReuseGatherRadius must be finite and greater than zero.");
+        // An uncapped history's sample count grows by the neighbor count each frame until it overflows.
+        if (!std::isfinite(temporalHistoryLength) || temporalHistoryLength < 0.f)
+            FALCOR_THROW("temporalHistoryLength must be finite and non-negative.");
+        if (!std::isfinite(reconnectionRoughnessThreshold) || reconnectionRoughnessThreshold < 0.f)
+            FALCOR_THROW("reconnectionRoughnessThreshold must be finite and non-negative.");
+        if (!std::isfinite(reconnectionMinDistance) || reconnectionMinDistance < 0.f)
+            FALCOR_THROW("reconnectionMinDistance must be finite and non-negative.");
+    }
 
     bool parse(const std::string& key, const Properties::ConstValue& value)
     {
@@ -110,9 +129,9 @@ struct PathLengthAwareReSTIRConfig
 
         if (useTemporalReuse)
         {
-            dirty |= widget.var("History length (frames)", temporalHistoryLength, -1.f, 100000.f);
+            dirty |= widget.var("History length (frames)", temporalHistoryLength, 0.f, 100000.f);
             widget.tooltip("Cap on the history's sample count, in frames of samples per pixel. 0 ignores the "
-                           "history; a negative value leaves it uncapped.", true);
+                           "history.", true);
         }
         return dirty;
     }

@@ -106,6 +106,8 @@ private:
         float wideGateWindow() const { return timeGateWindowRough > 0.f ? timeGateWindowRough : 10.f * timeGate.timeGateWindow; }
     };
     Options mOptions;
+    /// Throws if `options` are invalid: checked on creation, set_properties(), set_time_gate_info() and UI edits.
+    static void validateOptions(const Options& options);
 
     ref<Scene> mpScene;
     ref<SampleGenerator> mpSampleGenerator;

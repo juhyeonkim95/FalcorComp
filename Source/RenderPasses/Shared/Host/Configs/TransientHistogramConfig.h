@@ -45,8 +45,18 @@ struct TransientHistogramConfig
         histogramVar["gBinWidth"] = binWidth();
     }
 
-    void validate() const
+    /// `allowKernelDensityEstimation`: whether the pass implements kernel density estimation.
+    void validate(bool allowKernelDensityEstimation = true) const
     {
+        if (useKernelDensityEstimation && !allowKernelDensityEstimation)
+            FALCOR_THROW("This pass does not support kernel density estimation (useKernelDensityEstimation).");
+        const bool binFilter = filter == TimeGateMode::Box || filter == TimeGateMode::Tent;
+        if (!useKernelDensityEstimation && !binFilter)
+            FALCOR_THROW("histogramFilter must be 'box' or 'tent' (other kernels need useKernelDensityEstimation).");
+        if (useKernelDensityEstimation && !binFilter && filter != TimeGateMode::Gaussian &&
+            filter != TimeGateMode::Epanechnikov && filter != TimeGateMode::Perlin)
+            FALCOR_THROW("With kernel density estimation, histogramFilter must be 'box', 'tent', 'gaussian', "
+                         "'epanechnikov' or 'perlin'.");
         if (timeBin == 0)
             FALCOR_THROW("timeBin must be positive.");
         if (!std::isfinite(timeMin) || !std::isfinite(timeMax) || timeMin >= timeMax || !(binWidth() > 0.f))

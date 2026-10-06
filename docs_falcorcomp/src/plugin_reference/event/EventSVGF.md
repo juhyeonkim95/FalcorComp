@@ -40,7 +40,7 @@ Everything is computed on the luminance.
   - Description
 * - `iterations`
   - integer
-  - à-trous iterations; iteration $k$ has step $2^k$. (Default: `4`)
+  - à-trous iterations, 1 to 10; iteration $k$ has step $2^k$. (Default: `4`)
 * - `feedbackTap`
   - integer
   - The iteration whose output is the next frame's history; `-1`: the unfiltered accumulation. (Default: `1`)

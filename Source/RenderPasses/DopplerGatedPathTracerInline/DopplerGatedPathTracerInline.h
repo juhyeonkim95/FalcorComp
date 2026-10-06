@@ -99,6 +99,7 @@ private:
     TimeGateState mGate;
     uint mFrameCount = 0;
     bool mOptionsChanged = false;
+    std::string mUIWarning; ///< Why the last UI edit was rejected.
     bool mVelocitiesDirty = true;
     ref<Scene> mpScene;
     ref<SampleGenerator> mpSampleGenerator;

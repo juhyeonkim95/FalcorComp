@@ -146,10 +146,21 @@ void InlinePathTracer::renderUI(Gui::Widgets& widget)
     // In execute() we will pass the flag to other passes for reset of temporal data etc.
     if (dirty)
     {
-        validateOptions(options);
+        try
+        {
+            validateOptions(options);
+        }
+        catch (const std::exception& e)
+        {
+            mUIWarning = e.what();
+            return;
+        }
+        mUIWarning.clear();
         mOptions = options;
         mOptionsChanged = true;
     }
+    if (!mUIWarning.empty())
+        widget.text(mUIWarning);
 }
 
 void InlinePathTracer::setScene(RenderContext* pRenderContext, const ref<Scene>& pScene)

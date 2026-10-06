@@ -288,10 +288,21 @@ void DopplerGatedPathTracerInline::renderUI(Gui::Widgets& widget)
 
     if (dirty)
     {
-        validateOptions(options);
+        try
+        {
+            validateOptions(options);
+        }
+        catch (const std::exception& e)
+        {
+            mUIWarning = e.what();
+            return;
+        }
+        mUIWarning.clear();
         mOptions = options;
         mOptionsChanged = true;
     }
+    if (!mUIWarning.empty())
+        widget.text(mUIWarning);
 }
 
 void DopplerGatedPathTracerInline::setScene(RenderContext* pRenderContext, const ref<Scene>& pScene)

@@ -67,6 +67,7 @@ const char kRoughTimeGateSampleRatio[] = "roughTimeGateSampleRatio";
 TimeGatedReSTIRInline::TimeGatedReSTIRInline(ref<Device> pDevice, const Properties& props) : RenderPass(pDevice)
 {
     parseProperties(props);
+    validateOptions(mOptions);
 
     // Create a sample generator.
     mpSampleGenerator = SampleGenerator::create(mpDevice, SAMPLE_GENERATOR_TINY_UNIFORM);
@@ -80,9 +81,30 @@ void TimeGatedReSTIRInline::incrementTimeGateFrame()
 
 void TimeGatedReSTIRInline::setTimeGateInfo(float timeMin, float timeMax, uint timeBin)
 {
-    mOptions.timeGate.timeMin = timeMin;
-    mOptions.timeGate.timeMax = timeMax;
-    mOptions.timeGate.timeBin = timeBin;
+    TimeGateConfig timeGate = mOptions.timeGate;
+    timeGate.timeMin = timeMin;
+    timeGate.timeMax = timeMax;
+    timeGate.timeBin = timeBin;
+    timeGate.validate(true);
+    mOptions.timeGate = timeGate;
+}
+
+void TimeGatedReSTIRInline::validateOptions(const Options& options)
+{
+    options.timeGate.validate(true);
+    options.pathTracing.validate();
+    options.ellipsoidalSampling.validate();
+    options.restir.validate();
+    if (!std::isfinite(options.timeGateWindowRough) || options.timeGateWindowRough < 0.f)
+        FALCOR_THROW("timeGateWindowRough must be finite and non-negative (0 uses 10 x timeGateWindow).");
+    if (!std::isfinite(options.roughTimeGateSampleRatio))
+        FALCOR_THROW("roughTimeGateSampleRatio must be finite.");
+    // Dynamic suffix replay reconstructs BSDF steps after y only. An ellipsoidal candidate
+    // inserts x or y (both reevaluated exactly); inserting a vertex after y needs a walk
+    // that reaches y and continues, i.e. maxBounces >= 4.
+    if (options.isSceneDynamic && options.ellipsoidalSampling.samplingMethod != EllipsoidalSamplingMethod::Direct &&
+        options.pathTracing.maxBounces > 3)
+        FALCOR_THROW("Ellipsoidal initial sampling with isSceneDynamic=true requires maxBounces <= 3.");
 }
 
 void TimeGatedReSTIRInline::parseProperties(const Properties& props)
@@ -108,12 +130,6 @@ void TimeGatedReSTIRInline::parseProperties(const Properties& props)
             logWarning("Unknown property '{}' in TimeGatedReSTIRInline properties.", key);
     }
     mOptions.timeGate.applyTimeCenter(props);
-    mOptions.ellipsoidalSampling.validate();
-    // Dynamic suffix replay reconstructs BSDF steps after y only. An ellipsoidal candidate
-    // inserts x or y (both reevaluated exactly); inserting a vertex after y needs a walk
-    // that reaches y and continues, i.e. maxBounces >= 4.
-    if (mOptions.isSceneDynamic && mOptions.ellipsoidalSampling.samplingMethod != EllipsoidalSamplingMethod::Direct && mOptions.pathTracing.maxBounces > 3)
-        FALCOR_THROW("Ellipsoidal initial sampling with isSceneDynamic=true requires maxBounces <= 3.");
 }
 
 Properties TimeGatedReSTIRInline::getProperties() const
@@ -134,18 +150,22 @@ Properties TimeGatedReSTIRInline::getProperties() const
 
 void TimeGatedReSTIRInline::setProperties(const Properties& props)
 {
-    const auto previousSamplingMethod = mOptions.ellipsoidalSampling.samplingMethod;
-    const auto previousTriSampler = mOptions.ellipsoidalSampling.triSampler;
-    parseProperties(props);
+    const Options previous = mOptions;
+    // Invalid properties throw and leave the options unchanged.
+    InlinePass::applyProperties(mOptions, [&] { parseProperties(props); }, [](const Options& options) { validateOptions(options); });
     // Same rebuilds as a UI edit: the emissive sampler's defines are only added when the programs are created.
-    if (mOptions.ellipsoidalSampling.triSampler != previousTriSampler)
+    if (mOptions.ellipsoidalSampling.triSampler != previous.ellipsoidalSampling.triSampler)
         mTriangleSampler.reset();
-    if (mOptions.ellipsoidalSampling.samplingMethod != previousSamplingMethod || mOptions.ellipsoidalSampling.triSampler != previousTriSampler)
+    if (mOptions.ellipsoidalSampling.samplingMethod != previous.ellipsoidalSampling.samplingMethod ||
+        mOptions.ellipsoidalSampling.triSampler != previous.ellipsoidalSampling.triSampler)
     {
         mpComputePass = nullptr;
         mpSpatialReusePass = nullptr;
         mpSpatialReusePairsPass = nullptr;
     }
+    // The debug outputs are part of the reflection.
+    if (mOptions.debugNewtonIterations != previous.debugNewtonIterations)
+        requestRecompile();
     mOptionsChanged = true;
 }
 
@@ -401,11 +421,8 @@ void TimeGatedReSTIRInline::execute(RenderContext* pRenderContext, const RenderD
 void TimeGatedReSTIRInline::renderUI(Gui::Widgets& widget)
 {
     bool dirty = false;
-    // Settings validated together; a rejected edit restores them.
-    const auto previousSamplingMethod = mOptions.ellipsoidalSampling.samplingMethod;
-    const auto previousTriSampler = mOptions.ellipsoidalSampling.triSampler;
-    const uint previousMaxBounces = mOptions.pathTracing.maxBounces;
-    const bool previousSceneDynamic = mOptions.isSceneDynamic;
+    // An edit that fails validation is undone.
+    const Options previous = mOptions;
 
     if (auto group = widget.group("Time gate", true))
     {
@@ -461,19 +478,21 @@ void TimeGatedReSTIRInline::renderUI(Gui::Widgets& widget)
 
     if (dirty)
     {
-        mUIWarning.clear();
-        // Same constraint as parseProperties(): see the comment there.
-        if (mOptions.isSceneDynamic && mOptions.ellipsoidalSampling.samplingMethod != EllipsoidalSamplingMethod::Direct && mOptions.pathTracing.maxBounces > 3)
+        try
         {
-            mUIWarning = "Ellipsoidal sampling with a dynamic light supports at most 3 bounces.";
-            mOptions.ellipsoidalSampling.samplingMethod = previousSamplingMethod;
-            mOptions.pathTracing.maxBounces = previousMaxBounces;
-            mOptions.isSceneDynamic = previousSceneDynamic;
+            validateOptions(mOptions);
+            mUIWarning.clear();
+        }
+        catch (const std::exception& e)
+        {
+            mUIWarning = e.what();
+            mOptions = previous;
         }
         // Rebuild the sampler and programs: the emissive sampler's defines are only added when they are created.
-        if (mOptions.ellipsoidalSampling.triSampler != previousTriSampler)
+        if (mOptions.ellipsoidalSampling.triSampler != previous.ellipsoidalSampling.triSampler)
             mTriangleSampler.reset();
-        if (mOptions.ellipsoidalSampling.samplingMethod != previousSamplingMethod || mOptions.ellipsoidalSampling.triSampler != previousTriSampler)
+        if (mOptions.ellipsoidalSampling.samplingMethod != previous.ellipsoidalSampling.samplingMethod ||
+            mOptions.ellipsoidalSampling.triSampler != previous.ellipsoidalSampling.triSampler)
         {
             mpComputePass = nullptr;
             mpSpatialReusePass = nullptr;

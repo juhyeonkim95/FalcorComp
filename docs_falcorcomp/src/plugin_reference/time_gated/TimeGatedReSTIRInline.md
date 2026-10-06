@@ -22,7 +22,8 @@ The time gate is set as for the path tracer:
 * - `timeGateMode`
   - string
   - Gate kernel: `box`, `tent`, `gaussian`, `exp` (one-sided exponential), `exp_two_side`
-    (two-sided exponential), `cos` or `all` (no gating). See [the kernels](#gate-kernels). (Default: `box`)
+    (two-sided exponential) or `all` (no gating). See [the kernels](#gate-kernels). `cos` is not
+    available: its negative weights cannot be resampled. (Default: `box`)
 * - `timeGateWindow`
   - float
   - Gate width $\Delta$, in path-length units. (Default: `0.05`)
@@ -118,8 +119,8 @@ Reuse:
     input is connected. (Default: `false`)
 * - `temporalHistoryLength`
   - float
-  - Cap on the history's sample count, in frames of `samplesPerPixel`. 0 ignores the history; a
-    negative value leaves it uncapped. (Default: `20`)
+  - Cap on the history's sample count, in frames of `samplesPerPixel`; 0 ignores the history.
+    Must not be negative. (Default: `20`)
 * - `isSceneDynamic`
   - boolean
   - Keep the temporal history when the laser moves or changes, re-evaluating the lighting of
