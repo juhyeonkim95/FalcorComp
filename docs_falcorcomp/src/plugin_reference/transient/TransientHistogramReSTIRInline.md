@@ -24,7 +24,8 @@ Histogram:
   - Description
 * - `timeMin`, `timeMax`
   - float
-  - Path-length range of the histogram. Paths outside `[timeMin, timeMax)` are not recorded.
+  - Path-length range of the histogram. Paths outside `[timeMin, timeMax)` are not recorded, except
+    that the `tent` filter's first and last bins reach half a bin beyond it.
     (Default: `9`, `12`)
 * - `timeBin`
   - integer
@@ -33,7 +34,8 @@ Histogram:
 * - `histogramFilter`
   - string
   - The bin filter: `box` (a path counts for the bin that contains its length) or `tent` (a path is
-    split between the two bins whose centers are nearest to its length). (Default: `box`)
+    split between the two bins whose centers are nearest to its length, as in
+    [TransientHistogramPathTracerInline](TransientHistogramPathTracerInline.md)). (Default: `box`)
 ```
 
 Kernel density estimation is not supported: `useKernelDensityEstimation` must be `false`

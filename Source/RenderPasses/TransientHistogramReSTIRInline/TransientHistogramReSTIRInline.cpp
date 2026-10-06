@@ -387,6 +387,10 @@ void TransientHistogramReSTIRInline::execute(RenderContext* pRenderContext, cons
     mFrameCount++;
 
     mOptions.histogram.publishRange(renderData);
+    // One frame's estimate (not a sum), so that a viewer in the same graph as an accumulating tracer reads it right.
+    auto& dict = renderData.getDictionary();
+    dict[TransientHistogramConfig::kSummedFramesKey] = 1u;
+    dict[TransientHistogramConfig::kAveragedFramesKey] = 0u;
 
     // The final reservoirs become next frame's temporal history.
     mReSTIR.endFrame(pRenderContext, mOptions.restir.useTemporalReuse, *mpScene, renderData.getTexture("vbuffer"));

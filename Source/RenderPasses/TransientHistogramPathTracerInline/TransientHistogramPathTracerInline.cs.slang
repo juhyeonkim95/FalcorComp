@@ -59,18 +59,22 @@ void accumulateToHistogram(uint2 pixel, float pathLength, float3 radiance, float
         if (weight > 0.f) addHistogramBin(pixel, bin, radiance * weight);
     }
 #else
-    // Half-open range prevents gTimeMax from being incorrectly added to the final bin.
-    if (pathLength < gTimeMin || pathLength >= gTimeMax) return;
-    float coordinate = (pathLength - gTimeMin) / gBinWidth;
-    uint bin = min(uint(coordinate), gTimeBin - 1);
     radiance /= gBinWidth * gSamplesPerPixel;
-#if HISTOGRAM_FILTER == HISTOGRAM_FILTER_BOX
+#if HISTOGRAM_FILTER == HISTOGRAM_FILTER_TENT
+    // A tent of half-width one bin around each bin center (as ReSTIR's bins): the path splits between the two bins
+    // whose centers are nearest to its length, and reaches the first and last bins from up to half a bin outside the
+    // range.
+    float coordinate = (pathLength - gTimeMin) / gBinWidth - 0.5f; // In bin centers.
+    if (!(coordinate > -1.f && coordinate < float(gTimeBin))) return;
+    float lowerBin = floor(coordinate);
+    float upperWeight = coordinate - lowerBin;
+    if (lowerBin >= 0.f) addHistogramBin(pixel, uint(lowerBin), radiance, 1.f - upperWeight);
+    if (lowerBin + 1.f < float(gTimeBin)) addHistogramBin(pixel, uint(lowerBin + 1.f), radiance, upperWeight);
+#else
+    // Box: the bin that contains the length. The half-open range keeps gTimeMax out of the last bin.
+    if (pathLength < gTimeMin || pathLength >= gTimeMax) return;
+    uint bin = min(uint((pathLength - gTimeMin) / gBinWidth), gTimeBin - 1);
     addHistogramBin(pixel, bin, radiance);
-#elif HISTOGRAM_FILTER == HISTOGRAM_FILTER_TENT
-    // Retain the existing interpolation and final-bin clamping convention.
-    float residual = frac(coordinate);
-    addHistogramBin(pixel, bin, radiance, 1.f - residual);
-    addHistogramBin(pixel, min(bin + 1, gTimeBin - 1), radiance, residual);
 #endif
 #endif
 }
@@ -90,6 +94,8 @@ float3 tracePath(const uint2 pixel, const uint2 frameDim)
 #if USE_KERNEL_DENSITY_ESTIMATION
     // Ad hoc extension: paths beyond the histogram range can contribute through KDE support.
     const float maxPathLength = 1.5f * gTimeMax;
+#elif HISTOGRAM_FILTER == HISTOGRAM_FILTER_TENT
+    const float maxPathLength = gTimeMax + 0.5f * gBinWidth; // The last bin's tent reaches half a bin past the range.
 #else
     const float maxPathLength = gTimeMax;
 #endif

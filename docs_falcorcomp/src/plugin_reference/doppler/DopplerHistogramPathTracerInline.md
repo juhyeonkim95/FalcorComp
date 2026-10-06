@@ -113,8 +113,9 @@ Sampling and output, as for the [transient histogram path tracer](../transient/T
   - Importance-sample the BSDF when extending a camera path. (Default: `true`)
 * - `accumulate`
   - boolean
-  - Sum the frames in the spectrum, restarting when the camera moves, a setting changes, or `reset_spectrum()` is
-    called; divide by the number of frames for the mean. Off, each frame writes its own spectrum. (Default: `false`)
+  - Sum the frames in the spectrum, restarting when the camera moves, a setting changes, the render graph is
+    recompiled (e.g. on a resize), or `reset_spectrum()` is called; divide by the number of frames for the mean. Off,
+    each frame writes its own spectrum. (Default: `false`)
 * - `useSingleChannel`
   - boolean
   - Store one channel per bin, chosen by `singleChannel`. (Default: `false`)

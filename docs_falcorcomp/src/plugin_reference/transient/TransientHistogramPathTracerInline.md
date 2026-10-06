@@ -33,7 +33,8 @@ Histogram:
   - Description
 * - `timeMin`, `timeMax`
   - float
-  - Path-length range of the histogram. Paths outside `[timeMin, timeMax)` are not recorded.
+  - Path-length range of the histogram. Paths outside `[timeMin, timeMax)` are not recorded, except
+    that the `tent` filter's first and last bins reach half a bin beyond it.
     (Default: `9`, `12`)
 * - `timeBin`
   - integer
@@ -119,8 +120,10 @@ Output:
 Without kernel density estimation, a path is added to the bins with a filter:
 
 - `box`: to the bin that contains its length.
-- `tent`: split between that bin and the next one, in proportion to where its length falls in the
-  bin.
+- `tent`: split between the two bins whose centers are nearest to its length, in proportion to its
+  distance to them: a tent one bin wide on each side of every bin center, as in
+  [TransientHistogramReSTIRInline](TransientHistogramReSTIRInline.md). The first and last bins also
+  take paths up to half a bin outside the range.
 
 With `useKernelDensityEstimation`, every path is spread over all bins with the kernel chosen by
 `histogramFilter`. The kernel starts at `initialWindowRatio x (timeMax - timeMin)` wide for a frame's
@@ -138,7 +141,8 @@ With `accumulate`, the histogram is the *sum* of the frames rendered since the l
 is much cheaper than a separate accumulation pass for large histograms. Divide it by the number
 of frames to get the mean; `TransientHistogramViewer` does this on its own. The sum restarts when
 the camera moves, the scene changes, a setting of this pass or an upstream pass (e.g. the laser)
-changes, or a script calls `reset_histogram()`.
+changes, the render graph is recompiled (e.g. on a resize or a new output), or a script calls
+`reset_histogram()`.
 
 (sampling-methods)=
 ## Sampling methods

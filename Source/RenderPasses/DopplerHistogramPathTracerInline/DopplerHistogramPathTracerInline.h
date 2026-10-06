@@ -58,6 +58,8 @@ public:
     Properties getProperties() const override;
     RenderPassReflection reflect(const CompileData& compileData) override;
     void execute(RenderContext* pRenderContext, const RenderData& renderData) override;
+    /// A recompile (e.g. a new output or a resize) allocates new textures: restart the in-place sum.
+    void compile(RenderContext* pRenderContext, const CompileData& compileData) override { resetSpectrum(); }
     void renderUI(Gui::Widgets& widget) override;
     void setScene(RenderContext* pRenderContext, const ref<Scene>& pScene) override;
 
