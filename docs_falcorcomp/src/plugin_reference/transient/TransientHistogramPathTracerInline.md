@@ -175,11 +175,13 @@ The laser is set on the `LaserLight` pass, as for the
 * - `viewW` (input, optional)
   - Primary ray directions, from `VBufferRT`.
 * - `histogram` (output)
-  - Transient histogram $H$, `width x height x timeBin`. RGBA32Float (the alpha channel is an
-    auxiliary weight), or R32Float with `useSingleChannel`.
+  - Transient histogram $H$, `width x height x timeBin`. RGBA32Float (the alpha channel sums the
+    filter or kernel weights of the samples that added light to the bin), or R32Float with
+    `useSingleChannel`.
 * - `color` (output)
-  - Radiance of the frame, summed over all path lengths the camera paths reach (with `tri_approx`,
-    over the histogram's range), RGBA32Float.
+  - The frame's histogram integrated over path length (the sum of its bins times the bin width):
+    the radiance of the paths that fall in the histogram, weighted by the filter or kernel,
+    RGBA32Float. Paths that reach no bin are not shaded.
 ```
 
 The pass also publishes the histogram's range and the number of summed frames to the render

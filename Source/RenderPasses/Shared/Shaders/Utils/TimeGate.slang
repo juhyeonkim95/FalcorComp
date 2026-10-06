@@ -178,6 +178,20 @@ float getMaxPathLength(float target_distance, bool use_rough = false)
 	return (v >= -0.5 && v < 0.5) ? 1.0 : 0.0; // Half-open, like a histogram bin.
  }
 
+ // Half-width of the support of pathLengthImportanceGivenWindow()'s kernel, in path length (FLT_MAX if unbounded).
+ float getKernelReachGivenWindow(float target_time_gate_window)
+ {
+	switch(gTimeGateMode)
+	{
+		case TIME_GATE_ALL:
+		case TIME_GATE_GAUSSIAN:
+			return FLT_MAX;
+		case TIME_GATE_TENT:
+			return target_time_gate_window;
+	}
+	return 0.5 * target_time_gate_window; // Box (also the fallback kernel), Epanechnikov, Perlin.
+ }
+
  inline float tentPdfTime(float tau, float t, float a)
  {
 	 float x = abs(tau - t);

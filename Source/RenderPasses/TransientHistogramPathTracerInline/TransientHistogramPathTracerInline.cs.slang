@@ -47,17 +47,41 @@ void addHistogramBin(uint2 pixel, uint bin, float3 radiance, float weight = 1.f)
     gTransientHistogram[uint3(pixel, bin)] += toHistogramTexel(radiance) * weight;
 }
 
-void accumulateToHistogram(uint2 pixel, float pathLength, float3 radiance, float window)
+// Whether a path of this length can add to a bin: only then is its light connection shaded. Exact for the bin filters,
+// conservative for the kernels.
+bool reachesHistogram(float pathLength, float window)
 {
-    if (!isfinite(pathLength)) return;
+#if USE_KERNEL_DENSITY_ESTIMATION
+    float reach = getKernelReachGivenWindow(window);
+    return pathLength >= binCenter(0) - reach && pathLength <= binCenter(gTimeBin - 1) + reach;
+#elif HISTOGRAM_FILTER == HISTOGRAM_FILTER_TENT
+    float coordinate = (pathLength - gTimeMin) / gBinWidth - 0.5f; // In bin centers.
+    return coordinate > -1.f && coordinate < float(gTimeBin);
+#else
+    return pathLength >= gTimeMin && pathLength < gTimeMax;
+#endif
+}
+
+// Adds a path to the bins its filter or kernel reaches. Returns the fraction of its radiance added over all bins: the
+// histogram's integral over path length grows by radiance * fraction / gSamplesPerPixel, and so does the color output,
+// which is that integral.
+float accumulateToHistogram(uint2 pixel, float pathLength, float3 radiance, float window)
+{
+    if (!isfinite(pathLength)) return 0.f;
+    // A zero contribution (e.g. a blocked connection) adds nothing: skip its texel writes.
+    const bool zero = all(radiance == 0.f);
 #if USE_KERNEL_DENSITY_ESTIMATION
     radiance /= window * gSamplesPerPixel;
+    float total = 0.f;
     for (uint bin = 0; bin < gTimeBin; ++bin)
     {
         float center = binCenter(bin);
         float weight = pathLengthImportanceGivenWindow(pathLength, center, window);
-        if (weight > 0.f) addHistogramBin(pixel, bin, radiance * weight);
+        if (!(weight > 0.f)) continue;
+        if (!zero) addHistogramBin(pixel, bin, radiance * weight);
+        total += weight;
     }
+    return total * gBinWidth / window;
 #else
     radiance /= gBinWidth * gSamplesPerPixel;
 #if HISTOGRAM_FILTER == HISTOGRAM_FILTER_TENT
@@ -65,16 +89,27 @@ void accumulateToHistogram(uint2 pixel, float pathLength, float3 radiance, float
     // whose centers are nearest to its length, and reaches the first and last bins from up to half a bin outside the
     // range.
     float coordinate = (pathLength - gTimeMin) / gBinWidth - 0.5f; // In bin centers.
-    if (!(coordinate > -1.f && coordinate < float(gTimeBin))) return;
+    if (!(coordinate > -1.f && coordinate < float(gTimeBin))) return 0.f;
     float lowerBin = floor(coordinate);
     float upperWeight = coordinate - lowerBin;
-    if (lowerBin >= 0.f) addHistogramBin(pixel, uint(lowerBin), radiance, 1.f - upperWeight);
-    if (lowerBin + 1.f < float(gTimeBin)) addHistogramBin(pixel, uint(lowerBin + 1.f), radiance, upperWeight);
+    float total = 0.f;
+    if (lowerBin >= 0.f)
+    {
+        if (!zero) addHistogramBin(pixel, uint(lowerBin), radiance, 1.f - upperWeight);
+        total += 1.f - upperWeight;
+    }
+    if (lowerBin + 1.f < float(gTimeBin))
+    {
+        if (!zero) addHistogramBin(pixel, uint(lowerBin + 1.f), radiance, upperWeight);
+        total += upperWeight;
+    }
+    return total;
 #else
     // Box: the bin that contains the length. The half-open range keeps gTimeMax out of the last bin.
-    if (pathLength < gTimeMin || pathLength >= gTimeMax) return;
+    if (pathLength < gTimeMin || pathLength >= gTimeMax) return 0.f;
     uint bin = min(uint((pathLength - gTimeMin) / gBinWidth), gTimeBin - 1);
-    addHistogramBin(pixel, bin, radiance);
+    if (!zero) addHistogramBin(pixel, bin, radiance);
+    return 1.f;
 #endif
 #endif
 }
@@ -113,13 +148,15 @@ float3 tracePath(const uint2 pixel, const uint2 frameDim)
             {
                 LightSample light = {};
                 lightSampler.generateLightSample(sg, light);
-                if (light.valid)
+                bool connected;
+                LightConnection connection = connectToLight(surface, light, connected);
+                float totalLength = pathLength + connection.distance + light.laserT;
+                // A path that reaches no bin contributes to neither output: skip its visibility ray and BSDF.
+                if (connected && reachesHistogram(totalLength, window))
                 {
-                    LightConnection connection = evaluateLightConnection(surface, material, light, sg);
-                    float totalLength = pathLength + connection.distance + light.laserT;
+                    shadeLightConnection(connection, surface, material, light, sg);
                     float3 contribution = throughput * connection.bsdfCosine * connection.incidentRadiance;
-                    radiance += contribution;
-                    accumulateToHistogram(pixel, totalLength, contribution, window);
+                    radiance += contribution * accumulateToHistogram(pixel, totalLength, contribution, window);
                 }
             }
             if (depth + 1 >= kMaxBounces) break;
