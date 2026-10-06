@@ -38,6 +38,8 @@ cbuffer CB
     uint gSamplesPerPixel;
     ReconnectionCriteria gReconnection;
     float gTemporalHistoryLength;
+    // Whether this pass writes the histogram: only the frame's last stage does (spatial reuse rewrites every texel).
+    bool gWriteHistogram;
 #if USE_TEMPORAL_REUSE
     bool gTemporalHistoryValid;
     float3 gPreviousCameraPosition;

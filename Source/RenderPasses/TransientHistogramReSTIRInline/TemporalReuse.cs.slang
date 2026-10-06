@@ -61,7 +61,7 @@ void main(uint3 dispatchThreadId: SV_DispatchThreadID)
         }
         float3 radiance = reservoir.W * reservoir.f;
         integratedRadiance += radiance;
-        gTransientHistogram[uint3(pixel, bin)] = toHistogramTexel(radiance / gBinWidth);
+        if (gWriteHistogram) gTransientHistogram[uint3(pixel, bin)] = toHistogramTexel(radiance / gBinWidth);
     }
     gTemporalRandomState[pixelIndex] = rng.getCurrentSeed();
     gOutputColor[pixel] = float4(integratedRadiance, 1.f);

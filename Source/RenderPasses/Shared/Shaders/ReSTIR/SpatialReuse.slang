@@ -40,6 +40,7 @@ struct SpatialReuse
     ReconnectionCriteria reconnection;
     float gatherRadius;
     bool useBinReuse; // Histogram only: bin centers are binCenter(bin).
+    bool lastIteration; // The frame's last spatial reuse iteration, whose outputs are final.
 
     uint gFrameCount;
     uint gRandomSeed;

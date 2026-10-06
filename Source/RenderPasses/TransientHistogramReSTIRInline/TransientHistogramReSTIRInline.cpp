@@ -218,6 +218,9 @@ void TransientHistogramReSTIRInline::bindShaderData(const ShaderVar& var, const 
     mOptions.restir.bindReconnectionCriteria(var["CB"]["gReconnection"]);
     var["CB"]["gSamplesPerPixel"] = mOptions.pathTracing.samplesPerPixel;
     var["CB"]["gTemporalHistoryLength"] = mOptions.restir.temporalHistoryLength;
+    // Spatial reuse, when it runs, rewrites every histogram texel; initial generation and temporal reuse write it only
+    // if they are the frame's last stage.
+    var["CB"]["gWriteHistogram"] = mOptions.restir.spatialReuseIteration == 0;
     mLaser.bindShaderData(var["Laser"]);
     bindTimeGate(var);
 

@@ -377,6 +377,7 @@ public:
             {
                 swapReservoirs();
                 spatialVar["gRandomSeed"] = randomSeed++;
+                spatialVar["lastIteration"] = iteration + 1 == iterations;
                 bindReservoirs(spatialVar);
                 pPass->execute(pRenderContext, {frameDim.x, frameDim.y, 1});
             }
@@ -389,6 +390,7 @@ public:
             for (const ShaderVar* var : {&pairVar, &spatialVar})
             {
                 (*var)["gRandomSeed"] = randomSeed;
+                (*var)["lastIteration"] = iteration + 1 == iterations;
                 bindReservoirs(*var);
             }
             randomSeed++;

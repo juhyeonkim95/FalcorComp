@@ -68,7 +68,7 @@ float3 tracePath(uint2 pixel, uint2 frameDim)
         for (uint bin = 0; bin < gTimeBin; ++bin)
         {
             storeReservoir(pixelIndex * gTimeBin + bin, Reservoir());
-            gTransientHistogram[uint3(pixel, bin)] = 0.f;
+            if (gWriteHistogram) gTransientHistogram[uint3(pixel, bin)] = 0.f;
         }
         return 0.f;
     }
@@ -157,11 +157,15 @@ float3 tracePath(uint2 pixel, uint2 frameDim)
     IMaterialInstance previousMaterial = primaryMaterial;
     if (history.valid)
         previousMaterial = gScene.materials.getMaterialInstance(history.primary, ExplicitLodTextureSampler(0.f));
-#elif TEMPORAL_REUSE_PAIRS
-    // Found once here for the temporal kernels, which run one thread per pixel and bin.
+#endif
+    bool writeHistogram = gWriteHistogram;
+#if TEMPORAL_REUSE_PAIRS
+    // Found once here for the temporal kernels, which run one thread per pixel and bin. They rewrite the histogram of
+    // pixels with a history.
     {
         TemporalHistory history = getTemporalHistory(pixel);
         gTemporalHistoryPixel[pixelIndex] = history.valid ? history.pixelIndex : kNoHistory;
+        writeHistogram = writeHistogram && !history.valid;
     }
 #endif
 
@@ -193,7 +197,7 @@ float3 tracePath(uint2 pixel, uint2 frameDim)
         storeReservoir(index, reservoir);
         float3 radiance = reservoir.W * reservoir.f;
         integratedRadiance += radiance;
-        gTransientHistogram[uint3(pixel, bin)] = toHistogramTexel(radiance / gBinWidth);
+        if (writeHistogram) gTransientHistogram[uint3(pixel, bin)] = toHistogramTexel(radiance / gBinWidth);
     }
 #if TEMPORAL_REUSE_PAIRS
     // The merges (TemporalReuse.cs.slang) draw next.
