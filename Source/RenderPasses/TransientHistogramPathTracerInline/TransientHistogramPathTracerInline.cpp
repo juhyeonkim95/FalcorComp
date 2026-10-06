@@ -45,6 +45,8 @@ extern "C" FALCOR_API_EXPORT void registerPlugin(Falcor::PluginRegistry& registr
 namespace
 {
 const char kShaderFile[] = "RenderPasses/TransientHistogramPathTracerInline/TransientHistogramPathTracerInline.cs.slang";
+/// tri_approx: triangles larger than this (world-space area) are left out, as in ellipsoidal sampling's default.
+const float kTriangleApproxMaxArea = 10000.f;
 
 const ChannelList kHistogramOutputChannelSingle = {
     { "histogram",          "gTransientHistogram", "Accumulated transient radiance density per bin", false, ResourceFormat::R32Float },
@@ -197,6 +199,7 @@ void TransientHistogramPathTracerInline::bindShaderData(const ShaderVar& var, co
     var["CB"]["gInitialWindowRatio"] = mOptions.histogram.initialWindowRatio;
     LaserState::resolve(renderData).bindShaderData(var["Laser"]);
     mOptions.histogram.bindShaderData(var);
+    mTriangles.bindShaderData(var);
 
     InlinePass::bindChannels(var, renderData, InlinePass::kPrimaryHitInputChannels);
     InlinePass::bindChannels(var, renderData, InlinePass::kColorOutputChannels);
@@ -230,7 +233,7 @@ void TransientHistogramPathTracerInline::execute(RenderContext* pRenderContext, 
 
     // Triangle approximation enumerates all triangles; no triangle sampling distribution is needed.
     if (mOptions.samplingMethod == SamplingMethod::TriangleApprox)
-        mpScene->getTriCollection(pRenderContext)->update(pRenderContext);
+        mTriangles.get(pRenderContext, mpScene, kTriangleApproxMaxArea)->update(pRenderContext);
     if (!mpComputePass)
         mpComputePass = InlinePass::createScenePass(mpDevice, pRenderContext, mpScene, mpSampleGenerator, kShaderFile, getShaderDefines(renderData));
     InlinePass::checkScene(*mpScene, renderData);
@@ -336,6 +339,7 @@ void TransientHistogramPathTracerInline::setScene(RenderContext* pRenderContext,
     mpComputePass = nullptr;
     mFrameCount = 0;
     resetHistogram();
+    mTriangles.reset();
 
     // Set new scene.
     mpScene = pScene;

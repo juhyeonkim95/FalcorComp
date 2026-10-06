@@ -67,18 +67,19 @@ namespace Falcor
             \param[in] pScene The scene.
             \return A pointer to a new light collection object, or throws an exception if creation failed.
         */
-        static ref<LightCollection> create(ref<Device> pDevice, RenderContext* pRenderContext, Scene* pScene, bool force=false,
-            float maxTriangleArea = 10000.f)
+        static ref<LightCollection> create(ref<Device> pDevice, RenderContext* pRenderContext, Scene* pScene,
+            bool allTriangles = false, float maxTriangleArea = 10000.f)
         {
-            return make_ref<LightCollection>(pDevice, pRenderContext, pScene, force, maxTriangleArea);
+            return make_ref<LightCollection>(pDevice, pRenderContext, pScene, allTriangles, maxTriangleArea);
         }
 
-        /// `force`: collect every triangle mesh (with flux = area), not only emissive ones; triangles larger than
-        /// `maxTriangleArea` (world space) are left out, e.g. an NLOS relay wall in ellipsoidal sampling.
-        LightCollection(ref<Device> pDevice, RenderContext* pRenderContext, Scene* pScene, bool force=false,
+        /// `allTriangles` (FalcorComp): collect every triangle mesh, not only the emissive ones, each triangle weighted by
+        /// its area (flux = area, radiance 1), e.g. to sample points on the scene's surfaces; triangles larger than
+        /// `maxTriangleArea` (world space) are left out (flux 0), e.g. an NLOS relay wall.
+        LightCollection(ref<Device> pDevice, RenderContext* pRenderContext, Scene* pScene, bool allTriangles = false,
             float maxTriangleArea = 10000.f);
 
-        /// Forced collections only: the largest triangle area included.
+        /// With allTriangles: the largest triangle area included.
         float getMaxTriangleArea() const { return mMaxTriangleArea; }
         ~LightCollection() = default;
 
@@ -201,8 +202,8 @@ namespace Falcor
 
         UpdateFlagsSignal mUpdateFlagsSignal;
 
-        bool mForce = false; ///< Forced light collection? (true for tricollection)
-        float mMaxTriangleArea = 10000.f; ///< Forced collections: larger triangles are left out.
+        bool mAllTriangles = false;       ///< Every triangle mesh, weighted by area (see the constructor).
+        float mMaxTriangleArea = 10000.f; ///< With mAllTriangles: larger triangles are left out.
     };
 
     FALCOR_ENUM_CLASS_OPERATORS(LightCollection::CPUOutOfDateFlags);

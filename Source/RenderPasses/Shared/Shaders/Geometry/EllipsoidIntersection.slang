@@ -1,5 +1,5 @@
 #include "Utils/Math/MathConstants.slangh"
-import Utils.Geometry.Ellipsoid;
+import RenderPasses.Shared.Shaders.Geometry.Ellipsoid;
 
 struct SampleResultArea
 {

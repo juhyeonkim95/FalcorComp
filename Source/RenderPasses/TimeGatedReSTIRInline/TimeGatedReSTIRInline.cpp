@@ -167,16 +167,7 @@ void TimeGatedReSTIRInline::setProperties(const Properties& props)
 
 void TimeGatedReSTIRInline::onOptionsChanged(const Options& previous)
 {
-    // Rebuild the sampler and programs: the emissive sampler's defines are only added when they are created.
-    if (mOptions.ellipsoidalSampling.triSampler != previous.ellipsoidalSampling.triSampler)
-        mTriangleSampler.reset();
-    if (mOptions.ellipsoidalSampling.samplingMethod != previous.ellipsoidalSampling.samplingMethod ||
-        mOptions.ellipsoidalSampling.triSampler != previous.ellipsoidalSampling.triSampler)
-    {
-        mpComputePass = nullptr;
-        mpSpatialReusePass = nullptr;
-        mpSpatialReusePairsPass = nullptr;
-    }
+    // The triangle sampler follows the options in prepare(), and its defines are part of getShaderDefines().
     // The debug outputs are part of the reflection.
     if (mOptions.debugNewtonIterations != previous.debugNewtonIterations)
         requestRecompile();
@@ -221,6 +212,7 @@ DefineList TimeGatedReSTIRInline::getShaderDefines(const RenderData& renderData)
     defines.add(PathLengthAwareReSTIRResources::getReservoirDefines(mOptions.pathTracing, mOptions.isSceneDynamic));
 
     defines.add("LIGHT_SAMPLING_METHOD", std::to_string((uint32_t)mOptions.ellipsoidalSampling.samplingMethod));
+    defines.add(mTriangleSampler.getDefines());
     defines.add("DIRECT_CONNECTION", std::to_string((uint32_t)EllipsoidalSamplingMethod::Direct));
     defines.add("ELLIPSOIDAL_CONNECTION", std::to_string((uint32_t)EllipsoidalSamplingMethod::Ellipsoidal));
     defines.add("ELLIPSOIDAL_DIRECT_MIS", std::to_string((uint32_t)EllipsoidalSamplingMethod::EllipsoidalDirectMIS));
@@ -233,7 +225,7 @@ DefineList TimeGatedReSTIRInline::getShaderDefines(const RenderData& renderData)
 
 void TimeGatedReSTIRInline::bindShaderData(const ShaderVar& var, const RenderData& renderData)
 {
-    mTriangleSampler.bindShaderData(var["emissiveSampler"]);
+    mTriangleSampler.bindShaderData(var);
     var["gPrevReservoirs"] = mReSTIR.prevReservoirs;
     var["gCurrReservoirs"] = mReSTIR.currReservoirs;
 
@@ -377,20 +369,17 @@ void TimeGatedReSTIRInline::execute(RenderContext* pRenderContext, const RenderD
     if (!mpComputePass)
     {
         DefineList defines = getShaderDefines(renderData);
-        defines.add(mTriangleSampler.getDefines());
         mpComputePass = InlinePass::createScenePass(mpDevice, pRenderContext, mpScene, mpSampleGenerator, kShaderFile, defines);
     }
     if (!mpSpatialReusePass)
     {
         DefineList defines = getShaderDefines(renderData);
-        defines.add(mTriangleSampler.getDefines());
         defines.add("NEIGHBOR_OFFSET_COUNT", std::to_string(PathLengthAwareReSTIRResources::kNeighborOffsetCount));
         mpSpatialReusePass = InlinePass::createScenePass(mpDevice, pRenderContext, mpScene, mpSampleGenerator, kSpatialReuseFile, defines);
     }
     if (useSpatialReusePairs() && !mpSpatialReusePairsPass)
     {
         DefineList defines = getShaderDefines(renderData);
-        defines.add(mTriangleSampler.getDefines());
         defines.add("NEIGHBOR_OFFSET_COUNT", std::to_string(PathLengthAwareReSTIRResources::kNeighborOffsetCount));
         mpSpatialReusePairsPass = InlinePass::createScenePass(mpDevice, pRenderContext, mpScene, mpSampleGenerator, kSpatialReusePairsFile, defines);
     }

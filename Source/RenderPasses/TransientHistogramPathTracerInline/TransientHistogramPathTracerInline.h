@@ -34,6 +34,7 @@
 #include "../Shared/Host/Configs/PathTracingConfig.h"
 #include "../Shared/Host/LaserState.h"
 #include "../Shared/Host/InlinePassUtils.h"
+#include "../Shared/Host/SceneTriangles.h"
 
 using namespace Falcor;
 
@@ -94,4 +95,5 @@ private:
     ref<Scene> mpScene;
     ref<SampleGenerator> mpSampleGenerator;
     ref<ComputePass> mpComputePass;
+    SceneTriangles mTriangles; ///< tri_approx: every scene triangle.
 };

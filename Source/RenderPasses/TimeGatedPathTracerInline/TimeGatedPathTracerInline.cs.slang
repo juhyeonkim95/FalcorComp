@@ -12,10 +12,8 @@ import Utils.Sampling.SampleGenerator;
 import Rendering.Lights.LightHelpers;
 import RenderPasses.Shared.Shaders.Utils.TimeGate;
 import RenderPasses.Shared.Shaders.Utils.RayUtils;
-import Utils.Geometry.EllipsoidIntersection;
-import Rendering.Lights.EmissiveLightSampler;
-import Rendering.Lights.EmissiveLightSamplerHelpers;
-import Utils.Geometry.Ellipsoid;
+import RenderPasses.Shared.Shaders.Geometry.EllipsoidIntersection;
+import RenderPasses.Shared.Shaders.Geometry.Ellipsoid;
 import Scene.RaytracingInline;
 import RenderPasses.Shared.Shaders.Lights.Laser;
 
@@ -36,7 +34,6 @@ Texture2D<float4> gViewW; // Optional
 // Outputs
 RWTexture2D<float4> gOutputColor;
 
-EmissiveLightSampler emissiveSampler; // Triangle-selection hierarchy for ellipsoidal connections.
 
 // Static configuration based on defines set from the host.
 static const uint kMaxBounces = MAX_BOUNCES;
@@ -160,7 +157,7 @@ float3 tracePath(const uint2 pixel, const uint2 frameDim)
                     // visibility ray and BSDF.
                     if (connected && gate != 0.f)
                     {
-                        float weight = evalBsdfTechniqueWeight(previous, sd, hit, ls, gTimeCenter, emissiveSampler,
+                        float weight = evalBsdfTechniqueWeight(previous, sd, hit, ls, gTimeCenter,
                             LIGHT_SAMPLING_METHOD == ELLIPSOIDAL_DIRECT_MIS);
                         if (weight > 0.f)
                         {
@@ -228,7 +225,7 @@ EllipsoidalEstimate estimateEllipsoidalPath(
     EllipsoidalEstimate estimate = {};
     if (!light.valid) return estimate;
     EllipsoidalSample ellipsoidal;
-    if (!sampleEllipsoid(x, prefixLength, light, gTimeCenter, emissiveSampler, sg, ellipsoidal)) return estimate;
+    if (!sampleEllipsoid(x, prefixLength, light, gTimeCenter, sg, ellipsoidal)) return estimate;
     ShadingData y = ellipsoidal.surface;
     let yMaterial = gScene.materials.getMaterialInstance(y, ExplicitLodTextureSampler(0.f));
     estimate.ellipsePdf = ellipsoidal.pdf; // Above kMinEllipsePdf, as evalEllipsoidPdf() requires too.

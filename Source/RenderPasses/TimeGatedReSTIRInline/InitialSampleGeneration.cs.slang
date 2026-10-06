@@ -7,10 +7,8 @@ import Utils.Sampling.SampleGenerator;
 import Rendering.Lights.LightHelpers;
 import Utils.Color.ColorHelpers;
 import RenderPasses.Shared.Shaders.Utils.TimeGate;
-import Utils.Geometry.Ellipsoid;
-import Utils.Geometry.EllipsoidIntersection;
-import Rendering.Lights.EmissiveLightSamplerHelpers;
-import Rendering.Lights.EmissiveLightSampler;
+import RenderPasses.Shared.Shaders.Geometry.Ellipsoid;
+import RenderPasses.Shared.Shaders.Geometry.EllipsoidIntersection;
 import Scene.RaytracingInline;
 import RenderPasses.Shared.Shaders.ReSTIR.Reservoirs;
 import RenderPasses.Shared.Shaders.ReSTIR.PathReconstruction;
@@ -84,7 +82,6 @@ RWTexture2D<float4> gOutputColor;
 RWTexture2D<float4> gDirectColor;
 #endif
 
-EmissiveLightSampler emissiveSampler;
 
 static const bool kUseImportanceSampling = USE_IMPORTANCE_SAMPLING;
 static const bool kUseEnvBackground = USE_ENV_BACKGROUND;
@@ -100,7 +97,7 @@ void submitEllipsoidalCandidate(inout Reservoir reservoir, ReconnectionState rc,
 {
     if (!light.valid) return;
     EllipsoidalSample ellipsoidal;
-    if (!sampleEllipsoid(origin, prefixLength, light, gTimeCenter, emissiveSampler, rng, ellipsoidal)) return;
+    if (!sampleEllipsoid(origin, prefixLength, light, gTimeCenter, rng, ellipsoidal)) return;
     ShadingData target = ellipsoidal.surface;
     let targetMaterial = gScene.materials.getMaterialInstance(target, ExplicitLodTextureSampler(0.f));
     float targetLength = prefixLength + ellipsoidal.distance * origin.IoR;
@@ -348,7 +345,7 @@ float3 tracePath(uint2 pixel, uint2 frameDim)
 #if LIGHT_SAMPLING_METHOD != DIRECT_CONNECTION
             // A zero candidate's weight does not matter: skip the light-BVH walk too.
             if (connected && gate != 0.f)
-                techniqueWeight = evalBsdfTechniqueWeight(previous, surface, hit, light, gTimeCenter, emissiveSampler,
+                techniqueWeight = evalBsdfTechniqueWeight(previous, surface, hit, light, gTimeCenter,
                     LIGHT_SAMPLING_METHOD == ELLIPSOIDAL_DIRECT_MIS);
 #endif
 #if USE_SHRINK_MAPPING

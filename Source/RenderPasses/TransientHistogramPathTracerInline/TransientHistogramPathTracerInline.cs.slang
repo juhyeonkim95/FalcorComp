@@ -14,6 +14,7 @@ import RenderPasses.Shared.Shaders.Utils.TransientHistogram;
 import RenderPasses.Shared.Shaders.Utils.RayUtils;
 import Scene.RaytracingInline;
 import RenderPasses.Shared.Shaders.Lights.Laser;
+import RenderPasses.Shared.Shaders.Lights.SceneTriangles; // tri_approx: every scene triangle.
 
 cbuffer CB
 {
@@ -253,10 +254,10 @@ float3 tracePathTriangleApprox(const uint2 pixel, const uint2 frameDim)
     const float epsilon = 1e-4f;
     const float2 barycentrics[3] = {float2(epsilon, epsilon), float2(1.f - epsilon, epsilon), float2(epsilon, 1.f - epsilon)};
     float3 radiance = 0.f;
-    uint triangleCount = gScene.triCollection.getActiveTriangleCount();
+    uint triangleCount = gSceneTriangles.getActiveTriangleCount();
     for (uint i = 0; i < triangleCount; ++i)
     {
-        EmissiveTriangle triangle = gScene.triCollection.getTriangle(gScene.triCollection.activeTriangles[i]);
+        EmissiveTriangle triangle = gSceneTriangles.getTriangle(gSceneTriangles.activeTriangles[i]);
         float3 center = (triangle.posW[0] + triangle.posW[1] + triangle.posW[2]) / 3.f;
         float3 toCenter = center - primary.posW;
         if (!(dot(toCenter, toCenter) > 0.f) || !(triangle.area > 0.f)) continue;

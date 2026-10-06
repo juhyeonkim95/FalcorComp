@@ -1,8 +1,9 @@
 #pragma once
 #include "ConfigUtils.h"
+#include "../SceneTriangles.h"
 #include "Rendering/Lights/EmissiveLightSamplerType.slangh"
-#include "Rendering/Lights/EmissiveUniformSampler.h"
-#include "Rendering/Lights/LightBVHSampler.h"
+#include "Rendering/Lights/LightBVH.h"
+#include "Rendering/Lights/LightBVHBuilder.h"
 #include "Scene/Scene.h"
 #include <memory>
 
@@ -113,55 +114,64 @@ struct EllipsoidalSamplingConfig
     }
 };
 
-/// Runtime part of EllipsoidalSamplingConfig: the sampler that picks the scene triangle of an ellipsoidal
-/// connection. It is kept out of the config so that the config stays copyable.
+/// Runtime part of EllipsoidalSamplingConfig: the scene triangles that hold the vertex y of an ellipsoidal connection
+/// (SceneTriangles) and, for the LightBVH method, a light BVH over them with one triangle per leaf. The shaders pick a
+/// triangle with Shared/Shaders/Lights/EllipsoidTriangleSampler.slang. It is kept out of the config so that the config
+/// stays copyable.
 class EllipsoidalTriangleSampler
 {
 public:
-    /// Creates the sampler once `config` uses the ellipsoid, and requests the scene's triangle collection each
-    /// frame while it exists. Call reset() after changing the scene or the config's triSampler.
+    /// Builds the triangles, and the BVH for LightBVH, once `config` uses the ellipsoid; rebuilds them when the area
+    /// cutoff changes. Call reset() after changing the scene.
     void prepare(RenderContext* pRenderContext, const ref<Scene>& pScene, const EllipsoidalSamplingConfig& config)
     {
-        // The sampler is built over the triangle collection, which depends on the area cutoff.
-        if (mpSampler && mMaxTriangleArea != config.maxTriangleArea)
-            mpSampler.reset();
-        if (!mpSampler && config.usesEllipsoid())
+        if (!config.usesEllipsoid() && mTriangles.empty())
+            return;
+        const ref<LightCollection>& pTriangles = mTriangles.get(pRenderContext, pScene, config.maxTriangleArea);
+        if (pTriangles != mpBVHTriangles)
         {
-            ref<ILightCollection> pTriangles = pScene->getTriCollection(pRenderContext, config.maxTriangleArea);
-            FALCOR_CHECK(pTriangles && pTriangles->getActiveLightCount(pRenderContext) > 0,
+            FALCOR_CHECK(pTriangles->getActiveLightCount(pRenderContext) > 0,
                 "Ellipsoidal sampling found no scene triangles (all larger than ellipsoidMaxTriangleArea?).");
-            mMaxTriangleArea = config.maxTriangleArea;
-            mLightBVHOptions.buildOptions.maxTriangleCountPerLeaf = 1;
-            switch (config.triSampler)
-            {
-            case EmissiveLightSamplerType::Uniform:
-                mpSampler = std::make_unique<EmissiveUniformSampler>(pRenderContext, pTriangles);
-                break;
-            case EmissiveLightSamplerType::LightBVH:
-                mpSampler = std::make_unique<LightBVHSampler>(pRenderContext, pTriangles, mLightBVHOptions);
-                break;
-            default:
-                FALCOR_THROW("Unknown emissive light sampler type");
-            }
-            mpSampler->update(pRenderContext, pTriangles);
+            mpBVH.reset();
+            mpBVHTriangles = pTriangles;
         }
-        if (mpSampler)
-            pScene->getTriCollection(pRenderContext, mMaxTriangleArea);
+        mUseBVH = config.triSampler == EmissiveLightSamplerType::LightBVH;
+        if (mUseBVH && !mpBVH)
+        {
+            LightBVHBuilder::Options options;
+            options.maxTriangleCountPerLeaf = 1;
+            mpBVH = std::make_unique<LightBVH>(pScene->getDevice(), pTriangles);
+            LightBVHBuilder(options).build(pRenderContext, *mpBVH);
+        }
     }
 
-    void reset() { mpSampler.reset(); }
+    void reset()
+    {
+        mTriangles.reset();
+        mpBVH.reset();
+        mpBVHTriangles = nullptr;
+    }
 
-    /// The sampler's shader type defines; empty without a sampler.
-    DefineList getDefines() const { return mpSampler ? mpSampler->getDefines() : DefineList(); }
+    /// ELLIPSOID_TRIANGLE_SAMPLER, once prepared; empty before.
+    DefineList getDefines() const
+    {
+        DefineList defines;
+        if (!mTriangles.empty())
+            defines.add("ELLIPSOID_TRIANGLE_SAMPLER", mUseBVH ? "1" : "0");
+        return defines;
+    }
 
+    /// Binds gSceneTriangles and gSceneTriangleBVH under `var` (the root).
     void bindShaderData(const ShaderVar& var) const
     {
-        if (mpSampler)
-            mpSampler->bindShaderData(var);
+        mTriangles.bindShaderData(var);
+        if (mUseBVH && mpBVH)
+            mpBVH->bindShaderData(var["gSceneTriangleBVH"]);
     }
 
 private:
-    std::unique_ptr<EmissiveLightSampler> mpSampler;
-    LightBVHSampler::Options mLightBVHOptions;
-    float mMaxTriangleArea = 0.f; ///< The area cutoff of the collection mpSampler was built over.
+    SceneTriangles mTriangles;
+    std::unique_ptr<LightBVH> mpBVH;
+    ref<LightCollection> mpBVHTriangles; ///< The triangles mpBVH was built over.
+    bool mUseBVH = true;
 };

@@ -363,26 +363,6 @@ namespace Falcor
         return mpLightCollection;
     }
 
-    const ref<LightCollection>& Scene::getTriCollection(RenderContext* pRenderContext)
-    {
-        if (!mpTriCollection)
-        {
-            mpTriCollection = LightCollection::create(mpDevice, pRenderContext, this, true);
-            mpTriCollection->bindShaderData(mpSceneBlock->getRootVar()["triCollection"]);
-        }
-        return mpTriCollection;
-    }
-
-    const ref<LightCollection>& Scene::getTriCollection(RenderContext* pRenderContext, float maxTriangleArea)
-    {
-        if (!mpTriCollection || mpTriCollection->getMaxTriangleArea() != maxTriangleArea)
-        {
-            mpTriCollection = LightCollection::create(mpDevice, pRenderContext, this, true, maxTriangleArea);
-            mpTriCollection->bindShaderData(mpSceneBlock->getRootVar()["triCollection"]);
-        }
-        return mpTriCollection;
-    }
-
     void Scene::rasterize(RenderContext* pRenderContext, GraphicsState* pState, ProgramVars* pVars, RasterizerState::CullMode cullMode)
     {
         rasterize(pRenderContext, pState, pVars, mFrontClockwiseRS[cullMode], mFrontCounterClockwiseRS[cullMode]);
@@ -1671,8 +1651,6 @@ namespace Falcor
 
         if (mpLightCollection)
             mpLightCollection->bindShaderData(var["lightCollection"]);
-        if (mpTriCollection)
-            mpTriCollection->bindShaderData(var["triCollection"]);
         if (mpEnvMap)
             mpEnvMap->bindShaderData(var[kEnvMap]);
     }
@@ -1951,29 +1929,6 @@ namespace Falcor
                 mSceneStats.emissiveMemoryInBytes = mpLightCollection->getMemoryUsageInBytes();
             }
         }
-        else if (!mpLightCollection)
-        {
-            mSceneStats.emissiveMemoryInBytes = 0;
-        }
-
-        // // Update tri collection
-        // if (mpTriCollection)
-        // {
-        //     // If emissive material properties changed we recreate the light collection.
-        //     // This can be expensive and should be optimized by letting the light collection internally update its data structures.
-        //     if (is_set(mUpdates, IScene::UpdateFlags::MeshesChanged))
-        //     {
-        //         mpTriCollection = nullptr;
-        //         getTriollection(pRenderContext);
-        //         mUpdates |= IScene::UpdateFlags::LightCollectionChanged;
-        //     }
-        //     else
-        //     {
-        //         if (mpTriCollection->update(pRenderContext))
-        //             mUpdates |= IScene::UpdateFlags::LightCollectionChanged;
-        //     }
-        // }
-
         else if (!mpLightCollection)
         {
             mSceneStats.emissiveMemoryInBytes = 0;

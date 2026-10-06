@@ -13,6 +13,10 @@ set(shared_shaders
     Lights/LaserLightSampler.slang
     Lights/LightConnection.slang
     Lights/EllipsoidalSampling.slang
+    Lights/EllipsoidTriangleSampler.slang
+    Lights/SceneTriangles.slang
+    Geometry/Ellipsoid.slang
+    Geometry/EllipsoidIntersection.slang
     ShiftMapping/ShiftMapping.slang
     ShiftMapping/NewtonSolver.slang
     ShiftMapping/Charts/ShiftChart.slang

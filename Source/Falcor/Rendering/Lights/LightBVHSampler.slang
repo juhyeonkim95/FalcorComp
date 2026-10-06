@@ -35,7 +35,6 @@ import Rendering.Lights.LightBVH;
 import Rendering.Lights.LightBVHSamplerSharedDefinitions;
 import Rendering.Lights.EmissiveLightSamplerHelpers;
 import Rendering.Lights.EmissiveLightSamplerInterface;
-import Utils.Geometry.Ellipsoid;
 
 // TODO: Use precise keyword at appropriate places.
 
@@ -94,13 +93,6 @@ struct LightBVHSampler : IEmissiveLightSampler
         return true;
     }
 
-    void skipRandomNumber<S : ISampleGenerator>(inout S sg)
-    {
-        if (gScene.lightCollection.isEmpty()) return;
-        sampleNext1D(sg);
-        sampleNext2D(sg);
-    }
-
     /** Evaluate the PDF associated with selecting an emissive triangle.
         \param[in] posW Shading point in world space.
         \param[in] normalW Normal at the shading point in world space.
@@ -132,34 +124,6 @@ struct LightBVHSampler : IEmissiveLightSampler
         return traversalPdf * triangleSelectionPdf;
     }
 
-    float evalTriangleSelectionPdfEllipsoid(
-        const Ellipsoid E, const uint triangleIndex)
-    {
-        if (triangleIndex >= gScene.triCollection.getTriangleCount()) return 0.f;
-
-        float traversalPdf = 1.0f;
-        float triangleSelectionPdf = 1.0f;
-
-        // Evaluate PDF using the BVH.
-        // Load the triangle bitmask as 2x32 bits instead of uint64_t due to driver bug.
-        // TODO: Change buffer to uint64_t format and remove this workaround when http://nvbugs/2817745 is fixed.
-        //uint64_t bitmask = _lightBVH.triangleBitmasks[hit.triangleIndex];
-        uint2 tmp = _lightBVH.triangleBitmasks[triangleIndex];
-        // The builder leaves an all-ones mask for triangles excluded from the BVH
-        // (including the NLOS backwall). They cannot be selected by this sampler.
-        if (tmp.x == 0xffffffffu && tmp.y == 0xffffffffu) return 0.f;
-        uint64_t bitmask = ((uint64_t)tmp.y << 32) | tmp.x;
-
-        uint leafNodeIndex;
-        traversalPdf = evalBVHTraversalPdfEllipsoid(E, bitmask, leafNodeIndex);
-        if (traversalPdf == 0.0f) return 0.0f;
-
-        triangleSelectionPdf = evalNodeSamplingPdfEllipsoid(E, leafNodeIndex, triangleIndex);
-        if (triangleSelectionPdf == 0.0f) return 0.0f;
-
-        return traversalPdf * triangleSelectionPdf;
-    }
-
     /** Evaluate the PDF at a shading point given a hit point on an emissive triangle.
         \param[in] posW Shading point in world space.
         \param[in] normalW Normal at the shading point in world space.
@@ -180,12 +144,6 @@ struct LightBVHSampler : IEmissiveLightSampler
         return triangleSelectionPdf * trianglePdf;
     }
 
-    float evalPdfEllipsoid(Ellipsoid E, const TriangleLightHit hit)
-    {
-        if (hit.triangleIndex == LightCollection::kInvalidIndex) return 0.f;
-        float triangleSelectionPdf = evalTriangleSelectionPdfEllipsoid(E, hit.triangleIndex);
-        return triangleSelectionPdf;
-    }
 
     // Private
 
@@ -403,7 +361,7 @@ struct LightBVHSampler : IEmissiveLightSampler
             return 1.f / distSqr;
         }
     }
-    
+
     /** Pick a triangle in a leaf node to sample.
         \param[in] posW Shading point in world space.
         \param[in] normalW Normal at the shading point in world space.
@@ -459,66 +417,6 @@ struct LightBVHSampler : IEmissiveLightSampler
             return true;
         }
     }
-
-
-    bool pickTriangleEllipsoid(const Ellipsoid E, const uint nodeIndex, const float u, out float pdf, out uint triangleIndex)
-    {
-        pdf = {};
-        triangleIndex = {};
-
-        const LeafNode node = _lightBVH.getLeafNode(nodeIndex);
-
-        if (kUseUniformTriangleSampling)
-        {
-            uint idx = min((uint)(u * node.triangleCount), node.triangleCount - 1); // Safety precaution in case u == 1.0 (it shouldn't be).
-            triangleIndex = _lightBVH.getNodeTriangleIndex(node, idx);
-            pdf = 1.0f / (float)node.triangleCount;
-            return true;
-        }
-        else
-        {
-            float pdfs[kActualMaxTrianglesPerNode];
-            float totalImportance = 0.0f;
-
-            for (uint i = 0; i < node.triangleCount; ++i)
-            {
-                uint triIdx = _lightBVH.getNodeTriangleIndex(node, i);
-                const EmissiveTriangle tri = gScene.triCollection.getTriangle(triIdx);
-                pdfs[i] = float(isTriangleValid(E, tri.posW[0], tri.posW[1], tri.posW[2], tri.normal));
-                totalImportance += pdfs[i];
-            }
-
-            // If the total importance is zero, none of the triangles matter so just bail out.
-            if (totalImportance == 0.0f) return false;
-
-            float uScaled = u * totalImportance;
-            float cdf = 0.0f;
-
-            uint idx = 0;
-            for (; idx < node.triangleCount; ++idx)
-            {
-                cdf += pdfs[idx];
-                if (uScaled < cdf) break;
-            }
-
-            idx = min(idx, node.triangleCount - 1); // Safety precaution in case uScaled == cdf (it shouldn't be).
-            triangleIndex = _lightBVH.getNodeTriangleIndex(node, idx);
-            pdf = pdfs[idx] / totalImportance;
-            return true;
-        }
-    }
-
-    // bool pickTriangleEllipsoid(const uint nodeIndex, const float u, out float pdf, out uint triangleIndex)
-    // {
-    //     pdf = {};
-    //     triangleIndex = {};
-
-    //     const LeafNode node = _lightBVH.getLeafNode(nodeIndex);
-    //     uint idx = min((uint)(u * node.triangleCount), node.triangleCount - 1); // Safety precaution in case u == 1.0 (it shouldn't be).
-    //     triangleIndex = _lightBVH.getNodeTriangleIndex(node, idx);
-    //     pdf = 1.0f / (float)node.triangleCount;
-    //     return true;
-    // }
 
     /** Samples a light using the BVH.
         \param[in] posW Shading point in world space.
@@ -593,45 +491,6 @@ struct LightBVHSampler : IEmissiveLightSampler
         return traversalPdf;
     }
 
-    float evalBVHTraversalPdfEllipsoid(Ellipsoid E, uint64_t bitmask, out uint nodeIndex)
-    {
-        float traversalPdf = 1.0f;
-        nodeIndex = 0;
-        bool isLeaf = _lightBVH.isLeaf(nodeIndex);
-
-        while (!isLeaf)
-        {
-            uint leftNodeIndex = nodeIndex + 1;
-            uint rightNodeIndex = _lightBVH.getInternalNode(nodeIndex).rightChildIdx;
-
-            float leftNodeImportance = computeImportanceEllipsoid(E, leftNodeIndex);
-            float rightNodeImportance = computeImportanceEllipsoid(E, rightNodeIndex);
-
-            float totalImportance = leftNodeImportance + rightNodeImportance;
-            if (totalImportance == 0.f) return 0.0f;
-
-            float pLeft = leftNodeImportance / totalImportance; // Probability of visiting left child.
-            float pRight = 1.0f - pLeft;
-
-            bool chooseLeftNode = (bitmask & 0x1) == 0;
-            if (chooseLeftNode) // Traverse left node
-            {
-                traversalPdf *= pLeft;
-                nodeIndex = leftNodeIndex;
-            }
-            else // Traverse right node
-            {
-                traversalPdf *= pRight;
-                nodeIndex = rightNodeIndex;
-            }
-
-            bitmask >>= 1;
-            isLeaf = _lightBVH.isLeaf(nodeIndex);
-        }
-
-        return traversalPdf;
-    }
-
     /** Returns the PDF of selecting the specified triangle inside the specified leaf node as seen from a given shading point.
         \param[in] posW Shading point in world space.
         \param[in] normalW Normal at the shading point in world space.
@@ -670,255 +529,6 @@ struct LightBVHSampler : IEmissiveLightSampler
             }
 
             return triangleImportance / totalImportance;
-        }
-    }
-
-    float evalNodeSamplingPdfEllipsoid(Ellipsoid E, const uint nodeIndex, const uint triangleIndex)
-    {
-        const LeafNode node = _lightBVH.getLeafNode(nodeIndex);
-
-        if (kUseUniformTriangleSampling)
-        {
-            // Only members of this leaf have nonzero selection probability.
-            for (uint i = 0; i < node.triangleCount; ++i)
-            {
-                if (_lightBVH.getNodeTriangleIndex(node, i) == triangleIndex)
-                    return 1.0f / float(node.triangleCount);
-            }
-            return 0.f;
-        }
-        else
-        {
-            float triangleImportance = 0.0f;
-            float totalImportance = 0.0f;
-            for (uint i = 0; i < node.triangleCount; ++i)
-            {
-                uint triIdx = _lightBVH.getNodeTriangleIndex(node, i);
-                const EmissiveTriangle tri = gScene.triCollection.getTriangle(triIdx);
-                float importance = float(isTriangleValid(E, tri.posW[0], tri.posW[1], tri.posW[2], tri.normal));
-                // uint localTriangleIndex = _lightBVH.getNodeTriangleIndex(node, i);
-                // float importance = computeTriangleImportance(posW, normalW, upperHemisphere, localTriangleIndex);
-                if (triangleIndex == triIdx)
-                {
-                    triangleImportance = importance;
-                }
-                totalImportance += importance;
-            }
-
-            // If the total importance is 0, none of the triangles matter so just bail out.
-            if (totalImportance == 0.0f)
-            {
-                return 0.0f;
-            }
-
-            return triangleImportance / totalImportance;
-        }
-    }
-
-
-    float computeImportanceEllipsoid(Ellipsoid E, const uint nodeIndex)
-    {
-        const SharedNodeAttributes nodeAttribs = _lightBVH.getNodeAttributes(nodeIndex);
-
-        float flux = 1.f;
-        if (!kDisableNodeFlux) flux = nodeAttribs.flux;
-        return flux * isAABBValidForEllipoid(E, nodeAttribs.origin, nodeAttribs.extent);
-    }
-
-    /// Descends from the root to a leaf, choosing each child in proportion to its importance. Each level draws its
-    /// own random number: rescaling one number over the 20-40 levels of a BVH over every scene triangle would run out
-    /// of its 24 bits, making leaves below ~2^-24 unreachable. The choice probabilities are the same either way.
-    bool traverseTreeEllipsoid<S : ISampleGenerator>(Ellipsoid E, inout S sg, out float u, out float pdf, out uint nodeIndex)
-    {
-        pdf = 1.0f;
-        nodeIndex = 0;
-        u = sampleNext1D(sg);
-        bool isLeaf = _lightBVH.isLeaf(nodeIndex);
-
-        while (!isLeaf)
-        {
-            if (nodeIndex != 0) u = sampleNext1D(sg);
-            uint leftNodeIndex = nodeIndex + 1;
-            uint rightNodeIndex = _lightBVH.getInternalNode(nodeIndex).rightChildIdx;
-
-            float leftNodeImportance = computeImportanceEllipsoid(E, leftNodeIndex);
-            float rightNodeImportance = computeImportanceEllipsoid(E, rightNodeIndex);
-
-            float totalImportance = leftNodeImportance + rightNodeImportance;
-
-            // If both nodes have importance being zero, there is no need to continue.
-            if (totalImportance == 0.f) return false;
-
-            float pLeft = leftNodeImportance / totalImportance; // Probability of visiting left child.
-            float pRight = 1.0f - pLeft;
-
-            if (u < pLeft) // Traverse left node
-            {
-                u = u / pLeft;  // Rescale to [0,1).
-                pdf *= pLeft;
-                nodeIndex = leftNodeIndex;
-            }
-            else // Traverse right node
-            {
-                u = (u - pLeft) / pRight;  // Rescale to [0,1).
-                pdf *= pRight;
-                nodeIndex = rightNodeIndex;
-            }
-            isLeaf = _lightBVH.isLeaf(nodeIndex);
-        }
-        return true;
-    }
-
-    float computeImportanceEllipsoidConditional(Ellipsoid E, Sphere S, const uint nodeIndex)
-    {
-        const SharedNodeAttributes nodeAttribs = _lightBVH.getNodeAttributes(nodeIndex);
-        if (!isAABBValidForSphere(S, nodeAttribs.origin, nodeAttribs.extent))
-            return 0.0;
-
-        float flux = 1.f;
-        if (!kDisableNodeFlux) flux = nodeAttribs.flux;
-        return flux * isAABBValidForEllipoid(E, nodeAttribs.origin, nodeAttribs.extent);
-    }
-
-    bool traverseTreeEllipsoidConditional(Ellipsoid E, Sphere S, inout float u, out float pdf, out uint nodeIndex)
-    {
-        pdf = 1.0f;
-        nodeIndex = 0;
-        bool isLeaf = _lightBVH.isLeaf(nodeIndex);
-
-        while (!isLeaf)
-        {
-            uint leftNodeIndex = nodeIndex + 1;
-            uint rightNodeIndex = _lightBVH.getInternalNode(nodeIndex).rightChildIdx;
-
-            float leftNodeImportance = computeImportanceEllipsoidConditional(E, S, leftNodeIndex);
-            float rightNodeImportance = computeImportanceEllipsoidConditional(E, S, rightNodeIndex);
-
-            float totalImportance = leftNodeImportance + rightNodeImportance;
-
-            // If both nodes have importance being zero, there is no need to continue.
-            if (totalImportance == 0.f) return false;
-
-            float pLeft = leftNodeImportance / totalImportance; // Probability of visiting left child.
-            float pRight = 1.0f - pLeft;
-
-            if (u < pLeft) // Traverse left node
-            {
-                u = u / pLeft;  // Rescale to [0,1).
-                pdf *= pLeft;
-                nodeIndex = leftNodeIndex;
-            }
-            else // Traverse right node
-            {
-                u = (u - pLeft) / pRight;  // Rescale to [0,1).
-                pdf *= pRight;
-                nodeIndex = rightNodeIndex;
-            }
-            isLeaf = _lightBVH.isLeaf(nodeIndex);
-        }
-        return true;
-    }
-
-    bool sampleTriangleEllipsoid<S : ISampleGenerator>(
-        const Ellipsoid E, inout S sg, out uint triangleIndex, out float pdf)
-    {
-        pdf = {};
-        triangleIndex = {};
-
-        // Traverse BVH to select a leaf node with N triangles based on estimated probabilities during traversal.
-        float leafPdf;
-        uint leafNodeIndex;
-        float u;
-
-        if (!traverseTreeEllipsoid(E, sg, u, leafPdf, leafNodeIndex)) return false;
-
-        // Within the selected leaf, pick one out of the N triangles to sample.
-        float trianglePdf;
-        if (!pickTriangleEllipsoid(E, leafNodeIndex, u, trianglePdf, triangleIndex)) return false;
-        
-        pdf = leafPdf * trianglePdf;
-        return true;
-    }
-
-    bool sampleTriangleEllipsoidConditional<S : ISampleGenerator>(
-        const Ellipsoid E, const Sphere sph, inout S sg, out uint triangleIndex, out float pdf)
-    {
-        pdf = {};
-        triangleIndex = {};
-
-        // Traverse BVH to select a leaf node with N triangles based on estimated probabilities during traversal.
-        float leafPdf;
-        uint leafNodeIndex;
-        float u = sampleNext1D(sg);
-
-        if (!traverseTreeEllipsoidConditional(E, sph, u, leafPdf, leafNodeIndex)) return false;
-
-        // Within the selected leaf, pick one out of the N triangles to sample.
-        float trianglePdf;
-        if (!pickTriangleEllipsoid(E, leafNodeIndex, u, trianglePdf, triangleIndex)) return false;
-        
-        pdf = leafPdf * trianglePdf;
-        return true;
-    }
-
-    // Iterative DFS over LightBVH to collect up to 64 triangle indices
-    void findAllTrianglesEllipsoid(
-        const Ellipsoid E,
-        out uint triangleCount,
-        out uint indices[kMaxCandidates])
-    {
-        triangleCount = 0;
-
-        // Explicit stack for DFS
-        uint stack[kMaxStackDepth];
-        uint sp = 0;
-
-        // Start from root node (index 0)
-        stack[sp++] = 0;
-
-        // Standard DFS loop
-        while (sp > 0 && triangleCount < kMaxCandidates)
-        {
-            // Pop node
-            uint nodeIndex = stack[--sp];
-
-            // If you have an AABB-ellipsoid cull for this node, put it here
-            // if (!nodeOverlapsEllipsoid(nodeIndex, E)) continue;
-            const SharedNodeAttributes nodeAttribs = _lightBVH.getNodeAttributes(nodeIndex);
-            if(!isAABBValidForEllipoid(E, nodeAttribs.origin, nodeAttribs.extent)) continue;
-
-            if (_lightBVH.isLeaf(nodeIndex))
-            {
-                LeafNode node = _lightBVH.getLeafNode(nodeIndex);
-
-                for (uint i = 0; i < node.triangleCount; ++i)
-                {
-                    // Assuming 1 triangle per leaf; if there can be more, loop over them here.
-                    uint triangleIndex = _lightBVH.getNodeTriangleIndex(node, i);
-                    EmissiveTriangle tri = gScene.triCollection.getTriangle(triangleIndex);
-
-                    if (isTriangleValid(E, tri.posW[0], tri.posW[1], tri.posW[2], tri.normal)
-                        && triangleCount < kMaxCandidates)
-                    {
-                        indices[triangleCount] = triangleIndex;
-                        triangleCount++;
-                    }
-                }
-            }
-            else
-            {
-                // Internal node: push children onto stack.
-                // NOTE: order doesn't matter unless you want specific traversal order.
-                InternalNode inode = _lightBVH.getInternalNode(nodeIndex);
-
-                uint leftNodeIndex  = nodeIndex + 1;
-                uint rightNodeIndex = inode.rightChildIdx;
-
-                // Push right first, then left, so left is processed first (classic DFS pattern)
-                if (sp < kMaxStackDepth) stack[sp++] = rightNodeIndex;
-                if (sp < kMaxStackDepth) stack[sp++] = leftNodeIndex;
-                // If you’re paranoid about overflow, you can early-out if sp hits kMaxStackDepth.
-            }
         }
     }
 };

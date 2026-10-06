@@ -100,12 +100,7 @@ void TimeGatedPathTracerInline::parseProperties(const Properties& props)
 
 void TimeGatedPathTracerInline::onOptionsChanged(const Options& previous)
 {
-    // Rebuild the sampler and program: the emissive sampler's defines are only added when the program is created.
-    if (mOptions.ellipsoidalSampling.triSampler != previous.ellipsoidalSampling.triSampler)
-        mTriangleSampler.reset();
-    if (mOptions.ellipsoidalSampling.samplingMethod != previous.ellipsoidalSampling.samplingMethod ||
-        mOptions.ellipsoidalSampling.triSampler != previous.ellipsoidalSampling.triSampler)
-        mpComputePass = nullptr;
+    // The triangle sampler follows the options in prepare(), and its defines are part of getShaderDefines().
     mOptionsChanged = true;
 }
 
@@ -147,6 +142,7 @@ DefineList TimeGatedPathTracerInline::getShaderDefines(const RenderData& renderD
     defines.add("DIRECT_CONNECTION", std::to_string((uint32_t)EllipsoidalSamplingMethod::Direct));
     defines.add("ELLIPSOIDAL_CONNECTION", std::to_string((uint32_t)EllipsoidalSamplingMethod::Ellipsoidal));
     defines.add("ELLIPSOIDAL_DIRECT_MIS", std::to_string((uint32_t)EllipsoidalSamplingMethod::EllipsoidalDirectMIS));
+    defines.add(mTriangleSampler.getDefines());
 
     // For optional I/O resources, set 'is_valid_<name>' defines to inform the program of which ones it can access.
     defines.add(getValidResourceDefines(InlinePass::kPrimaryHitInputChannels, renderData));
@@ -156,7 +152,7 @@ DefineList TimeGatedPathTracerInline::getShaderDefines(const RenderData& renderD
 
 void TimeGatedPathTracerInline::bindShaderData(const ShaderVar& var, const RenderData& renderData)
 {
-    mTriangleSampler.bindShaderData(var["emissiveSampler"]);
+    mTriangleSampler.bindShaderData(var);
 
     var["CB"]["gFrameCount"] = mFrameCount;
     var["CB"]["gFrameDim"] = renderData.getDefaultTextureDims();
@@ -186,11 +182,8 @@ void TimeGatedPathTracerInline::execute(RenderContext* pRenderContext, const Ren
     mOptions.timeGate.beginFrame(mGate);
     mTriangleSampler.prepare(pRenderContext, mpScene, mOptions.ellipsoidalSampling);
     if (!mpComputePass)
-    {
-        DefineList defines = getShaderDefines(renderData);
-        defines.add(mTriangleSampler.getDefines());
-        mpComputePass = InlinePass::createScenePass(mpDevice, pRenderContext, mpScene, mpSampleGenerator, kShaderFile, defines);
-    }
+        mpComputePass = InlinePass::createScenePass(mpDevice, pRenderContext, mpScene, mpSampleGenerator, kShaderFile,
+            getShaderDefines(renderData));
     InlinePass::checkScene(*mpScene, renderData);
     if (mpScene->getRenderSettings().useEmissiveLights)
         mpScene->getLightCollection(pRenderContext);
