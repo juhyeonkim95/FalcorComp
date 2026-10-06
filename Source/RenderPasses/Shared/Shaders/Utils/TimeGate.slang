@@ -103,6 +103,15 @@ float getMaxPathLength(float target_distance, bool use_rough = false)
 	return FLT_MAX;
 }
 
+/// Whether a path at x, of optical length pathLength so far, can still end inside the gate, i.e. below maxPathLength
+/// (getMaxPathLength). The rest of any path from x to the light at lightOrigin, a laser's origin or a point light, is
+/// at least |x - lightOrigin| long (triangle inequality; indices of refraction are at least 1), so a walk can stop as
+/// soon as this fails: nothing it could still add reaches the gate.
+bool canReachGate(float pathLength, float3 x, float3 lightOrigin, float maxPathLength)
+{
+    return pathLength + distance(x, lightOrigin) < maxPathLength;
+}
+
 /**
  * Evaluate Path Length Importance Function
  */

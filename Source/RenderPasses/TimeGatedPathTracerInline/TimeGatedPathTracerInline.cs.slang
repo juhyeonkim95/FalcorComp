@@ -83,7 +83,9 @@ float3 tracePath(const uint2 pixel, const uint2 frameDim)
                 result += throughput * evalGatedLightConnection(sd, mi, ls, pathLength, sg);
             }
 #if LIGHT_SAMPLING_METHOD == DIRECT_CONNECTION
-            for(uint depth=1; depth<kMaxBounces && any(throughput > 0.) && !any(throughput < 0.) && hit.isValid() && pathLength < maxPathLength; depth++){
+            // canReachGate: stop once no continuation can end inside the gate (triangle inequality).
+            for(uint depth=1; depth<kMaxBounces && any(throughput > 0.) && !any(throughput < 0.) && hit.isValid() &&
+                canReachGate(pathLength, sd.posW, lls.laserOrigin, maxPathLength); depth++){
                 // -------------------- BSDF Sampling ----------------------
                 if(!mi.sample(sd, sg, bsdfSample, kUseImportanceSampling)){
                     break;
@@ -100,7 +102,7 @@ float3 tracePath(const uint2 pixel, const uint2 frameDim)
                 if(hit.isValid() && any(throughput > 0.)){
                     sd = loadShadingData(hit, rayOrigin, bsdfSample.wo);
                     pathLength += length(sd.posW - previousPosition) * segmentIoR;
-                    if (pathLength >= maxPathLength) break;
+                    if (!canReachGate(pathLength, sd.posW, lls.laserOrigin, maxPathLength)) break;
                     mi = gScene.materials.getMaterialInstance(sd, ExplicitLodTextureSampler(0.f));
 
                     // sample light
@@ -111,7 +113,8 @@ float3 tracePath(const uint2 pixel, const uint2 frameDim)
             }
 #elif LIGHT_SAMPLING_METHOD == ELLIPSOIDAL_CONNECTION || LIGHT_SAMPLING_METHOD == ELLIPSOIDAL_DIRECT_MIS
             ScatterRecord previous = {};
-            for (uint depth = 0; depth < kMaxBounces && pathLength < maxPathLength; ++depth)
+            // canReachGate: stop once no continuation from x (BSDF or ellipsoidal) can end inside the gate.
+            for (uint depth = 0; depth < kMaxBounces && canReachGate(pathLength, sd.posW, lls.laserOrigin, maxPathLength); ++depth)
             {
                 bool hasNonDelta = (mi.getLobeTypes(sd) & uint(LobeType::NonDelta)) != 0;
                 bool useEllipsoid = canSampleEllipsoid(depth, hasNonDelta);

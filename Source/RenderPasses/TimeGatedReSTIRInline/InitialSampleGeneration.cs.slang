@@ -264,7 +264,9 @@ float3 tracePath(uint2 pixel, uint2 frameDim)
         for (uint depth = 1; depth < MAX_BOUNCES; ++depth)
         {
             if (!any(throughput > 0.f)) break;
-            if (!(pathLength < maxPathLength)) break;
+            // Stop once no continuation from this vertex can end inside the gate (triangle inequality). Such paths
+            // have a zero target, so prefix replay and the shifts see the same support.
+            if (!canReachGate(pathLength, surface.posW, lightSampler.laserOrigin, maxPathLength)) break;
 #if LIGHT_SAMPLING_METHOD != DIRECT_CONNECTION
             ScatterRecord previous = {};
             previous.posW = surface.posW;
@@ -313,7 +315,7 @@ float3 tracePath(uint2 pixel, uint2 frameDim)
             material = gScene.materials.getMaterialInstance(surface, ExplicitLodTextureSampler(0.f));
             float segmentLength = length(surface.posW - previousPosition);
             pathLength += segmentLength * segmentIoR;
-            if (!(pathLength < maxPathLength)) break;
+            if (!canReachGate(pathLength, surface.posW, lightSampler.laserOrigin, maxPathLength)) break;
             bool currentDiffuse = gReconnection.isRough(material.getProperties(surface).roughness);
             rc.recordHit(hit, surface, previousPosition, sample, depth, previousDiffuse && currentDiffuse && gReconnection.isLongEnough(segmentLength),
                 segmentLength, segmentIoR, suffixDirectionWeight, sampleSeed);
