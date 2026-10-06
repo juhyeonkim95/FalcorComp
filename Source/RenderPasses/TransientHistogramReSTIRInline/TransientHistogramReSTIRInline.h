@@ -54,6 +54,7 @@ public:
     TransientHistogramReSTIRInline(ref<Device> pDevice, const Properties& props);
 
     virtual Properties getProperties() const override;
+    void setProperties(const Properties& props) override;
     virtual RenderPassReflection reflect(const CompileData& compileData) override;
     virtual void execute(RenderContext* pRenderContext, const RenderData& renderData) override;
     virtual void renderUI(Gui::Widgets& widget) override;

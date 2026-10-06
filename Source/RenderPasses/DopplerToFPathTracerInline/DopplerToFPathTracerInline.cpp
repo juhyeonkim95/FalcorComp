@@ -147,6 +147,15 @@ void DopplerToFPathTracerInline::validateOptions(const Options& options)
                    "objects do not cancel.", periods);
 }
 
+void DopplerToFPathTracerInline::setProperties(const Properties& props)
+{
+    // Invalid properties throw and leave the options unchanged.
+    InlinePass::applyProperties(mOptions, [&] { parseProperties(props); }, validateOptions);
+    if (props.has(kVelocities))
+        mNodesDirty = true; // Collect the moving nodes again.
+    mOptionsChanged = true;
+}
+
 Properties DopplerToFPathTracerInline::getProperties() const
 {
     Properties props;

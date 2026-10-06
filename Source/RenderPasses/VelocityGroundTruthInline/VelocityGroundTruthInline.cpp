@@ -99,6 +99,15 @@ void VelocityGroundTruthInline::validateOptions(const Options& options)
         FALCOR_THROW("direction must be nonzero.");
 }
 
+void VelocityGroundTruthInline::setProperties(const Properties& props)
+{
+    // Invalid properties throw and leave the options unchanged.
+    InlinePass::applyProperties(mOptions, [&] { parseProperties(props); }, validateOptions);
+    // The velocity buffer and, for path_length, the moving nodes follow the motions and the mode.
+    if (props.has("velocities") || props.has("mode"))
+        mVelocitiesDirty = true;
+}
+
 Properties VelocityGroundTruthInline::getProperties() const
 {
     Properties props;

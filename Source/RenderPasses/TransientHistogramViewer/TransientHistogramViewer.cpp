@@ -58,6 +58,16 @@ const char kProfileRadius[] = "profileRadius";
 TransientHistogramViewer::TransientHistogramViewer(ref<Device> pDevice, const Properties& props) : RenderPass(pDevice)
 {
     parseProperties(props);
+    validateOptions(mOptions);
+}
+
+void TransientHistogramViewer::validateOptions(const Options& options)
+{
+    if (!std::isfinite(options.binExposure))
+        FALCOR_THROW("binExposure must be finite.");
+    // The UI's range; it also catches negative values, which wrap around.
+    if (options.profileRadius > 16)
+        FALCOR_THROW("profileRadius must be in [0, 16].");
 }
 
 void TransientHistogramViewer::parseProperties(const Properties& props)
@@ -86,6 +96,12 @@ void TransientHistogramViewer::parseProperties(const Properties& props)
         else
             logWarning("Unknown property '{}' in TransientHistogramViewer properties.", key);
     }
+}
+
+void TransientHistogramViewer::setProperties(const Properties& props)
+{
+    // Invalid properties throw and leave the options unchanged.
+    InlinePass::applyProperties(mOptions, [&] { parseProperties(props); }, validateOptions);
 }
 
 Properties TransientHistogramViewer::getProperties() const

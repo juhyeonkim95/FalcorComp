@@ -54,6 +54,7 @@ public:
     }
     TransientHistogramPathTracerInline(ref<Device> pDevice, const Properties& props);
     Properties getProperties() const override;
+    void setProperties(const Properties& props) override;
     RenderPassReflection reflect(const CompileData& compileData) override;
     void execute(RenderContext* pRenderContext, const RenderData& renderData) override;
     /// A recompile (e.g. a new output or a resize) allocates new textures: restart the in-place sum.

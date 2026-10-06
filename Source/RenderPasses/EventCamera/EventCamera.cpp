@@ -137,6 +137,16 @@ void EventDifference::validateOptions(const Options& options)
         FALCOR_THROW("intensityBias must be finite and positive.");
 }
 
+void EventDifference::setProperties(const Properties& props)
+{
+    const Options previous = mOptions;
+    // Invalid properties throw and leave the options unchanged.
+    InlinePass::applyProperties(mOptions, [&] { parseProperties(props); }, validateOptions);
+    // The history was rendered with the previous sampling or event-frame length.
+    if (mOptions.correlated != previous.correlated || mOptions.subframes != previous.subframes)
+        reset();
+}
+
 Properties EventDifference::getProperties() const
 {
     Properties props;
@@ -270,6 +280,19 @@ void EventSVGF::validateOptions(const Options& options)
         FALCOR_THROW("alpha and momentsAlpha must be in (0, 1].");
     if (!(options.intensityBias > 0.f) || !std::isfinite(options.intensityBias))
         FALCOR_THROW("intensityBias must be finite and positive.");
+}
+
+void EventSVGF::setProperties(const Properties& props)
+{
+    const Options previous = mOptions;
+    // Invalid properties throw and leave the options unchanged.
+    InlinePass::applyProperties(mOptions, [&] { parseProperties(props); }, validateOptions);
+    // The history holds values these options shape; the filter weights apply from the next frame on.
+    if (mOptions.iterations != previous.iterations || mOptions.feedbackTap != previous.feedbackTap ||
+        mOptions.useDemodulation != previous.useDemodulation ||
+        mOptions.useTemporalAccumulation != previous.useTemporalAccumulation ||
+        mOptions.useDenoisedDifference != previous.useDenoisedDifference || mOptions.intensityBias != previous.intensityBias)
+        reset();
 }
 
 Properties EventSVGF::getProperties() const
@@ -472,6 +495,16 @@ void EventGenerator::validateOptions(const Options& options)
 {
     if (!(options.threshold > 0.f) || !std::isfinite(options.threshold))
         FALCOR_THROW("threshold must be finite and positive.");
+}
+
+void EventGenerator::setProperties(const Properties& props)
+{
+    const Options previous = mOptions;
+    // Invalid properties throw and leave the options unchanged.
+    InlinePass::applyProperties(mOptions, [&] { parseProperties(props); }, validateOptions);
+    // Switching between probabilistic and accumulated events starts the residuals afresh.
+    if (mOptions.mode != previous.mode)
+        reset();
 }
 
 Properties EventGenerator::getProperties() const

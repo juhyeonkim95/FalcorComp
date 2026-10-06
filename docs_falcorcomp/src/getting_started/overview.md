@@ -97,6 +97,11 @@ testbed.frame()                                                   # one noisy fr
 image = graph.get_output("Tracer.color").to_numpy()               # 512 x 512 x RGBA
 ```
 
+A pass's settings can also be changed between frames, with the names used to create it:
+`graph.get_pass("Tracer").set_properties({"timeCenter": 17.6})`. Settings left out keep their
+values, an invalid value raises an error and leaves the pass unchanged, and
+`graph.get_pass("Tracer").properties` returns the current settings.
+
 The same graph can run in an interactive window, where the camera and the render pass's settings
 can be changed while it renders. The [tutorials](../tutorials/index.md) build such graphs step by
 step, and the [plugin reference](../plugin_reference/time_gated.md) describes every render pass and

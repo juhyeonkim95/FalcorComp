@@ -109,10 +109,19 @@ void TransientHistogramPathTracerInline::onOptionsChanged(const Options& previou
 {
     mOptionsChanged = true;
     resetHistogram();
-    // The histogram texture depends on the bin count and channel count.
+    // The outputs depend on the bin count, the channel count and the output size.
     if (mOptions.histogram.timeBin != previous.histogram.timeBin ||
-        mOptions.pathTracing.useSingleChannel != previous.pathTracing.useSingleChannel)
+        mOptions.pathTracing.useSingleChannel != previous.pathTracing.useSingleChannel ||
+        mOptions.outputSize != previous.outputSize || any(mOptions.fixedOutputSize != previous.fixedOutputSize))
         requestRecompile();
+}
+
+void TransientHistogramPathTracerInline::setProperties(const Properties& props)
+{
+    const Options previous = mOptions;
+    // Invalid properties throw and leave the options unchanged.
+    InlinePass::applyProperties(mOptions, [&] { parseProperties(props); }, validateOptions);
+    onOptionsChanged(previous);
 }
 
 Properties TransientHistogramPathTracerInline::getProperties() const

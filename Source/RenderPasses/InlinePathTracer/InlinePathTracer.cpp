@@ -65,6 +65,13 @@ void InlinePathTracer::parseProperties(const Properties& props)
     }
 }
 
+void InlinePathTracer::setProperties(const Properties& props)
+{
+    // Invalid properties throw and leave the options unchanged.
+    InlinePass::applyProperties(mOptions, [&] { parseProperties(props); }, validateOptions);
+    mOptionsChanged = true;
+}
+
 Properties InlinePathTracer::getProperties() const
 {
     Properties props;

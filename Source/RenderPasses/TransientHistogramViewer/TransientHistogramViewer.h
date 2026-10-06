@@ -27,6 +27,7 @@
  **************************************************************************/
 #pragma once
 #include "Falcor.h"
+#include "../Shared/Host/InlinePassUtils.h"
 #include "RenderGraph/RenderPass.h"
 
 using namespace Falcor;
@@ -56,6 +57,7 @@ public:
     TransientHistogramViewer(ref<Device> pDevice, const Properties& props);
 
     Properties getProperties() const override;
+    void setProperties(const Properties& props) override;
     RenderPassReflection reflect(const CompileData& compileData) override;
     void execute(RenderContext* pRenderContext, const RenderData& renderData) override;
     void renderUI(Gui::Widgets& widget) override;
@@ -83,6 +85,7 @@ private:
         int2 selectedPixel = {-1, -1}; ///< Histogram pixel of the transient profile; negative if none.
         uint profileRadius = 1;      ///< The profile averages a (2r + 1)^2 patch.
     };
+    static void validateOptions(const Options& options);
     void parseProperties(const Properties& props);
 
     Options mOptions;

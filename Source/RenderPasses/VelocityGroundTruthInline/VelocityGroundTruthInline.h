@@ -57,6 +57,7 @@ public:
     VelocityGroundTruthInline(ref<Device> pDevice, const Properties& props);
     ~VelocityGroundTruthInline() override { mMover.restore(); }
     Properties getProperties() const override;
+    void setProperties(const Properties& props) override;
     RenderPassReflection reflect(const CompileData& compileData) override;
     void execute(RenderContext* pRenderContext, const RenderData& renderData) override;
     void setScene(RenderContext* pRenderContext, const ref<Scene>& pScene) override;

@@ -151,8 +151,17 @@ Properties TimeGatedReSTIRInline::getProperties() const
 void TimeGatedReSTIRInline::setProperties(const Properties& props)
 {
     const Options previous = mOptions;
-    // Invalid properties throw and leave the options unchanged.
-    InlinePass::applyProperties(mOptions, [&] { parseProperties(props); }, [](const Options& options) { validateOptions(options); });
+    const uint previousSeed = mRandomSeed;
+    // Invalid properties throw and leave the options (and the seed) unchanged.
+    try
+    {
+        InlinePass::applyProperties(mOptions, [&] { parseProperties(props); }, validateOptions);
+    }
+    catch (...)
+    {
+        mRandomSeed = previousSeed;
+        throw;
+    }
     onOptionsChanged(previous);
 }
 

@@ -150,11 +150,22 @@ void DopplerHistogramPathTracerInline::onOptionsChanged(const Options& previous)
 {
     mOptionsChanged = true;
     resetSpectrum();
-    // The spectrum textures depend on the bin count, the channel count and the chirp (a second spectrum).
+    // The outputs depend on the bin count, the channel count, the chirp (a second spectrum) and the output size.
     if (mOptions.frequencyBin != previous.frequencyBin ||
         mOptions.pathTracing.useSingleChannel != previous.pathTracing.useSingleChannel ||
-        mOptions.chirped() != previous.chirped())
+        mOptions.chirped() != previous.chirped() || mOptions.outputSize != previous.outputSize ||
+        any(mOptions.fixedOutputSize != previous.fixedOutputSize))
         requestRecompile();
+}
+
+void DopplerHistogramPathTracerInline::setProperties(const Properties& props)
+{
+    const Options previous = mOptions;
+    // Invalid properties throw and leave the options unchanged.
+    InlinePass::applyProperties(mOptions, [&] { parseProperties(props); }, validateOptions);
+    if (props.has(kVelocities))
+        mVelocitiesDirty = true;
+    onOptionsChanged(previous);
 }
 
 Properties DopplerHistogramPathTracerInline::getProperties() const

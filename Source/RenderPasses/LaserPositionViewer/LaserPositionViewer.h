@@ -59,6 +59,7 @@ public:
     LaserPositionViewer(ref<Device> pDevice, const Properties& props);
 
     Properties getProperties() const override;
+    void setProperties(const Properties& props) override;
     RenderPassReflection reflect(const CompileData& compileData) override;
     void execute(RenderContext* pRenderContext, const RenderData& renderData) override;
     void renderUI(Gui::Widgets& widget) override;
@@ -77,6 +78,7 @@ private:
         RenderPassHelpers::IOSize outputSize = RenderPassHelpers::IOSize::Default;
         uint2 fixedOutputSize = {512, 512};  ///< Output size when outputSize is Fixed; must match the vbuffer.
     };
+    static void validateOptions(const Options& options);
     void parseProperties(const Properties& props);
 
     Options mOptions;

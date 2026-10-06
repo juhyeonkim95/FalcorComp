@@ -116,15 +116,15 @@ inline void clearChannels(RenderContext* pRenderContext, const RenderData& rende
             pRenderContext->clearTexture(pTexture.get());
 }
 
-/// setProperties() of a pass with validated options: `parse` reads the properties into `options`; when `validate`
-/// throws, the previous options are restored.
+/// setProperties() of a pass with validated options: `parse` reads the properties into `options`; when it or `validate`
+/// throws (an unknown enum name, an invalid value), the previous options are restored.
 template<typename Options, typename Parse, typename Validate>
 void applyProperties(Options& options, Parse&& parse, Validate&& validate)
 {
     const Options previous = options;
-    parse();
     try
     {
+        parse();
         validate(options);
     }
     catch (...)

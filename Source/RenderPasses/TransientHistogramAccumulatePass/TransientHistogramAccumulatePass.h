@@ -27,6 +27,7 @@
  **************************************************************************/
 #pragma once
 #include "Falcor.h"
+#include "../Shared/Host/InlinePassUtils.h"
 #include "RenderGraph/RenderPass.h"
 
 using namespace Falcor;
@@ -50,6 +51,7 @@ public:
     TransientHistogramAccumulatePass(ref<Device> pDevice, const Properties& props);
 
     Properties getProperties() const override;
+    void setProperties(const Properties& props) override;
     RenderPassReflection reflect(const CompileData& compileData) override;
     void compile(RenderContext* pRenderContext, const CompileData& compileData) override;
     void execute(RenderContext* pRenderContext, const RenderData& renderData) override;

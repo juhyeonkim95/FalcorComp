@@ -119,6 +119,23 @@ void TransientHistogramReSTIRInline::onOptionsChanged(const Options& previous)
         requestRecompile();
 }
 
+void TransientHistogramReSTIRInline::setProperties(const Properties& props)
+{
+    const Options previous = mOptions;
+    const uint previousSeed = mRandomSeed;
+    // Invalid properties throw and leave the options (and the seed) unchanged.
+    try
+    {
+        InlinePass::applyProperties(mOptions, [&] { parseProperties(props); }, validateOptions);
+    }
+    catch (...)
+    {
+        mRandomSeed = previousSeed;
+        throw;
+    }
+    onOptionsChanged(previous);
+}
+
 Properties TransientHistogramReSTIRInline::getProperties() const
 {
     Properties props;

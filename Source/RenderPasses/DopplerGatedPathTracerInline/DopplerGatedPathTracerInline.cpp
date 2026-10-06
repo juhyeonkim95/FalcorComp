@@ -115,6 +115,15 @@ void DopplerGatedPathTracerInline::validateOptions(const Options& options)
         FALCOR_THROW("wavelength must be positive and finite.");
 }
 
+void DopplerGatedPathTracerInline::setProperties(const Properties& props)
+{
+    // Invalid properties throw and leave the options unchanged.
+    InlinePass::applyProperties(mOptions, [&] { parseProperties(props); }, validateOptions);
+    if (props.has(kVelocities))
+        mVelocitiesDirty = true;
+    mOptionsChanged = true;
+}
+
 Properties DopplerGatedPathTracerInline::getProperties() const
 {
     Properties props;

@@ -63,6 +63,7 @@ public:
     /// Leaves the scene as it was built.
     ~DopplerToFPathTracerInline() override { mMover.restore(); }
     Properties getProperties() const override;
+    void setProperties(const Properties& props) override;
     RenderPassReflection reflect(const CompileData& compileData) override;
     void execute(RenderContext* pRenderContext, const RenderData& renderData) override;
     void renderUI(Gui::Widgets& widget) override;

@@ -109,6 +109,14 @@ void TimeGatedPathTracerInline::onOptionsChanged(const Options& previous)
     mOptionsChanged = true;
 }
 
+void TimeGatedPathTracerInline::setProperties(const Properties& props)
+{
+    const Options previous = mOptions;
+    // Invalid properties throw and leave the options unchanged.
+    InlinePass::applyProperties(mOptions, [&] { parseProperties(props); }, validateOptions);
+    onOptionsChanged(previous);
+}
+
 Properties TimeGatedPathTracerInline::getProperties() const
 {
     Properties props;

@@ -27,6 +27,7 @@
  **************************************************************************/
 #pragma once
 #include "Falcor.h"
+#include "../Shared/Host/InlinePassUtils.h"
 #include "RenderGraph/RenderPass.h"
 
 using namespace Falcor;
@@ -49,6 +50,7 @@ public:
     }
     EventDifference(ref<Device> pDevice, const Properties& props);
     Properties getProperties() const override;
+    void setProperties(const Properties& props) override;
     RenderPassReflection reflect(const CompileData& compileData) override;
     void execute(RenderContext* pRenderContext, const RenderData& renderData) override;
 
@@ -92,6 +94,7 @@ public:
     static ref<EventSVGF> create(ref<Device> pDevice, const Properties& props) { return make_ref<EventSVGF>(pDevice, props); }
     EventSVGF(ref<Device> pDevice, const Properties& props);
     Properties getProperties() const override;
+    void setProperties(const Properties& props) override;
     RenderPassReflection reflect(const CompileData& compileData) override;
     void execute(RenderContext* pRenderContext, const RenderData& renderData) override;
 
@@ -148,6 +151,7 @@ public:
     }
     EventGenerator(ref<Device> pDevice, const Properties& props);
     Properties getProperties() const override;
+    void setProperties(const Properties& props) override;
     RenderPassReflection reflect(const CompileData& compileData) override;
     void execute(RenderContext* pRenderContext, const RenderData& renderData) override;
 

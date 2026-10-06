@@ -87,7 +87,19 @@ Properties LaserLight::getProperties() const
 
 void LaserLight::setProperties(const Properties& props)
 {
-    parseProperties(props);
+    // An invalid property (e.g. a zero direction) throws and leaves the light unchanged.
+    const LaserState laser = mLaser;
+    const float3 velocity = mVelocity;
+    try
+    {
+        parseProperties(props);
+    }
+    catch (...)
+    {
+        mLaser = laser;
+        mVelocity = velocity;
+        throw;
+    }
     mOptionsChanged = true;
 }
 

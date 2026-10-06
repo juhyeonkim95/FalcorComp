@@ -64,7 +64,15 @@ const char kFixedOutputSize[] = "fixedOutputSize";
 LaserPositionViewer::LaserPositionViewer(ref<Device> pDevice, const Properties& props) : RenderPass(pDevice)
 {
     parseProperties(props);
+    validateOptions(mOptions);
     mpSampleGenerator = SampleGenerator::create(mpDevice, SAMPLE_GENERATOR_TINY_UNIFORM);
+}
+
+void LaserPositionViewer::validateOptions(const Options& options)
+{
+    if (!(options.spotScale >= 0.f) || !std::isfinite(options.spotScale) || !(options.coneDensity >= 0.f) ||
+        !std::isfinite(options.coneDensity) || !(options.beamRadius >= 0.f) || !std::isfinite(options.beamRadius))
+        FALCOR_THROW("spotScale, coneDensity and beamRadius must be finite and non-negative.");
 }
 
 void LaserPositionViewer::parseProperties(const Properties& props)
@@ -92,6 +100,15 @@ void LaserPositionViewer::parseProperties(const Properties& props)
         else
             logWarning("Unknown property '{}' in LaserPositionViewer properties.", key);
     }
+}
+
+void LaserPositionViewer::setProperties(const Properties& props)
+{
+    const Options previous = mOptions;
+    // Invalid properties throw and leave the options unchanged.
+    InlinePass::applyProperties(mOptions, [&] { parseProperties(props); }, validateOptions);
+    if (mOptions.outputSize != previous.outputSize || any(mOptions.fixedOutputSize != previous.fixedOutputSize))
+        requestRecompile();
 }
 
 Properties LaserPositionViewer::getProperties() const

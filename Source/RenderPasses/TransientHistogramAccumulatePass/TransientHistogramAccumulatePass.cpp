@@ -84,6 +84,16 @@ void TransientHistogramAccumulatePass::parseProperties(const Properties& props)
     }
 }
 
+void TransientHistogramAccumulatePass::setProperties(const Properties& props)
+{
+    const Options previous = mOptions;
+    // Invalid properties throw and leave the options unchanged.
+    InlinePass::applyProperties(mOptions, [&] { parseProperties(props); }, [](const Options&) {});
+    // As in the UI: switching the average on or off, or changing its precision, restarts it.
+    if (mOptions.enabled != previous.enabled || mOptions.precision != previous.precision)
+        reset();
+}
+
 Properties TransientHistogramAccumulatePass::getProperties() const
 {
     Properties props;
