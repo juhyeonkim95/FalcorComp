@@ -346,8 +346,10 @@ float3 tracePath(uint2 pixel, uint2 frameDim)
             if (connected && gate != 0.f) shadeLightConnection(connection, surface, material, light, rng);
             float techniqueWeight = 1.f;
 #if LIGHT_SAMPLING_METHOD != DIRECT_CONNECTION
-            techniqueWeight = evalBsdfTechniqueWeight(previous, surface, hit, light, gTimeCenter, emissiveSampler,
-                LIGHT_SAMPLING_METHOD == ELLIPSOIDAL_DIRECT_MIS);
+            // A zero candidate's weight does not matter: skip the light-BVH walk too.
+            if (connected && gate != 0.f)
+                techniqueWeight = evalBsdfTechniqueWeight(previous, surface, hit, light, gTimeCenter, emissiveSampler,
+                    LIGHT_SAMPLING_METHOD == ELLIPSOIDAL_DIRECT_MIS);
 #endif
 #if USE_SHRINK_MAPPING
             // submitCandidate divides by gSamplesPerPixel. Correct that to 1/N_i

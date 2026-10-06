@@ -153,15 +153,20 @@ float3 tracePath(const uint2 pixel, const uint2 frameDim)
                 // BSDF technique at y: the walk sampled x -> y, now connect y -> light.
                 if (depth > 0 && hasNonDelta && ls.valid)
                 {
-                    float weight = evalBsdfTechniqueWeight(previous, sd, hit, ls, gTimeCenter, emissiveSampler,
-                        LIGHT_SAMPLING_METHOD == ELLIPSOIDAL_DIRECT_MIS);
-                    if (weight > 0.f)
+                    bool connected;
+                    LightConnection connection = connectToLight(sd, ls, connected);
+                    float gate = pathLengthImportance(pathLength + connection.distance + ls.laserT, gTimeCenter);
+                    // Outside the gate the connection contributes zero: skip its technique weight (a light-BVH walk),
+                    // visibility ray and BSDF.
+                    if (connected && gate != 0.f)
                     {
-                        bool connected;
-                        LightConnection connection = connectToLight(sd, ls, connected);
-                        float gate = pathLengthImportance(pathLength + connection.distance + ls.laserT, gTimeCenter);
-                        if (connected && gate != 0.f) shadeLightConnection(connection, sd, mi, ls, sg);
-                        result += throughput * weight * (connection.bsdfCosine * connection.incidentRadiance * gate);
+                        float weight = evalBsdfTechniqueWeight(previous, sd, hit, ls, gTimeCenter, emissiveSampler,
+                            LIGHT_SAMPLING_METHOD == ELLIPSOIDAL_DIRECT_MIS);
+                        if (weight > 0.f)
+                        {
+                            shadeLightConnection(connection, sd, mi, ls, sg);
+                            result += throughput * weight * (connection.bsdfCosine * connection.incidentRadiance * gate);
+                        }
                     }
                 }
 
