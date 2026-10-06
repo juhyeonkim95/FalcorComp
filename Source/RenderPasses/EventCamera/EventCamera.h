@@ -128,12 +128,14 @@ private:
     uint32_t mFrameCount = 0;
     bool mClearHistory = true;
     uint2 mDim = uint2(0);
-    ref<ComputePass> mpReproject, mpFilterMoments, mpAtrous, mpFinalize;
+    ref<ComputePass> mpReproject, mpFilterMoments, mpAtrous, mpFinalize, mpCopyFeedback;
     // History: [0] the current frame, [1] the previous one; swapped every frame.
     ref<Texture> mpZN[2], mpMoments[2], mpHistory[2], mpReprojected[2];
-    ref<Texture> mpPrevFiltered, mpPrevPrevFiltered; ///< Feedback-tap illumination of frames t-1 and t-2.
+    /// Feedback-tap illumination (primal, difference) of frames t-1 and t-2.
+    ref<Texture> mpPrevFiltered, mpPrevPrevFiltered;
     ref<Texture> mpPrevIllumination2, mpPrevAlbedoEmission, mpPrevFinalIllumination;
-    ref<Texture> mpIllumination, mpPingPong[2];
+    /// The a-trous ping-pong; [0] first holds the temporal accumulation (the filters' input).
+    ref<Texture> mpPingPong[2];
     ref<Texture> mpEmitter; ///< Emitter in the current or the previous frame (R8).
 };
 

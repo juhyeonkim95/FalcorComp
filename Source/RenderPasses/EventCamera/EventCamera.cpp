@@ -238,6 +238,7 @@ EventSVGF::EventSVGF(ref<Device> pDevice, const Properties& props) : RenderPass(
     mpFilterMoments = ComputePass::create(mpDevice, kSVGFShader, "filterMoments");
     mpAtrous = ComputePass::create(mpDevice, kSVGFShader, "atrous");
     mpFinalize = ComputePass::create(mpDevice, kSVGFShader, "finalize");
+    mpCopyFeedback = ComputePass::create(mpDevice, kSVGFShader, "copyFeedback");
 }
 
 void EventSVGF::parseProperties(const Properties& props)
@@ -335,20 +336,21 @@ void EventSVGF::allocate(uint2 dim)
         return mpDevice->createTexture2D(dim.x, dim.y, format, 1, 1, nullptr,
             ResourceBindFlags::UnorderedAccess | ResourceBindFlags::ShaderResource);
     };
+    // 161 B per pixel. History lengths are integers up to 32, exact in half floats; the feedback taps keep the two
+    // channels read back (primal, difference).
     for (int i = 0; i < 2; i++)
     {
         mpZN[i] = create(ResourceFormat::RGBA32Float);
         mpMoments[i] = create(ResourceFormat::RGBA32Float);
-        mpHistory[i] = create(ResourceFormat::RGBA32Float);
+        mpHistory[i] = create(ResourceFormat::RGBA16Float);
         mpReprojected[i] = create(ResourceFormat::R32Float);
         mpPingPong[i] = create(ResourceFormat::RGBA32Float);
     }
-    mpPrevFiltered = create(ResourceFormat::RGBA32Float);
-    mpPrevPrevFiltered = create(ResourceFormat::RGBA32Float);
+    mpPrevFiltered = create(ResourceFormat::RG32Float);
+    mpPrevPrevFiltered = create(ResourceFormat::RG32Float);
     mpPrevIllumination2 = create(ResourceFormat::R32Float);
     mpPrevAlbedoEmission = create(ResourceFormat::RGBA32Float);
     mpPrevFinalIllumination = create(ResourceFormat::R32Float);
-    mpIllumination = create(ResourceFormat::RGBA32Float);
     mpEmitter = create(ResourceFormat::R8Unorm);
     mDim = dim;
 }
@@ -390,7 +392,6 @@ void EventSVGF::execute(RenderContext* pRenderContext, const RenderData& renderD
         var["CB"]["gUseDenoisedDifference"] = uint(mOptions.useDenoisedDifference);
         var["CB"]["gIntensityBias"] = mOptions.intensityBias;
         var["CB"]["gUseDifferenceVariance"] = uint(mOptions.useDifferenceVariance);
-        var["gZN"] = mpZN[0];
         var["gPrevZN"] = mpZN[1];
         return var;
     };
@@ -411,11 +412,12 @@ void EventSVGF::execute(RenderContext* pRenderContext, const RenderData& renderD
         var["gMoments"] = mpMoments[0];
         var["gPrevHistory"] = mpHistory[1];
         var["gHistory"] = mpHistory[0];
+        var["gZN"] = mpZN[0];
         var["gPrevReprojected"] = mpReprojected[1];
         var["gReprojected"] = mpReprojected[0];
         var["gPrevIllumination2"] = mpPrevIllumination2;
         var["gPrevAlbedoEmission"] = mpPrevAlbedoEmission;
-        var["gIllumination"] = mpIllumination;
+        var["gIllumination"] = mpPingPong[0];
         var["gEmitterOut"] = mpEmitter;
         mpReproject->execute(pRenderContext, uint3(dim, 1));
     }
@@ -424,21 +426,30 @@ void EventSVGF::execute(RenderContext* pRenderContext, const RenderData& renderD
     auto feedback = [&](const ref<Texture>& pSource)
     {
         std::swap(mpPrevFiltered, mpPrevPrevFiltered);
-        pRenderContext->copyResource(mpPrevFiltered.get(), pSource.get());
+        auto var = mpCopyFeedback->getRootVar();
+        var["CB"]["gFrameDim"] = dim;
+        var["gAtrousInput"] = pSource;
+        var["gFeedbackOut"] = mpPrevFiltered;
+        mpCopyFeedback->execute(pRenderContext, uint3(dim, 1));
     };
-    // Spatial variance where a history is short, into the ping-pong texture the first a-trous iteration does not write.
+    // Spatial variance where a history is short, from the temporal accumulation in ping-pong [0] into [1].
     {
         auto var = bindCommon(mpFilterMoments);
-        var["gAtrousInput"] = mpIllumination;
+        var["gAtrousInput"] = mpPingPong[0];
         var["gAtrousOutput"] = mpPingPong[1];
-        var["gMoments"] = mpMoments[0];
-        var["gHistory"] = mpHistory[0];
+        var["gCurrZN"] = mpZN[0];
+        var["gCurrMoments"] = mpMoments[0];
+        var["gCurrHistory"] = mpHistory[0];
         var["gEmitter"] = mpEmitter;
         mpFilterMoments->execute(pRenderContext, uint3(dim, 1));
     }
+    // Without a tap inside the a-trous loop the temporal accumulation is fed back, before the loop overwrites it.
+    if (mOptions.feedbackTap < 0)
+        feedback(mpPingPong[0]);
     ref<Texture> pFiltered = mpPingPong[1];
     {
         auto var = bindCommon(mpAtrous);
+        var["gCurrZN"] = mpZN[0];
         var["gEmitter"] = mpEmitter;
         const int32_t tap = std::min(mOptions.feedbackTap, int32_t(mOptions.iterations) - 1);
         for (uint32_t i = 0; i < mOptions.iterations; i++)
@@ -452,13 +463,12 @@ void EventSVGF::execute(RenderContext* pRenderContext, const RenderData& renderD
             if (int32_t(i) == tap)
                 feedback(pFiltered);
         }
-        if (mOptions.feedbackTap < 0)
-            feedback(mpIllumination);
     }
 
     // 3. Remodulation, dI and dL.
     {
         auto var = bindCommon(mpFinalize);
+        var["gCurrZN"] = mpZN[0];
         var["gAlbedo"] = renderData.getTexture("albedo");
         var["gEmission"] = renderData.getTexture("emission");
         var["gFiltered"] = pFiltered;

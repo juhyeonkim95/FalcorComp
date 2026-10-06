@@ -49,6 +49,10 @@ Texture2D gPrevHistory; // (history length of the primal, consecutive frames wit
 RWTexture2D<float4> gHistory;
 Texture2D<float> gPrevReprojected; // Frame t-1's reprojection of the frame t-2 feedback, at the same pixel.
 RWTexture2D<float> gReprojected;
+// The current frame's gZN, gMoments and gHistory, as the filters read them (shader resources, not UAVs).
+Texture2D gCurrZN;
+Texture2D gCurrMoments;
+Texture2D gCurrHistory;
 RWTexture2D<float> gPrevIllumination2;         // Demodulated color2 of frame t-1; updated in place.
 RWTexture2D<float4> gPrevAlbedoEmission;       // (albedo, emission, emitted luminance) of frame t-1, as remodulated; in place.
 RWTexture2D<float> gPrevFinalIllumination;     // Denoised primal of frame t-1; updated in place.
@@ -59,6 +63,9 @@ Texture2D<float> gEmitter;                     // The same, read by the filters.
 RWTexture2D<float4> gIllumination;
 Texture2D gAtrousInput;
 RWTexture2D<float4> gAtrousOutput;
+
+// Feedback tap (copyFeedback): the (primal, difference) illumination that becomes frame t-1's.
+RWTexture2D<float2> gFeedbackOut;
 
 // Outputs.
 Texture2D gFiltered;
@@ -272,16 +279,16 @@ void filterMoments(uint3 dispatchThreadId: SV_DispatchThreadID)
         return;
 
     const float4 center = gAtrousInput.Load(int3(pixel, 0));
-    const float4 history = gHistory[pixel];
+    const float4 history = gCurrHistory[pixel];
     const bool primalShort = history.x < 4.0;
     const bool differenceShort = history.z < 4.0 && !isEmitter(pixel);
-    const float2 zCenter = gZN[pixel].xy;
+    const float2 zCenter = gCurrZN[pixel].xy;
     if ((!primalShort && !differenceShort) || zCenter.x < 0)
     {
         gAtrousOutput[pixel] = center;
         return;
     }
-    const float3 nCenter = oct_to_ndir_snorm(gZN[pixel].zw);
+    const float3 nCenter = oct_to_ndir_snorm(gCurrZN[pixel].zw);
     const float4 znCenterPrev = gPrevZN[pixel];
     const float3 nCenterPrev = oct_to_ndir_snorm(znCenterPrev.zw);
     const float phiDepth = max(zCenter.y, 1e-8) * 3.0;
@@ -299,8 +306,8 @@ void filterMoments(uint3 dispatchThreadId: SV_DispatchThreadID)
             if (any(p < int2(0, 0)) || any(p >= int2(gFrameDim)))
                 continue;
             const float4 illuminationP = gAtrousInput.Load(int3(p, 0));
-            const float4 momentsP = gMoments[p];
-            const float4 znP = gZN[p];
+            const float4 momentsP = gCurrMoments[p];
+            const float4 znP = gCurrZN[p];
             const float distance = length(float2(xx, yy));
             const float w = computeWeight(zCenter.x, znP.x, phiDepth * distance, nCenter, oct_to_ndir_snorm(znP.zw),
                 gPhiNormal, center.r, illuminationP.r, gPhiColor);
@@ -352,14 +359,14 @@ void atrous(uint3 dispatchThreadId: SV_DispatchThreadID)
         return;
 
     const float4 center = gAtrousInput.Load(int3(pixel, 0));
-    const float2 zCenter = gZN[pixel].xy;
+    const float2 zCenter = gCurrZN[pixel].xy;
     if (zCenter.x < 0)
     {
         // No valid depth: environment, not filtered.
         gAtrousOutput[pixel] = center;
         return;
     }
-    const float3 nCenter = oct_to_ndir_snorm(gZN[pixel].zw);
+    const float3 nCenter = oct_to_ndir_snorm(gCurrZN[pixel].zw);
     const float4 znCenterPrev = gPrevZN[pixel];
     const float3 nCenterPrev = oct_to_ndir_snorm(znCenterPrev.zw);
 
@@ -383,7 +390,7 @@ void atrous(uint3 dispatchThreadId: SV_DispatchThreadID)
                 continue;
             const float kernel = kernelWeights[abs(xx)] * kernelWeights[abs(yy)];
             const float4 illuminationP = gAtrousInput.Load(int3(p, 0));
-            const float4 znP = gZN[p];
+            const float4 znP = gCurrZN[p];
             const float4 znPPrev = gPrevZN[p];
             const float distance = length(float2(xx, yy));
 
@@ -417,7 +424,7 @@ void finalize(uint3 dispatchThreadId: SV_DispatchThreadID)
     if (any(pixel >= int2(gFrameDim)))
         return;
 
-    const float4 zn = gZN[pixel];
+    const float4 zn = gCurrZN[pixel];
     const float4 znPrev = gPrevZN[pixel];
     // (albedo, emission) for remodulation, and the luminance of the emission (to detect emitters).
     const float emitted = luminance(gEmission[pixel].rgb);
@@ -469,4 +476,15 @@ void finalize(uint3 dispatchThreadId: SV_DispatchThreadID)
     gDeltaL[pixel] = deltaL;
     const float3 primal = gUseDemodulation != 0 ? gAlbedo[pixel].rgb * illumination + gEmission[pixel].rgb : float3(illumination);
     gPrimal[pixel] = float4(primal, 1.0);
+}
+
+/// Copies the (primal, difference) channels of gAtrousInput, the feedback tap, to gFeedbackOut (the next frame's
+/// gPrevFiltered): only those two are read back.
+[numthreads(16, 16, 1)]
+void copyFeedback(uint3 dispatchThreadId: SV_DispatchThreadID)
+{
+    const int2 pixel = dispatchThreadId.xy;
+    if (any(pixel >= int2(gFrameDim)))
+        return;
+    gFeedbackOut[pixel] = gAtrousInput.Load(int3(pixel, 0)).rg;
 }
