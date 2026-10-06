@@ -12,8 +12,10 @@ of events per pixel, positive where the brightness rose by multiples of the thre
   Errors in $\Delta L$ add up over time in this mode.
 
 With an [`EventDifference`](EventDifference.md) that averages several executions per frame (`subframes`), events
-are generated once, when the frame completes. Accumulate the output over frames for an event image of a time window,
-or turn it into an event list (pixel, frame, polarity) in Python.
+are generated once, when the frame completes; the executions in between output no events. Each generator follows the
+`EventDifference` that feeds it, so several chains can share a graph. Accumulate the output over executions for an
+event image of a time window, or turn it into an event list (pixel, frame, polarity) in Python. A non-finite
+$\Delta L$ (NaN or infinity) makes no events and does not enter the accumulated brightness.
 
 ## Parameters
 

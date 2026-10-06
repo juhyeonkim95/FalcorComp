@@ -18,8 +18,11 @@ renders.
 `PathTracer` renders at most 16 samples per pixel. With `subframes` $= N$, the pass averages $N$ executions into
 one event frame; the script holds the scene still and gives each execution new seeds, keeping the pairing: in
 execution $k$ of frame $t$, `color1` uses seed $(t-1)N + k$ and `color2` seed $tN + k$. The outputs keep the last
-complete event frame in between, and [`EventGenerator`](EventGenerator.md) fires only when a frame completes. This
-gives references with thousands of samples per pixel.
+complete event frame in between, and the [`EventGenerator`](EventGenerator.md) fed by `deltaL` fires only when a
+frame completes. This gives references with thousands of samples per pixel.
+
+A pixel with a non-finite sample (NaN or infinity) in an event frame gets no difference for it, and its history keeps
+the last finite frame.
 
 ## Parameters
 

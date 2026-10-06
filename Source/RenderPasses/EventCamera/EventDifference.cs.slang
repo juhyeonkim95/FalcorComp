@@ -50,17 +50,21 @@ void main(uint3 dispatchThreadId: SV_DispatchThreadID)
     // The event frame is complete. color1 pairs with the history: same seed (correlated) or the previous render.
     const float3 newer = sum1 / float(gSubframes);
     const float3 current = gCorrelated ? sum2 / float(gSubframes) : newer;
-    const float3 older = gHistory[pixel].rgb;
+    const float4 history = gHistory[pixel]; // alpha: the history holds a sample.
+    const float3 older = history.rgb;
+    // A non-finite sample (NaN or Inf from the renderer) gives no difference and leaves the history as it was.
+    const bool finite = all(isfinite(newer)) && all(isfinite(current));
 
     float3 deltaI = float3(0.f);
     float deltaL = 0.f;
-    if (gHasHistory)
+    if (gHasHistory && finite && history.a > 0.f)
     {
         deltaI = newer - older;
         deltaL = log(gIntensityBias + max(luminance(newer), 0.f)) - log(gIntensityBias + max(luminance(older), 0.f));
     }
     gDeltaI[pixel] = float4(deltaI, 0.f);
     gDeltaL[pixel] = deltaL;
-    gPrimal[pixel] = float4(0.5f * (newer + current), 1.f);
-    gHistory[pixel] = float4(current, 0.f);
+    gPrimal[pixel] = float4(finite ? 0.5f * (newer + current) : older, 1.f);
+    if (finite)
+        gHistory[pixel] = float4(current, 1.f);
 }

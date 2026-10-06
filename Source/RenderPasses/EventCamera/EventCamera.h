@@ -38,7 +38,8 @@ using namespace Falcor;
  *   current seed r_t; dI_t = I^1_t - I^2_{t-1}, the pair that shares r_{t-1}. Primal = (I^1_t + I^2_t) / 2.
  * dL_t = log(Ie + lum(new)) - log(Ie + lum(old)) for the same pair. The seeds are set on the tracers by the caller.
  * With subframes = N, N executions (scene held still) are averaged into one event frame; the outputs keep the last
- * event frame until the next one completes, and the dictionary key "eventFrameReady" tells EventGenerator.
+ * event frame until the next one completes, and the EventGenerator fed by deltaL generates events only then (a
+ * dictionary key per deltaL texture). A non-finite sample gives no difference and leaves the history.
  */
 class EventDifference : public RenderPass
 {
@@ -140,6 +141,8 @@ private:
  * - probabilistic: floor(|dL|/C) events plus one more with probability frac(|dL|/C), with the sign of dL (the
  *   threshold phase is uniform, Kim et al. Sec. 4.6 and App. B).
  * - accumulate: per-pixel residual r = L - L_ref; r += dL, n = trunc(r / C), r -= n C (Eq. 22).
+ * Fed by an EventDifference with subframes, it generates only on the frames that complete an event frame and outputs
+ * no events on the others. A non-finite dL makes no events.
  */
 class EventGenerator : public RenderPass
 {
@@ -175,5 +178,5 @@ private:
     uint32_t mFrame = 0;
     bool mClearResidual = true;
     ref<ComputePass> mpPass;
-    ref<Texture> mpResidual, mpEvents;
+    ref<Texture> mpResidual;
 };

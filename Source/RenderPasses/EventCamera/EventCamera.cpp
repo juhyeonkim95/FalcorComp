@@ -56,7 +56,12 @@ namespace
 const char kDifferenceShader[] = "RenderPasses/EventCamera/EventDifference.cs.slang";
 const char kSVGFShader[] = "RenderPasses/EventCamera/EventSVGF.cs.slang";
 const char kGeneratorShader[] = "RenderPasses/EventCamera/EventGenerator.cs.slang";
-const char kEventFrameReady[] = "eventFrameReady";
+/// Dictionary key: whether the event frame in EventDifference output `pDeltaL` completed this frame. Keyed by the
+/// texture, so that an EventGenerator follows only the EventDifference that feeds it (absent: complete every frame).
+std::string eventFrameReadyKey(const Texture* pDeltaL)
+{
+    return fmt::format("eventFrameReady:{}", static_cast<const void*>(pDeltaL));
+}
 
 const ChannelList kDifferenceInputs = {
     { "color1", "gColor1", "Render of the current frame (correlated: with the previous frame's seed)", false },
@@ -86,7 +91,7 @@ const ChannelList kGeneratorInputs = {
     { "deltaL", "gDeltaL", "Brightness change of the event frame", false },
 };
 const ChannelList kGeneratorOutputs = {
-    { "events", "", "Signed event count of the last event frame", false, ResourceFormat::R32Float },
+    { "events", "", "Signed event count of the event frame completed this frame (0 if none)", false, ResourceFormat::R32Float },
 };
 
 ref<Texture> ensureTexture(ref<Device> pDevice, ref<Texture> pTexture, uint2 dim, ResourceFormat format, bool& created)
@@ -188,6 +193,7 @@ void EventDifference::execute(RenderContext* pRenderContext, const RenderData& r
     if (created)
     {
         reset();
+        pRenderContext->clearUAV(mpHistory->getUAV().get(), float4(0.f));
         pRenderContext->clearUAV(mpDeltaI->getUAV().get(), float4(0.f));
         pRenderContext->clearUAV(mpDeltaL->getUAV().get(), float4(0.f));
         pRenderContext->clearUAV(mpPrimal->getUAV().get(), float4(0.f));
@@ -214,7 +220,7 @@ void EventDifference::execute(RenderContext* pRenderContext, const RenderData& r
     mSubframe = ready ? 0 : mSubframe + 1;
     if (ready)
         mEventFrame++;
-    renderData.getDictionary()[kEventFrameReady] = ready;
+    renderData.getDictionary()[eventFrameReadyKey(renderData.getTexture("deltaL").get())] = ready;
 
     // The outputs keep the last complete event frame.
     pRenderContext->copyResource(renderData.getTexture("deltaI").get(), mpDeltaI.get());
@@ -547,16 +553,18 @@ void EventGenerator::execute(RenderContext* pRenderContext, const RenderData& re
     const uint2 dim = uint2(pDeltaL->getWidth(), pDeltaL->getHeight());
     bool created = false;
     mpResidual = ensureTexture(mpDevice, mpResidual, dim, ResourceFormat::R32Float, created);
-    mpEvents = ensureTexture(mpDevice, mpEvents, dim, ResourceFormat::R32Float, created);
     if (created)
-    {
         reset();
-        pRenderContext->clearUAV(mpEvents->getUAV().get(), float4(0.f));
-    }
 
-    // Only once per event frame: EventDifference may average several executions into one.
-    const bool ready = renderData.getDictionary().getValue(kEventFrameReady, true);
-    if (ready)
+    // Only once per event frame: the EventDifference that produced deltaL may average several executions into one.
+    // Frames that complete no event frame output no events, so that summing the output over frames counts each once.
+    const ref<Texture> pEvents = renderData.getTexture("events");
+    const bool ready = renderData.getDictionary().getValue(eventFrameReadyKey(pDeltaL.get()), true);
+    if (!ready)
+    {
+        pRenderContext->clearUAV(pEvents->getUAV().get(), float4(0.f));
+    }
+    else
     {
         auto var = mpPass->getRootVar();
         var["CB"]["gFrameDim"] = dim;
@@ -567,10 +575,9 @@ void EventGenerator::execute(RenderContext* pRenderContext, const RenderData& re
         var["CB"]["gClearResidual"] = uint(mClearResidual);
         var["gDeltaL"] = pDeltaL;
         var["gResidual"] = mpResidual;
-        var["gEvents"] = mpEvents;
+        var["gEvents"] = pEvents;
         mpPass->execute(pRenderContext, uint3(dim, 1));
         mFrame++;
         mClearResidual = false;
     }
-    pRenderContext->copyResource(renderData.getTexture("events").get(), mpEvents.get());
 }
