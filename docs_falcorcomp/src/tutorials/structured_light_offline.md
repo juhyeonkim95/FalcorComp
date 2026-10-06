@@ -1,8 +1,7 @@
 # Structured light rendering (offline)
 
 This tutorial renders a structured-light measurement of the Cornell box with
-`StructuredLightPathTracerInline`, and compares antithetic and naive sampling at equal rendering
-time.
+`StructuredLightPathTracerInline`, with antithetic sampling.
 
 A projector next to the camera shows fine vertical stripes, $\cos(2\pi\,u / \lambda)$ with
 $\lambda = 0.01$ in projector coordinates: 100 periods across its field of view. The image shows
@@ -84,39 +83,5 @@ whose range is the 95th percentile of its magnitude.
 
 The full script: {download}`structured_light_offline.py <code/structured_light_offline.py>`.
 
-## Equal-time comparison
-
-The comparison script works like the [CW-ToF one](cwtof_offline.md): it renders the same graph with
-`samplingMethod` set to `bsdf` (naive) and `antithetic` for 0.3 seconds each at 256 x 256, after
-compiling and warming up, and compares both with a naive reference with 262,144 samples per pixel.
-
-```{image} images/structured_light_equal_time.jpg
-:alt: Equal-time comparison of naive and antithetic structured-light rendering with a reference
-:align: center
-```
-
-```{list-table}
-:header-rows: 1
-:widths: 40 20 20 20
-
-* - `samplingMethod` (0.3 seconds)
-  - Frames
-  - Samples per pixel
-  - relMSE
-* - `bsdf` (naive)
-  - 393
-  - 3,144
-  - 0.0782
-* - `antithetic`
-  - 303
-  - 2,424
-  - 0.0048
-```
-
-An antithetic frame costs about 30% more, since it traces a projector ray to the antithetic vertex and checks
-that it is visible, but in the same time its error is 16 times lower. These numbers were measured on
-an NVIDIA GeForce RTX 3090 with Vulkan; frame counts and errors depend on the GPU.
-
-The full comparison script, which also saves the image above:
-{download}`structured_light_equal_time.py <code/structured_light_equal_time.py>`. It takes about
-45 seconds, most of it for the reference.
+For an equal-time comparison of antithetic and naive sampling, and how it changes with the pattern, see
+[Antithetic sampling for modulated light](modulated_antithetic_index.md).

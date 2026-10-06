@@ -86,7 +86,7 @@ times.
     ![Doppler ToF](images/measurements/doppler_tof.jpg)
 
     [`DopplerToFPathTracerInline`](../plugin_reference/doppler/DopplerToFPathTracerInline.md)
-  - $$I = \frac{1}{T} \int_0^T \int_{\mathcal{P}} f(\bar{\mathbf{x}}, t)\, m\!\left(t, \ell(\bar{\mathbf{x}}, t)\right) \mathrm{d}\bar{\mathbf{x}}\, \mathrm{d}t$$
+  - $$I = \frac{1}{T} \int_0^T \int_{\mathcal{P(t)}} f(\bar{\mathbf{x}}, t)\, m\!\left(t, \ell(\bar{\mathbf{x}}, t)\right) \mathrm{d}\bar{\mathbf{x}}\, \mathrm{d}t$$
     $$m(t, \ell) = \cos\!\left(2\pi\left(\Delta f\, t - \frac{f_g\, \ell}{c} - \phi\right)\right)$$
 
     A double integral over paths and the exposure $[0, T)$: the scene moves, and the light, modulated at $f_g$, is

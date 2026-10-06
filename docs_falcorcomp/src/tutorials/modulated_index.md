@@ -25,8 +25,9 @@ geometrically close path whose modulation has the opposite sign, so the pair can
 true signal does, and the two are combined with multiple importance sampling.
 
 The tutorials render the indirect part only (`computeDirect` off), as a signed image shown with a
-diverging colormap (0 in white, positive in red, negative in blue), and compare antithetic sampling
-with naive sampling at equal rendering time.
+diverging colormap (0 in white, positive in red, negative in blue), with antithetic sampling.
+[Antithetic sampling for modulated light](modulated_antithetic_index.md) compares it with naive sampling at equal
+rendering time.
 
 - **Scene:** the Cornell box without its area light, as in the [ToF rendering](index.md)
   tutorials. Download {download}`scene-v4-nolight.pbrt <scenes/cornell-box/scene-v4-nolight.pbrt>`
@@ -46,8 +47,7 @@ with naive sampling at equal rendering time.
 :link: cwtof_offline
 :link-type: doc
 
-Render the indirect CW-ToF measurement with `CWToFPathTracerInline`, and compare antithetic and
-naive sampling at equal time.
+Render the indirect CW-ToF measurement with `CWToFPathTracerInline` and antithetic sampling.
 ```
 
 ```{grid-item-card} Structured light rendering (offline)
@@ -56,8 +56,7 @@ naive sampling at equal time.
 :link: structured_light_offline
 :link-type: doc
 
-Project fine sinusoidal stripes with `StructuredLightPathTracerInline`, and compare antithetic and
-naive sampling at equal time.
+Project fine sinusoidal stripes with `StructuredLightPathTracerInline` and antithetic sampling.
 ```
 ````
 

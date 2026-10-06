@@ -1,7 +1,7 @@
 # CW-ToF rendering (offline)
 
 This tutorial renders a continuous-wave time-of-flight (CW-ToF) measurement of the Cornell box with
-`CWToFPathTracerInline`, and compares antithetic and naive sampling at equal rendering time.
+`CWToFPathTracerInline`, with antithetic sampling.
 
 A CW-ToF camera modulates its light and weights each light path by the modulation at the path's
 length $\ell$: here $\cos(2\pi\,\ell / \lambda)$ with a wavelength $\lambda = 0.01$, a hundredth
@@ -82,52 +82,5 @@ whose range is the 95th percentile of its magnitude.
 
 The full script: {download}`cwtof_offline.py <code/cwtof_offline.py>`.
 
-## Equal-time comparison
-
-The comparison script builds the same render graph, renders it with and without antithetic
-sampling for 0.3 seconds each at 256 x 256, and compares both with a reference rendered by naive
-sampling with 262,144 samples per pixel. The error is the relative mean squared error,
-$\mathrm{relMSE} = \overline{(I - I_\mathrm{ref})^2} / \overline{I_\mathrm{ref}^2}$.
-
-Each method first renders a frame that compiles its shaders, then warms up for a second, so the GPU
-runs at full speed when the timing starts:
-
-```{literalinclude} code/cwtof_equal_time.py
-:language: python
-:start-after: "# 3. Render each method for the same time"
-:end-before: "# 4. Render a reference"
-```
-
-```{image} images/cwtof_equal_time.jpg
-:alt: Equal-time comparison of naive and antithetic CW-ToF rendering with a reference
-:align: center
-```
-
-```{list-table}
-:header-rows: 1
-:widths: 40 20 20 20
-
-* - Method (0.3 seconds)
-  - Frames
-  - Samples per pixel
-  - relMSE
-* - Naive
-  - 366
-  - 2,928
-  - 0.130
-* - Antithetic
-  - 289
-  - 2,312
-  - 0.0064
-```
-
-An antithetic frame costs about 25% more, since it finds and evaluates an antithetic path for every
-sampled path, but in the same time its error is 20 times lower: naive sampling shows only noise, while
-antithetic sampling already shows the rings and stripes of the reference. The advantage shrinks for
-longer wavelengths, where the antithetic path, half a wavelength away, is no longer similar to the sampled one.
-These numbers were measured on an NVIDIA GeForce RTX 3090 with Vulkan; frame counts and errors
-depend on the GPU.
-
-The full comparison script, which also saves the image above:
-{download}`cwtof_equal_time.py <code/cwtof_equal_time.py>`. It takes about 45 seconds, most of it
-for the reference.
+For an equal-time comparison of antithetic and naive sampling, and how it changes with the modulation wavelength, see
+[Antithetic sampling for modulated light](modulated_antithetic_index.md).

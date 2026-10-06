@@ -75,3 +75,30 @@ through paths that meet it twice.
 ```
 
 The full script: {download}`doppler_spectrum_offline.py <code/doppler_spectrum_offline.py>`. It takes about 10 seconds.
+
+## A Doppler-gated image
+
+A spectrum keeps every shift. To render only the light in one band of shifts, a single image instead of
+`frequencyBin` bins, replace the tracer with `DopplerGatedPathTracerInline` and give it a gate: a center and a width
+in MHz. The scene, the light and the velocities stay the same; its `color` output is averaged with `AccumulatePass`.
+A gate 2 MHz wide at +25.8 MHz keeps the light that the tall box reflected once (the Doppler-gated image of the
+[overview](../getting_started/overview.md)):
+
+```python
+graph.create_pass("Tracer", "DopplerGatedPathTracerInline", {
+    "samplesPerPixel": 64, "maxBounces": 3, "computeDirect": True,
+    "wavelength": 1550.0,  # nm
+    "frequencyCenter": 25.8, "frequencyGateWindow": 2.0, "frequencyGateMode": "box",  # MHz
+    "velocities": {"TallBox": {"linear": [0.0, 0.0, 20.0]}, "ShortBox": {"linear": [0.0, 0.0, -20.0]}},
+})
+graph.create_pass("Accumulate", "AccumulatePass", {"precisionMode": "SingleCompensated"})
+graph.add_edge("VBuffer.vbuffer", "Tracer.vbuffer")
+graph.add_edge("VBuffer.viewW", "Tracer.viewW")
+graph.add_edge("Light", "Tracer")
+graph.add_edge("Tracer.color", "Accumulate.input")
+graph.mark_output("Accumulate.output")
+```
+
+Connections whose shift falls outside the gate are skipped before they are shaded, so a narrow gate renders faster
+than the spectrum. See [`DopplerGatedPathTracerInline`](../plugin_reference/doppler/DopplerGatedPathTracerInline.md)
+for the gate kernels and the gate sweep.

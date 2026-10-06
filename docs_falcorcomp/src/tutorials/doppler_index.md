@@ -8,10 +8,11 @@ different frequencies, so that light from static objects cancels over the exposu
 | Measurement | Output | Render pass |
 |---|---|---|
 | **Doppler spectrum (OHD)** | `H × W × B`: for every pixel, the light at each Doppler shift | `DopplerHistogramPathTracerInline` |
+| **Doppler-gated image (OHD)** | `H × W`: the light whose Doppler shift falls inside a gate | `DopplerGatedPathTracerInline` |
 | **Doppler ToF** | `H × W`: the heterodyne (or homodyne) measurement over the exposure | `DopplerToFPathTracerInline` |
 
-Both take the objects' velocities as a property (see
-[Velocities](#doppler-velocities)). The OHD pass never moves the scene: a path's Doppler shift follows from the
+All three take the objects' velocities as a property (see
+[Velocities](#doppler-velocities)). The OHD passes never move the scene: a path's Doppler shift follows from the
 velocities of its vertices. The D-ToF pass moves the objects during the exposure, so they must be built as animated.
 `VelocityGroundTruthInline` renders the reference velocity maps.
 
@@ -45,8 +46,8 @@ Doppler ToF.
 :link: doppler_spectrum_offline
 :link-type: doc
 
-Render the Doppler spectrum of the Cornell box with `DopplerHistogramPathTracerInline` while its boxes move, and
-look at the spectra of single pixels.
+Render the Doppler spectrum of the Cornell box with `DopplerHistogramPathTracerInline` while its boxes move, look
+at the spectra of single pixels, and render a single Doppler-gated image with `DopplerGatedPathTracerInline`.
 ```
 
 ```{grid-item-card} Doppler ToF velocity (offline)
