@@ -108,12 +108,12 @@ inline void bindChannels(const ShaderVar& var, const RenderData& renderData, con
             var[channel.texname] = renderData.getTexture(channel.name);
 }
 
-/// Clears the channels' textures that are connected.
+/// Clears the channels' textures that are connected to zero, alpha included (a histogram's alpha sums sample weights).
 inline void clearChannels(RenderContext* pRenderContext, const RenderData& renderData, const ChannelList& channels)
 {
     for (const auto& channel : channels)
         if (auto pTexture = renderData.getTexture(channel.name))
-            pRenderContext->clearTexture(pTexture.get());
+            pRenderContext->clearTexture(pTexture.get(), float4(0.f));
 }
 
 /// setProperties() of a pass with validated options: `parse` reads the properties into `options`; when it or `validate`
