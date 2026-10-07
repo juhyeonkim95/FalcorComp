@@ -151,9 +151,14 @@ export struct RayTraceHemisphereChart:IShiftChart
         hit = sceneRayQuery.traceRay(ray, hitT);
         if (hit.isValid() && hit.getType() == HitType::Triangle)
         {
-            VertexData v = gScene.getVertexData(hit.getTriangleHit());
-            hitPosition = v.posW;
-            hitFaceNormal = v.faceNormalW;
+            // Only the position and the face normal, from the triangle's vertices: getVertexData would interpolate
+            // every attribute at every trial. eval() orients the normal toward the ray, so its sign does not matter.
+            TriangleHit triangle = hit.getTriangleHit();
+            float3 vertices[3];
+            gScene.getVertexPositionsW(triangle.instanceID, triangle.primitiveIndex, vertices);
+            float3 weights = triangle.getBarycentricWeights();
+            hitPosition = weights.x * vertices[0] + weights.y * vertices[1] + weights.z * vertices[2];
+            hitFaceNormal = normalize(cross(vertices[1] - vertices[0], vertices[2] - vertices[0]));
         }
     }
 
