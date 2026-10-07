@@ -108,7 +108,8 @@ Properties StructuredLightPathTracerInline::getProperties() const
     mOptions.projector.serialize(props);
     mOptions.pathTracing.serialize(props);
     props[kSamplingMethod] = enumPropertyName(kSamplingMethods, mOptions.samplingMethod);
-    props[kProjectorSampleCount] = mOptions.projectorSampleCount;
+    if (mOptions.samplingMethod == StructuredLightSamplingMethod::Projector)
+        props[kProjectorSampleCount] = mOptions.projectorSampleCount;
     return props;
 }
 
@@ -197,13 +198,15 @@ void StructuredLightPathTracerInline::renderUI(Gui::Widgets& widget)
     if (auto group = widget.group("Sampling", true))
     {
         dirty |= options.pathTracing.renderSamplingUI(group, " Each vertex is connected to the projector.");
-        static const Gui::DropdownList kSamplingMethodList = {
+        Gui::DropdownList samplingMethods = {
             {(uint32_t)StructuredLightSamplingMethod::Naive, "Naive"},
             {(uint32_t)StructuredLightSamplingMethod::Antithetic, "Antithetic"},
-            {(uint32_t)StructuredLightSamplingMethod::Projector, "Projector"},
         };
+        // Projector sampling is not offered; it shows only when a script selected it.
+        if (options.samplingMethod == StructuredLightSamplingMethod::Projector)
+            samplingMethods.push_back({(uint32_t)StructuredLightSamplingMethod::Projector, "Projector"});
         uint32_t method = (uint32_t)options.samplingMethod;
-        if (group.dropdown("Sampling method", kSamplingMethodList, method))
+        if (group.dropdown("Sampling method", samplingMethods, method))
         {
             options.samplingMethod = (StructuredLightSamplingMethod)method;
             dirty = true;
@@ -211,9 +214,8 @@ void StructuredLightPathTracerInline::renderUI(Gui::Widgets& widget)
         group.tooltip("How the vertex lit by the projector is reached from the camera path.\n"
                       "Naive: BSDF sampling, then a connection to the projector.\n"
                       "Antithetic: each BSDF sample is paired with the point lit through the pattern's "
-                      "antithetic uv, where the pattern has the opposite sign, and the two are combined with MIS.\n"
-                      "Projector: the vertex is sampled from the projector (stratified along the pattern axis) and "
-                      "connected to the camera path.", true);
+                      "antithetic uv, where the pattern has the opposite sign, and the two are combined with MIS.",
+                      true);
         if (options.samplingMethod == StructuredLightSamplingMethod::Projector)
         {
             dirty |= group.var("Projector samples", options.projectorSampleCount, 1u, 1024u);

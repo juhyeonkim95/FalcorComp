@@ -187,29 +187,15 @@ not map back onto themselves, which makes antithetic sampling biased or ineffect
 * - `samplingMethod`
   - string
   - How the vertex lit by the projector is reached from the camera path: `naive` (BSDF sampling,
-    then a connection to the projector), `antithetic` (the same, with each BSDF sample paired with
-    its antithetic vertex) or `projector` (the vertex is sampled from the projector, stratified
-    along the pattern axis, and connected to the camera path). (Default: `antithetic`)
-* - `projectorSampleCount`
-  - integer
-  - `projector` only: projector samples per camera-path vertex. (Default: `1`)
+    then a connection to the projector) or `antithetic` (the same, with each BSDF sample paired with
+    its antithetic vertex; see [Antithetic sampling](#structured-light-antithetic)). (Default: `antithetic`)
 * - `useImportanceSampling`
   - boolean
   - Importance-sample the BSDF when extending the camera path; otherwise use the material's
     reference sampler (cosine-weighted for standard materials). (Default: `true`)
 ```
 
-The `projector` method has high variance where the sampled vertex falls close to the camera-path
-vertex (for example in corners), because it is not combined with BSDF sampling; it is mainly a
-baseline for comparisons. On a concave edge, where two surfaces meet (a wall and the floor, a box and the floor),
-this makes it too dark in practice: a vertex on the edge gets much of its light from the other surface right next to
-it, and a projector ray lands there with a negligible probability. In the Cornell box with the tutorial's projector,
-the pixels whose primary hit lies on such an edge came out 35 to 78 % too dark, and the two-bounce image
-(`maxBounces` 2 without `computeDirect`) 0.12 % darker in all; elsewhere the method agrees with BSDF sampling.
-Its connections are one-sided: they do not pass through the camera-path vertex or the sampled vertex by
-transmission.
-
-For every method, a vertex is lit by the projector only on the side its path arrived from: the projector never
+With either method, a vertex is lit by the projector only on the side its path arrived from: the projector never
 lights a surface through it, so it does not light the inside of glass or other transmissive objects (they still
 transmit the light that reflects off other surfaces).
 

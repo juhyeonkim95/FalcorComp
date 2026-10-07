@@ -41,7 +41,8 @@ enum class StructuredLightSamplingMethod : uint32_t
 {
     Naive = 0,      ///< BSDF sampling.
     Antithetic = 1, ///< BSDF sampling, each sample paired with its antithetic partner in projector space.
-    Projector = 2,  ///< Sampled from the projector, stratified along the pattern axis, and connected.
+    Projector = 2,  ///< Sampled from the projector, stratified along the pattern axis, and connected. Kept for
+                    ///< comparisons, but not documented or offered in the UI: "projector" in scripts only.
 };
 
 /** Structured-light path tracer: a projector shows a signed pattern and camera paths are connected to it.
