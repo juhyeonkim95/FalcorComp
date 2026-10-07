@@ -57,6 +57,9 @@ export struct RayTraceHemisphereChart:IShiftChart
     // The surface is wherever the rays hit: only the straight path p1 -> p2 bounds the length.
     float lengthLowerBound() { return length(p1 - p2); }
 
+    // The metric varies over the chart; the gauges use the coordinates' gradient.
+    float3 metric() { return float3(1.f, 0.f, 1.f); }
+
     bool validCoordinates(float2 coordinates)
     {
         if (useCartesianChart) return CartesianRayChart::isValid(coordinates);

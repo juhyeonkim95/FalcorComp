@@ -81,9 +81,13 @@ void inv2(float a,float b,float c,float d,
 
 // ----------------- gaugeTerms (packed Hessians) -----------------
 // Builds: a(η',η),   JpΔ = (∂a/∂xi')^T Δ,   J0Δ = (∂a/∂xi )^T Δ
+// G is the chart's metric (see IShiftChart.metric). The gradient gauges move along G^-1 g, the steepest direction on
+// the surface, whatever the chart's coordinates: a = c G R g with c = det(G)^-1/2, which keeps a . Δ a length (in
+// orthonormal coordinates G = I, c = 1 and a = R g).
 void gaugeTerms(
     GaugeMode mode,
     float2 a_const,
+    float3 G,
     float2 g0, float2 g1,
     float3 H0, float3 H1,
     float2 Delta,
@@ -91,8 +95,6 @@ void gaugeTerms(
     out float2 JpDelta,
     out float2 J0Delta)
 {
-    float2 RDel = Rperp(Delta);
-
     if (mode == GaugeMode::Constant)
     {
         a = a_const;
@@ -100,21 +102,24 @@ void gaugeTerms(
         J0Delta = float2(0.0, 0.0);
         return;
     }
+    // Exactly 1 for orthonormal coordinates.
+    float c = all(G == float3(1.f, 0.f, 1.f)) ? 1.f : 1.f / sqrt(G.x * G.z - G.y * G.y);
+    float2 RGDel = Rperp(Hmul(G, Delta));
     if (mode == GaugeMode::OrthoGradStart)
     {
-        a = Rperp(g0);
+        a = c * Hmul(G, Rperp(g0));
         JpDelta = float2(0.0, 0.0);
-        // (∂a/∂xi)^T Δ = (R H0)^T Δ = - H0 (R Δ)
-        J0Delta = float2(0.0, 0.0) - Hmul(H0, RDel);
+        // (∂a/∂xi)^T Δ = c (G R H0)^T Δ = - c H0 R (G Δ)
+        J0Delta = float2(0.0, 0.0) - c * Hmul(H0, RGDel);
         return;
     }
 
     // ORTHO_AVG_GRAD
-    a = Rperp(0.5 * (g0 + g1));
-    // (∂a/∂xi')^T Δ = -0.5 * H1 (R Δ)
-    JpDelta = float2(0.0, 0.0) - 0.5 * Hmul(H1, RDel);
-    // (∂a/∂xi )^T Δ = -0.5 * H0 (R Δ)
-    J0Delta = float2(0.0, 0.0) - 0.5 * Hmul(H0, RDel);
+    a = c * Hmul(G, Rperp(0.5 * (g0 + g1)));
+    // (∂a/∂xi')^T Δ = -0.5 c H1 R (G Δ)
+    JpDelta = float2(0.0, 0.0) - 0.5 * c * Hmul(H1, RGDel);
+    // (∂a/∂xi )^T Δ = -0.5 c H0 R (G Δ)
+    J0Delta = float2(0.0, 0.0) - 0.5 * c * Hmul(H0, RGDel);
 }
 
 // Solves ell_t(xi') = condition.targetLength(ell_s(xi)) with the gauge a . (xi' - xi) = 0. xi is the source vertex in
@@ -176,6 +181,7 @@ NewtonResult solveShiftNewton<Chart : IShiftChart>(
         R.status = NewtonResultStatus::Unreachable;
         return R;
     }
+    const float3 G = ops.metric();
 
     // no need to search (a distinct source needs the Jacobian of its map even where xi' = xi)
     if (abs(targetValue - L0) <= tol && !distinctSource)
@@ -204,7 +210,7 @@ NewtonResult solveShiftNewton<Chart : IShiftChart>(
         R.iters = it + 1;
 
         Delta = e - xi;
-        gaugeTerms(mode, a_const, g0, g1, H0, H1, Delta, a, JpDelta, J0Delta);
+        gaugeTerms(mode, a_const, G, g0, g1, H0, H1, Delta, a, JpDelta, J0Delta);
 
         // Jp rows: [ g1^T ; (a + JpDelta)^T ]
         float a11 = g1.x, a12 = g1.y;
@@ -228,7 +234,7 @@ NewtonResult solveShiftNewton<Chart : IShiftChart>(
         if (update_eta)
         {
             float2 a_try, JpD_try, J0D_try;
-            gaugeTerms(mode, a_const, g0, g_try, H0, H_try, e_try - xi, a_try, JpD_try, J0D_try);
+            gaugeTerms(mode, a_const, G, g0, g_try, H0, H_try, e_try - xi, a_try, JpD_try, J0D_try);
             F2_try = dot(a_try, e_try - xi);
         }
         // Both equations in the merit: a step may not trade the gauge for the length. Both are lengths: F2 is the
@@ -258,7 +264,7 @@ NewtonResult solveShiftNewton<Chart : IShiftChart>(
     R.xi_prime = e;
 
     Delta = e - xi;
-    gaugeTerms(mode, a_const, g0, g1, H0, H1, Delta, a, JpDelta, J0Delta);
+    gaugeTerms(mode, a_const, G, g0, g1, H0, H1, Delta, a, JpDelta, J0Delta);
     // Jp rows: [ g1^T ; (a + JpDelta)^T ]
     float a11 = g1.x, a12 = g1.y;
     float b11 = a.x + JpDelta.x, b12 = a.y + JpDelta.y;

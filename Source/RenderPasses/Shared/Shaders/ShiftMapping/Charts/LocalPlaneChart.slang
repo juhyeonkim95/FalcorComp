@@ -34,6 +34,9 @@ export struct LocalPlaneChart: IShiftChart
         return length(p1 - (h1 * h2 > 0.f ? p2 - 2.f * h2 * n : p2));
     }
 
+    // The local tangent shift's t and b are orthonormal, so the coordinates' gradient is the steepest direction.
+    float3 metric() { return float3(1.f, 0.f, 1.f); }
+
     float3 X(float2 coordinates)
     {
         return x0 + coordinates.x * t + coordinates.y * b;

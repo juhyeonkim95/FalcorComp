@@ -40,6 +40,13 @@ export struct BarycentricChart : IShiftChart
         return length(p1 - (h1 * h2 > 0.f ? p2 - 2.f * h2 * n : p2));
     }
 
+    // Barycentric coordinates are not orthonormal: G = E^T E with the edges E = (v1 - v0, v2 - v0).
+    float3 metric()
+    {
+        float3 e1 = v1 - v0, e2 = v2 - v0;
+        return float3(dot(e1, e1), dot(e1, e2), dot(e2, e2));
+    }
+
     // Barycentric parameterization:
     // coordinates.x = b1, coordinates.y = b2, b0 = 1 - b1 - b2.
     float3 X(float2 coordinates)
