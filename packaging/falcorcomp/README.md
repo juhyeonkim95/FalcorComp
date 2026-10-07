@@ -24,7 +24,7 @@ Documentation, tutorials and the reference of every render pass: [falcorcomp.rea
 | Doppler (optical heterodyne detection) | `DopplerGatedPathTracerInline`, `DopplerHistogramPathTracerInline` |
 | Doppler ToF | `DopplerToFPathTracerInline`, `VelocityGroundTruthInline` (ground-truth velocity) |
 | Event cameras | `EventDifference`, `EventSVGF`, `EventGenerator`, with Falcor's `PathTracer` and `SVGFPass` |
-| Utilities | `LaserLight`, `VBufferRT`/`GBufferRT`, `AccumulatePass`, `ToneMapper`, `TransientHistogramViewer`, `LaserPositionViewer`, `SplitScreenPass` |
+| Utilities | `LaserLight`, `InlinePathTracer`, `VBufferRT`/`GBufferRT`, `AccumulatePass`, `TransientHistogramAccumulatePass`, `ToneMapper`, `TransientHistogramViewer`, `LaserPositionViewer`, `SplitScreenPass` |
 
 Scene importers: pbrt, pyscene, Mitsuba, Assimp.
 
@@ -50,10 +50,8 @@ The BibTeX entries are in the [README on GitHub](https://github.com/juhyeonkim95
 
 ## Installation
 
-falcorcomp is currently published on TestPyPI. Its only dependency, NumPy, comes from PyPI:
-
 ```bash
-pip install --index-url https://test.pypi.org/simple/ --extra-index-url https://pypi.org/simple/ falcorcomp
+pip install falcorcomp
 ```
 
 Creating a `Testbed` initializes the GPU device, so this checks the driver as well as the package:
