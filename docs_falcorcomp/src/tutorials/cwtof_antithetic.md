@@ -28,8 +28,9 @@ gauge. Here the antithetic vertex is found with `shiftMappingMethod` = `barycent
   the solution.
 
 The default `radial` shift solves the same condition in closed form along a ray on the vertex's plane; it is a
-little faster and exactly invertible. The Newton-based methods follow the average gradient, which can leave a small
-bias where the gauge has several solutions; `shiftRoundTripCheck` removes it at the cost of a second shift.
+little faster and exactly invertible. Newton's method is local, so rarely (near the shortest path, or with a ray
+chart on curved surfaces) the backward shift reaches another solution; `shiftRoundTripCheck` removes the small bias
+this leaves, at the cost of a second shift.
 
 ## 1. Load the scene
 

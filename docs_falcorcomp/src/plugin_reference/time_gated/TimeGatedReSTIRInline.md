@@ -162,16 +162,19 @@ Shift mapping:
   - string
   - Fixes the direction the path-length constraint leaves free. `constant`: the vertex moves
     orthogonally to `gaugeAxis`; `grad`: along the path-length gradient at the start; `avg_grad`:
-    along the average of the gradients at both ends. `grad` is not symmetric (the reverse shift
-    follows the gradient at the other end), so it biases reuse. `radial` ignores it.
-    (Default: `constant`)
+    along the average of the gradients at both ends, where the length changes fastest, so the move
+    is as short as possible. `grad` is not symmetric (the reverse shift follows the gradient at the
+    other end), so it biases reuse. `radial` ignores it. (Default: `constant`)
 * - `gaugeAxis`
   - float pair
   - Chart-space axis for `constant`. `[0, 0]` picks a random axis for every shift.
     (Default: `[1, 0]`)
 * - `NewtonMaxIteration`
   - integer
-  - Maximum Newton iterations per shift. `radial` does not use it. (Default: `10`)
+  - Maximum Newton iterations per shift. A solve cut off by the cap can fail in one direction of a pair only, which
+    biases reuse (with temporal reuse and ray charts most: `ray_trace_chart` in the Cornell box +1.9 % at `5`,
+    +0.5 % at `10`). Solves whose target length no point of the chart reaches stop at once. `radial` does not use
+    it. (Default: `10`)
 * - `NewtonRelativeTolerance`
   - float
   - Tolerance of the shift solve on the path length, relative to the path-length change of the shift, and at least
@@ -185,10 +188,10 @@ Shift mapping:
     which raises the variance. `0` disables. (Default: `0`)
 * - `shiftRoundTripCheck`
   - boolean
-  - Keep a shift only if the reverse shift maps it back to its start, at the cost of a second shift. Without it,
-    `radial` and the plane charts (`local_tangent`, `barycentric`) with the `constant` gauge are already one-to-one;
-    with `avg_grad` or a ray chart, a rare shift can still reach another solution, a small bias that the check
-    removes. See [Shift mapping](#restir-shift-mapping). (Default: `false`)
+  - Keep a shift only if the reverse shift maps it back to its start, at the cost of a second shift. Newton's method
+    is local, so a rare shift reaches another solution than its reverse, mostly with a ray chart; the check removes
+    most of the bias this leaves. `radial` does not need it. See [Shift mapping](#restir-shift-mapping).
+    (Default: `false`)
 ```
 
 Other:
@@ -261,16 +264,26 @@ it needs no gauge. With `no`, the vertex is not moved, so the shifted path often
 the gate.
 
 Reuse is unbiased only if the shift from a pixel to its neighbor and the shift back are inverse. The two equations
-(the path length and the gauge) have several solutions, and Newton's method finds the one its start leads to: the
-forward shift starts at the vertex, the reverse at the moved vertex. The solve therefore converges both equations,
-and keeps a solution only on its start's branch: the path lengths at both ends change the same way along the move,
-the move keeps the orientation, and with a ray chart the vertex stays on its object. Both pixels of a pair evaluate
-the same tests, so they accept the same shifts. This makes `radial` and the plane charts with the `constant` gauge
-one-to-one. With `avg_grad`, whose equations always have a second solution (on the far side of the target length's
-level curve), or a ray chart on a curved surface, where the path length along the chart can have several minima, a
-rare shift still reaches another solution; `shiftRoundTripCheck` removes the small bias this leaves.
+(the path length and the gauge) have more than one solution, and Newton's method is local: it finds the solution its
+start leads to, from the vertex for the forward shift and from the moved vertex for the reverse. The solve therefore
+converges both equations and keeps a solution only on its start's branch: the path lengths at both ends change the
+same way along the move, the move keeps the orientation, and with a ray chart the vertex stays on its object. Both
+pixels of a pair evaluate the same tests, so they accept the same shifts.
 
-`local_tangent` with the `constant` gauge is a good starting point; the tutorials use `avg_grad`.
+`avg_grad` moves the vertex along the path-length gradient, where the length changes fastest on the surface, so the
+move is as short as the length change allows and both solves start close to their solutions. `constant` moves the
+vertex along a fixed chart axis, which needs a long move wherever the gradient is nearly orthogonal to that axis.
+`local_tangent` with `avg_grad` is a good starting point, and the tutorials use it.
+
+Because Newton's method is local, a rare shift can still reach another solution than its reverse. This happens near
+the minimum of the path length, where `avg_grad`'s two solutions come close (in a transient histogram: the bins at
+the onset of a bounce), and with a ray chart, whose coordinates do not follow the surface. In our tests with temporal
+reuse, against the exact `radial` shift: `local_tangent` with `avg_grad` within 0.1 %, but -0.5 % in a transient
+histogram (its onset bins); `ray_trace_chart` +1.9 % with `avg_grad` on a finely tessellated model and +0.5 % with
+`constant` in the Cornell box. `shiftRoundTripCheck` removes most of this, at the cost of a second shift. It is off by
+default: without temporal reuse the bias is small, and the check costs more than it saves there (Cornell box scenes,
+spatial reuse, equal time: 8-39 % more error; up to 50 % longer with ray charts). Turn it on for temporal reuse,
+transient histograms or ray charts. `radial` is one-to-one without it.
 
 ## Moving the gate
 

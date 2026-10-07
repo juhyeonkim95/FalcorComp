@@ -110,9 +110,10 @@ Antithetic shift mapping (used with `useAntitheticSampling`):
   - string
   - Newton-based methods only: fixes the direction left free by the one path-length constraint.
     `constant`: the vertex moves orthogonally to the chart axis `gaugeAxis`; `grad`: along the
-    path-length gradient at the start; `avg_grad`: along the average of the gradients at both ends.
-    `grad` is not symmetric (the backward shift follows the gradient at the other end), so it biases
-    the estimate. (Default: `avg_grad`)
+    path-length gradient at the start; `avg_grad`: along the average of the gradients at both ends,
+    where the length changes fastest, so the move is as short as possible. `grad` is not symmetric
+    (the backward shift follows the gradient at the other end), so it biases the estimate.
+    (Default: `avg_grad`)
 * - `gaugeAxis`
   - float2
   - Chart axis of the `constant` gauge; `(0, 0)` picks a random axis per shift. (Default: `(1, 0)`)
@@ -133,9 +134,9 @@ Antithetic shift mapping (used with `useAntitheticSampling`):
 * - `shiftRoundTripCheck`
   - boolean
   - Keep an antithetic vertex only if shifting it back returns to the starting vertex, at the cost
-    of a second shift. `radial` and the plane charts with the `constant` gauge do not need it; with
-    `avg_grad` or a ray chart it removes the small bias of a shift that reaches another solution.
-    (Default: `false`)
+    of a second shift. `radial` does not need it. Newton's method is local, so with the Newton-based
+    methods a rare shift reaches another solution than its reverse, mostly with a ray chart; the
+    check removes most of the small bias this leaves. (Default: `false`)
 ```
 
 Output:
@@ -187,8 +188,9 @@ This needs the two shifts to be exact inverses of each other. The `radial` shift
 it: it moves the vertex along the ray from $m$, the point of the vertex's plane with the shortest
 path length (found in closed form with the mirror construction), and the path length increases along
 every such ray, so each target length has one solution on the ray, and the backward shift lands back
-on the start. The Newton-based methods follow the average gradient, which can pick a different
-solution near $m$ and leave a small bias; `shiftRoundTripCheck` removes it. `radial` works on
+on the start. The Newton-based methods move the vertex along the average gradient, the shortest
+move; Newton's method is local, so a rare shift near $m$ reaches another solution than its reverse
+and leaves a small bias, which `shiftRoundTripCheck` removes. `radial` works on
 planar faces: on finely tessellated curved surfaces, fewer vertices find an antithetic vertex on their
 own plane, which reduces the variance reduction but not the correctness.
 

@@ -144,8 +144,9 @@ struct ShiftMappingConfig
         if (shiftMappingMethod != ShiftMappingMethod::Identity)
         {
             dirty |= widget.checkbox("Round-trip check", roundTripCheck);
-            widget.tooltip("Keep a shift only if shifting back returns to its start, so that the shifts used are "
-                           "one-to-one even where the solve could reach another solution. Costs a second shift.", true);
+            widget.tooltip("Keep a shift only if shifting back returns to its start. Newton's method is local, so a "
+                           "rare shift (mostly with a ray chart on curved surfaces) reaches another solution than its "
+                           "reverse; the check removes the small bias this leaves. Costs a second shift.", true);
         }
 
         dirty |= extraUI(widget);
@@ -164,7 +165,8 @@ struct ShiftMappingConfig
                 gaugeMode = (GaugeMode)gauge;
                 dirty = true;
             }
-            widget.tooltip("Fixes the direction left free by the one path-length constraint in the 2D Newton solve.", true);
+            widget.tooltip("Fixes the direction left free by the one path-length constraint in the 2D Newton solve. "
+                           "The average gradient gives the shortest move.", true);
 
             if (gaugeMode == GaugeMode::Constant)
             {

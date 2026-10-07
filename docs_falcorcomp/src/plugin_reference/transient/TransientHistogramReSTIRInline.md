@@ -124,16 +124,18 @@ Shift mapping, as for [time-gated ReSTIR](#restir-shift-mapping):
   - string
   - Fixes the direction the path-length constraint leaves free. `constant`: the vertex moves
     orthogonally to `gaugeAxis`; `grad`: along the path-length gradient at the start; `avg_grad`:
-    along the average of the gradients at both ends. `grad` is not symmetric (the reverse shift
-    follows the gradient at the other end), so it biases reuse. `radial` ignores it.
-    (Default: `constant`)
+    along the average of the gradients at both ends, where the length changes fastest, so the move
+    is as short as possible. `grad` is not symmetric (the reverse shift follows the gradient at the
+    other end), so it biases reuse. `radial` ignores it. (Default: `constant`)
 * - `gaugeAxis`
   - float pair
   - Chart-space axis for `constant`. `[0, 0]` picks a random axis for every shift.
     (Default: `[1, 0]`)
 * - `NewtonMaxIteration`
   - integer
-  - Maximum Newton iterations per shift. (Default: `10`)
+  - Maximum Newton iterations per shift. Fewer are faster but leave more shifts one-way, which
+    biases reuse (the Cornell box with temporal reuse, `local_tangent` with `avg_grad`: -0.66 %
+    at `5`, -0.52 % at `10`). (Default: `10`)
 * - `NewtonRelativeTolerance`
   - float
   - Tolerance of the shift solve on the path length, relative to the path-length change of the
@@ -147,8 +149,9 @@ Shift mapping, as for [time-gated ReSTIR](#restir-shift-mapping):
 * - `shiftRoundTripCheck`
   - boolean
   - Keep a shift only if the reverse shift maps it back to its start, at the cost of a second
-    shift. `radial` and the plane charts with the `constant` gauge are one-to-one without it; see
-    the [TG ReSTIR shift mapping](#restir-shift-mapping). (Default: `false`)
+    shift. Newton's method is local, so a rare shift reaches another solution than its reverse,
+    mostly with a ray chart; see the [TG ReSTIR shift mapping](#restir-shift-mapping).
+    (Default: `false`)
 ```
 
 Performance. These options change how the work is split on the GPU, not the result:
