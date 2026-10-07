@@ -12,7 +12,10 @@ Every frame:
 
 1. **Demodulation.** Both renders are divided by the albedo of the primary hit, after subtracting its emission:
    $i = (I - E) / A$, so that textures are not blurred. The primal is $(i^1_t + i^2_t) / 2$ and the difference
-   $\Delta i_t = i^1_t - i^2_{t-1}$.
+   $\Delta i_t = i^1_t - i^2_{t-1}$. The albedo $A$ is the renderer's, e.g. `PathTracer.albedo`. A pbrt
+   `coatedconductor` has none (zero), and dividing by the floor of 0.001 instead amplifies its noise: turn
+   `useDemodulation` off for such scenes (see
+   [Differences from Falcor](#differences-from-falcor)).
 2. **Temporal accumulation.** The primal is blended with the previous frame's result at the position given by the
    motion vectors, as in SVGF. The difference is blended with the previous difference there, plus the correction
    $I'_{t-2}[s + \Delta_t s] - I'_{t-2}[s + \Delta_{t-1} s]$, which turns the moved difference back into the change
