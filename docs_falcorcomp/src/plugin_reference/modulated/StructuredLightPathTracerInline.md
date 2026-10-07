@@ -186,7 +186,7 @@ not map back onto themselves, which makes antithetic sampling biased or ineffect
     `0` renders no light. (Default: `3`)
 * - `samplingMethod`
   - string
-  - How the vertex lit by the projector is reached from the camera path: `bsdf` (BSDF sampling,
+  - How the vertex lit by the projector is reached from the camera path: `naive` (BSDF sampling,
     then a connection to the projector), `antithetic` (the same, with each BSDF sample paired with
     its antithetic vertex) or `projector` (the vertex is sampled from the projector, stratified
     along the pattern axis, and connected to the camera path). (Default: `antithetic`)

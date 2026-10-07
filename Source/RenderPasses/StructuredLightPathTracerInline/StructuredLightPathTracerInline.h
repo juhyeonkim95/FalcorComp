@@ -39,7 +39,7 @@ using namespace Falcor;
 /// How the vertex lit by the projector is reached from the camera path (SAMPLING_METHOD in the shader).
 enum class StructuredLightSamplingMethod : uint32_t
 {
-    BSDF = 0,       ///< BSDF sampling.
+    Naive = 0,      ///< BSDF sampling.
     Antithetic = 1, ///< BSDF sampling, each sample paired with its antithetic partner in projector space.
     Projector = 2,  ///< Sampled from the projector, stratified along the pattern axis, and connected.
 };

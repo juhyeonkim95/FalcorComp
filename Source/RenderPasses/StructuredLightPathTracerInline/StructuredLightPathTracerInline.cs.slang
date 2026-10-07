@@ -11,7 +11,7 @@ import Utils.Sampling.SampleGenerator;
 import Scene.RaytracingInline;
 
 // SAMPLING_METHOD: how the vertex lit by the projector is reached from the camera path.
-#define SAMPLING_BSDF 0       // BSDF sampling.
+#define SAMPLING_NAIVE 0      // BSDF sampling.
 #define SAMPLING_ANTITHETIC 1 // BSDF sampling, each sample paired with its antithetic partner in projector space.
 #define SAMPLING_PROJECTOR 2  // Sampled from the projector (stratified along the pattern axis) and connected.
 

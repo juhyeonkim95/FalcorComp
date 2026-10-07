@@ -167,9 +167,9 @@ rows = []
 for name, setup in BLOCK_CODES:
     print(name)
     properties = setup.pop("properties")
-    naive = create_graph({**properties, "samplingMethod": "bsdf"}, **setup)
+    naive = create_graph({**properties, "samplingMethod": "naive"}, **setup)
     antithetic = create_graph({**properties, "samplingMethod": "antithetic"}, **setup)
-    reference = create_graph({**properties, "samplingMethod": "bsdf", "samplesPerPixel": 16}, **setup)
+    reference = create_graph({**properties, "samplingMethod": "naive", "samplesPerPixel": 16}, **setup)
     rows.append((name, compare([("Naive", naive), ("Antithetic", antithetic)], reference)))
 show(rows, "structured_light_blocks.png")
 
@@ -182,11 +182,11 @@ for seed in [183, 160]:  # a code with a short and one with a long optimal-trans
     distance = mean_distance(code, matching)
     print(f"code {seed}: mean optimal-transport distance {distance:.1f} columns")
     arbitrary = {"pattern": "arbitrary"}
-    naive = create_graph({**arbitrary, "samplingMethod": "bsdf"}, code)
+    naive = create_graph({**arbitrary, "samplingMethod": "naive"}, code)
     ot = create_graph({**arbitrary, "samplingMethod": "antithetic"}, code, antithetic_index=matching)
     scale = create_graph({**arbitrary, "samplingMethod": "antithetic"}, code,
                          interval_ids=ids, intervals=intervals)
-    reference = create_graph({**arbitrary, "samplingMethod": "bsdf", "samplesPerPixel": 16}, code)
+    reference = create_graph({**arbitrary, "samplingMethod": "naive", "samplesPerPixel": 16}, code)
     images = compare([("Naive", naive), ("Optimal transport", ot), ("Scale", scale)], reference)
     rows.append((f"Code {seed}\n(distance {distance:.1f})", images))
 show(rows, "structured_light_arbitrary.png")

@@ -22,8 +22,7 @@ explicit, and the projector ray gives the antithetic vertex (see [Antithetic sam
 ## The script
 
 The script is that of the [CW-ToF tutorial](cwtof_antithetic.md), with the structured-light pass in place of the
-CW-ToF pass. The projector sits 0.4 to the right of the camera and covers the whole box; `naive` uses
-`samplingMethod` = `bsdf`.
+CW-ToF pass. The projector sits 0.4 to the right of the camera and covers the whole box.
 
 ```{literalinclude} code/structured_light_antithetic.py
 :language: python

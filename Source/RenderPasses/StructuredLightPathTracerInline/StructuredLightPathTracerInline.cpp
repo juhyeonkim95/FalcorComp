@@ -51,7 +51,7 @@ const char kSamplingMethod[] = "samplingMethod";
 const char kProjectorSampleCount[] = "projectorSampleCount";
 
 const std::unordered_map<std::string, StructuredLightSamplingMethod> kSamplingMethods = {
-    {"bsdf", StructuredLightSamplingMethod::BSDF},
+    {"naive", StructuredLightSamplingMethod::Naive},
     {"antithetic", StructuredLightSamplingMethod::Antithetic},
     {"projector", StructuredLightSamplingMethod::Projector},
 };
@@ -198,8 +198,8 @@ void StructuredLightPathTracerInline::renderUI(Gui::Widgets& widget)
     {
         dirty |= options.pathTracing.renderSamplingUI(group, " Each vertex is connected to the projector.");
         static const Gui::DropdownList kSamplingMethodList = {
-            {(uint32_t)StructuredLightSamplingMethod::BSDF, "BSDF"},
-            {(uint32_t)StructuredLightSamplingMethod::Antithetic, "BSDF + antithetic"},
+            {(uint32_t)StructuredLightSamplingMethod::Naive, "Naive"},
+            {(uint32_t)StructuredLightSamplingMethod::Antithetic, "Antithetic"},
             {(uint32_t)StructuredLightSamplingMethod::Projector, "Projector"},
         };
         uint32_t method = (uint32_t)options.samplingMethod;
@@ -209,8 +209,8 @@ void StructuredLightPathTracerInline::renderUI(Gui::Widgets& widget)
             dirty = true;
         }
         group.tooltip("How the vertex lit by the projector is reached from the camera path.\n"
-                      "BSDF: BSDF sampling, then a connection to the projector.\n"
-                      "BSDF + antithetic: each BSDF sample is paired with the point lit through the pattern's "
+                      "Naive: BSDF sampling, then a connection to the projector.\n"
+                      "Antithetic: each BSDF sample is paired with the point lit through the pattern's "
                       "antithetic uv, where the pattern has the opposite sign, and the two are combined with MIS.\n"
                       "Projector: the vertex is sampled from the projector (stratified along the pattern axis) and "
                       "connected to the camera path.", true);
