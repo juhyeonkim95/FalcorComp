@@ -55,6 +55,10 @@ struct ShiftMappingConfig
     /// Keep a shift only if the reverse shift maps it back to its start (a second shift each): the accepted shifts are
     /// then one-to-one wherever the solver could reach another root.
     bool roundTripCheck = false;
+    /// avg_grad only: keep a shift only if the first Newton step from each end lands within half the move of the other
+    /// end, so that the reverse solve comes back (NewtonSolver.slang). No extra evaluation, but it rejects some valid
+    /// shifts too (variance), so it is off by default.
+    bool reachCheck = false;
 
     void validate() const
     {
@@ -84,6 +88,8 @@ struct ShiftMappingConfig
             rayChartMaxDisplacement = value;
         else if (key == "shiftRoundTripCheck")
             roundTripCheck = value;
+        else if (key == "shiftReachCheck")
+            reachCheck = value;
         else
             return false;
         return true;
@@ -98,15 +104,17 @@ struct ShiftMappingConfig
         props["NewtonRelativeTolerance"] = newtonRelativeTolerance;
         props["rayChartMaxDisplacement"] = rayChartMaxDisplacement;
         props["shiftRoundTripCheck"] = roundTripCheck;
+        props["shiftReachCheck"] = reachCheck;
     }
 
-    /// SHIFT_MAPPING_METHOD, SHIFT_MAPPING_GAUGE_MODE and SHIFT_ROUND_TRIP_CHECK.
+    /// SHIFT_MAPPING_METHOD, SHIFT_MAPPING_GAUGE_MODE, SHIFT_ROUND_TRIP_CHECK and SHIFT_REACH_CHECK.
     DefineList getDefines() const
     {
         DefineList defines;
         defines.add("SHIFT_MAPPING_METHOD", std::to_string((uint32_t)shiftMappingMethod));
         defines.add("SHIFT_MAPPING_GAUGE_MODE", std::to_string((uint32_t)gaugeMode));
         defines.add("SHIFT_ROUND_TRIP_CHECK", roundTripCheck ? "1" : "0");
+        defines.add("SHIFT_REACH_CHECK", reachCheck ? "1" : "0");
         return defines;
     }
 
@@ -172,6 +180,13 @@ struct ShiftMappingConfig
             {
                 dirty |= widget.var("Gauge axis", gaugeAxis, -1.f, 1.f);
                 widget.tooltip("Chart-space axis of the constant gauge. (0, 0) picks a random axis per shift.", true);
+            }
+            if (gaugeMode == GaugeMode::OrthoAvgGrad)
+            {
+                dirty |= widget.checkbox("Reach check", reachCheck);
+                widget.tooltip("Keep a shift only if the first Newton step from each end lands within half the move of "
+                               "the other end, so that the reverse solve comes back. No extra cost, but it also "
+                               "rejects valid shifts, which raises the variance.", true);
             }
 
             dirty |= widget.var("Newton iterations", newtonMaxIteration, 1u, 64u);

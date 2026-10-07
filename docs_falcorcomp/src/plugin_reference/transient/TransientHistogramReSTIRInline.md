@@ -135,7 +135,7 @@ Shift mapping, as for [time-gated ReSTIR](#restir-shift-mapping):
   - integer
   - Maximum Newton iterations per shift. Fewer are faster but leave more shifts one-way, which
     biases reuse (the Cornell box with temporal reuse, `local_tangent` with `avg_grad`: -0.66 %
-    at `5`, -0.52 % at `10`). (Default: `10`)
+    at `5`, -0.52 % at `10` without `shiftReachCheck`). (Default: `10`)
 * - `NewtonRelativeTolerance`
   - float
   - Tolerance of the shift solve on the path length, relative to the path-length change of the
@@ -152,6 +152,13 @@ Shift mapping, as for [time-gated ReSTIR](#restir-shift-mapping):
     shift. Newton's method is local, so a rare shift reaches another solution than its reverse,
     mostly with a ray chart; see the [TG ReSTIR shift mapping](#restir-shift-mapping).
     (Default: `false`)
+* - `shiftReachCheck`
+  - boolean
+  - `avg_grad` only: keep a shift only if the first Newton step from each end lands within half
+    the move of the other end. Near the onset of a bounce, where the path length is near its
+    minimum, `avg_grad` shifts are otherwise not always one-to-one (the Cornell box with temporal
+    reuse: -0.5 % without the check, -0.08 % with it). No extra cost, but it also rejects valid
+    shifts, which raises the variance. (Default: `false`)
 ```
 
 Performance. These options change how the work is split on the GPU, not the result:

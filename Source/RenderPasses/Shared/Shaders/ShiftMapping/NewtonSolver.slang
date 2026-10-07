@@ -19,7 +19,15 @@ enum NewtonResultStatus : uint
     InvalidPoint = 3,
     BranchRejected = 4, // A root on another branch than the start's (see solveShiftNewton).
     Unreachable    = 5, // The target length is below the shortest path over the chart: no solution.
+    OutOfReach     = 6, // Newton's first step from one end misses the other end (see solveShiftNewton).
 };
+
+// avg_grad only: keep a shift only if the first Newton step from each end lands within this share of the move of the
+// other end (SHIFT_REACH_CHECK, shiftReachCheck).
+#ifndef SHIFT_REACH_CHECK
+#define SHIFT_REACH_CHECK 0
+#endif
+static const float kShiftReachRatio = 0.5f;
 
 
 // =============================================================
@@ -68,6 +76,18 @@ float2 Hmul(float3 H, float2 v)
 {
     return float2(H.x * v.x + H.y * v.y,
                   H.y * v.x + H.z * v.y);
+}
+
+// The Newton step d of [g^T; a^T] d = (-F1, 0): the length row and the gauge row at a solve's start.
+float2 newtonStep(float2 g, float2 a, float F1)
+{
+    return float2(-F1 * a.y, F1 * a.x) / (g.x * a.y - g.y * a.x);
+}
+
+// |v| in the chart's metric G (see IShiftChart.metric).
+float metricLength(float3 G, float2 v)
+{
+    return sqrt(max(G.x * v.x * v.x + 2.f * G.y * v.x * v.y + G.z * v.y * v.y, 0.f));
 }
 
 void inv2(float a,float b,float c,float d,
@@ -304,11 +324,12 @@ NewtonResult solveShiftNewton<Chart : IShiftChart>(
     }
     if (any(Delta != 0.f))
     {
-        // The source length's gradient at xi' (in the target's chart unless the charts differ).
+        // The source length and its gradient at xi' (in the target's chart unless the charts differ).
         float2 gs1 = g1;
+        float Ld = L1;
         if (distinctSource)
         {
-            float Ld; float3 Hd;
+            float3 Hd;
             bool valid;
             if (traceStart)
             {
@@ -327,7 +348,29 @@ NewtonResult solveShiftNewton<Chart : IShiftChart>(
         // ell_s and ell_t at xi and xi' change the same way along the chord.
         float4 slopes = float4(dot(g0, Delta), dot(gt0, Delta), dot(g1, Delta), dot(gs1, Delta));
         if (!(all(slopes > 0.f) || all(slopes < 0.f)))
+        {
             R.status = NewtonResultStatus::BranchRejected;
+            return R;
+        }
+#if SHIFT_REACH_CHECK
+        // Newton is local, and the rules above check the pair, not whether each end's solve reaches it: near the path
+        // length's minimum, avg_grad's two roots come close and the reverse solve can stall or reach the other one.
+        // Keep the pair only if the first Newton step from each end lands within half the move of the other end. The
+        // step from xi solves ell_t against ell_t(xi'), the step from xi' solves ell_s against ell_s(xi); the reverse
+        // shift evaluates the same two steps. (On plane charts the rules already make the constant gauge one-to-one;
+        // grad is not symmetric.)
+        if (mode == GaugeMode::OrthoAvgGrad)
+        {
+            float2 aForward, aReverse, unused0, unused1;
+            gaugeTerms(mode, a_const, G, g0, gt0, H0, H0, float2(0.f), aForward, unused0, unused1);
+            gaugeTerms(mode, a_const, G, g1, gs1, H0, H0, float2(0.f), aReverse, unused0, unused1);
+            float2 missForward = newtonStep(gt0, aForward, L0 - L1) - Delta;
+            float2 missReverse = newtonStep(gs1, aReverse, Ld - Ls) + Delta;
+            float reach = kShiftReachRatio * metricLength(G, Delta);
+            if (!(metricLength(G, missForward) <= reach && metricLength(G, missReverse) <= reach))
+                R.status = NewtonResultStatus::OutOfReach;
+        }
+#endif
     }
     return R;
 }

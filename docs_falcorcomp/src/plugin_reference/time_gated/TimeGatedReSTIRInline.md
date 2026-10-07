@@ -192,6 +192,12 @@ Shift mapping:
     is local, so a rare shift reaches another solution than its reverse, mostly with a ray chart; the check removes
     most of the bias this leaves. `radial` does not need it. See [Shift mapping](#restir-shift-mapping).
     (Default: `false`)
+* - `shiftReachCheck`
+  - boolean
+  - `avg_grad` only: keep a shift only if the first Newton step from each end lands within half the move of the
+    other end, so that the reverse solve comes back. It costs no extra evaluation and removes most of the bias of
+    shifts near the path length's minimum, but also rejects valid shifts, which raises the variance. See
+    [Shift mapping](#restir-shift-mapping). (Default: `false`)
 ```
 
 Other:
@@ -267,8 +273,10 @@ Reuse is unbiased only if the shift from a pixel to its neighbor and the shift b
 (the path length and the gauge) have more than one solution, and Newton's method is local: it finds the solution its
 start leads to, from the vertex for the forward shift and from the moved vertex for the reverse. The solve therefore
 converges both equations and keeps a solution only on its start's branch: the path lengths at both ends change the
-same way along the move, the move keeps the orientation, and with a ray chart the vertex stays on its object. Both
-pixels of a pair evaluate the same tests, so they accept the same shifts.
+same way along the move, the move keeps the orientation, and with a ray chart the vertex stays on its object. With
+`avg_grad` and `shiftReachCheck`, it also keeps a solution only within the reach of Newton's method from both ends:
+the first Newton step from each end must land within half the move of the other end. Both pixels of a pair evaluate
+the same tests, so they accept the same shifts.
 
 `avg_grad` moves the vertex along the path-length gradient, where the length changes fastest on the surface, so the
 move is as short as the length change allows and both solves start close to their solutions. `constant` moves the
@@ -278,12 +286,14 @@ vertex along a fixed chart axis, which needs a long move wherever the gradient i
 Because Newton's method is local, a rare shift can still reach another solution than its reverse. This happens near
 the minimum of the path length, where `avg_grad`'s two solutions come close (in a transient histogram: the bins at
 the onset of a bounce), and with a ray chart, whose coordinates do not follow the surface. In our tests with temporal
-reuse, against the exact `radial` shift: `local_tangent` with `avg_grad` within 0.1 %, but -0.5 % in a transient
-histogram (its onset bins); `ray_trace_chart` +1.9 % with `avg_grad` on a finely tessellated model and +0.5 % with
-`constant` in the Cornell box. `shiftRoundTripCheck` removes most of this, at the cost of a second shift. It is off by
-default: without temporal reuse the bias is small, and the check costs more than it saves there (Cornell box scenes,
-spatial reuse, equal time: 8-39 % more error; up to 50 % longer with ray charts). Turn it on for temporal reuse,
-transient histograms or ray charts. `radial` is one-to-one without it.
+reuse, against the exact `radial` shift: `local_tangent` with `avg_grad` within 0.1 % (a transient histogram: -0.08 %
+with `shiftReachCheck`, -0.5 % without); `ray_trace_chart` +0.4 % with `avg_grad` on a finely tessellated model
+(+1.9 % without the reach check) and +0.5 % with `constant` in the Cornell box. `shiftRoundTripCheck` removes most of
+the rest, at the cost of a second shift. Both checks are off by default: without temporal reuse the bias is small,
+and both cost more than they save there (Cornell box scenes, spatial reuse, equal time: 8-20 % more error with the
+reach check, which rejects valid shifts too, and 8-39 % with the round-trip check, which takes up to 50 % longer
+with ray charts). Turn one on for temporal reuse, transient histograms or ray charts. `radial` is one-to-one without
+either check.
 
 ## Moving the gate
 

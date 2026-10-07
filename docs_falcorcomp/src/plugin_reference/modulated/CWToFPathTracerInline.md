@@ -137,6 +137,12 @@ Antithetic shift mapping (used with `useAntitheticSampling`):
     of a second shift. `radial` does not need it. Newton's method is local, so with the Newton-based
     methods a rare shift reaches another solution than its reverse, mostly with a ray chart; the
     check removes most of the small bias this leaves. (Default: `false`)
+* - `shiftReachCheck`
+  - boolean
+  - Newton-based methods with `avg_grad` only: keep an antithetic vertex only if the first Newton
+    step from each end lands within half the move of the other end, so that shifting back returns
+    to the start. No extra cost, but it also rejects valid vertices, which raises the variance.
+    (Default: `false`)
 ```
 
 Output:
