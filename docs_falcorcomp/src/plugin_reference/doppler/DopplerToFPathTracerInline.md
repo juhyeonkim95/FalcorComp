@@ -155,6 +155,7 @@ The light is set on the `LaserLight` pass, as for the [time-gated path tracer](#
 ```python
 testbed.load_scene("cornell-box-moving/scene.pyscene",
                    falcor.SceneBuilderFlags.DontMergeMaterials | falcor.SceneBuilderFlags.DontOptimizeGraph)
+graph = testbed.create_render_graph("DopplerToF")
 graph.create_pass("Light", "LaserLight", {"isLightSourceLaser": False, "laserCollocated": True})
 graph.create_pass("Tracer", "DopplerToFPathTracerInline", {
     "samplesPerPixel": 16, "maxBounces": 3, "computeDirect": True,
@@ -165,6 +166,8 @@ graph.create_pass("Tracer", "DopplerToFPathTracerInline", {
 graph.create_pass("Accumulate", "AccumulatePass", {"autoReset": False})
 graph.add_edge("Light", "Tracer")
 graph.add_edge("Tracer.color", "Accumulate.input")
+graph.mark_output("Accumulate.output")
+testbed.render_graph = graph
 ```
 
 See the [Doppler ToF tutorial](../../tutorials/doppler_tof_offline.md) for a complete script.

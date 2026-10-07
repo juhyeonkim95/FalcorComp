@@ -2,16 +2,16 @@
 
 This render pass renders a *time-gated* image: the radiance carried by paths whose total optical
 length, from the laser through the scene to the camera, lies near a gate center $t$. For a path
-$\bar{\mathbf{x}}$ with optical length $\ell(\bar{\mathbf{x}})$ (segment lengths weighted by the index of
-refraction), each pixel estimates
+$\bar{\mathbf{x}}$ with optical length $\ell(\bar{\mathbf{x}})$ (the sum of its segment lengths: refractive indices
+are not implemented yet), each pixel estimates
 
 $$
 I(t) = \frac{1}{\Delta} \int f(\bar{\mathbf{x}})\, w\!\left(\frac{\ell(\bar{\mathbf{x}}) - t}{\Delta}\right) \mathrm{d}\bar{\mathbf{x}},
 $$
 
 where $f$ is the path contribution and $w$ the gate kernel of width $\Delta$ (`timeGateWindow`).
-With the `box` kernel, $w(v) = 1$ for $|v| < 1/2$, so $I(t)$ is the radiance per unit path
-length averaged over the gate. The other kernels:
+With the `box` kernel, $w(v) = 1$ for $-1/2 \le v < 1/2$ (half-open, like histogram bins), so $I(t)$ is the
+radiance per unit path length averaged over the gate. The other kernels:
 
 (gate-kernels)=
 - `tent`: $w(v) = \max(1 - |v|, 0)$.
@@ -84,7 +84,7 @@ Sampling:
   - integer
   - Maximum number of surface vertices on a camera path, counting the primary hit and any vertex
     inserted by an ellipsoidal connection. Each vertex is connected to the laser spot (the
-    primary hit only with `computeDirect`). (Default: `3`)
+    primary hit only with `computeDirect`). `0` renders no light. (Default: `3`)
 * - `samplingMethod`
   - string
   - How a camera-path vertex is connected to the laser spot: `direct`, `ellipsoidal` or
@@ -159,6 +159,13 @@ Every camera-path vertex $x$ is connected to the laser spot:
 The `cos` and `all` kernels have no length to draw from, and `perlin` has no length sampler, so with
 them no ellipsoidal connections are made and both ellipsoidal methods behave like `direct`.
 
+Not every surface can hold the ellipsoidal vertex $y$. Only triangle meshes whose material is a Falcor
+`BasicMaterial` (or derives from it, as the PBRT materials do) take part; SDF grids, curves and other
+geometry, and materials such as hair or measured BSDFs, do not. Triangles larger than
+`ellipsoidMaxTriangleArea` are left out, and so are triangles behind the surface at $x$ or at the
+laser spot. The triangles are collected once per scene, so animated geometry is not followed. Paths
+through the surfaces left out come from BSDF sampling, as for `ellipsoidMaxTriangleArea`.
+
 (laser)=
 ## Laser
 
@@ -227,13 +234,23 @@ camera) restarts downstream accumulation, so an accumulated image never mixes tw
 ## Example
 
 ```python
+testbed.load_scene("cornell-box/scene-v4-nolight.pbrt", falcor.SceneBuilderFlags.DontMergeMaterials)
+graph = testbed.create_render_graph("TimeGated")
+graph.create_pass("VBuffer", "VBufferRT", {"samplePattern": "Center", "sampleCount": 1})
+graph.create_pass("Laser", "LaserLight", {
+    "laserPosition": [0.0, 1.7, 6.8], "laserDirection": [0.0, 0.0, -1.0], "laserPower": [170.0, 120.0, 40.0],
+})
 graph.create_pass("Tracer", "TimeGatedPathTracerInline", {
     "samplesPerPixel": 16, "maxBounces": 6,
     "timeGateMode": "box", "timeGateWindow": 0.1, "timeCenter": 17.337,
 })
+graph.create_pass("Accumulate", "AccumulatePass", {})
 graph.add_edge("VBuffer.vbuffer", "Tracer.vbuffer")
 graph.add_edge("VBuffer.viewW", "Tracer.viewW")
 graph.add_edge("Laser", "Tracer")  # run the laser pass first
+graph.add_edge("Tracer.color", "Accumulate.input")
+graph.mark_output("Accumulate.output")
+testbed.render_graph = graph
 ```
 
 See the [time-gated rendering tutorial](../../tutorials/time_gated_offline.md) for a complete

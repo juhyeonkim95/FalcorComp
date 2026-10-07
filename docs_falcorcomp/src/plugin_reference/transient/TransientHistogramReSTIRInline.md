@@ -36,6 +36,15 @@ Histogram:
   - The bin filter: `box` (a path counts for the bin that contains its length) or `tent` (a path is
     split between the two bins whose centers are nearest to its length, as in
     [TransientHistogramPathTracerInline](TransientHistogramPathTracerInline.md)). (Default: `box`)
+* - `useKernelDensityEstimation`
+  - boolean
+  - Not implemented in this pass: the histogram settings are shared with
+    [TransientHistogramPathTracerInline](TransientHistogramPathTracerInline.md), but kernel density
+    estimation is not, and `true` is rejected. (Default: `false`)
+* - `initialWindowRatio`
+  - float
+  - Unused: only kernel density estimation, which this pass does not implement, reads it.
+    (Default: `1`)
 ```
 
 Kernel density estimation is not supported: `useKernelDensityEstimation` must be `false`
@@ -57,7 +66,7 @@ Initial sampling, the candidate paths each pixel starts from in every frame:
   - integer
   - Maximum number of surface vertices on a camera path, counting the primary hit. Each vertex
     after the primary hit is connected to the laser spot, and the connection is a candidate for the
-    bin its total length falls in. (Default: `3`)
+    bin its total length falls in. `0` renders no light. (Default: `3`)
 * - `useImportanceSampling`
   - boolean
   - Importance-sample the BSDF when extending a camera path. (Default: `true`)
@@ -258,7 +267,9 @@ a surface, the pixel starts from its own samples).
 The pass keeps two sets of reservoirs, this frame's and the previous one's, each with `timeBin`
 reservoirs of about 100 bytes per pixel: at 480 x 270 with 64 bins that is about 1.8 GB. The
 two-pass reuse adds up to 512 MB of intermediate results, processing the bins in chunks when they
-do not fit at once.
+do not fit at once. These sizes are not checked against the GPU's limits: keep each set of reservoirs,
+a single buffer, below 4 GB, the largest buffer Vulkan binds (with 64 bins, up to about 0.6 megapixels,
+e.g. 960 x 540).
 
 ## Limitations
 
@@ -299,6 +310,12 @@ the next frame.
 ## Example
 
 ```python
+testbed.load_scene("cornell-box/scene-v4-nolight.pbrt", falcor.SceneBuilderFlags.DontMergeMaterials)
+graph = testbed.create_render_graph("TransientReSTIR")
+graph.create_pass("VBuffer", "VBufferRT", {"samplePattern": "Center", "sampleCount": 1})
+graph.create_pass("Laser", "LaserLight", {
+    "laserPosition": [0.0, 1.7, 6.8], "laserDirection": [0.0, 0.0, -1.0], "laserPower": [170.0, 120.0, 40.0],
+})
 graph.create_pass("Tracer", "TransientHistogramReSTIRInline", {
     "samplesPerPixel": 16, "maxBounces": 4,
     "timeMin": 16.75, "timeMax": 18.03, "timeBin": 64,
@@ -311,6 +328,7 @@ graph.add_edge("VBuffer.viewW", "Tracer.viewW")
 graph.add_edge("VBuffer.mvec", "Tracer.mvec")
 graph.add_edge("Laser", "Tracer")  # run the laser pass first
 graph.mark_output("Tracer.histogram")
+testbed.render_graph = graph
 ```
 
 See the [offline](../../tutorials/transient_restir_offline.md) and

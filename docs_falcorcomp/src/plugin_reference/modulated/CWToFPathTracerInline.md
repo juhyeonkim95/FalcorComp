@@ -80,7 +80,7 @@ Sampling:
 * - `maxBounces`
   - integer
   - Maximum number of surface vertices on a camera path, counting the primary hit. Each vertex is
-    connected to the light. (Default: `3`)
+    connected to the light. `0` renders no light. (Default: `3`)
 * - `useImportanceSampling`
   - boolean
   - Importance-sample the BSDF when extending the camera path; otherwise use the material's
@@ -230,6 +230,9 @@ camera is usually modeled with a point light at the camera: `isLightSourceLaser 
 ## Example
 
 ```python
+testbed.load_scene("cornell-box/scene-v4-nolight.pbrt", falcor.SceneBuilderFlags.DontMergeMaterials)
+graph = testbed.create_render_graph("CWToF")
+graph.create_pass("VBuffer", "VBufferRT", {"samplePattern": "Center", "sampleCount": 1})
 graph.create_pass("Light", "LaserLight", {"isLightSourceLaser": False, "laserCollocated": True})
 graph.create_pass("Tracer", "CWToFPathTracerInline", {
     "samplesPerPixel": 8, "maxBounces": 3, "computeDirect": False,
@@ -238,6 +241,8 @@ graph.create_pass("Tracer", "CWToFPathTracerInline", {
 graph.add_edge("VBuffer.vbuffer", "Tracer.vbuffer")
 graph.add_edge("VBuffer.viewW", "Tracer.viewW")
 graph.add_edge("Light", "Tracer")  # run the light pass first
+graph.mark_output("Tracer.color")
+testbed.render_graph = graph
 ```
 
 See the [CW-ToF tutorial](../../tutorials/cwtof_offline.md) for a complete script.

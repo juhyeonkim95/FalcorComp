@@ -115,6 +115,7 @@ The tall box of the Cornell box approaches at 20 m/s and the short box recedes; 
 
 ```python
 testbed.load_scene("cornell-box/scene-v4-nolight.pbrt", falcor.SceneBuilderFlags.DontMergeMaterials)
+graph = testbed.create_render_graph("DopplerGated")
 graph.create_pass("VBuffer", "VBufferRT", {"samplePattern": "Center", "sampleCount": 1})
 graph.create_pass("Light", "LaserLight", {"isLightSourceLaser": False, "laserCollocated": True})
 graph.create_pass("Tracer", "DopplerGatedPathTracerInline", {
@@ -128,6 +129,7 @@ graph.add_edge("VBuffer.viewW", "Tracer.viewW")
 graph.add_edge("Light", "Tracer")
 graph.add_edge("Tracer.color", "Accumulate.input")
 graph.mark_output("Accumulate.output")
+testbed.render_graph = graph
 ```
 
 The [Doppler spectrum tutorial](../../tutorials/doppler_spectrum_offline.md) renders the same scene as a spectrum.

@@ -85,15 +85,25 @@ All of them can also be changed in the pass's panel of the Render Graph window.
 ## Example
 
 ```python
+testbed.load_scene("cornell-box/scene-v4-nolight.pbrt", falcor.SceneBuilderFlags.DontMergeMaterials)
+graph = testbed.create_render_graph("LaserView")
+graph.create_pass("VBuffer", "VBufferRT", {"samplePattern": "Center", "sampleCount": 1})
 graph.create_pass("Laser", "LaserLight", {
     "laserPosition": [0.0, 1.7, 6.8], "laserDirection": [0.0, 0.0, -1.0], "laserAngle": 0.0,
 })
+graph.create_pass("Tracer", "TimeGatedPathTracerInline", {"timeGateWindow": 0.1, "timeCenter": 17.337})
+graph.create_pass("Accumulate", "AccumulatePass", {})
+graph.add_edge("VBuffer.vbuffer", "Tracer.vbuffer")
+graph.add_edge("VBuffer.viewW", "Tracer.viewW")
+graph.add_edge("Laser", "Tracer")
+graph.add_edge("Tracer.color", "Accumulate.input")
 graph.create_pass("Viewer", "LaserPositionViewer", {"showCone": True, "beamRadius": 0.02, "coneDensity": 20.0})
 graph.add_edge("Laser", "Viewer")                    # the laser is set before the viewer runs
 graph.add_edge("VBuffer.vbuffer", "Viewer.vbuffer")
 graph.add_edge("VBuffer.viewW", "Viewer.viewW")
-graph.add_edge("Accumulate.output", "Viewer.input")  # e.g. a time-gated image
+graph.add_edge("Accumulate.output", "Viewer.input")  # the time-gated image
 graph.mark_output("Viewer.output")
+testbed.render_graph = graph
 ```
 
 The [laser visualization tutorial](../../tutorials/laser_visualization_offline.md) draws the beam over a time-gated

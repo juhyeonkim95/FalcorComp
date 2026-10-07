@@ -183,7 +183,7 @@ not map back onto themselves, which makes antithetic sampling biased or ineffect
 * - `maxBounces`
   - integer
   - Maximum number of surface vertices on a camera path, counting the primary hit.
-    (Default: `3`)
+    `0` renders no light. (Default: `3`)
 * - `samplingMethod`
   - string
   - How the vertex lit by the projector is reached from the camera path: `bsdf` (BSDF sampling,
@@ -202,7 +202,9 @@ not map back onto themselves, which makes antithetic sampling biased or ineffect
 The `projector` method has high variance where the sampled vertex falls close to the camera-path
 vertex (for example in corners), because it is not combined with BSDF sampling; it is mainly a
 baseline for comparisons. Its connections are one-sided: they do not pass through the
-camera-path vertex or the sampled vertex by transmission.
+camera-path vertex or the sampled vertex by transmission. Known issue: in a test in the Cornell box with the
+tutorial's projector, it rendered the two-bounce light (`maxBounces` 2) about 1 % darker than the other methods;
+the cause is not found yet.
 
 For every method, a vertex is lit by the projector only on the side its path arrived from: the projector never
 lights a surface through it, so it does not light the inside of glass or other transmissive objects (they still
@@ -260,6 +262,9 @@ The output options `computeDirect` (default `true` here), `useSingleChannel`, `s
 ## Example
 
 ```python
+testbed.load_scene("cornell-box/scene-v4-nolight.pbrt", falcor.SceneBuilderFlags.DontMergeMaterials)
+graph = testbed.create_render_graph("StructuredLight")
+graph.create_pass("VBuffer", "VBufferRT", {"samplePattern": "Center", "sampleCount": 1})
 graph.create_pass("Tracer", "StructuredLightPathTracerInline", {
     "samplesPerPixel": 8, "maxBounces": 3, "computeDirect": False,
     "projectorPosition": [0.4, 1.0, 6.8], "projectorDirection": [0.0, 0.0, -1.0],
@@ -268,6 +273,8 @@ graph.create_pass("Tracer", "StructuredLightPathTracerInline", {
 })
 graph.add_edge("VBuffer.vbuffer", "Tracer.vbuffer")
 graph.add_edge("VBuffer.viewW", "Tracer.viewW")
+graph.mark_output("Tracer.color")
+testbed.render_graph = graph
 ```
 
 See the [structured light tutorial](../../tutorials/structured_light_offline.md) for a complete

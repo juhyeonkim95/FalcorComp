@@ -27,10 +27,10 @@ gauge. Here the antithetic vertex is found with `shiftMappingMethod` = `barycent
 - The Jacobian of the map, which multiple importance sampling needs, comes from the implicit function theorem at
   the solution.
 
-The default `radial` shift solves the same condition in closed form along a ray on the vertex's plane; it is a
-little faster and exactly invertible. Newton's method is local, so rarely (near the shortest path, or with a ray
-chart on curved surfaces) the backward shift reaches another solution; `shiftRoundTripCheck` removes the small bias
-this leaves, at the cost of a second shift.
+The default `radial` shift solves the same condition with a 1D search along a ray on the vertex's plane, from the point
+of the plane with the shortest path (found in closed form); it is a little faster and exactly invertible. Newton's
+method is local, so rarely (near the shortest path, or with a ray chart on curved surfaces) the backward shift reaches
+another solution; `shiftRoundTripCheck` removes most of the small bias this leaves, at the cost of a second shift.
 
 ## 1. Load the scene
 

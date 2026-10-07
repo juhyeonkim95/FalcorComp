@@ -15,8 +15,8 @@ $$
 
 where $\lambda$ is the laser wavelength and $u$ the *path velocity*: over the path's segments $x_k \to x_{k+1}$ (from
 the light towards the camera, direction $\hat{d}_k$, refractive index $\eta_k$), the velocity of their endpoints along
-the segment. $\Delta f$ is positive when the path shortens, for example for an object coming towards a camera with the
-light next to it.
+the segment. Refractive indices are not implemented yet: $\eta_k = 1$ on every segment. $\Delta f$ is positive when the
+path shortens, for example for an object coming towards a camera with the light next to it.
 
 The scene does not move. Every object is given an instantaneous velocity (see
 [Velocities](#doppler-velocities)), which only decides the bin of each path; the contribution is that of the static
@@ -105,7 +105,8 @@ Sampling and output, as for the [transient histogram path tracer](../transient/T
 * - `maxBounces`
   - integer
   - Maximum number of surface vertices on a camera path, counting the primary hit. Each vertex is connected to the
-    light (the primary hit only with `computeDirect`). Paths are not cut off by length. (Default: `3`)
+    light (the primary hit only with `computeDirect`). Paths are not cut off by length.
+    `0` renders no light. (Default: `3`)
 * - `computeDirect`
   - boolean
   - Include the path camera -> primary hit -> light. (Default: `false`)
@@ -167,6 +168,8 @@ From Python: `reset()`, `set_velocity(...)`, `clear_velocities()` and `get_objec
 
 ```python
 testbed.load_scene("cornell-box/scene-v4-nolight.pbrt", falcor.SceneBuilderFlags.DontMergeMaterials)
+graph = testbed.create_render_graph("DopplerSpectrum")
+graph.create_pass("VBuffer", "VBufferRT", {"samplePattern": "Center", "sampleCount": 1})
 graph.create_pass("Light", "LaserLight", {"isLightSourceLaser": False, "laserCollocated": True})
 graph.create_pass("Tracer", "DopplerHistogramPathTracerInline", {
     "samplesPerPixel": 64, "maxBounces": 3, "computeDirect": True,
@@ -176,12 +179,15 @@ graph.create_pass("Tracer", "DopplerHistogramPathTracerInline", {
 graph.add_edge("VBuffer.vbuffer", "Tracer.vbuffer")
 graph.add_edge("VBuffer.viewW", "Tracer.viewW")
 graph.add_edge("Light", "Tracer")
+graph.mark_output("Tracer.spectrum")
+testbed.render_graph = graph
 ```
 
 An FMCW lidar with a 1 GHz chirp over 1 µs, whose beat frequencies fall between 0 and 100 MHz in this scene:
 
 ```python
-graph.create_pass("Tracer", "DopplerHistogramPathTracerInline", {
+# The same graph with this tracer instead:
+graph.update_pass("Tracer", {
     "samplesPerPixel": 64, "maxBounces": 3, "computeDirect": True,
     "wavelength": 1550.0, "chirpBandwidth": 1.0, "chirpDuration": 1.0,
     "frequencyMin": 0.0, "frequencyMax": 100.0, "frequencyBin": 512,

@@ -16,8 +16,10 @@ renders.
 ## Event frames of several renders
 
 `PathTracer` renders at most 16 samples per pixel. With `subframes` $= N$, the pass averages $N$ executions into
-one event frame; the script holds the scene still and gives each execution new seeds, keeping the pairing: in
-execution $k$ of frame $t$, `color1` uses seed $(t-1)N + k$ and `color2` seed $tN + k$. The outputs keep the last
+one event frame; the script holds the scene still and sets new seeds on the tracers for each execution, keeping the
+pairing. With correlated sampling, the tutorials give execution $k$ of frame $t = 0, 1, \ldots$ seed $tN + k$ for
+`color1` and $(t + 1)N + k$ for `color2`, which `color1` uses again in frame $t + 1$. At $t = 0$, `color1` (seed
+$k$) has no partner: the first frame has no difference, and `color1` enters only its image. The outputs keep the last
 complete event frame in between, and the [`EventGenerator`](EventGenerator.md) fed by `deltaL` fires only when a
 frame completes. This gives references with thousands of samples per pixel.
 
@@ -60,12 +62,14 @@ the last finite frame.
   - See [Outputs](#event-outputs).
 ```
 
-From Python: `reset()` forgets the previous frame; `subframe` and `event_frame` give the position in the current
-event frame and the number of completed event frames.
+From Python: `reset()` forgets the previous frame and restarts the event frame; `subframe` is the index of the next
+execution in the event frame, and `event_frame` the number of event frames completed since the last reset.
 
 ## Example
 
 ```python
+testbed.load_scene("cornell-box/scene-v4.pbrt")  # with its area light
+graph = testbed.create_render_graph("Events")
 graph.create_pass("GBuffer", "GBufferRT", {"samplePattern": "Center", "sampleCount": 1})
 for tracer in ["TracerA", "TracerB"]:
     graph.create_pass(tracer, "PathTracer", {"samplesPerPixel": 1, "fixedSeed": 0})
@@ -74,8 +78,9 @@ graph.create_pass("Difference", "EventDifference", {"sampling": "correlated"})
 graph.add_edge("TracerA.color", "Difference.color1")
 graph.add_edge("TracerB.color", "Difference.color2")
 graph.mark_output("Difference.deltaL")
+testbed.render_graph = graph
 
-for frame in range(frames):
+for frame in range(16):
     # ... move the camera ...
     graph.get_pass("TracerA").fixedSeed = frame
     graph.get_pass("TracerB").fixedSeed = frame + 1

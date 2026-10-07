@@ -67,16 +67,19 @@ Falcor builds for emissive triangles, here built over all the scene's triangles 
 1. **Length**: the length of $x \to y \to$ laser spot is drawn from the gate, and with $x$ and the laser spot as
    foci it defines the ellipsoid.
 2. **Node**: from the root, the walk goes into one of the two children at random, with a weight equal to the total
-   area of the child's triangles, or zero if the child's bounding box does not intersect the ellipsoid. Large
-   regions near the ellipsoid are visited more often, and regions it cannot reach are never visited.
-3. **Triangle**: in the leaf, one of the triangles the ellipsoid actually crosses is picked.
+   area of the child's triangles. The weight is zero, and the child is never visited, if its bounding box cannot
+   hold a point of the ellipsoid's surface: the box misses the ellipsoid's bounding box, lies entirely outside the
+   ellipsoid (its distances to the two foci add up to more than the length) or entirely inside it, or lies behind the
+   surface at $x$ or at the laser spot. The test uses only the box, so a box that passes can still hold triangles the
+   ellipsoid does not cross.
+3. **Triangle**: every leaf holds one triangle, which is taken without testing whether the ellipsoid crosses it.
 4. **Point**: $y$ is sampled on the curve where the ellipsoid crosses the triangle (an ellipse in the triangle's
    plane, clipped to the triangle): in coordinates where the ellipsoid is the unit sphere, the curve is a circle, and
    $y$ is uniform in angle over its arcs inside the triangle.
 5. **Visibility**: a ray from $x$ towards $y$ must hit that triangle first; otherwise the sample is rejected.
 
 The probability of every step is known, so the density of $y$ is too, and it is recomputed for multiple importance
-sampling by walking the BVH again. The bounding-box test is conservative: a leaf can be reached whose triangles the
+sampling by walking the BVH again. The bounding-box test is conservative: a leaf can be reached whose triangle the
 ellipsoid misses, and that sample then fails instead of being drawn again. This keeps the cost of a connection to
 one walk down the tree, at the price of some failed samples.
 

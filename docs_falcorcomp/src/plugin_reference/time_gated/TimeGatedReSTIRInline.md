@@ -60,7 +60,7 @@ Initial sampling, the candidate paths each pixel starts from in every frame:
   - integer
   - Maximum number of surface vertices on a candidate path, counting the primary hit and any
     vertex inserted by an ellipsoidal connection. The primary hit itself is not connected to the
-    laser spot. (Default: `3`)
+    laser spot. `0` renders no light. (Default: `3`)
 * - `samplingMethod`
   - string
   - How a candidate path's vertices are connected to the laser spot: `direct`, `ellipsoidal` or
@@ -346,7 +346,9 @@ difference was under 1 %.
 
 As for the [path tracer](TimeGatedPathTracerInline.md): `direct` connects every vertex to the
 laser spot, `ellipsoidal` inserts a vertex whose length fits the gate, and `ellipsoidal_direct_mis`
-combines both. With `isSceneDynamic`, ellipsoidal sampling supports at most 3 bounces.
+combines both. With `isSceneDynamic`, ellipsoidal sampling supports at most 3 bounces. The same surfaces
+as in the path tracer can hold the ellipsoidal vertex (see [its connection sampling](#connection-sampling)): the
+triangles are collected once per scene, so animated geometry is not followed.
 
 ## Laser
 
@@ -378,6 +380,12 @@ The laser is set on the `LaserLight` pass, as for the [path tracer](#laser).
 ## Example
 
 ```python
+testbed.load_scene("cornell-box/scene-v4-nolight.pbrt", falcor.SceneBuilderFlags.DontMergeMaterials)
+graph = testbed.create_render_graph("TimeGatedReSTIR")
+graph.create_pass("VBuffer", "VBufferRT", {"samplePattern": "Center", "sampleCount": 1})
+graph.create_pass("Laser", "LaserLight", {
+    "laserPosition": [0.0, 1.7, 6.8], "laserDirection": [0.0, 0.0, -1.0], "laserPower": [170.0, 120.0, 40.0],
+})
 graph.create_pass("Tracer", "TimeGatedReSTIRInline", {
     "samplesPerPixel": 16, "maxBounces": 6,
     "timeGateMode": "box", "timeGateWindow": 0.02, "timeCenter": 17.337,
@@ -388,6 +396,8 @@ graph.create_pass("Tracer", "TimeGatedReSTIRInline", {
 graph.add_edge("VBuffer.vbuffer", "Tracer.vbuffer")
 graph.add_edge("VBuffer.viewW", "Tracer.viewW")
 graph.add_edge("Laser", "Tracer")  # run the laser pass first
+graph.mark_output("Tracer.color")
+testbed.render_graph = graph
 ```
 
 See the [offline](../../tutorials/time_gated_restir_offline.md) and

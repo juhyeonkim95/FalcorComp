@@ -11,7 +11,8 @@ times.
   of all paths and $f(\bar{\mathbf{x}})$ the measurement contribution of a path, so that a standard path tracer estimates
   $\int_\mathcal{P} f(\bar{\mathbf{x}})\, \mathrm{d}\bar{\mathbf{x}}$.
 - $\ell(\bar{\mathbf{x}}) = \sum_i \eta_i \lVert x_{i+1} - x_i \rVert$ is the optical path length ($\eta_i$: refractive index
-  of segment $i$); the arrival time is $\ell / c$.
+  of segment $i$); the arrival time is $\ell / c$. Refractive indices are not implemented yet: every pass uses
+  $\eta_i = 1$, so path lengths and path velocities are geometric, also inside glass or water.
 - $u(\bar{\mathbf{x}}) = \sum_i \eta_i\, (v_i - v_{i+1}) \cdot \hat{d}_i$ is the path velocity: the rate at which the path
   shortens, from the velocities $v_i$ of its vertices along each segment direction $\hat{d}_i$. A path with path
   velocity $u$ has the Doppler shift $f_D(\bar{\mathbf{x}}) = u(\bar{\mathbf{x}}) / \lambda$ at laser wavelength $\lambda$.

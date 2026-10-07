@@ -75,6 +75,9 @@ The light is set on the `LaserLight` pass. From Python: `set_velocity(...)`, `cl
 ## Example
 
 ```python
+testbed.load_scene("cornell-box-moving/scene.pyscene",
+                   falcor.SceneBuilderFlags.DontMergeMaterials | falcor.SceneBuilderFlags.DontOptimizeGraph)
+graph = testbed.create_render_graph("Truth")
 graph.create_pass("Light", "LaserLight", {"isLightSourceLaser": False, "laserCollocated": True})
 graph.create_pass("Truth", "VelocityGroundTruthInline", {
     "mode": "path_length", "dt": 1e-3,
@@ -82,6 +85,7 @@ graph.create_pass("Truth", "VelocityGroundTruthInline", {
 })
 graph.add_edge("Light", "Truth")
 graph.mark_output("Truth.velocity")
+testbed.render_graph = graph
 ```
 
 The [Doppler ToF tutorial](../../tutorials/doppler_tof_offline.md) compares the three modes.

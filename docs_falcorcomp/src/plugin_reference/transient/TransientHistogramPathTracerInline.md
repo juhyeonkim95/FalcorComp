@@ -10,8 +10,8 @@ H_i = \frac{1}{\Delta} \int f(\bar{\mathbf{x}})\, \mathbf{1}\!\left[\ell(\bar{\m
 \qquad t_i = \text{timeMin} + i\Delta,
 $$
 
-where $f$ is the path contribution and $\ell$ the optical length (segment lengths weighted by the
-index of refraction). $H_i$ is radiance per unit path length, so $\sum_i H_i \Delta$ is the
+where $f$ is the path contribution and $\ell$ the optical length (the sum of the segment lengths:
+refractive indices are not implemented yet). $H_i$ is radiance per unit path length, so $\sum_i H_i \Delta$ is the
 radiance of all paths in the range. Camera paths start at the primary hits from `VBufferRT` and
 stop once they are longer than `timeMax`.
 
@@ -69,7 +69,8 @@ Sampling:
 * - `maxBounces`
   - integer
   - Maximum number of surface vertices on a camera path, counting the primary hit. Each vertex
-    is connected to the laser spot (the primary hit only with `computeDirect`). (Default: `3`)
+    is connected to the laser spot (the primary hit only with `computeDirect`).
+    `0` renders no light. (Default: `3`)
 * - `samplingMethod`
   - string
   - `direct` or `tri_approx`. See [Sampling methods](#sampling-methods). (Default: `direct`)
@@ -151,11 +152,13 @@ changes, the render graph is recompiled (e.g. on a resize or a new output), or a
 - `direct`: trace camera paths and connect every vertex to the laser spot, as the time-gated path
   tracer does.
 - `tri_approx`: a deterministic approximation of the paths primary hit -> one scene triangle ->
-  laser spot, integrated over every triangle of the scene (a single intermediate bounce). It
+  laser spot, integrated over the scene's triangles (a single intermediate bounce). It
   tests visibility at triangle centers and interpolates the path length linearly over each
   triangle, so it is biased; `samplesPerPixel`, `maxBounces`, `computeDirect`,
   `useImportanceSampling`, `histogramFilter` and kernel density estimation do not apply. It
-  assumes a collimated laser.
+  assumes a collimated laser. It uses the same triangles as the time-gated passes' ellipsoidal
+  connections (see [the time-gated path tracer](#connection-sampling)), but with a fixed area cutoff:
+  triangles larger than 10000 (world-space area) are left out.
 
 ## Laser
 
@@ -191,6 +194,12 @@ without extra settings.
 ## Example
 
 ```python
+testbed.load_scene("cornell-box/scene-v4-nolight.pbrt", falcor.SceneBuilderFlags.DontMergeMaterials)
+graph = testbed.create_render_graph("Transient")
+graph.create_pass("VBuffer", "VBufferRT", {"samplePattern": "Center", "sampleCount": 1})
+graph.create_pass("Laser", "LaserLight", {
+    "laserPosition": [0.0, 1.7, 6.8], "laserDirection": [0.0, 0.0, -1.0], "laserPower": [170.0, 120.0, 40.0],
+})
 graph.create_pass("Tracer", "TransientHistogramPathTracerInline", {
     "samplesPerPixel": 16, "maxBounces": 6,
     "timeMin": 16.75, "timeMax": 18.03, "timeBin": 64,
@@ -201,6 +210,7 @@ graph.add_edge("Laser", "Tracer")  # run the laser pass first
 graph.create_pass("Accumulate", "TransientHistogramAccumulatePass", {})
 graph.add_edge("Tracer.histogram", "Accumulate.input")
 graph.mark_output("Accumulate.output")
+testbed.render_graph = graph
 ```
 
 See the [transient rendering tutorial](../../tutorials/transient_offline.md) for a complete
