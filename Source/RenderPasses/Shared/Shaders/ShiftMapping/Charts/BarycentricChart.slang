@@ -31,6 +31,15 @@ export struct BarycentricChart : IShiftChart
     [mutating]
     void setEndpoints(float3 p1, float3 p2) { this.p1 = p1; this.p2 = p2; }
 
+    // The shortest path over the triangle's plane (the solve may leave the triangle): through the point where
+    // p1 -> p2 crosses the plane, p2 mirrored if on p1's side.
+    float lengthLowerBound()
+    {
+        float3 n = normalize(cross(v1 - v0, v2 - v0));
+        float h1 = dot(p1 - v0, n), h2 = dot(p2 - v0, n);
+        return length(p1 - (h1 * h2 > 0.f ? p2 - 2.f * h2 * n : p2));
+    }
+
     // Barycentric parameterization:
     // coordinates.x = b1, coordinates.y = b2, b0 = 1 - b1 - b2.
     float3 X(float2 coordinates)

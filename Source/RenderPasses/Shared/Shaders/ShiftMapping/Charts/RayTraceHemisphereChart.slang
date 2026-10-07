@@ -54,6 +54,9 @@ export struct RayTraceHemisphereChart:IShiftChart
     [mutating]
     void setEndpoints(float3 p1, float3 p2) { this.p1 = p1; this.p2 = p2; }
 
+    // The surface is wherever the rays hit: only the straight path p1 -> p2 bounds the length.
+    float lengthLowerBound() { return length(p1 - p2); }
+
     bool validCoordinates(float2 coordinates)
     {
         if (useCartesianChart) return CartesianRayChart::isValid(coordinates);

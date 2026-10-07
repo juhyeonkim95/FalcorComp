@@ -18,4 +18,7 @@ export interface IShiftChart
     float3 secondEndpoint();
     [mutating]
     void setEndpoints(float3 p1, float3 p2);
+
+    // A lower bound of |p1 - X| + |p2 - X| over the chart's surface: a target length below it has no solution.
+    float lengthLowerBound();
 };

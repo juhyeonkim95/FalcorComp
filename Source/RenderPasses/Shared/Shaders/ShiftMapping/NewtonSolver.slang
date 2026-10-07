@@ -18,6 +18,7 @@ enum NewtonResultStatus : uint
     Singular     = 2,
     InvalidPoint = 3,
     BranchRejected = 4, // A root on another branch than the start's (see solveShiftNewton).
+    Unreachable    = 5, // The target length is below the shortest path over the chart: no solution.
 };
 
 
@@ -167,6 +168,14 @@ NewtonResult solveShiftNewton<Chart : IShiftChart>(
         if (!sourceOps.eval(xi, Ls, g0, H0)) { R.status = NewtonResultStatus::InvalidPoint; return R; }
     }
     float targetValue = condition.targetLength(Ls);
+    // A target below the shortest path over the chart's surface has no solution: stop before iterating (on planes,
+    // about half of the failed solves, which would otherwise iterate until the step stalls). The margin keeps every
+    // target that a solve could reach within tol, so this rejects no shift that could succeed.
+    if (targetValue < ops.lengthLowerBound() - 2.f * tol)
+    {
+        R.status = NewtonResultStatus::Unreachable;
+        return R;
+    }
 
     // no need to search (a distinct source needs the Jacobian of its map even where xi' = xi)
     if (abs(targetValue - L0) <= tol && !distinctSource)

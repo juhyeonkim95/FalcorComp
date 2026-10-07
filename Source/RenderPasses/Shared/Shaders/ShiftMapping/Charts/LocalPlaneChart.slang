@@ -26,6 +26,14 @@ export struct LocalPlaneChart: IShiftChart
     [mutating]
     void setEndpoints(float3 p1, float3 p2) { this.p1 = p1; this.p2 = p2; }
 
+    // The shortest path over the plane: through the point where p1 -> p2 crosses it, p2 mirrored if on p1's side.
+    float lengthLowerBound()
+    {
+        float3 n = normalize(cross(t, b));
+        float h1 = dot(p1 - x0, n), h2 = dot(p2 - x0, n);
+        return length(p1 - (h1 * h2 > 0.f ? p2 - 2.f * h2 * n : p2));
+    }
+
     float3 X(float2 coordinates)
     {
         return x0 + coordinates.x * t + coordinates.y * b;
