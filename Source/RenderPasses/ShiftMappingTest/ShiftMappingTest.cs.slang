@@ -4,7 +4,8 @@
     first hit of a cosine-sampled ray from x, or the camera (a collocated point light) with gNextIsLight. The source path
     camera -> a_s -> x -> y is shifted to camera -> a_t -> x' -> y with equal total lengths plus an extra length change
     delta in [-gLengthChange, gLengthChange]: ell_t(x') = ell_s(x) + |a_s - camera| - |a_t - camera| + delta. The reverse
-    shift then maps x' back. Not for release.
+    shift then maps x' back. With gNextIsLight and gNextOffset, the target path ends at a light moved by gNextOffset, so
+    the source and target build different charts from y (ReSTIR's re-lit suffix after the light moved). Not for release.
 */
 #include "Scene/SceneDefines.slangh"
 #include "Utils/Math/MathConstants.slangh"
@@ -26,6 +27,7 @@ cbuffer CB
     float gNeighborRadius;
     uint gNextIsLight;
     float gEpsilon;
+    float3 gNextOffset; // With gNextIsLight: the target's light is moved by this (distinct source and target charts).
 }
 
 Texture2D<PackedHitInfo> gVBuffer;
@@ -62,16 +64,17 @@ bool sampleNext(ShadingData from, inout SampleGenerator sg, out HitInfo hit, out
     return true;
 }
 
-// Shift x (on the source path aSource -> x -> y) to the target path aTarget -> x' -> y with
+// Shift x (on the source path aSource -> x -> ySource) to the target path aTarget -> x' -> yTarget with
 // ell_t(x') = ell_s(x) + offset.
-HitInfo shiftOnce(float3 aTarget, float3 aSource, HitInfo xHit, VertexData xv, ShadingData y, float offset,
-    out float jacobian, out VertexData shifted, out ShiftMappingDebugInfo debugInfo, inout SampleGenerator sg)
+HitInfo shiftOnce(float3 aTarget, float3 aSource, HitInfo xHit, VertexData xv, ShadingData ySource,
+    ShadingData yTarget, float offset, out float jacobian, out VertexData shifted, out ShiftMappingDebugInfo debugInfo,
+    inout SampleGenerator sg)
 {
     ShadingData x1 = pointOnly(aTarget);
-    ShiftSource source = makeShiftSource(aSource, y, x1, y);
+    ShiftSource source = makeShiftSource(aSource, ySource, x1, yTarget);
     ShiftLengthCondition condition = { 1.f, 0.f, offset, 0.f, 0.f }; // ell_t(x') = ell_s(x) + offset
     debugInfo = {};
-    return pathLengthAwareShiftMapping(x1, xHit, xv, y, source, condition, jacobian, shifted, debugInfo, sg);
+    return pathLengthAwareShiftMapping(x1, xHit, xv, yTarget, source, condition, jacobian, shifted, debugInfo, sg);
 }
 
 [numthreads(16, 16, 1)]
@@ -123,31 +126,36 @@ void main(uint3 dispatchThreadId: SV_DispatchThreadID)
         if (!sampleNext(xs, sg, yHit, y)) return;
     }
 
+    // The target's next vertex: y, or a moved light (gNextOffset), which gives the target its own chart.
+    ShadingData yTarget = y;
+    if (gNextIsLight != 0) yTarget.posW = y.posW + gNextOffset;
+
     float delta = (2.f * sampleNext1D(sg) - 1.f) * gLengthChange;
     float offset = length(aSource.posW - camera) - length(aTarget.posW - camera) + delta;
 
     // The needed length minus the shortest a_t -> p -> y over x's plane (mirror construction): negative where no point
     // of the plane has the needed length, so a plane chart has no solution.
     float3 n = xs.faceN;
-    float sideA = dot(aTarget.posW - xs.posW, n), sideY = dot(y.posW - xs.posW, n);
-    float3 yMirror = sideA * sideY > 0.f ? y.posW - 2.f * sideY * n : y.posW;
+    float sideA = dot(aTarget.posW - xs.posW, n), sideY = dot(yTarget.posW - xs.posW, n);
+    float3 yMirror = sideA * sideY > 0.f ? yTarget.posW - 2.f * sideY * n : yTarget.posW;
     float neededLength = length(aSource.posW - xs.posW) + length(y.posW - xs.posW) + offset;
     float planeMargin = neededLength - length(aTarget.posW - yMirror);
 
     float jacobian;
     VertexData shifted;
     ShiftMappingDebugInfo forwardInfo;
-    HitInfo shiftedHit = shiftOnce(aTarget.posW, aSource.posW, xHit, xv, y, offset, jacobian, shifted, forwardInfo, sg);
+    HitInfo shiftedHit = shiftOnce(aTarget.posW, aSource.posW, xHit, xv, y, yTarget, offset, jacobian, shifted,
+        forwardInfo, sg);
     bool ok = jacobian > 0.f && shiftedHit.isValid();
     gShiftStatus[pixel] = float4(float(forwardInfo.status), float(forwardInfo.iters), -1.f, -1.f);
     gShiftValues[pixel] = float4(jacobian, planeMargin, -1.f, offset);
     if (!ok) return;
 
-    // The reverse shift: x' on a_t -> x' -> y back to a_s -> x -> y, ell_s(x) = ell_t(x') - offset.
+    // The reverse shift: x' on a_t -> x' -> yTarget back to a_s -> x -> y, ell_s(x) = ell_t(x') - offset.
     float jacobianBack;
     VertexData back;
     ShiftMappingDebugInfo reverseInfo;
-    HitInfo backHit = shiftOnce(aSource.posW, aTarget.posW, shiftedHit, shifted, y, -offset, jacobianBack, back,
+    HitInfo backHit = shiftOnce(aSource.posW, aTarget.posW, shiftedHit, shifted, yTarget, y, -offset, jacobianBack, back,
         reverseInfo, sg);
     bool backOk = backHit.isValid() && jacobianBack > 0.f;
     float roundTrip = backOk ? length(back.posW - xv.posW) : -1.f;
@@ -173,7 +181,7 @@ void main(uint3 dispatchThreadId: SV_DispatchThreadID)
             float jm;
             VertexData sm;
             ShiftMappingDebugInfo info;
-            HitInfo h = shiftOnce(aTarget.posW, aSource.posW, HitInfo(moved), mv, y, offset, jm, sm, info, sg);
+            HitInfo h = shiftOnce(aTarget.posW, aSource.posW, HitInfo(moved), mv, y, yTarget, offset, jm, sm, info, sg);
             if (!(jm > 0.f) || !h.isValid()) { complete = false; break; }
             before[i] = mv.posW;
             after[i] = sm.posW;

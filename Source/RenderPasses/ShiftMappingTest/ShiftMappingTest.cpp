@@ -46,6 +46,8 @@ public:
                 mNeighborRadius = value;
             else if (key == "nextIsLight")
                 mNextIsLight = value;
+            else if (key == "nextOffset")
+                mNextOffset = value;
             else if (key == "epsilon")
                 mEpsilon = value;
             else if (key == "seed")
@@ -63,6 +65,7 @@ public:
         props["lengthChange"] = mLengthChange;
         props["neighborRadius"] = mNeighborRadius;
         props["nextIsLight"] = mNextIsLight;
+        props["nextOffset"] = mNextOffset;
         props["epsilon"] = mEpsilon;
         props["seed"] = mSeed;
         return props;
@@ -98,6 +101,7 @@ public:
         var["CB"]["gLengthChange"] = mLengthChange;
         var["CB"]["gNeighborRadius"] = mNeighborRadius;
         var["CB"]["gNextIsLight"] = mNextIsLight ? 1u : 0u;
+        var["CB"]["gNextOffset"] = mNextOffset;
         var["CB"]["gEpsilon"] = mEpsilon;
         mShiftMapping.bindShaderData(var["ShiftMappingCB"]);
         InlinePass::bindChannels(var, renderData, InlinePass::kPrimaryHitInputChannels);
@@ -110,6 +114,9 @@ private:
     float mLengthChange = 0.f;   ///< Extra length change, uniform in [-this, this] (0: plain spatial reuse).
     float mNeighborRadius = 8.f; ///< Pixel radius of the source pixel around the target pixel.
     bool mNextIsLight = false;   ///< y is the camera (a collocated point light) instead of a surface.
+    /// With nextIsLight: the target path's light is moved by this, so that the source and target charts differ (as in
+    /// ReSTIR's re-lit suffix after the light moved).
+    float3 mNextOffset = float3(0.f);
     float mEpsilon = 1e-3f;      ///< Finite-difference step in barycentrics; 0 skips the check.
     uint mSeed = 0;
     uint mFrame = 0;
