@@ -36,19 +36,7 @@ Histogram:
   - The bin filter: `box` (a path counts for the bin that contains its length) or `tent` (a path is
     split between the two bins whose centers are nearest to its length, as in
     [TransientHistogramPathTracerInline](TransientHistogramPathTracerInline.md)). (Default: `box`)
-* - `useKernelDensityEstimation`
-  - boolean
-  - Not implemented in this pass: the histogram settings are shared with
-    [TransientHistogramPathTracerInline](TransientHistogramPathTracerInline.md), but kernel density
-    estimation is not, and `true` is rejected. (Default: `false`)
-* - `initialWindowRatio`
-  - float
-  - Unused: only kernel density estimation, which this pass does not implement, reads it.
-    (Default: `1`)
 ```
-
-Kernel density estimation is not supported: `useKernelDensityEstimation` must be `false`
-(`initialWindowRatio` has no effect).
 
 Initial sampling, the candidate paths each pixel starts from in every frame:
 

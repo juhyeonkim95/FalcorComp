@@ -94,7 +94,7 @@ void TransientHistogramReSTIRInline::parseProperties(const Properties& props)
 {
     for (const auto& [key, value] : props)
     {
-        if (mOptions.histogram.parse(key, value) || mOptions.pathTracing.parse(key, value) ||
+        if (mOptions.histogram.parse(key, value, false) || mOptions.pathTracing.parse(key, value) ||
             mOptions.restir.parse(key, value))
             continue;
         if (key == kUseBinReuse)
@@ -139,7 +139,7 @@ void TransientHistogramReSTIRInline::setProperties(const Properties& props)
 Properties TransientHistogramReSTIRInline::getProperties() const
 {
     Properties props;
-    mOptions.histogram.serialize(props);
+    mOptions.histogram.serialize(props, false);
     mOptions.pathTracing.serialize(props);
     mOptions.restir.serialize(props);
     props[kUseBinReuse] = mOptions.useBinReuse;

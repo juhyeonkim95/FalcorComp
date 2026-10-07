@@ -65,7 +65,9 @@ struct TransientHistogramConfig
             FALCOR_THROW("initialWindowRatio must be finite and in (0, 1]. Zero would produce a zero KDE bandwidth.");
     }
 
-    bool parse(const std::string& key, const Properties::ConstValue& value)
+    /// `allowKernelDensityEstimation`: whether the pass implements kernel density estimation; the KDE keys are the
+    /// pass's properties only then.
+    bool parse(const std::string& key, const Properties::ConstValue& value, bool allowKernelDensityEstimation = true)
     {
         if (key == "timeMin")
             timeMin = value;
@@ -75,23 +77,26 @@ struct TransientHistogramConfig
             timeBin = value;
         else if (key == "histogramFilter")
             filter = parseEnumProperty(kTimeGateModes, value, key);
-        else if (key == "useKernelDensityEstimation")
+        else if (allowKernelDensityEstimation && key == "useKernelDensityEstimation")
             useKernelDensityEstimation = value;
-        else if (key == "initialWindowRatio")
+        else if (allowKernelDensityEstimation && key == "initialWindowRatio")
             initialWindowRatio = value;
         else
             return false;
         return true;
     }
 
-    void serialize(Properties& props) const
+    void serialize(Properties& props, bool allowKernelDensityEstimation = true) const
     {
         props["timeMin"] = timeMin;
         props["timeMax"] = timeMax;
         props["timeBin"] = timeBin;
         props["histogramFilter"] = enumPropertyName(kTimeGateModes, filter);
-        props["useKernelDensityEstimation"] = useKernelDensityEstimation;
-        props["initialWindowRatio"] = initialWindowRatio;
+        if (allowKernelDensityEstimation)
+        {
+            props["useKernelDensityEstimation"] = useKernelDensityEstimation;
+            props["initialWindowRatio"] = initialWindowRatio;
+        }
     }
 
     /// Range, bins and filter. `allowKernelDensityEstimation` shows the KDE controls.
