@@ -143,7 +143,7 @@ is much cheaper than a separate accumulation pass for large histograms. Divide i
 of frames to get the mean; `TransientHistogramViewer` does this on its own. The sum restarts when
 the camera moves, the scene changes, a setting of this pass or an upstream pass (e.g. the laser)
 changes, the render graph is recompiled (e.g. on a resize or a new output), or a script calls
-`reset_histogram()`.
+`reset()`.
 
 (sampling-methods)=
 ## Sampling methods

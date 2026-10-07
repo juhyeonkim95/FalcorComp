@@ -62,13 +62,13 @@ def main():
             testbed.frame()
             np.testing.assert_allclose(graph.get_output("P.histogram").to_numpy(), histogram,
                                        rtol=1e-4, atol=1e-6)
-            # With accumulate, frames add up in place until reset_histogram().
+            # With accumulate, frames add up in place until reset().
             graph = create_graph(testbed, method, mono, kde, laser, filter_mode, accumulate=True)
             testbed.frame()
             testbed.frame()
             np.testing.assert_allclose(graph.get_output("P.histogram").to_numpy(), 2 * histogram,
                                        rtol=1e-4, atol=1e-6)
-            graph.get_pass("P").reset_histogram()
+            graph.get_pass("P").reset()
             testbed.frame()
             np.testing.assert_allclose(graph.get_output("P.histogram").to_numpy(), histogram,
                                        rtol=1e-4, atol=1e-6)

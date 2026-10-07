@@ -34,6 +34,7 @@ static void regVelocityGroundTruthInline(pybind11::module& m)
     pybind11::class_<VelocityGroundTruthInline, RenderPass, ref<VelocityGroundTruthInline>> pass(m, "VelocityGroundTruthInline");
     pass.def("set_velocity", &VelocityGroundTruthInline::setVelocity, "name"_a, "linear"_a,
         "angular"_a = float3(0.f), "center"_a = float3(0.f));
+    pass.def("clear_velocities", &VelocityGroundTruthInline::clearVelocities);
     pass.def("get_object_names", &VelocityGroundTruthInline::getObjectNames);
 }
 
@@ -132,6 +133,12 @@ RenderPassReflection VelocityGroundTruthInline::reflect(const CompileData& compi
 void VelocityGroundTruthInline::setVelocity(const std::string& name, float3 linear, float3 angular, float3 center)
 {
     mOptions.velocities[name] = ObjectMotion{linear, angular, center};
+    mVelocitiesDirty = true;
+}
+
+void VelocityGroundTruthInline::clearVelocities()
+{
+    mOptions.velocities.clear();
     mVelocitiesDirty = true;
 }
 

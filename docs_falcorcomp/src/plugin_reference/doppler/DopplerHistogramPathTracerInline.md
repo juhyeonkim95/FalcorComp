@@ -114,7 +114,7 @@ Sampling and output, as for the [transient histogram path tracer](../transient/T
 * - `accumulate`
   - boolean
   - Sum the frames in the spectrum, restarting when the camera moves, a setting changes, the render graph is
-    recompiled (e.g. on a resize), or `reset_spectrum()` is called; divide by the number of frames for the mean. Off,
+    recompiled (e.g. on a resize), or `reset()` is called; divide by the number of frames for the mean. Off,
     each frame writes its own spectrum. (Default: `false`)
 * - `useSingleChannel`
   - boolean
@@ -158,8 +158,8 @@ the camera: `isLightSourceLaser = false` with `laserCollocated = true` puts a po
   - The steady image (the spectrum summed over all shifts, including those outside the range), RGBA32Float.
 ```
 
-From Python: `reset_spectrum()`, `set_velocity(...)`, `clear_velocities()` and `get_object_names()`, which returns
-`(instance, mesh name, material name)` for every object of the scene.
+From Python: `reset()`, `set_velocity(...)`, `clear_velocities()` and `get_object_names()`, which returns
+`(instance, mesh name, material name, movable)` for every object of the scene.
 
 ## Example
 

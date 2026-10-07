@@ -33,7 +33,7 @@
 static void regTransientHistogramPathTracerInline(pybind11::module& m)
 {
     pybind11::class_<TransientHistogramPathTracerInline, RenderPass, ref<TransientHistogramPathTracerInline>> pass(m, "TransientHistogramPathTracerInline");
-    pass.def("reset_histogram", &TransientHistogramPathTracerInline::resetHistogram);
+    pass.def("reset", &TransientHistogramPathTracerInline::resetHistogram);
 }
 
 extern "C" FALCOR_API_EXPORT void registerPlugin(Falcor::PluginRegistry& registry)

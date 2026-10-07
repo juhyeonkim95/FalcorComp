@@ -116,6 +116,9 @@ for every object. The camera and the light do not move.
 The scene changes every frame, so an `AccumulatePass` after this pass restarts every frame unless it is created with
 `"autoReset": False`.
 
+From Python: `set_velocity(...)`, `clear_velocities()`, `get_object_names()` and `reset()`, which restarts the time
+sequence (the next frame is pair 0).
+
 ## Velocity from heterodyne and homodyne
 
 For a path whose length changes at the rate $\mathrm{d}\ell/\mathrm{d}t$, the frequency shift is

@@ -35,7 +35,7 @@ static void regDopplerHistogramPathTracerInline(pybind11::module& m)
     using namespace pybind11::literals;
     pybind11::class_<DopplerHistogramPathTracerInline, RenderPass, ref<DopplerHistogramPathTracerInline>> pass(
         m, "DopplerHistogramPathTracerInline");
-    pass.def("reset_spectrum", &DopplerHistogramPathTracerInline::resetSpectrum);
+    pass.def("reset", &DopplerHistogramPathTracerInline::resetSpectrum);
     pass.def("set_velocity", &DopplerHistogramPathTracerInline::setVelocity, "name"_a, "linear"_a,
         "angular"_a = float3(0.f), "center"_a = float3(0.f));
     pass.def("clear_velocities", &DopplerHistogramPathTracerInline::clearVelocities);
@@ -238,12 +238,12 @@ void DopplerHistogramPathTracerInline::clearVelocities()
     resetSpectrum();
 }
 
-std::vector<std::tuple<uint32_t, std::string, std::string>> DopplerHistogramPathTracerInline::getObjectNames() const
+std::vector<std::tuple<uint32_t, std::string, std::string, bool>> DopplerHistogramPathTracerInline::getObjectNames() const
 {
-    std::vector<std::tuple<uint32_t, std::string, std::string>> names;
+    std::vector<std::tuple<uint32_t, std::string, std::string, bool>> names;
     if (mpScene)
         for (const auto& object : listSceneObjects(*mpScene))
-            names.emplace_back(object.instance, object.mesh, object.material);
+            names.emplace_back(object.instance, object.mesh, object.material, object.movable);
     return names;
 }
 

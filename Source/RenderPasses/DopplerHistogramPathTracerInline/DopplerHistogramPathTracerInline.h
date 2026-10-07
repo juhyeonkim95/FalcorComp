@@ -69,8 +69,8 @@ public:
     /// Sets the velocity of the scene objects whose mesh or material is named `name` (or of instance "#<index>").
     void setVelocity(const std::string& name, float3 linear, float3 angular, float3 center);
     void clearVelocities();
-    /// (instance index, mesh name, material name) of every geometry instance of the scene.
-    std::vector<std::tuple<uint32_t, std::string, std::string>> getObjectNames() const;
+    /// (instance index, mesh name, material name, movable) of every geometry instance of the scene.
+    std::vector<std::tuple<uint32_t, std::string, std::string, bool>> getObjectNames() const;
 
 private:
     /// User settings, composed of shared configs (Shared/Host/Configs) plus this pass's own.

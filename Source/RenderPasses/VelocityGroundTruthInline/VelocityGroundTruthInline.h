@@ -64,6 +64,7 @@ public:
 
     enum class Mode { Doppler = 0, PathLength = 1, Projection = 2 };
     void setVelocity(const std::string& name, float3 linear, float3 angular, float3 center);
+    void clearVelocities();
     /// (instance index, mesh name, material name, movable) of every geometry instance of the scene.
     std::vector<std::tuple<uint32_t, std::string, std::string, bool>> getObjectNames() const;
 

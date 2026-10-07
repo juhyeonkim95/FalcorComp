@@ -32,7 +32,7 @@
 static void regTransientHistogramReSTIRInline(pybind11::module& m)
 {
     pybind11::class_<TransientHistogramReSTIRInline, RenderPass, ref<TransientHistogramReSTIRInline>> pass(m, "TransientHistogramReSTIRInline");
-    pass.def("reset_histogram", &TransientHistogramReSTIRInline::resetHistogram);
+    pass.def("reset", &TransientHistogramReSTIRInline::resetHistogram);
 }
 
 extern "C" FALCOR_API_EXPORT void registerPlugin(Falcor::PluginRegistry& registry)

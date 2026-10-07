@@ -275,7 +275,7 @@ The laser is set on the `LaserLight` pass, as for the
 ```
 
 The pass publishes the histogram's range to the render graph, so a `TransientHistogramViewer`
-downstream labels the path lengths. From a script, `reset_histogram()` clears the histogram before
+downstream labels the path lengths. From a script, `reset()` clears the histogram before
 the next frame.
 
 ## Example

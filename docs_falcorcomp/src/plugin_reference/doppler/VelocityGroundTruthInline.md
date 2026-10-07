@@ -69,7 +69,8 @@ hits another object at `dt` than at time 0 (an object edge, where the length dif
   - Velocity of the direct path, m/s, R32Float; NaN without a hit.
 ```
 
-The light is set on the `LaserLight` pass. From Python: `set_velocity(...)` and `get_object_names()`.
+The light is set on the `LaserLight` pass. From Python: `set_velocity(...)`, `clear_velocities()` and `get_object_names()`, which returns
+`(instance, mesh name, material name, movable)` for every object of the scene.
 
 ## Example
 

@@ -37,7 +37,8 @@ static void regDopplerToFPathTracerInline(pybind11::module& m)
         m, "DopplerToFPathTracerInline");
     pass.def("set_velocity", &DopplerToFPathTracerInline::setVelocity, "name"_a, "linear"_a,
         "angular"_a = float3(0.f), "center"_a = float3(0.f));
-    pass.def("reset_sequence", &DopplerToFPathTracerInline::resetSequence);
+    pass.def("clear_velocities", &DopplerToFPathTracerInline::clearVelocities);
+    pass.def("reset", &DopplerToFPathTracerInline::resetSequence);
     pass.def("get_object_names", &DopplerToFPathTracerInline::getObjectNames);
 }
 
@@ -189,6 +190,13 @@ DefineList DopplerToFPathTracerInline::getShaderDefines(const RenderData& render
 void DopplerToFPathTracerInline::setVelocity(const std::string& name, float3 linear, float3 angular, float3 center)
 {
     mOptions.velocities[name] = ObjectMotion{linear, angular, center};
+    mNodesDirty = true;
+    mOptionsChanged = true;
+}
+
+void DopplerToFPathTracerInline::clearVelocities()
+{
+    mOptions.velocities.clear();
     mNodesDirty = true;
     mOptionsChanged = true;
 }

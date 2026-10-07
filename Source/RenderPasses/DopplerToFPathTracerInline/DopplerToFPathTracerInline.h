@@ -73,6 +73,7 @@ public:
     enum class Antithetic { None = 0, HalfPeriod = 1, Mirror = 2 };
 
     void setVelocity(const std::string& name, float3 linear, float3 angular, float3 center);
+    void clearVelocities();
     /// Restarts the time sequence (the next frame is pair 0).
     void resetSequence() { mFrameCount = 0; }
     /// (instance index, mesh name, material name, movable) of every geometry instance of the scene.
