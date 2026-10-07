@@ -6,7 +6,8 @@ pixel reuse the paths found by its neighbors, shifted with a path-length-aware s
 keeps their length. This pays off when few sampled paths fit the measurement, for example with a
 narrow time gate, and in online rendering, where every frame is shown on its own.
 
-They build on the [ToF rendering](index.md) tutorials, and use the same scene and render graph.
+They build on the [ToF rendering](index.md) tutorials, and use the same scene and render graph. Most of their scripts
+save their images with Pillow 10.1 or newer (`pip install pillow`).
 
 ## Time-gated rendering
 
