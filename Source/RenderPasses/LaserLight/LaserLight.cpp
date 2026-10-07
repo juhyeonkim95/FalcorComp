@@ -48,6 +48,7 @@ float angleDegrees(float cosAngle)
 LaserLight::LaserLight(ref<Device> pDevice, const Properties& props) : RenderPass(pDevice)
 {
     parseProperties(props);
+    mPosition = mLaser.origin;
 }
 
 void LaserLight::parseProperties(const Properties& props)
@@ -101,18 +102,21 @@ void LaserLight::setProperties(const Properties& props)
         mVelocity = velocity;
         throw;
     }
+    mPosition = mLaser.origin; // The motion restarts from laserPosition.
     mOptionsChanged = true;
 }
 
 void LaserLight::updateLaserInfo(const float3& position, const float3& direction)
 {
-    mLaser.origin = position;
     mLaser.direction = normalizeDirection(direction);
+    mLaser.origin = position;
+    mPosition = position;
 }
 
 void LaserLight::execute(RenderContext* pRenderContext, const RenderData& renderData)
 {
     LaserState laser = mLaser;
+    laser.origin = mPosition;
     if (mLaser.collocated && mpScene)
     {
         const auto& pCamera = mpScene->getCamera();
@@ -133,7 +137,7 @@ void LaserLight::execute(RenderContext* pRenderContext, const RenderData& render
     mOptionsChanged = false;
     mPublished = laser;
 
-    mLaser.origin += mVelocity;
+    mPosition += mVelocity;
 }
 
 void LaserLight::renderUI(Gui::Widgets& widget)
@@ -151,7 +155,16 @@ void LaserLight::renderUI(Gui::Widgets& widget)
 
     if (!mLaser.collocated)
     {
-        dirty |= widget.var("laserPosition", mLaser.origin, -FLT_MAX, FLT_MAX, 0.001f, false, "%.4f");
+        if (widget.var("laserPosition", mLaser.origin, -FLT_MAX, FLT_MAX, 0.001f, false, "%.4f"))
+        {
+            mPosition = mLaser.origin; // The motion restarts from the new position.
+            dirty = true;
+        }
+        if (any(mVelocity != float3(0.f)))
+        {
+            widget.text(fmt::format("Moving with laserVelocity, now at ({:.4f}, {:.4f}, {:.4f})", mPosition.x,
+                mPosition.y, mPosition.z));
+        }
         float3 direction = mLaser.direction;
         if (widget.var("laserDirection", direction, -1.f, 1.f, 0.001f, false, "%.4f") && length(direction) > 0.f)
         {

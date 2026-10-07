@@ -176,7 +176,7 @@ in a frame (no `LaserLight`, one removed from the graph, or no execution edge) w
   - Description
 * - `laserPosition`
   - float3
-  - Laser position. (Default: `(0, 0, 0)`)
+  - Laser position; with `laserVelocity`, where the motion starts. (Default: `(0, 0, 0)`)
 * - `laserDirection`
   - float3
   - Beam direction (normalized). (Default: `(0, 0, 1)`)
@@ -198,12 +198,14 @@ in a frame (no `LaserLight`, one removed from the graph, or no execution edge) w
     `laserDirection`. (Default: `false`)
 * - `laserVelocity`
   - float3
-  - Added to the position after every frame. (Default: `(0, 0, 0)`)
+  - Moves the laser by this much after every frame, starting from `laserPosition`. Setting the
+    properties, the position in the UI or `update_laser_info` restarts the motion; the saved
+    `laserPosition` stays its start, so a saved graph replays the motion. (Default: `(0, 0, 0)`)
 ```
 
-`update_laser_info(position, direction)` moves the laser from a script, for example every frame. Any change of the
-light (this, `laserVelocity`, new properties, a collocated laser following the camera) restarts downstream
-accumulation, so an accumulated image never mixes two laser positions.
+`update_laser_info(position, direction)` moves the laser from a script, for example every frame; `position` becomes
+`laserPosition`. Any change of the light (this, `laserVelocity`, new properties, a collocated laser following the
+camera) restarts downstream accumulation, so an accumulated image never mixes two laser positions.
 
 ## Inputs and outputs
 
