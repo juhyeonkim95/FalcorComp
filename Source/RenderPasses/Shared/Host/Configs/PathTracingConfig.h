@@ -35,12 +35,16 @@ struct PathTracingConfig
             FALCOR_THROW("samplesPerPixel must be greater than zero.");
     }
 
-    /// MAX_BOUNCES, COMPUTE_DIRECT, USE_IMPORTANCE_SAMPLING, USE_ALPHA_TEST, USE_SINGLE_CHANNEL.
+    /// The camera -> primary hit -> laser spot term is rendered: computeDirect, and a path that keeps its primary hit
+    /// (maxBounces = 0 allows no vertex, so it renders no light).
+    bool hasDirect() const { return computeDirect && maxBounces > 0; }
+
+    /// MAX_BOUNCES, COMPUTE_DIRECT (hasDirect()), USE_IMPORTANCE_SAMPLING, USE_ALPHA_TEST, USE_SINGLE_CHANNEL.
     DefineList getDefines() const
     {
         DefineList defines;
         defines.add("MAX_BOUNCES", std::to_string(maxBounces));
-        defines.add("COMPUTE_DIRECT", computeDirect ? "1" : "0");
+        defines.add("COMPUTE_DIRECT", hasDirect() ? "1" : "0");
         defines.add("USE_IMPORTANCE_SAMPLING", useImportanceSampling ? "1" : "0");
         defines.add("USE_ALPHA_TEST", useAlphaTest ? "1" : "0");
         defines.add("USE_SINGLE_CHANNEL", useSingleChannel ? "1" : "0");

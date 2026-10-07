@@ -60,7 +60,7 @@ float3 tracePath(const uint2 pixel, const uint2 frameDim)
         float pathVelocity = primarySegment; // Of the camera path so far, m/s.
         float3 throughput = 1.f;
         // As the Doppler histogram path tracer: the primary vertex is depth zero.
-        for (uint depth = 0; depth < max(1u, kMaxBounces) && any(throughput > 0.f); ++depth)
+        for (uint depth = 0; depth < kMaxBounces && any(throughput > 0.f); ++depth)
         {
             IMaterialInstance material = gScene.materials.getMaterialInstance(surface, ExplicitLodTextureSampler(0.f));
             if ((depth > 0 || kComputeDirect) && hasNonDeltaLobe(surface, material))

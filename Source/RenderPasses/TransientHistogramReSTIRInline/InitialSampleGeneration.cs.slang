@@ -119,7 +119,7 @@ float3 tracePath(uint2 pixel, uint2 frameDim)
         rc.prefixSeed = bsdfRng.getCurrentSeed();
 
         // Match the histogram PT convention: primary = depth zero.
-        for (uint depth = 0; depth < max(1u, uint(MAX_BOUNCES)) &&
+        for (uint depth = 0; depth < uint(MAX_BOUNCES) &&
             pathLength < maxPathLength && any(throughput > 0.f); ++depth)
         {
             // A candidate at a vertex without a non-delta lobe would be zero.

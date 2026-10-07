@@ -245,7 +245,7 @@ void TimeGatedReSTIRInline::bindShaderData(const ShaderVar& var, const RenderDat
 
     InlinePass::bindChannels(var, renderData, InlinePass::kPrimaryHitAndMotionInputChannels);
     InlinePass::bindChannels(var, renderData, InlinePass::kColorOutputChannels);
-    if (mOptions.pathTracing.computeDirect)
+    if (mOptions.pathTracing.hasDirect())
         var["gDirectColor"] = mpDirectColor;
 
     if (mOptions.restir.useTemporalReuse)
@@ -364,13 +364,13 @@ void TimeGatedReSTIRInline::execute(RenderContext* pRenderContext, const RenderD
         mpSpatialReusePairsPass = InlinePass::createScenePass(mpDevice, pRenderContext, mpScene, mpSampleGenerator, kSpatialReusePairsFile, defines);
     }
     const uint2 frameDim = renderData.getDefaultTextureDims();
-    if (mOptions.pathTracing.computeDirect &&
+    if (mOptions.pathTracing.hasDirect() &&
         (!mpDirectColor || mpDirectColor->getWidth() != frameDim.x || mpDirectColor->getHeight() != frameDim.y))
     {
         mpDirectColor = mpDevice->createTexture2D(frameDim.x, frameDim.y, ResourceFormat::RGBA32Float, 1, 1, nullptr,
             ResourceBindFlags::ShaderResource | ResourceBindFlags::UnorderedAccess);
     }
-    else if (!mOptions.pathTracing.computeDirect)
+    else if (!mOptions.pathTracing.hasDirect())
         mpDirectColor = nullptr;
     mReSTIR.prepare(mpDevice, mpScene, mpSampleGenerator, mOptions.pathTracing, mOptions.isSceneDynamic, 1, frameDim,
         mOptions.restir.useTemporalReuse, renderData.getTexture("vbuffer")->getFormat());
@@ -386,7 +386,7 @@ void TimeGatedReSTIRInline::execute(RenderContext* pRenderContext, const RenderD
 
     spatialReuse(pRenderContext, renderData);
     // The primary-hit direct lighting is added after reuse; it never enters the reservoirs.
-    if (mOptions.pathTracing.computeDirect)
+    if (mOptions.pathTracing.hasDirect())
         addDirect(pRenderContext, renderData);
     mFrameCount++;
 
