@@ -70,7 +70,8 @@ Spectrum:
     ([FMCW](#doppler-fmcw)). `0` is a single-frequency laser. (Default: `0`)
 * - `chirpDuration`
   - float
-  - Duration $T$ of each sweep, µs. Used when `chirpBandwidth` is positive. (Default: `10`)
+  - Duration $T$ of each sweep, µs. Used when `chirpBandwidth` is positive. Assumed much longer
+    than every path's round-trip time $l/c$; this is not checked. (Default: `10`)
 * - `frequencyMin`, `frequencyMax`
   - float
   - Range of Doppler shifts (with a chirp, of beat frequencies), MHz. Paths outside `[frequencyMin, frequencyMax)`
