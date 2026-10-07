@@ -12,7 +12,7 @@
 
 | Documentation | PyPI | Build |
 |:---:|:---:|:---:|
-| [![docs](https://readthedocs.org/projects/falcorcomp/badge/?version=latest)](https://falcorcomp.readthedocs.io/en/latest/) | [![TestPyPI](https://img.shields.io/badge/TestPyPI-0.1.4-blue)](https://test.pypi.org/project/falcorcomp/) | [![build](https://github.com/juhyeonkim95/FalcorComp/actions/workflows/build.yml/badge.svg?branch=master)](https://github.com/juhyeonkim95/FalcorComp/actions/workflows/build.yml) |
+| [![docs](https://readthedocs.org/projects/falcorcomp/badge/?version=latest)](https://falcorcomp.readthedocs.io/en/latest/) | [![PyPI](https://img.shields.io/pypi/v/falcorcomp)](https://pypi.org/project/falcorcomp/) | [![build](https://github.com/juhyeonkim95/FalcorComp/actions/workflows/build.yml/badge.svg?branch=master)](https://github.com/juhyeonkim95/FalcorComp/actions/workflows/build.yml) |
 
 </div>
 
@@ -114,10 +114,10 @@ For details, please refer to the corresponding project page for each paper.
 
 FalcorComp is installed as the Python package `falcorcomp`, which contains Falcor and the render passes, so no separate Falcor build is needed. It requires 64-bit Linux (Windows wheels are not available yet), an NVIDIA GPU with hardware ray tracing (RTX), and Python 3.9 to 3.13.
 
-The package is currently published on TestPyPI:
+Install it from PyPI:
 
 ```bash
-pip install --index-url https://test.pypi.org/simple/ --extra-index-url https://pypi.org/simple/ falcorcomp
+pip install falcorcomp
 ```
 
 To check the installation (this also initializes the GPU):

@@ -30,17 +30,17 @@ python3 -m venv falcorcomp-env
 source falcorcomp-env/bin/activate
 ```
 
-falcorcomp is currently published on TestPyPI. Its only dependency, NumPy, comes from PyPI:
+Install falcorcomp from PyPI; pip also installs its only dependency, NumPy:
 
 ```bash
-pip install --index-url https://test.pypi.org/simple/ --extra-index-url https://pypi.org/simple/ falcorcomp
+pip install falcorcomp
 ```
 
 pip picks the wheel for your Python version. To install a wheel file you downloaded instead,
 choose the one whose name matches your Python version (`cp312` is Python 3.12):
 
 ```bash
-pip install falcorcomp-0.1.4-cp312-cp312-manylinux_2_35_x86_64.whl
+pip install falcorcomp-0.2.0-cp312-cp312-manylinux_2_35_x86_64.whl
 ```
 
 ## Verifying the installation
