@@ -10,13 +10,21 @@ import Scene.RaytracingInline;
 #define USE_ALPHA_TEST 0
 #endif
 #include "Utils/Math/MathConstants.slangh"
+#include "RenderPasses/Shared/Shaders/ShiftMapping/ShiftMappingMethods.slangh"
+
+// ray_trace_chart gives the ray directions Cartesian slopes (CartesianRayChart); ray_trace and area_adaptive use the
+// polar equal-area hemisphere. A compile-time choice, so that only one parameterization is compiled.
+#if defined(SHIFT_MAPPING_METHOD) && SHIFT_MAPPING_METHOD == SHIFT_MAPPING_RAY_TRACE_CHART
+#define RAY_CHART_CARTESIAN 1
+#else
+#define RAY_CHART_CARTESIAN 0
+#endif
 
 export struct RayTraceHemisphereChart:IShiftChart
 {
     // Geometry
     float3 p1, p2, p2o;
     float3 t2, b2, n2;
-    bool useCartesianChart;
     HitInfo hit;
     float hitT;
     // The hit's position and face normal, loaded once per hit (update, or setHit from known vertex data).
@@ -27,7 +35,6 @@ export struct RayTraceHemisphereChart:IShiftChart
     {
         this.p1 = p1; this.p2 = p2; this.p2o = p2o;
         this.t2 = t2; this.b2 = b2; this.n2 = n2;
-        this.useCartesianChart = false;
         this.hit = HitInfo(); this.hitT = 0.f;
         this.hitPosition = float3(0.f); this.hitFaceNormal = float3(0.f);
     }
@@ -62,8 +69,11 @@ export struct RayTraceHemisphereChart:IShiftChart
 
     bool validCoordinates(float2 coordinates)
     {
-        if (useCartesianChart) return CartesianRayChart::isValid(coordinates);
+#if RAY_CHART_CARTESIAN
+        return CartesianRayChart::isValid(coordinates);
+#else
         return all(isfinite(coordinates)) && coordinates.x > 1e-6f && coordinates.x < 1.f - 1e-6f;
+#endif
     }
 
     // --- hemisphere direction (LOCAL) ---
@@ -106,10 +116,11 @@ export struct RayTraceHemisphereChart:IShiftChart
         out float3 duu, out float3 duv, out float3 dvv)
     {
         float3 localD, localU, localV, localUU, localUV, localVV;
-        if (useCartesianChart)
-            CartesianRayChart::derivatives(coordinates, localD, localU, localV, localUU, localUV, localVV);
-        else
-            dirPartialsLocal(coordinates.x, coordinates.y, localD, localU, localV, localUU, localUV, localVV);
+#if RAY_CHART_CARTESIAN
+        CartesianRayChart::derivatives(coordinates, localD, localU, localV, localUU, localUV, localVV);
+#else
+        dirPartialsLocal(coordinates.x, coordinates.y, localD, localU, localV, localUU, localUV, localVV);
+#endif
         d = toWorld(localD); du = toWorld(localU); dv = toWorld(localV);
         duu = toWorld(localUU); duv = toWorld(localUV); dvv = toWorld(localVV);
     }
@@ -128,7 +139,11 @@ export struct RayTraceHemisphereChart:IShiftChart
         hitT = 0.f;
         if (!validCoordinates(coordinates)) return;
         float2 et = project(coordinates);
-        float3 dL = useCartesianChart ? CartesianRayChart::direction(et) : dirLocal(et.x, et.y);
+#if RAY_CHART_CARTESIAN
+        float3 dL = CartesianRayChart::direction(et);
+#else
+        float3 dL = dirLocal(et.x, et.y);
+#endif
         float3 d  = toWorld(dL); // unit
 
         Ray ray = Ray(p2o, d, 0.0f, FLT_MAX);

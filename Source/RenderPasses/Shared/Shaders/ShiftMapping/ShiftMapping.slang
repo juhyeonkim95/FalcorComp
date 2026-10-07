@@ -22,13 +22,7 @@ import Utils.Math.HashUtils;
 #define DEBUG_NEWTON_ITERATIONS 0
 #endif
 
-#define SHIFT_MAPPING_NO 0
-#define SHIFT_MAPPING_LOCAL_TANGENT 1
-#define SHIFT_MAPPING_BARYCENTRIC 2
-#define SHIFT_MAPPING_RAY_TRACE 3
-#define SHIFT_MAPPING_AREA_ADAPTIVE 4
-#define SHIFT_MAPPING_RAY_TRACE_CHART 5
-#define SHIFT_MAPPING_RADIAL 6
+#include "RenderPasses/Shared/Shaders/ShiftMapping/ShiftMappingMethods.slangh"
 
 /// The identity shift (`no`) leaves the path unchanged; it maps no path lengths (e.g. shrink mapping's K).
 #if SHIFT_MAPPING_METHOD == SHIFT_MAPPING_NO
@@ -626,8 +620,6 @@ HitInfo shiftRayTrace(
     float3 local = float3(dot(t2s, dir), dot(b2s, dir), dot(n2s, dir));
 #if SHIFT_MAPPING_METHOD == SHIFT_MAPPING_RAY_TRACE_CHART
     if (!(local.z > 1e-6f)) { jacobian = 0.f; return x2; }
-    ops.useCartesianChart = true;
-    sourceOps.useCartesianChart = true;
     float2 xi = local.xy / local.z;
 #else
     float2 xi = inverse_sample_hemisphere_preserve_area(local);

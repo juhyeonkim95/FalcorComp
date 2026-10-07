@@ -21,6 +21,7 @@ set(shared_shaders
     Geometry/EllipsoidIntersection.slang
     ShiftMapping/ShiftMapping.slang
     ShiftMapping/NewtonSolver.slang
+    ShiftMapping/ShiftMappingMethods.slangh
     ShiftMapping/Charts/ShiftChart.slang
     ShiftMapping/Charts/LocalPlaneChart.slang
     ShiftMapping/Charts/BarycentricChart.slang
