@@ -201,10 +201,13 @@ not map back onto themselves, which makes antithetic sampling biased or ineffect
 
 The `projector` method has high variance where the sampled vertex falls close to the camera-path
 vertex (for example in corners), because it is not combined with BSDF sampling; it is mainly a
-baseline for comparisons. Its connections are one-sided: they do not pass through the
-camera-path vertex or the sampled vertex by transmission. Known issue: in a test in the Cornell box with the
-tutorial's projector, it rendered the two-bounce light (`maxBounces` 2) about 1 % darker than the other methods;
-the cause is not found yet.
+baseline for comparisons. On a concave edge, where two surfaces meet (a wall and the floor, a box and the floor),
+this makes it too dark in practice: a vertex on the edge gets much of its light from the other surface right next to
+it, and a projector ray lands there with a negligible probability. In the Cornell box with the tutorial's projector,
+the pixels whose primary hit lies on such an edge came out 35 to 78 % too dark, and the two-bounce image
+(`maxBounces` 2 without `computeDirect`) 0.12 % darker in all; elsewhere the method agrees with BSDF sampling.
+Its connections are one-sided: they do not pass through the camera-path vertex or the sampled vertex by
+transmission.
 
 For every method, a vertex is lit by the projector only on the side its path arrived from: the projector never
 lights a surface through it, so it does not light the inside of glass or other transmissive objects (they still

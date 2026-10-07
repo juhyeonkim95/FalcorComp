@@ -40,8 +40,7 @@ path tracer, `accumulate` is the cheaper way to combine frames (see [Memory](#th
 * - `precisionMode`
   - string
   - How the running mean is kept: `Single`, in 32-bit floats, or `SingleCompensated`, the same with Kahan summation
-    of the increments, for long runs, at the cost of one more texture of the input's size. `Double`, which
-    `AccumulatePass` offers, is not implemented. (Default: `Single`)
+    of the increments, for long runs, at the cost of one more texture of the input's size. (Default: `Single`)
 * - `maxFrameCount`
   - integer
   - Stop averaging after this many frames: the output keeps the last average, and later frames are ignored until
