@@ -105,7 +105,9 @@ public:
 private:
     struct Options
     {
-        uint32_t iterations = 4;
+        /// a-trous iterations, 0 to 10 (0: the accumulation is not filtered). Signed, so that a negative value is
+        /// rejected instead of wrapping around.
+        int32_t iterations = 4;
         int32_t feedbackTap = 1; ///< a-trous iteration fed back to the next frame (-1: the unfiltered accumulation).
         float phiColor = 10.f;
         float phiNormal = 128.f;

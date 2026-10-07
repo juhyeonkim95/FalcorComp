@@ -277,9 +277,9 @@ void EventSVGF::parseProperties(const Properties& props)
 
 void EventSVGF::validateOptions(const Options& options)
 {
-    // The a-trous step doubles each iteration; the upper bound also catches negative values, which wrap around.
-    if (options.iterations < 1 || options.iterations > 10)
-        FALCOR_THROW("iterations must be in [1, 10].");
+    // The a-trous step doubles each iteration.
+    if (options.iterations < 0 || options.iterations > 10)
+        FALCOR_THROW("iterations must be in [0, 10].");
     if (options.feedbackTap < -1)
         FALCOR_THROW("feedbackTap must be at least -1 (-1 feeds back the unfiltered accumulation).");
     if (!(options.phiColor > 0.f) || !std::isfinite(options.phiColor) || !(options.phiNormal >= 0.f) || !std::isfinite(options.phiNormal))
@@ -443,24 +443,25 @@ void EventSVGF::execute(RenderContext* pRenderContext, const RenderData& renderD
         var["gEmitter"] = mpEmitter;
         mpFilterMoments->execute(pRenderContext, uint3(dim, 1));
     }
-    // Without a tap inside the a-trous loop the temporal accumulation is fed back, before the loop overwrites it.
-    if (mOptions.feedbackTap < 0)
+    // The tap is at most the last iteration. Without a tap inside the a-trous loop (feedbackTap -1, or no iterations)
+    // the temporal accumulation is fed back, before the loop overwrites it.
+    const int32_t tap = std::min(mOptions.feedbackTap, mOptions.iterations - 1);
+    if (tap < 0)
         feedback(mpPingPong[0]);
     ref<Texture> pFiltered = mpPingPong[1];
     {
         auto var = bindCommon(mpAtrous);
         var["gCurrZN"] = mpZN[0];
         var["gEmitter"] = mpEmitter;
-        const int32_t tap = std::min(mOptions.feedbackTap, int32_t(mOptions.iterations) - 1);
-        for (uint32_t i = 0; i < mOptions.iterations; i++)
+        for (int32_t i = 0; i < mOptions.iterations; i++)
         {
             const ref<Texture>& pTarget = mpPingPong[i % 2];
-            var["CB"]["gStepSize"] = int(1u << i);
+            var["CB"]["gStepSize"] = 1 << i;
             var["gAtrousInput"] = pFiltered;
             var["gAtrousOutput"] = pTarget;
             mpAtrous->execute(pRenderContext, uint3(dim, 1));
             pFiltered = pTarget;
-            if (int32_t(i) == tap)
+            if (i == tap)
                 feedback(pFiltered);
         }
     }

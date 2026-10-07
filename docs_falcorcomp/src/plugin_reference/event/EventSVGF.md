@@ -47,10 +47,12 @@ Everything is computed on the luminance.
   - Description
 * - `iterations`
   - integer
-  - à-trous iterations, 1 to 10; iteration $k$ has step $2^k$. (Default: `4`)
+  - à-trous iterations, 0 to 10; iteration $k$ has step $2^k$. With 0 the accumulation is not
+    filtered (and is fed back as the history). (Default: `4`)
 * - `feedbackTap`
   - integer
-  - The iteration whose output is the next frame's history; `-1`: the unfiltered accumulation. (Default: `1`)
+  - The iteration whose output is the next frame's history, at most the last one; `-1`: the
+    unfiltered accumulation. (Default: `1`)
 * - `phiColor`
   - float
   - Width of the luminance edge-stopping weight, in standard deviations. (Default: `10`)
