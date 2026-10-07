@@ -18,7 +18,7 @@ sign. The two are combined with multiple importance sampling (see
 [Antithetic sampling](#cwtof-antithetic)).
 
 $y'$ has two coordinates on the surface and one condition on the path length, so one more condition fixes it: the
-gauge. Here the antithetic vertex is found with `shiftmapMethod` = `barycentric`:
+gauge. Here the antithetic vertex is found with `shiftMappingMethod` = `barycentric`:
 
 - The unknowns are the barycentric coordinates of $y'$ on $y$'s triangle, so $y'$ stays on the triangle (the shift
   fails if it would leave it).

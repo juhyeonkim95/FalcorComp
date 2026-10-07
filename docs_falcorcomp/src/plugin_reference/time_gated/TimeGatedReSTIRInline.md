@@ -145,7 +145,7 @@ Shift mapping:
 * - Parameter
   - Type
   - Description
-* - `shiftmapMethod`
+* - `shiftMappingMethod`
   - string
   - The chart on which the reconnection vertex is moved: `no` (naive reuse: the vertex stays
     fixed), `local_tangent`, `barycentric`, `ray_trace`, `area_adaptive`, `ray_trace_chart` or
@@ -245,7 +245,7 @@ a different gate), so its length changes too. The shift keeps the rest of the pa
 *reconnection vertex*, the first vertex where the path may reconnect (a segment whose two
 vertices are both rougher than `reconnectionRoughnessThreshold` and that is longer than
 `reconnectionMinDistance`), so that the shifted path has the length it needs. The move is a Newton
-solve on a 2D chart around that vertex, chosen by `shiftmapMethod`; the path-length constraint
+solve on a 2D chart around that vertex, chosen by `shiftMappingMethod`; the path-length constraint
 fixes only one direction, and `gaugeMode` fixes the other. `radial` instead moves the vertex along
 the ray, in the vertex's plane, from the point where the path length is shortest (a 1D search), so
 it needs no gauge. With `no`, the vertex is not moved, so the shifted path often no longer fits
@@ -340,7 +340,7 @@ graph.create_pass("Tracer", "TimeGatedReSTIRInline", {
     "samplesPerPixel": 16, "maxBounces": 6,
     "timeGateMode": "box", "timeGateWindow": 0.02, "timeCenter": 17.337,
     "spatialReuseIteration": 3, "spatialReuseNeighborCount": 5,
-    "shiftmapMethod": "local_tangent", "gaugeMode": "avg_grad",
+    "shiftMappingMethod": "local_tangent", "gaugeMode": "avg_grad",
     "reconnectionRoughnessThreshold": 0.05,
 })
 graph.add_edge("VBuffer.vbuffer", "Tracer.vbuffer")

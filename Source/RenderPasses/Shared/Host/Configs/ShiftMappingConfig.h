@@ -42,7 +42,7 @@ inline const std::unordered_map<std::string, GaugeMode> kGaugeModes = {
 /// moved on its surface so the path length changes by a given amount, with a Newton solve on the chosen chart.
 struct ShiftMappingConfig
 {
-    ShiftMappingMethod shiftmapMethod = ShiftMappingMethod::Identity;
+    ShiftMappingMethod shiftMappingMethod = ShiftMappingMethod::Identity;
     GaugeMode gaugeMode = GaugeMode::Constant;
     float2 gaugeAxis = float2(1, 0);
     uint newtonMaxIteration = 5;
@@ -65,8 +65,8 @@ struct ShiftMappingConfig
 
     bool parse(const std::string& key, const Properties::ConstValue& value)
     {
-        if (key == "shiftmapMethod")
-            shiftmapMethod = parseEnumProperty(kShiftMappingMethods, value, key);
+        if (key == "shiftMappingMethod")
+            shiftMappingMethod = parseEnumProperty(kShiftMappingMethods, value, key);
         else if (key == "gaugeMode")
             gaugeMode = parseEnumProperty(kGaugeModes, value, key);
         else if (key == "gaugeAxis")
@@ -84,7 +84,7 @@ struct ShiftMappingConfig
 
     void serialize(Properties& props) const
     {
-        props["shiftmapMethod"] = enumPropertyName(kShiftMappingMethods, shiftmapMethod);
+        props["shiftMappingMethod"] = enumPropertyName(kShiftMappingMethods, shiftMappingMethod);
         props["gaugeMode"] = enumPropertyName(kGaugeModes, gaugeMode);
         props["gaugeAxis"] = gaugeAxis;
         props["NewtonMaxIteration"] = newtonMaxIteration;
@@ -96,18 +96,18 @@ struct ShiftMappingConfig
     DefineList getDefines() const
     {
         DefineList defines;
-        defines.add("SHIFT_MAPPING_METHOD", std::to_string((uint32_t)shiftmapMethod));
+        defines.add("SHIFT_MAPPING_METHOD", std::to_string((uint32_t)shiftMappingMethod));
         defines.add("SHIFT_MAPPING_GAUGE_MODE", std::to_string((uint32_t)gaugeMode));
         return defines;
     }
 
-    /// Sets the shift mapping constants (ShiftMappingCB) under `shiftmapVar`.
-    void bindShaderData(const ShaderVar& shiftmapVar) const
+    /// Sets the shift mapping constants (ShiftMappingCB) under `var`.
+    void bindShaderData(const ShaderVar& var) const
     {
-        shiftmapVar["gGaugeAxis"] = gaugeAxis;
-        shiftmapVar["gNewtonMaxIteration"] = newtonMaxIteration;
-        shiftmapVar["gNewtonRelativeTolerance"] = newtonRelativeTolerance;
-        shiftmapVar["gRayChartMaxDisplacement"] = rayChartMaxDisplacement;
+        var["gGaugeAxis"] = gaugeAxis;
+        var["gNewtonMaxIteration"] = newtonMaxIteration;
+        var["gNewtonRelativeTolerance"] = newtonRelativeTolerance;
+        var["gRayChartMaxDisplacement"] = rayChartMaxDisplacement;
     }
 
     /// Shift method (with `methodTooltip`), gauge and Newton solve. `extraUI` is drawn after the method.
@@ -115,7 +115,7 @@ struct ShiftMappingConfig
     bool renderUI(Gui::Widgets& widget, const std::string& methodTooltip, ExtraUI&& extraUI)
     {
         bool dirty = false;
-        static const Gui::DropdownList kShiftmapMethodList = {
+        static const Gui::DropdownList kShiftMappingMethodList = {
             {(uint32_t)ShiftMappingMethod::Identity, "None"},
             {(uint32_t)ShiftMappingMethod::LocalTangent, "Local tangent"},
             {(uint32_t)ShiftMappingMethod::Barycentric, "Barycentric"},
@@ -124,10 +124,10 @@ struct ShiftMappingConfig
             {(uint32_t)ShiftMappingMethod::RayTraceChart, "Ray trace chart"},
             {(uint32_t)ShiftMappingMethod::Radial, "Radial"},
         };
-        uint32_t method = (uint32_t)shiftmapMethod;
-        if (widget.dropdown("Method", kShiftmapMethodList, method))
+        uint32_t method = (uint32_t)shiftMappingMethod;
+        if (widget.dropdown("Method", kShiftMappingMethodList, method))
         {
-            shiftmapMethod = (ShiftMappingMethod)method;
+            shiftMappingMethod = (ShiftMappingMethod)method;
             dirty = true;
         }
         widget.tooltip(methodTooltip, true);
@@ -135,7 +135,7 @@ struct ShiftMappingConfig
         dirty |= extraUI(widget);
 
         // Radial moves the vertex along the ray from the plane's path-length minimum: no gauge, no 2D Newton solve.
-        if (shiftmapMethod != ShiftMappingMethod::Identity && shiftmapMethod != ShiftMappingMethod::Radial)
+        if (shiftMappingMethod != ShiftMappingMethod::Identity && shiftMappingMethod != ShiftMappingMethod::Radial)
         {
             static const Gui::DropdownList kGaugeModeList = {
                 {(uint32_t)GaugeMode::Constant, "Constant axis"},
@@ -159,8 +159,8 @@ struct ShiftMappingConfig
             dirty |= widget.var("Newton iterations", newtonMaxIteration, 1u, 64u);
             widget.tooltip("Maximum Newton iterations per shift.", true);
 
-            if (shiftmapMethod == ShiftMappingMethod::RayTrace || shiftmapMethod == ShiftMappingMethod::RayTraceChart ||
-                shiftmapMethod == ShiftMappingMethod::AreaAdaptive)
+            if (shiftMappingMethod == ShiftMappingMethod::RayTrace || shiftMappingMethod == ShiftMappingMethod::RayTraceChart ||
+                shiftMappingMethod == ShiftMappingMethod::AreaAdaptive)
             {
                 dirty |= widget.var("Ray chart max displacement", rayChartMaxDisplacement, 0.f, 1.f);
                 widget.tooltip("Rejects ray-chart shifts that move farther than this in chart coordinates; 0 disables.", true);

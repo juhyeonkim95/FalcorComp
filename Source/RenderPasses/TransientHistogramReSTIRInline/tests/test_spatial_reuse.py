@@ -17,7 +17,7 @@ def main():
      g=f.create_render_graph('reuse')
      g.create_pass('V','VBufferRT',{'samplePattern':'Center','sampleCount':1})
      g.create_pass('L','LaserLight',{'laserPosition':[0.,1.7,6.8],'laserDirection':[0.,0.,-1.],'laserPower':[170.,120.,40.],'laserAngle':0.})
-     g.create_pass('P','TransientHistogramReSTIRInline',{'samplesPerPixel':8,'timeMin':time_range[0],'timeMax':time_range[1],'timeBin':time_range[2],'histogramFilter':'box','useSingleChannel':single,'maxBounces':4,'spatialReuseIteration':iterations,'spatialReuseNeighborCount':neighbors,'spatialReuseGatherRadius':radius,'reconnectionRoughnessThreshold':threshold,'shiftmapMethod':method,'gaugeMode':'avg_grad','useBinReuse':bin_reuse})
+     g.create_pass('P','TransientHistogramReSTIRInline',{'samplesPerPixel':8,'timeMin':time_range[0],'timeMax':time_range[1],'timeBin':time_range[2],'histogramFilter':'box','useSingleChannel':single,'maxBounces':4,'spatialReuseIteration':iterations,'spatialReuseNeighborCount':neighbors,'spatialReuseGatherRadius':radius,'reconnectionRoughnessThreshold':threshold,'shiftMappingMethod':method,'gaugeMode':'avg_grad','useBinReuse':bin_reuse})
      for a,b in [('V.vbuffer','P.vbuffer'),('V.viewW','P.viewW'),('L','P')]:g.add_edge(a,b)
      g.mark_output('P.histogram');g.mark_output('P.color');f.render_graph=g;f.frame()
      a=g.get_output('P.histogram').to_numpy().copy()

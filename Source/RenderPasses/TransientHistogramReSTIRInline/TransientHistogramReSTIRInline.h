@@ -84,14 +84,14 @@ private:
     bool useSpatialReusePairs() const
     {
         return mOptions.restir.spatialReuseTwoPass &&
-               mOptions.restir.shiftMapping.shiftmapMethod != ShiftMappingMethod::Identity;
+               mOptions.restir.shiftMapping.shiftMappingMethod != ShiftMappingMethod::Identity;
     }
     /// Temporal reuse runs as two passes after initial generation per chunk of bins (the merge shifts of each bin, then
     /// the merges) when temporalReuseTwoPass is set, unless the shift is `no` (as for spatial reuse).
     bool useTemporalReusePairs() const
     {
         return mOptions.restir.useTemporalReuse && mOptions.temporalReuseTwoPass &&
-               mOptions.restir.shiftMapping.shiftmapMethod != ShiftMappingMethod::Identity;
+               mOptions.restir.shiftMapping.shiftMappingMethod != ShiftMappingMethod::Identity;
     }
 
     /// User settings, composed of shared configs (Shared/Host/Configs) plus this pass's own.

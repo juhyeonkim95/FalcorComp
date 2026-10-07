@@ -37,7 +37,7 @@ def render(testbed, mode, sampler="LightBVH", iterations=0, radius=8., threshold
         "spatialReuseGatherRadius": radius,
         "reconnectionRoughnessThreshold": threshold,
         "specularRoughnessThresholdEllipsoid": ellipse_threshold,
-        "shiftmapMethod": shift_method, "gaugeMode": gauge_mode,
+        "shiftMappingMethod": shift_method, "gaugeMode": gauge_mode,
     })
     for source, target in [("V.vbuffer", "P.vbuffer"), ("V.viewW", "P.viewW"),
                            ("L", "P")]:

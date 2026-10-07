@@ -107,7 +107,7 @@ Shift mapping, as for [time-gated ReSTIR](#restir-shift-mapping):
 * - Parameter
   - Type
   - Description
-* - `shiftmapMethod`
+* - `shiftMappingMethod`
   - string
   - The chart on which the reconnection vertex is moved: `no` (naive reuse: the vertex stays
     fixed), `local_tangent`, `barycentric`, `ray_trace`, `area_adaptive`, `ray_trace_chart` or
@@ -286,7 +286,7 @@ graph.create_pass("Tracer", "TransientHistogramReSTIRInline", {
     "timeMin": 16.75, "timeMax": 18.03, "timeBin": 64,
     "spatialReuseIteration": 1, "spatialReuseNeighborCount": 5,
     "useTemporalReuse": True,
-    "shiftmapMethod": "local_tangent", "gaugeMode": "avg_grad",
+    "shiftMappingMethod": "local_tangent", "gaugeMode": "avg_grad",
 })
 graph.add_edge("VBuffer.vbuffer", "Tracer.vbuffer")
 graph.add_edge("VBuffer.viewW", "Tracer.viewW")

@@ -20,7 +20,7 @@ PT = {"samplesPerPixel": 16, "maxBounces": 6, "computeDirect": False, **HISTOGRA
 RESTIR = {**PT,
           "spatialReuseIteration": 3, "spatialReuseNeighborCount": 5,
           "spatialReuseGatherRadius": 10.0, "useTemporalReuse": False,
-          "shiftmapMethod": "local_tangent", "gaugeMode": "avg_grad",
+          "shiftMappingMethod": "local_tangent", "gaugeMode": "avg_grad",
           "reconnectionRoughnessThreshold": 0.05}
 # The same with temporal reuse and one spatial round: each frame also resamples the previous one.
 RESTIR_TEMPORAL = {**RESTIR, "spatialReuseIteration": 1, "useTemporalReuse": True}

@@ -100,7 +100,7 @@ Antithetic shift mapping (used with `useAntitheticSampling`):
 * - Parameter
   - Type
   - Description
-* - `shiftmapMethod`
+* - `shiftMappingMethod`
   - string
   - How the antithetic vertex is found: `radial` (along the ray from the path length's minimum on the
     vertex's plane), or one of the Newton-based path-length-aware shift mappings: `local_tangent`,

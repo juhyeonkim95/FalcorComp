@@ -29,7 +29,7 @@ def create_testbed(resolution):
     return testbed
 
 
-def create_graph(testbed, shiftmap_method, samples_per_pixel, spatial_iterations, temporal_reuse, scene_dynamic,
+def create_graph(testbed, shift_mapping_method, samples_per_pixel, spatial_iterations, temporal_reuse, scene_dynamic,
                  laser, collocated=False, gate_center=18., gate_width=4.):
     graph = testbed.create_render_graph("dynamic_temporal_reuse_test")
     graph.create_pass("VBuffer", "VBufferRT", {"samplePattern": "Center", "sampleCount": 1, "useAlphaTest": True})
@@ -43,7 +43,7 @@ def create_graph(testbed, shiftmap_method, samples_per_pixel, spatial_iterations
         "timeMin": gate_center, "timeMax": gate_center, "timeBin": 1,
         "spatialReuseIteration": spatial_iterations, "spatialReuseNeighborCount": 3,
         "spatialReuseGatherRadius": 10., "reconnectionRoughnessThreshold": .05,
-        "shiftmapMethod": shiftmap_method, "useTemporalReuse": temporal_reuse, "isSceneDynamic": scene_dynamic,
+        "shiftMappingMethod": shift_mapping_method, "useTemporalReuse": temporal_reuse, "isSceneDynamic": scene_dynamic,
     })
     graph.create_pass("Accumulate", "AccumulatePass", {"enabled": True, "precisionMode": "SingleCompensated"})
     for source, target in (("VBuffer.vbuffer", "Tracer.vbuffer"), ("VBuffer.viewW", "Tracer.viewW"),
@@ -72,14 +72,14 @@ def check_cached_lighting():
     combineReservoirWithShiftMapping(updateLight=false).
     """
     testbed = create_testbed([48, 48])
-    for shiftmap_method in ("no", "area_adaptive"):
+    for shift_mapping_method in ("no", "area_adaptive"):
         images = []
         for dynamic in (False, True):
-            graph = create_graph(testbed, shiftmap_method, 64, 1, False, dynamic, laser=False, collocated=True,
+            graph = create_graph(testbed, shift_mapping_method, 64, 1, False, dynamic, laser=False, collocated=True,
                                  gate_center=12., gate_width=.05)
             images.append(frame(testbed, graph))
         np.testing.assert_allclose(images[0], images[1], rtol=2e-5, atol=1e-5)
-        print(f"{shiftmap_method}: dynamic specialization preserves cached spatial lighting", flush=True)
+        print(f"{shift_mapping_method}: dynamic specialization preserves cached spatial lighting", flush=True)
 
 
 def main():

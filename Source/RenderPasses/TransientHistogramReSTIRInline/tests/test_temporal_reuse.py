@@ -54,7 +54,7 @@ def render(frames, temporal, spatial, move):
         'samplesPerPixel': 4, 'timeMin': TIME_RANGE[0], 'timeMax': TIME_RANGE[1], 'timeBin': TIME_RANGE[2],
         'histogramFilter': 'box', 'useSingleChannel': True, 'maxBounces': 4,
         'spatialReuseIteration': spatial, 'spatialReuseNeighborCount': 3, 'spatialReuseGatherRadius': 6.,
-        'shiftmapMethod': 'local_tangent', 'gaugeMode': 'avg_grad',
+        'shiftMappingMethod': 'local_tangent', 'gaugeMode': 'avg_grad',
         'useTemporalReuse': temporal, 'temporalHistoryLength': 20.})
     for a, b in [('V.vbuffer', 'P.vbuffer'), ('V.viewW', 'P.viewW'), ('V.mvec', 'P.mvec'),
                  ('L', 'P')]:

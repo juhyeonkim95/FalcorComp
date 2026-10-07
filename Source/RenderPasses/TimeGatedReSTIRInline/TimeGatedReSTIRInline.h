@@ -79,7 +79,7 @@ private:
     bool useSpatialReusePairs() const
     {
         return mOptions.restir.spatialReuseTwoPass && !mOptions.debugNewtonIterations &&
-               mOptions.restir.shiftMapping.shiftmapMethod != ShiftMappingMethod::Identity;
+               mOptions.restir.shiftMapping.shiftMappingMethod != ShiftMappingMethod::Identity;
     }
     DefineList getShaderDefines(const RenderData& renderData) const;
     /// Shrink mapping's wide-gate path fraction, clamped to [0, 1]; the host and the shader derive the wide path

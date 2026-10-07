@@ -84,18 +84,18 @@ def compare(label, tracer, settings, two_pass_option, kernels, output, size, fra
 # 3. Time-gated ReSTIR: spatial reuse, 3 rounds, 512 x 512
 print("GPU ms per frame of the reuse")
 for method in ["local_tangent", "barycentric", "ray_trace"]:
-    compare(f"TG spatial, {method}", "TimeGatedReSTIRInline", {**TIME_GATED, "shiftmapMethod": method},
+    compare(f"TG spatial, {method}", "TimeGatedReSTIRInline", {**TIME_GATED, "shiftMappingMethod": method},
             "spatialReuseTwoPass", ["pairs", "resample"], "color", 512, 200)
 
 # 4. Transient histogram ReSTIR: spatial reuse, 1 round, 64 bins, 256 x 256
 for method in ["local_tangent", "barycentric", "ray_trace"]:
-    compare(f"TH spatial, {method}", "TransientHistogramReSTIRInline", {**TRANSIENT, "shiftmapMethod": method},
+    compare(f"TH spatial, {method}", "TransientHistogramReSTIRInline", {**TRANSIENT, "shiftMappingMethod": method},
             "spatialReuseTwoPass", ["pairs", "resample"], "histogram", 256, 30)
 
 # 5. Transient histogram ReSTIR: temporal reuse (static camera), 64 bins, 256 x 256
 for method in ["local_tangent", "barycentric", "ray_trace"]:
     compare(f"TH temporal, {method}", "TransientHistogramReSTIRInline",
-            {**TRANSIENT, "shiftmapMethod": method, "spatialReuseIteration": 0, "useTemporalReuse": True},
+            {**TRANSIENT, "shiftMappingMethod": method, "spatialReuseIteration": 0, "useTemporalReuse": True},
             "temporalReuseTwoPass", ["temporalPairs", "temporalResample"], "histogram", 256, 30)
 
 # 6. Transient histogram ReSTIR: temporal reuse in Veach, Ajar (if downloaded), with the
@@ -123,5 +123,5 @@ if os.path.exists(VEACH_AJAR):
                 "spatialReuseIteration": 0, "useTemporalReuse": True, "temporalHistoryLength": 20.0}
     for method in ["local_tangent", "barycentric", "ray_trace"]:
         compare(f"TH temporal (Veach, Ajar), {method}", "TransientHistogramReSTIRInline",
-                {**settings, "shiftmapMethod": method}, "temporalReuseTwoPass",
+                {**settings, "shiftMappingMethod": method}, "temporalReuseTwoPass",
                 ["temporalPairs", "temporalResample"], "histogram", (480, 270), 30, laser=laser, move=move)

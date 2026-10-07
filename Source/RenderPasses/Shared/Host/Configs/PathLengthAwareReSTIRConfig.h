@@ -91,10 +91,10 @@ struct PathLengthAwareReSTIRConfig
         return defines;
     }
 
-    /// Sets the shift mapping constants (ShiftMappingCB) under `shiftmapVar`.
-    void bindShiftMapping(const ShaderVar& shiftmapVar) const
+    /// Sets the shift mapping constants (ShiftMappingCB) under `var`.
+    void bindShiftMapping(const ShaderVar& var) const
     {
-        shiftMapping.bindShaderData(shiftmapVar);
+        shiftMapping.bindShaderData(var);
     }
 
     /// Sets a ReconnectionCriteria (Shared/Shaders/ReSTIR/PathReconstruction.slang) at `var`.
