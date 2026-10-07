@@ -11,4 +11,11 @@ export interface IShiftChart
 
     [mutating]
     void update(float2 xi);
+
+    // The fixed vertices p1, p2 of the path length |p1 - X| + |p2 - X|. Replacing them keeps the chart's state (e.g. a
+    // ray chart's hit), so that another path's length can be evaluated at the same point.
+    float3 firstEndpoint();
+    float3 secondEndpoint();
+    [mutating]
+    void setEndpoints(float3 p1, float3 p2);
 };

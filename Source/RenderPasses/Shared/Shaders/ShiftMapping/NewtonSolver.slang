@@ -17,6 +17,7 @@ enum NewtonResultStatus : uint
     NoConverge   = 1,
     Singular     = 2,
     InvalidPoint = 3,
+    BranchRejected = 4, // A root on another branch than the start's (see solveShiftNewton).
 };
 
 
@@ -26,7 +27,8 @@ enum NewtonResultStatus : uint
 struct NewtonResult
 {
     float2 xi_prime;
-    float  detJ;
+    float  detJ;       // |det d xi' / d xi|
+    float  signedDetJ; // det d xi' / d xi
     int    iters;
     NewtonResultStatus    status;   // 0 OK, 1 no converge, 2 singular Jacobian
 };
@@ -124,6 +126,11 @@ void gaugeTerms(
 //   - traceStart = true: the charts differ; ops's start point X_t(xi) is another surface point, traced here.
 // Without a distinct source (distinctSource = false), ops and sourceOps are the same function (same endpoints and
 // chart): ell_s = ell_t and g_s = g_t, the single-length solve.
+// The equations have several roots (e.g. avg_grad always has a second one, where the gradients at both ends cancel),
+// and Newton finds the one its start leads to: the forward shift starts at xi, the reverse at xi'. So that they find
+// each other, the solve converges both equations, and accepts a root only on its start's branch: the path lengths
+// change the same way along the move at both ends (the chord rule), and the map keeps the orientation. Both rules are
+// symmetric, so the forward and reverse shifts accept and reject the same pairs.
 NewtonResult solveShiftNewton<Chart : IShiftChart>(
     inout Chart ops,
     Chart sourceOps,
@@ -133,19 +140,18 @@ NewtonResult solveShiftNewton<Chart : IShiftChart>(
     float2 xi,
     GaugeMode mode,
     float2 a_const,          // used iff CONSTANT_A
-    int maxIters,            // e.g., 15
+    int maxIters,            // e.g., 10
     float tol                // e.g., 1e-6
 )
 {
     NewtonResult R;
     R.xi_prime = xi;
     R.detJ = 1.0;
+    R.signedDetJ = 1.0;
     R.iters = 0;
     R.status = NewtonResultStatus::Success;
 
     const float epsDet = 1e-18;
-    const float epsDir = 1e-12;
-    const float ctol   = 1e-9;
 
     // Start eval (fixed during solve)
     float  L0; float2 g0; float3 H0;
@@ -170,20 +176,17 @@ NewtonResult solveShiftNewton<Chart : IShiftChart>(
         return R;
     }
 
-    // Predictor: move orthogonal to starting gauge
-    float2 a0 = (mode == GaugeMode::Constant) ? a_const : Rperp(g0);
-    float2 dir = Rperp(a0);
-    float n2 = max(dot(dir, dir), 1e-20);
-    dir *= rsqrt(n2); // normalize
-
-    float2 e = xi; //ops.project(xi + s0 * dir);
-
+    float2 e = xi;
     float  L1 = L0; float2 g1 = gt0; float3 H1 = Ht0;
     float2 a, JpDelta, J0Delta;
     float2 Delta;
     float inv00, inv01, inv10, inv11, detJp;
+    // At the start Delta = 0, so the gauge residual F2 is 0 for every gauge.
+    float F1 = L1 - targetValue;
+    float F2 = 0.f;
+    float merit = abs(F1);
     // Where the start already has the target length, xi' = xi solves both equations; only the Jacobian is needed.
-    bool success = abs(L0 - targetValue) <= tol;
+    bool success = merit <= tol;
     float beta = 1.0f;
 
     // --- Newton iterations using only Jp = ∂F/∂η' ---
@@ -193,10 +196,6 @@ NewtonResult solveShiftNewton<Chart : IShiftChart>(
 
         Delta = e - xi;
         gaugeTerms(mode, a_const, g0, g1, H0, H1, Delta, a, JpDelta, J0Delta);
-
-        // Current Residuals
-        float F1 = L1 - targetValue;
-        float F2 = dot(a, Delta);
 
         // Jp rows: [ g1^T ; (a + JpDelta)^T ]
         float a11 = g1.x, a12 = g1.y;
@@ -216,22 +215,35 @@ NewtonResult solveShiftNewton<Chart : IShiftChart>(
         ops.update(e_try);
         bool update_eta = ops.eval(e_try, L_try, g_try, H_try);
         float F1_try = L_try - targetValue;
+        float F2_try = 0.f;
+        if (update_eta)
+        {
+            float2 a_try, JpD_try, J0D_try;
+            gaugeTerms(mode, a_const, g0, g_try, H0, H_try, e_try - xi, a_try, JpD_try, J0D_try);
+            F2_try = dot(a_try, e_try - xi);
+        }
+        // Both equations in the merit: a step may not trade the gauge for the length. Both are lengths: F2 is the
+        // gauge vector (a chart gradient for grad and avg_grad) times a coordinate offset.
+        float merit_try = max(abs(F1_try), abs(F2_try));
 
-        if(!update_eta || (abs(F1_try) > abs(F1))){
+        if(!update_eta || !(merit_try <= merit)){
             beta *= 0.5f;
+            // Halved six times in a row: no descent near here (e.g. a target below the length's minimum), so stop.
+            if (beta < 1.f / 32.f) break;
         } else {
             e = e_try;
             L1 = L_try;
             g1 = g_try;
             H1 = H_try;
+            F1 = F1_try;
+            F2 = F2_try;
+            merit = merit_try;
             beta = min(1.0, beta * 2.0f);
-            if(abs(F1_try) < tol){
+            if(merit < tol){
                 success = true;
                 break;
             }
         }
-
-
     }
     // Final point
     R.xi_prime = e;
@@ -249,11 +261,58 @@ NewtonResult solveShiftNewton<Chart : IShiftChart>(
     float n22 =  J0Delta.y - a.y;
     float detJ0 = n11 * n22 - n12 * n21;
 
-    if (abs(detJp) < 1e-20) { R.status = (R.status != 0 ? R.status : NewtonResultStatus::Singular); R.detJ = 0.0; }
-    else                    { R.detJ = abs(detJ0 / detJp); }
+    if (abs(detJp) < 1e-20)
+    {
+        R.status = (R.status != 0 ? R.status : NewtonResultStatus::Singular);
+        R.detJ = 0.0;
+        R.signedDetJ = 0.0;
+    }
+    else
+    {
+        R.signedDetJ = detJ0 / detJp;
+        R.detJ = abs(R.signedDetJ);
+    }
 
-    if (R.iters >= maxIters) R.status = (success ? NewtonResultStatus::Success : NewtonResultStatus::NoConverge);
+    if (!success) R.status = NewtonResultStatus::NoConverge;
     // Reject too large a Jacobian change (after the iteration check, which must not restore Success).
     if (R.detJ >= 10.0 || R.detJ < 0.1) R.status = (NewtonResultStatus::NoConverge);
+    if (R.status != NewtonResultStatus::Success) return R;
+
+    // Root selection. The forward solve starts at xi and the reverse at xi', and each finds the root on its own branch;
+    // they are inverse only when both points are on one branch of both lengths. Both rules are symmetric: the reverse
+    // shift evaluates the same quantities with the roles swapped. A root on another branch reverses the orientation,
+    // or the chord crosses a minimum of one of the lengths.
+    if (!(R.signedDetJ > 0.f))
+    {
+        R.status = NewtonResultStatus::BranchRejected;
+        return R;
+    }
+    if (any(Delta != 0.f))
+    {
+        // The source length's gradient at xi' (in the target's chart unless the charts differ).
+        float2 gs1 = g1;
+        if (distinctSource)
+        {
+            float Ld; float3 Hd;
+            bool valid;
+            if (traceStart)
+            {
+                Chart sourceAtEnd = sourceOps;
+                sourceAtEnd.update(e);
+                valid = sourceAtEnd.eval(e, Ld, gs1, Hd);
+            }
+            else
+            {
+                Chart sourceAtEnd = ops;
+                sourceAtEnd.setEndpoints(sourceOps.firstEndpoint(), sourceOps.secondEndpoint());
+                valid = sourceAtEnd.eval(e, Ld, gs1, Hd);
+            }
+            if (!valid) { R.status = NewtonResultStatus::BranchRejected; return R; }
+        }
+        // ell_s and ell_t at xi and xi' change the same way along the chord.
+        float4 slopes = float4(dot(g0, Delta), dot(gt0, Delta), dot(g1, Delta), dot(gs1, Delta));
+        if (!(all(slopes > 0.f) || all(slopes < 0.f)))
+            R.status = NewtonResultStatus::BranchRejected;
+    }
     return R;
 }

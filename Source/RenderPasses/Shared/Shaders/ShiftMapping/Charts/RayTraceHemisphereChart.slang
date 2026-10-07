@@ -49,6 +49,11 @@ export struct RayTraceHemisphereChart:IShiftChart
         return coordinates;
     }
 
+    float3 firstEndpoint() { return p1; }
+    float3 secondEndpoint() { return p2; }
+    [mutating]
+    void setEndpoints(float3 p1, float3 p2) { this.p1 = p1; this.p2 = p2; }
+
     bool validCoordinates(float2 coordinates)
     {
         if (useCartesianChart) return CartesianRayChart::isValid(coordinates);

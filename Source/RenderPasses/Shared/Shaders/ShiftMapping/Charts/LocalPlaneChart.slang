@@ -21,6 +21,11 @@ export struct LocalPlaneChart: IShiftChart
         return coordinates;
     }
 
+    float3 firstEndpoint() { return p1; }
+    float3 secondEndpoint() { return p2; }
+    [mutating]
+    void setEndpoints(float3 p1, float3 p2) { this.p1 = p1; this.p2 = p2; }
+
     float3 X(float2 coordinates)
     {
         return x0 + coordinates.x * t + coordinates.y * b;

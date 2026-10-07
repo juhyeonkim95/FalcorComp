@@ -162,18 +162,21 @@ Shift mapping:
   - string
   - Fixes the direction the path-length constraint leaves free. `constant`: the vertex moves
     orthogonally to `gaugeAxis`; `grad`: along the path-length gradient at the start; `avg_grad`:
-    along the average of the gradients at both ends. `radial` ignores it. (Default: `constant`)
+    along the average of the gradients at both ends. `grad` is not symmetric (the reverse shift
+    follows the gradient at the other end), so it biases reuse. `radial` ignores it.
+    (Default: `constant`)
 * - `gaugeAxis`
   - float pair
   - Chart-space axis for `constant`. `[0, 0]` picks a random axis for every shift.
     (Default: `[1, 0]`)
 * - `NewtonMaxIteration`
   - integer
-  - Maximum Newton iterations per shift. `radial` does not use it. (Default: `5`)
+  - Maximum Newton iterations per shift. `radial` does not use it. (Default: `10`)
 * - `NewtonRelativeTolerance`
   - float
-  - Tolerance of the shift solve on the path length, relative to the path-length change of the shift. Looser
-    solves leave the forward and reverse shifts slightly inconsistent, which biases reuse. (Default: `0.0002`)
+  - Tolerance of the shift solve on the path length, relative to the path-length change of the shift, and at least
+    the float32 resolution of the path lengths involved. Looser solves leave the forward and reverse shifts slightly
+    inconsistent, which biases reuse. (Default: `1e-6`)
 * - `rayChartMaxDisplacement`
   - float
   - `ray_trace`, `ray_trace_chart` and `area_adaptive` only: rejects shifts that move the vertex farther than this in
@@ -251,7 +254,17 @@ the ray, in the vertex's plane, from the point where the path length is shortest
 it needs no gauge. With `no`, the vertex is not moved, so the shifted path often no longer fits
 the gate.
 
-`local_tangent` with `avg_grad` is a good starting point, and is what the tutorials use.
+Reuse is unbiased only if the shift from a pixel to its neighbor and the shift back are inverse. The two equations
+(the path length and the gauge) have several solutions, and Newton's method finds the one its start leads to: the
+forward shift starts at the vertex, the reverse at the moved vertex. The solve therefore converges both equations,
+and keeps a solution only on its start's branch: the path lengths at both ends change the same way along the move,
+the move keeps the orientation, and with a ray chart the vertex stays on its object. Both pixels of a pair evaluate
+the same tests, so they accept the same shifts. This makes `radial` and the plane charts with the `constant` gauge
+one-to-one. With `avg_grad`, whose equations always have a second solution (on the far side of the target length's
+level curve), or a ray chart on a curved surface, where the path length along the chart can have several minima, a
+rare shift still reaches another solution, which leaves a small bias.
+
+`local_tangent` with the `constant` gauge is a good starting point; the tutorials use `avg_grad`.
 
 ## Moving the gate
 

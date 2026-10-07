@@ -124,18 +124,21 @@ Shift mapping, as for [time-gated ReSTIR](#restir-shift-mapping):
   - string
   - Fixes the direction the path-length constraint leaves free. `constant`: the vertex moves
     orthogonally to `gaugeAxis`; `grad`: along the path-length gradient at the start; `avg_grad`:
-    along the average of the gradients at both ends. `radial` ignores it. (Default: `constant`)
+    along the average of the gradients at both ends. `grad` is not symmetric (the reverse shift
+    follows the gradient at the other end), so it biases reuse. `radial` ignores it.
+    (Default: `constant`)
 * - `gaugeAxis`
   - float pair
   - Chart-space axis for `constant`. `[0, 0]` picks a random axis for every shift.
     (Default: `[1, 0]`)
 * - `NewtonMaxIteration`
   - integer
-  - Maximum Newton iterations per shift. (Default: `5`)
+  - Maximum Newton iterations per shift. (Default: `10`)
 * - `NewtonRelativeTolerance`
   - float
   - Tolerance of the shift solve on the path length, relative to the path-length change of the
-    shift. Looser solves bias reuse. (Default: `0.0002`)
+    shift, and at least the float32 resolution of the path lengths involved. Looser solves bias
+    reuse. (Default: `1e-6`)
 * - `rayChartMaxDisplacement`
   - float
   - `ray_trace`, `ray_trace_chart`, and `area_adaptive` on faces it shifts with the ray chart, only:

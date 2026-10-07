@@ -111,17 +111,19 @@ Antithetic shift mapping (used with `useAntitheticSampling`):
   - Newton-based methods only: fixes the direction left free by the one path-length constraint.
     `constant`: the vertex moves orthogonally to the chart axis `gaugeAxis`; `grad`: along the
     path-length gradient at the start; `avg_grad`: along the average of the gradients at both ends.
-    (Default: `avg_grad`)
+    `grad` is not symmetric (the backward shift follows the gradient at the other end), so it biases
+    the estimate. (Default: `avg_grad`)
 * - `gaugeAxis`
   - float2
   - Chart axis of the `constant` gauge; `(0, 0)` picks a random axis per shift. (Default: `(1, 0)`)
 * - `NewtonMaxIteration`
   - integer
-  - Newton-based methods only: maximum Newton iterations per shift. (Default: `5`)
+  - Newton-based methods only: maximum Newton iterations per shift. (Default: `10`)
 * - `NewtonRelativeTolerance`
   - float
-  - Tolerance of the shift solve on the path length, relative to the path-length change of the shift
-    (at least `1e-6`). Also used by `radial`. (Default: `0.002`)
+  - Tolerance of the shift solve on the path length, relative to the path-length change of the shift,
+    and at least the float32 resolution of the path lengths involved. Also used by `radial`. Looser
+    solves make the antithetic shifts only approximately inverse. (Default: `1e-6`)
 * - `rayChartMaxDisplacement`
   - float
   - `ray_trace`, `ray_trace_chart`, and `area_adaptive` on faces of area at most `0.01` (which it

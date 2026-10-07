@@ -45,8 +45,10 @@ struct ShiftMappingConfig
     ShiftMappingMethod shiftMappingMethod = ShiftMappingMethod::Identity;
     GaugeMode gaugeMode = GaugeMode::Constant;
     float2 gaugeAxis = float2(1, 0);
-    uint newtonMaxIteration = 5;
-    float newtonRelativeTolerance = 2e-4f; ///< Relative to the path length change; looser solves bias reuse.
+    uint newtonMaxIteration = 10;
+    /// Relative to the path length change; looser solves bias reuse. The solve never resolves lengths below the float32
+    /// spacing of the path lengths and coordinates involved (ShiftMapping.slang).
+    float newtonRelativeTolerance = 1e-6f;
     /// Ray charts only: rejects shifts that move the vertex farther than this in chart coordinates (0 disables).
     /// The gauge system can have several roots for large moves, so the reverse solve may not return; see ShiftMapping.slang.
     float rayChartMaxDisplacement = 0.f;

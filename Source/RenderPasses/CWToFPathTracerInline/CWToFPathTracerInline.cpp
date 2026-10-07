@@ -49,7 +49,6 @@ CWToFPathTracerInline::CWToFPathTracerInline(ref<Device> pDevice, const Properti
     mOptions.pathTracing.computeDirect = true;
     mOptions.shiftMapping.shiftMappingMethod = ShiftMappingMethod::Radial;
     mOptions.shiftMapping.gaugeMode = GaugeMode::OrthoAvgGrad;
-    mOptions.shiftMapping.newtonRelativeTolerance = 0.002f;
 
     parseProperties(props);
     validateOptions(mOptions);

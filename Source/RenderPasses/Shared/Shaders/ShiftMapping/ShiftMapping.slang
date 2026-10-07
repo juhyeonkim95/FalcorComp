@@ -45,6 +45,9 @@ cbuffer ShiftMappingCB
     float gRayChartMaxDisplacement; // 0 disables; see shiftRayTrace.
 }
 
+// Relative float32 resolution of path lengths and positions allowed for a converged solve (~8 ulps).
+static const float kShiftLengthEpsilon = 1e-6f;
+
 // The host sets the gauge as a define (ShiftMappingConfig), so the Newton evaluations do not branch on it.
 #ifndef SHIFT_MAPPING_GAUGE_MODE
 #define SHIFT_MAPPING_GAUGE_MODE 0
@@ -128,9 +131,17 @@ HitInfo pathLengthAwareShiftMapping(
     }
     // dt: how much the target path through the unmoved x2 must change, ell_t(x2') - ell_t(x2). It sets the tolerance.
     float3 x = v2.posW;
-    float dt = condition.targetLength(length(source.p1 - x) + length(source.p2 - x))
-        - (length(x1.posW - x) + length(x3.posW - x));
-    float tol = max(abs(dt) * gNewtonRelativeTolerance, 1e-6f);
+    float sourceLength = length(source.p1 - x) + length(source.p2 - x);
+    float targetLength = length(x1.posW - x) + length(x3.posW - x);
+    float dt = condition.targetLength(sourceLength) - targetLength;
+    // The length residual cannot be resolved below the float32 spacing of the largest length or coordinate in it (the
+    // condition adds the paths' full lengths), and the checks of the traced point not below that of x. The same scale
+    // in the reverse shift keeps the two consistent.
+    float coordinate = max(1.f, max(abs(x.x), max(abs(x.y), abs(x.z))));
+    float scale = max(coordinate, max(abs(sourceLength) + abs(condition.sourceRest) + abs(condition.sourceGate),
+        abs(targetLength) + abs(condition.targetRest) + abs(condition.targetGate)));
+    float tol = max(abs(dt) * gNewtonRelativeTolerance, kShiftLengthEpsilon * scale);
+    float geometryTol = max(tol, 1e-5f * coordinate);
     // Identity shortcut: only valid when the source and target lengths are the same function of x2.
     if(abs(dt) < tol && !source.distinct){
         jacobian = 1.0;
@@ -150,15 +161,19 @@ HitInfo pathLengthAwareShiftMapping(
     shiftedVertex = v2;
     return shiftNone(x2, jacobian, debuginfo);
 #elif SHIFT_MAPPING_METHOD == SHIFT_MAPPING_LOCAL_TANGENT
-    return shiftLocalTangent(x1, x2, v2, x3, source, condition, a_const, jacobian, shiftedVertex, debuginfo, tol);
+    return shiftLocalTangent(x1, x2, v2, x3, source, condition, a_const, jacobian, shiftedVertex, debuginfo, tol,
+        geometryTol);
 #elif SHIFT_MAPPING_METHOD == SHIFT_MAPPING_BARYCENTRIC
-    return shiftBarycentric(x1, x2, v2, x3, source, condition, a_const, jacobian, shiftedVertex, debuginfo, tol);
+    return shiftBarycentric(x1, x2, v2, x3, source, condition, a_const, jacobian, shiftedVertex, debuginfo, tol,
+        geometryTol);
 #elif SHIFT_MAPPING_METHOD == SHIFT_MAPPING_RAY_TRACE || SHIFT_MAPPING_METHOD == SHIFT_MAPPING_RAY_TRACE_CHART
-    return shiftRayTrace(x1, x2, v2, x3, source, condition, a_const, jacobian, shiftedVertex, debuginfo, tol);
+    return shiftRayTrace(x1, x2, v2, x3, source, condition, a_const, jacobian, shiftedVertex, debuginfo, tol,
+        geometryTol);
 #elif SHIFT_MAPPING_METHOD == SHIFT_MAPPING_AREA_ADAPTIVE
-    return shiftAreaAdaptive(x1, x2, v2, x3, source, condition, a_const, jacobian, shiftedVertex, debuginfo, tol);
+    return shiftAreaAdaptive(x1, x2, v2, x3, source, condition, a_const, jacobian, shiftedVertex, debuginfo, tol,
+        geometryTol);
 #elif SHIFT_MAPPING_METHOD == SHIFT_MAPPING_RADIAL
-    return shiftRadial(x1, x2, v2, x3, source, condition, jacobian, shiftedVertex, debuginfo, tol);
+    return shiftRadial(x1, x2, v2, x3, source, condition, jacobian, shiftedVertex, debuginfo, tol, geometryTol);
 #else
     jacobian = 1.0;
     shiftedVertex = v2;
@@ -211,7 +226,8 @@ HitInfo shiftAreaAdaptive(
     out float jacobian,
     out VertexData shiftedVertex, // the returned hit's vertex data; zero-initialized when the shift fails
     inout ShiftMappingDebugInfo debuginfo,
-    float tol=1e-7
+    float tol=1e-7,
+    float geometryTol=1e-7 // Of the checks that the traced shifted vertex is the solved point on x's surface.
 )
 {
     shiftedVertex = {};
@@ -220,9 +236,11 @@ HitInfo shiftAreaAdaptive(
     bool usePlane = gScene.getFaceAreaW(original.instanceID, original.primitiveIndex) > areaThreshold;
     HitInfo hit;
     if (usePlane)
-        hit = shiftLocalTangent(x1, x2, v2, x3, source, condition, a_const, jacobian, shiftedVertex, debuginfo, tol);
+        hit = shiftLocalTangent(x1, x2, v2, x3, source, condition, a_const, jacobian, shiftedVertex, debuginfo, tol,
+            geometryTol);
     else
-        hit = shiftRayTrace(x1, x2, v2, x3, source, condition, a_const, jacobian, shiftedVertex, debuginfo, tol);
+        hit = shiftRayTrace(x1, x2, v2, x3, source, condition, a_const, jacobian, shiftedVertex, debuginfo, tol,
+            geometryTol);
 
     if (!(jacobian > 0.f) || !hit.isValid()) { jacobian = 0.f; shiftedVertex = {}; return x2; }
     if (hit.getType() != HitType::Triangle) { jacobian = 0.f; shiftedVertex = {}; return x2; }
@@ -252,7 +270,8 @@ HitInfo shiftLocalTangent(
     out float jacobian,
     out VertexData shiftedVertex, // the returned hit's vertex data; zero-initialized when the shift fails
     inout ShiftMappingDebugInfo debuginfo,
-    float tol=1e-7
+    float tol=1e-7,
+    float geometryTol=1e-7 // Of the checks that the traced shifted vertex is the solved point on x's surface.
 )
 {
     shiftedVertex = {};
@@ -279,9 +298,9 @@ HitInfo shiftLocalTangent(
     debuginfo.mappingDistance = float2(length(result.xi_prime - xi), length(x_prime - x));
 #endif
     VertexData traced;
-    HitInfo hit = traceShiftEndpoint(x3, true, x_prime, tol, traced);
+    HitInfo hit = traceShiftEndpoint(x3, true, x_prime, geometryTol, traced);
     if (!hit.isValid()) return x2;
-    if (!(abs(dot(traced.posW - x, n)) <= tol && dot(traced.faceNormalW, n) > 0.999999f)) return x2;
+    if (!(abs(dot(traced.posW - x, n)) <= geometryTol && dot(traced.faceNormalW, n) > 0.999999f)) return x2;
 
     jacobian = result.detJ;
     shiftedVertex = traced;
@@ -365,7 +384,8 @@ HitInfo shiftRadial(
     out float jacobian,
     out VertexData shiftedVertex, // the returned hit's vertex data; zero-initialized when the shift fails
     inout ShiftMappingDebugInfo debuginfo,
-    float tol=1e-7
+    float tol=1e-7,
+    float geometryTol=1e-7 // Of the checks that the traced shifted vertex is the solved point on x's surface.
 )
 {
     shiftedVertex = {};
@@ -396,9 +416,9 @@ HitInfo shiftRadial(
         if (!solveRadial(p1, p2, mt, u, target, r, tol, debuginfo, s, slope)) return x2;
         float3 shiftedPosition = mt + s * u;
         VertexData traced;
-        HitInfo shifted = traceShiftEndpoint(x3, true, shiftedPosition, tol, traced);
+        HitInfo shifted = traceShiftEndpoint(x3, true, shiftedPosition, geometryTol, traced);
         if (!shifted.isValid()) return x2;
-        if (!(abs(dot(traced.posW - x, n)) <= tol && dot(normalize(traced.faceNormalW), n) > 0.999999f))
+        if (!(abs(dot(traced.posW - x, n)) <= geometryTol && dot(normalize(traced.faceNormalW), n) > 0.999999f))
             return x2;
         shiftedVertex = traced;
         jacobian = (s / r) * (slopeSource / slope);
@@ -468,9 +488,9 @@ HitInfo shiftRadial(
     // Polar map (r, angle) -> (s, angle): dA' / dA = (s / r) * (ds / dr), ds / dr = slope(r) / slope(s).
     float3 shiftedPosition = m + s * u;
     VertexData traced;
-    HitInfo shifted = traceShiftEndpoint(x3, true, shiftedPosition, tol, traced);
+    HitInfo shifted = traceShiftEndpoint(x3, true, shiftedPosition, geometryTol, traced);
     if (!shifted.isValid()) return x2;
-    if (!(abs(dot(traced.posW - x, n)) <= tol && dot(normalize(traced.faceNormalW), n) > 0.999999f))
+    if (!(abs(dot(traced.posW - x, n)) <= geometryTol && dot(normalize(traced.faceNormalW), n) > 0.999999f))
         return x2;
     shiftedVertex = traced;
     jacobian = (s / r) * (slopeStart / slope);
@@ -493,7 +513,8 @@ HitInfo shiftBarycentric(
     out float jacobian,
     out VertexData shiftedVertex, // the returned hit's vertex data; zero-initialized when the shift fails
     inout ShiftMappingDebugInfo debuginfo,
-    float tol=1e-7
+    float tol=1e-7,
+    float geometryTol=1e-7 // Of the checks that the traced shifted vertex is the solved point on x's surface.
 )
 {
     shiftedVertex = {};
@@ -519,7 +540,7 @@ HitInfo shiftBarycentric(
     if (!(bary.x > 0.f && bary.y > 0.f && bary.x + bary.y < 1.f)) return x2;
 
     VertexData tracedVertex;
-    HitInfo hit = traceShiftEndpoint(x3, true, ops.X(bary), tol, tracedVertex);
+    HitInfo hit = traceShiftEndpoint(x3, true, ops.X(bary), geometryTol, tracedVertex);
     if (!hit.isValid()) return x2;
     TriangleHit traced = hit.getTriangleHit();
     if (traced.instanceID.index != triHit.instanceID.index || traced.primitiveIndex != triHit.primitiveIndex) return x2;
@@ -541,7 +562,8 @@ HitInfo shiftRayTrace(
     out float jacobian,
     out VertexData shiftedVertex, // the returned hit's vertex data; zero-initialized when the shift fails
     inout ShiftMappingDebugInfo debuginfo,
-    float tol=1e-7
+    float tol=1e-7,
+    float geometryTol=1e-7 // Of the checks that the traced shifted vertex is the solved point on x's surface.
 )
 {
     shiftedVertex = {};
@@ -591,6 +613,11 @@ HitInfo shiftRayTrace(
     // with no guarantee that every accepted shift returns.
     if (gRayChartMaxDisplacement > 0.f && length(result.xi_prime - xi) > gRayChartMaxDisplacement)
         result.status = NewtonResultStatus::NoConverge;
+    // The vertex stays on its object: a ray chart that jumps to another surface (across an occlusion boundary) breaks
+    // the inverse shift. Symmetric, as the reverse shift tests the same pair.
+    if (result.status == NewtonResultStatus::Success && (!ops.hit.isValid() || ops.hit.getType() != HitType::Triangle ||
+            ops.hit.getTriangleHit().instanceID.index != x2.getTriangleHit().instanceID.index))
+        result.status = NewtonResultStatus::BranchRejected;
     if(result.status == NewtonResultStatus::Success && ops.hit.isValid()){
         new_sample = ops.hit;
         VertexData vnew = gScene.getVertexData(new_sample.getTriangleHit());
