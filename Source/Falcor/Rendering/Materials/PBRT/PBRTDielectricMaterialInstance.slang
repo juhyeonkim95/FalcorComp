@@ -222,7 +222,7 @@ struct PBRTDielectricMaterialInstance : MaterialInstanceBase, IMaterialInstance
         p.specularTransmissionAlbedo = float3(1.0f);
         p.flags |= (uint)BSDFProperties::Flags::IsTransmissive;
         
-        // ADDED for SVGF!
+        // FalcorComp: the albedo that SVGF-style denoisers demodulate by (upstream leaves 0 for this material).
         p.diffuseReflectionAlbedo = float3(1.0f);
 
         return p;

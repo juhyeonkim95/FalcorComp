@@ -33,7 +33,7 @@
 static void regTransientHistogramPathTracerInline(pybind11::module& m)
 {
     pybind11::class_<TransientHistogramPathTracerInline, RenderPass, ref<TransientHistogramPathTracerInline>> pass(m, "TransientHistogramPathTracerInline");
-    pass.def("reset_histogram", &TransientHistogramPathTracerInline::resetHistogram);
+    pass.def("reset", &TransientHistogramPathTracerInline::resetHistogram);
 }
 
 extern "C" FALCOR_API_EXPORT void registerPlugin(Falcor::PluginRegistry& registry)
@@ -45,6 +45,8 @@ extern "C" FALCOR_API_EXPORT void registerPlugin(Falcor::PluginRegistry& registr
 namespace
 {
 const char kShaderFile[] = "RenderPasses/TransientHistogramPathTracerInline/TransientHistogramPathTracerInline.cs.slang";
+/// tri_approx: triangles larger than this (world-space area) are left out, as in ellipsoidal sampling's default.
+const float kTriangleApproxMaxArea = 10000.f;
 
 const ChannelList kHistogramOutputChannelSingle = {
     { "histogram",          "gTransientHistogram", "Accumulated transient radiance density per bin", false, ResourceFormat::R32Float },
@@ -105,6 +107,25 @@ void TransientHistogramPathTracerInline::validateOptions(const Options& options)
         FALCOR_THROW("Without KDE, histogram filtering supports box or tent.");
 }
 
+void TransientHistogramPathTracerInline::onOptionsChanged(const Options& previous)
+{
+    mOptionsChanged = true;
+    resetHistogram();
+    // The outputs depend on the bin count, the channel count and the output size.
+    if (mOptions.histogram.timeBin != previous.histogram.timeBin ||
+        mOptions.pathTracing.useSingleChannel != previous.pathTracing.useSingleChannel ||
+        mOptions.outputSize != previous.outputSize || any(mOptions.fixedOutputSize != previous.fixedOutputSize))
+        requestRecompile();
+}
+
+void TransientHistogramPathTracerInline::setProperties(const Properties& props)
+{
+    const Options previous = mOptions;
+    // Invalid properties throw and leave the options unchanged.
+    InlinePass::applyProperties(mOptions, [&] { parseProperties(props); }, validateOptions);
+    onOptionsChanged(previous);
+}
+
 Properties TransientHistogramPathTracerInline::getProperties() const
 {
     Properties props;
@@ -145,7 +166,7 @@ RenderPassReflection TransientHistogramPathTracerInline::reflect(const CompileDa
 DefineList TransientHistogramPathTracerInline::getShaderDefines(const RenderData& renderData) const
 {
     DefineList defines = mOptions.pathTracing.getDefines();
-    defines.add(LaserState::resolve(renderData).getDefines());
+    defines.add(mLaserInput.get().getDefines());
     defines.add("USE_KERNEL_DENSITY_ESTIMATION", mOptions.histogram.useKernelDensityEstimation ? "1" : "0");
 
     defines.add("LIGHT_SAMPLING_METHOD", std::to_string((uint32_t)mOptions.samplingMethod));
@@ -176,8 +197,9 @@ void TransientHistogramPathTracerInline::bindShaderData(const ShaderVar& var, co
     var["CB"]["gFrameDim"] = uint2(pColor->getWidth(), pColor->getHeight());
     var["CB"]["gSamplesPerPixel"] = mOptions.pathTracing.samplesPerPixel;
     var["CB"]["gInitialWindowRatio"] = mOptions.histogram.initialWindowRatio;
-    LaserState::resolve(renderData).bindShaderData(var["Laser"]);
+    mLaserInput.get().bindShaderData(var["Laser"]);
     mOptions.histogram.bindShaderData(var);
+    mTriangles.bindShaderData(var);
 
     InlinePass::bindChannels(var, renderData, InlinePass::kPrimaryHitInputChannels);
     InlinePass::bindChannels(var, renderData, InlinePass::kColorOutputChannels);
@@ -186,6 +208,7 @@ void TransientHistogramPathTracerInline::bindShaderData(const ShaderVar& var, co
 
 void TransientHistogramPathTracerInline::execute(RenderContext* pRenderContext, const RenderData& renderData)
 {
+    mLaserInput.update(renderData, "TransientHistogramPathTracerInline");
     if (mOptionsChanged)
     {
         InlinePass::flagOptionsChanged(renderData);
@@ -211,7 +234,7 @@ void TransientHistogramPathTracerInline::execute(RenderContext* pRenderContext, 
 
     // Triangle approximation enumerates all triangles; no triangle sampling distribution is needed.
     if (mOptions.samplingMethod == SamplingMethod::TriangleApprox)
-        mpScene->getTriCollection(pRenderContext)->update(pRenderContext);
+        mTriangles.get(pRenderContext, mpScene, kTriangleApproxMaxArea)->update(pRenderContext);
     if (!mpComputePass)
         mpComputePass = InlinePass::createScenePass(mpDevice, pRenderContext, mpScene, mpSampleGenerator, kShaderFile, getShaderDefines(renderData));
     InlinePass::checkScene(*mpScene, renderData);
@@ -302,13 +325,9 @@ void TransientHistogramPathTracerInline::renderUI(Gui::Widgets& widget)
             return;
         }
         mUIWarning.clear();
-        // The histogram texture depends on the bin count and channel count.
-        const bool resize = options.histogram.timeBin != mOptions.histogram.timeBin || options.pathTracing.useSingleChannel != mOptions.pathTracing.useSingleChannel;
+        const Options previous = mOptions;
         mOptions = options;
-        mOptionsChanged = true;
-        resetHistogram();
-        if (resize)
-            requestRecompile();
+        onOptionsChanged(previous);
     }
     if (!mUIWarning.empty())
         widget.text(mUIWarning);
@@ -321,6 +340,7 @@ void TransientHistogramPathTracerInline::setScene(RenderContext* pRenderContext,
     mpComputePass = nullptr;
     mFrameCount = 0;
     resetHistogram();
+    mTriangles.reset();
 
     // Set new scene.
     mpScene = pScene;

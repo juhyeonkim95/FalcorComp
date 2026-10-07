@@ -7,12 +7,11 @@ import RenderPasses.Shared.Shaders.Utils.RayUtils;
 #include "Scene/SceneDefines.slangh"
 #include "Utils/Math/MathConstants.slangh"
 
-import Utils.Math.MathHelpers;
 import Utils.Sampling.SampleGenerator;
 import Scene.RaytracingInline;
 
 // SAMPLING_METHOD: how the vertex lit by the projector is reached from the camera path.
-#define SAMPLING_BSDF 0       // BSDF sampling.
+#define SAMPLING_NAIVE 0      // BSDF sampling.
 #define SAMPLING_ANTITHETIC 1 // BSDF sampling, each sample paired with its antithetic partner in projector space.
 #define SAMPLING_PROJECTOR 2  // Sampled from the projector (stratified along the pattern axis) and connected.
 
@@ -35,10 +34,8 @@ RWTexture2D<float4> gOutputColor;
 static const uint kMaxBounces = MAX_BOUNCES;
 static const bool kComputeDirect = COMPUTE_DIRECT;
 static const bool kUseImportanceSampling = USE_IMPORTANCE_SAMPLING;
-static const bool kUseEnvBackground = USE_ENV_BACKGROUND;
 static const bool kUseAlphaTest = USE_ALPHA_TEST;
 
-static const float3 kDefaultBackgroundColor = float3(0, 0, 0);
 static const float kEpsilon = 1e-6f;
 
 
@@ -58,15 +55,28 @@ bool isLit(ShadingData surface, ProjectorConnection connection)
     return traceVisibilityRay(surface.computeRayOrigin(), connection.direction, connection.distance);
 }
 
+/// Connection of `surface` to the projector, and whether the projector lights it (inside the frustum, not occluded).
+bool connectLit(ShadingData surface, ProjectorLight projector, out ProjectorConnection connection)
+{
+    return projector.connect(surface.posW, connection) && isLit(surface, connection);
+}
+
+/// BSDF * cosine * emitted radiance / distance^2 of a connection that lights `surface` (connectLit).
+float3 shadeProjectorConnection(ShadingData surface, IMaterialInstance material, ProjectorConnection connection,
+    inout SampleGenerator sg)
+{
+    return material.eval(surface, connection.direction, sg) * connection.radiance /
+        (connection.distance * connection.distance);
+}
+
 /// Connection of `surface` to the projector: BSDF * cosine * emitted radiance / distance^2, zero outside the
 /// frustum or when occluded.
 float3 evaluateProjectorConnection(ShadingData surface, IMaterialInstance material, ProjectorLight projector,
     inout SampleGenerator sg)
 {
     ProjectorConnection connection;
-    if (!projector.connect(surface.posW, connection) || !isLit(surface, connection)) return float3(0.f);
-    return material.eval(surface, connection.direction, sg) * connection.radiance /
-        (connection.distance * connection.distance);
+    if (!connectLit(surface, projector, connection)) return float3(0.f);
+    return shadeProjectorConnection(surface, material, connection, sg);
 }
 
 /// |dw / duv|, up to a constant: the solid angle at `previous` of the surface point hit by the projector ray
@@ -89,18 +99,19 @@ float solidAngleFromPreviousPerUV(float3 previous, ShadingData surface)
 
 /** Estimate of the BSDF-sampled segment previous -> surface and its antithetic partner, each connected to the
     projector (AntitheticMIS). The partner is where the projector ray through the pattern's antithetic uv lands,
-    so the pattern has the opposite sign there. The map is defined on points the projector lights that `previous`
-    sees directly, which holds for both points of a pair; elsewhere the primal estimate is returned alone.
+    so the pattern has the opposite sign there. The map is defined on points that `previous` sees directly and the
+    projector lights on that side (isLit), checked for both points of a pair so that the map and its inverse fail
+    together; elsewhere the primal estimate is returned alone.
     @param[in] primalEstimate throughput * f / p of the primal path, connected to the projector.
+    @param[in] primalLit, primal The primal's projector connection (connectLit), traced once for both uses.
 */
 float3 estimateWithAntithetic(ShadingData previous, IMaterialInstance previousMaterial, ShadingData surface,
-    BSDFSample bsdfSample, ProjectorLight projector, float3 throughput, float3 primalEstimate, inout SampleGenerator sg)
+    BSDFSample bsdfSample, ProjectorLight projector, float3 throughput, float3 primalEstimate, bool primalLit,
+    ProjectorConnection primal, inout SampleGenerator sg)
 {
     float mapChoice = sampleNext1D(sg);
     if (bsdfSample.isLobe(LobeType::Delta) || !(bsdfSample.pdf > 0.f)) return primalEstimate;
-
-    ProjectorConnection primal;
-    if (!projector.connect(surface.posW, primal) || !isLit(surface, primal)) return primalEstimate;
+    if (!primalLit) return primalEstimate;
 
     float3 projectorDir;
     if (!projector.uvToDirection(projector.pattern.antitheticCoord(primal.uv, mapChoice), projectorDir))
@@ -115,7 +126,13 @@ float3 estimateWithAntithetic(ShadingData previous, IMaterialInstance previousMa
     if (!traceVisibilityRay(rayOriginToward(previous, antitheticDir), antitheticDir, antitheticDistance))
         return primalEstimate;
 
-    ShadingData antithetic = loadShadingData(hit, previous.posW, antitheticDir);
+    // Found along the projector ray (which places SDF-grid hits), seen from `previous`.
+    ShadingData antithetic = loadShadingData(hit, projector.position(), projectorDir, antitheticDir);
+    // The partner must pass the primal's test too (lit on the side `previous` sees): sampled itself, it would fail
+    // there and never return its share of this pair.
+    ProjectorConnection antitheticConnection;
+    if (!projector.connect(antithetic.posW, antitheticConnection) || !isLit(antithetic, antitheticConnection))
+        return primalEstimate;
     let antitheticMaterial = gScene.materials.getMaterialInstance(antithetic, ExplicitLodTextureSampler(0.f));
 
     // |dw_a / dw| = (dw_a / duv_a) / (dw / duv) * |duv_a / duv|.
@@ -127,7 +144,8 @@ float3 estimateWithAntithetic(ShadingData previous, IMaterialInstance previousMa
 
     float antitheticBsdfPdf = previousMaterial.evalPdf(previous, antitheticDir, kUseImportanceSampling);
     float3 antitheticValue = throughput * previousMaterial.eval(previous, antitheticDir, sg) *
-        evaluateProjectorConnection(antithetic, antitheticMaterial, projector, sg);
+        antitheticMaterial.eval(antithetic, antitheticConnection.direction, sg) * antitheticConnection.radiance /
+        (antitheticConnection.distance * antitheticConnection.distance);
     return combineAntithetic(primalEstimate, bsdfSample.pdf, antitheticValue, antitheticBsdfPdf, jacobian);
 }
 
@@ -221,14 +239,16 @@ float3 tracePath(const uint2 pixel, const uint2 frameDim)
                 sd = loadShadingData(hit, rayOrigin, bsdfSample.wo);
                 mi = gScene.materials.getMaterialInstance(sd, ExplicitLodTextureSampler(0.f));
 
-#if SAMPLING_METHOD != SAMPLING_PROJECTOR
-                float3 primalEstimate = throughput * bsdfSample.weight * evaluateProjectorConnection(sd, mi, projector, sg);
 #if SAMPLING_METHOD == SAMPLING_ANTITHETIC
+                ProjectorConnection primal;
+                bool primalLit = connectLit(sd, projector, primal);
+                float3 primalValue = float3(0.f);
+                if (primalLit) primalValue = shadeProjectorConnection(sd, mi, primal, sg);
+                float3 primalEstimate = throughput * bsdfSample.weight * primalValue;
                 result += estimateWithAntithetic(previous, previousMaterial, sd, bsdfSample, projector, throughput,
-                    primalEstimate, sg);
-#else
-                result += primalEstimate;
-#endif
+                    primalEstimate, primalLit, primal, sg);
+#elif SAMPLING_METHOD != SAMPLING_PROJECTOR
+                result += throughput * bsdfSample.weight * evaluateProjectorConnection(sd, mi, projector, sg);
 #endif
                 throughput *= bsdfSample.weight;
                 if (!any(throughput > 0.f) || any(throughput < 0.f)) break;
@@ -240,8 +260,8 @@ float3 tracePath(const uint2 pixel, const uint2 frameDim)
     }
     else
     {
-        // Background pixel.
-        outColor = kUseEnvBackground ? gScene.envMap.eval(primaryRayDir) : kDefaultBackgroundColor;
+        // A background pixel sees no laser light: the environment is not part of the measurement.
+        outColor = 0.f;
     }
 
     return outColor;

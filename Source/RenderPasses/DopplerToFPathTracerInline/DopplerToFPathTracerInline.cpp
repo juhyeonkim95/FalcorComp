@@ -37,7 +37,8 @@ static void regDopplerToFPathTracerInline(pybind11::module& m)
         m, "DopplerToFPathTracerInline");
     pass.def("set_velocity", &DopplerToFPathTracerInline::setVelocity, "name"_a, "linear"_a,
         "angular"_a = float3(0.f), "center"_a = float3(0.f));
-    pass.def("reset_sequence", &DopplerToFPathTracerInline::resetSequence);
+    pass.def("clear_velocities", &DopplerToFPathTracerInline::clearVelocities);
+    pass.def("reset", &DopplerToFPathTracerInline::resetSequence);
     pass.def("get_object_names", &DopplerToFPathTracerInline::getObjectNames);
 }
 
@@ -50,6 +51,7 @@ extern "C" FALCOR_API_EXPORT void registerPlugin(Falcor::PluginRegistry& registr
 namespace
 {
 const char kShaderFile[] = "RenderPasses/DopplerToFPathTracerInline/DopplerToFPathTracerInline.cs.slang";
+const char kPassName[] = "DopplerToFPathTracerInline";
 
 const ChannelList kOutputChannels = {
     { "color", "gOutputColor", "Doppler ToF measurement (signed)", false, ResourceFormat::RGBA32Float },
@@ -124,20 +126,7 @@ void DopplerToFPathTracerInline::parseProperties(const Properties& props)
         else if (key == kRandomReplay)
             mOptions.randomReplay = value;
         else if (key == kVelocities)
-        {
-            // {"object name": {"linear": [..], "angular": [..], "center": [..]}}; missing entries are zero.
-            const Properties objects = value;
-            mOptions.velocities.clear();
-            for (const auto& [name, motionValue] : objects)
-            {
-                const Properties motionProps = motionValue;
-                Motion motion;
-                motion.linear = motionProps.get<float3>("linear", float3(0.f));
-                motion.angular = motionProps.get<float3>("angular", float3(0.f));
-                motion.center = motionProps.get<float3>("center", float3(0.f));
-                mOptions.velocities[name] = motion;
-            }
-        }
+            mOptions.velocities = parseObjectMotions(value);
         else
             logWarning("Unknown property '{}' in DopplerToFPathTracerInline properties.", key);
     }
@@ -146,14 +135,26 @@ void DopplerToFPathTracerInline::parseProperties(const Properties& props)
 void DopplerToFPathTracerInline::validateOptions(const Options& options)
 {
     options.pathTracing.validate();
-    if (!(options.modulationFrequency > 0.f) || !(options.exposureTime > 0.f))
-        FALCOR_THROW("modulationFrequency and exposureTime must be positive.");
+    if (!(options.modulationFrequency > 0.f) || !(options.exposureTime > 0.f) || !std::isfinite(options.modulationFrequency) ||
+        !std::isfinite(options.exposureTime))
+        FALCOR_THROW("modulationFrequency and exposureTime must be finite and positive.");
+    if (!std::isfinite(options.heterodyneFrequency) || !std::isfinite(options.phase))
+        FALCOR_THROW("heterodyneFrequency and phase must be finite.");
     if (options.antithetic == Antithetic::HalfPeriod && !(options.heterodyneFrequency != 0.f))
         FALCOR_THROW("The half_period antithetic pairing needs a nonzero heterodyneFrequency.");
     const double periods = double(options.exposureTime) * options.heterodyneFrequency;
     if (std::abs(periods - std::round(periods)) > 1e-3)
         logWarning("DopplerToFPathTracerInline: exposureTime x heterodyneFrequency = {} is not an integer: static "
                    "objects do not cancel.", periods);
+}
+
+void DopplerToFPathTracerInline::setProperties(const Properties& props)
+{
+    // Invalid properties throw and leave the options unchanged.
+    InlinePass::applyProperties(mOptions, [&] { parseProperties(props); }, validateOptions);
+    if (props.has(kVelocities))
+        mNodesDirty = true; // Collect the moving nodes again.
+    mOptionsChanged = true;
 }
 
 Properties DopplerToFPathTracerInline::getProperties() const
@@ -168,16 +169,7 @@ Properties DopplerToFPathTracerInline::getProperties() const
     props[kAntithetic] = nameOf(kAntithetics, mOptions.antithetic);
     props[kSeed] = mOptions.seed;
     props[kRandomReplay] = mOptions.randomReplay;
-    Properties velocities;
-    for (const auto& [name, motion] : mOptions.velocities)
-    {
-        Properties motionProps;
-        motionProps["linear"] = motion.linear;
-        motionProps["angular"] = motion.angular;
-        motionProps["center"] = motion.center;
-        velocities[name] = motionProps;
-    }
-    props[kVelocities] = velocities;
+    props[kVelocities] = serializeObjectMotions(mOptions.velocities);
     return props;
 }
 
@@ -191,13 +183,20 @@ RenderPassReflection DopplerToFPathTracerInline::reflect(const CompileData& comp
 DefineList DopplerToFPathTracerInline::getShaderDefines(const RenderData& renderData) const
 {
     DefineList defines = mOptions.pathTracing.getDefines();
-    defines.add(LaserState::resolve(renderData).getDefines());
+    defines.add(mLaserInput.get().getDefines());
     return defines;
 }
 
 void DopplerToFPathTracerInline::setVelocity(const std::string& name, float3 linear, float3 angular, float3 center)
 {
-    mOptions.velocities[name] = Motion{linear, angular, center};
+    mOptions.velocities[name] = ObjectMotion{linear, angular, center};
+    mNodesDirty = true;
+    mOptionsChanged = true;
+}
+
+void DopplerToFPathTracerInline::clearVelocities()
+{
+    mOptions.velocities.clear();
     mNodesDirty = true;
     mOptionsChanged = true;
 }
@@ -205,92 +204,10 @@ void DopplerToFPathTracerInline::setVelocity(const std::string& name, float3 lin
 std::vector<std::tuple<uint32_t, std::string, std::string, bool>> DopplerToFPathTracerInline::getObjectNames() const
 {
     std::vector<std::tuple<uint32_t, std::string, std::string, bool>> names;
-    if (!mpScene)
-        return names;
-    for (uint32_t i = 0; i < mpScene->getGeometryInstanceCount(); ++i)
-    {
-        const GeometryInstanceData& instance = mpScene->getGeometryInstance(i);
-        const std::string mesh =
-            instance.getType() == GeometryType::TriangleMesh ? mpScene->getMeshName(instance.geometryID) : "";
-        names.emplace_back(i, mesh, mpScene->getMaterial(MaterialID(instance.materialID))->getName(), instance.isDynamic());
-    }
+    if (mpScene)
+        for (const auto& object : listSceneObjects(*mpScene))
+            names.emplace_back(object.instance, object.mesh, object.material, object.movable);
     return names;
-}
-
-void DopplerToFPathTracerInline::findMovingNodes()
-{
-    // The transforms the scene was built with are the poses at t = 0.
-    const auto& locals = mpScene->getAnimationController()->getLocalMatrices();
-    if (mBaseTransforms.empty())
-        for (uint32_t node = 0; node < locals.size(); ++node)
-            mBaseTransforms[node] = locals[node];
-    // Restore every node we moved before, then collect the nodes of the named objects.
-    for (const auto& moving : mMovingNodes)
-        mpScene->updateNodeTransform(moving.nodeID, moving.base);
-    mMovingNodes.clear();
-    std::map<std::string, bool> used;
-    for (const auto& [name, motion] : mOptions.velocities)
-        used[name] = false;
-    for (const auto& [index, mesh, material, movable] : getObjectNames())
-    {
-        for (const auto& [name, motion] : mOptions.velocities)
-        {
-            if (name != mesh && name != material && name != "#" + std::to_string(index))
-                continue;
-            used[name] = true;
-            if (!movable)
-            {
-                logWarning("DopplerToFPathTracerInline: object '{}' is static and cannot move; build it as animated "
-                           "(e.g. addTriangleMesh(..., isAnimated=True) in a .pyscene).", name);
-                continue;
-            }
-            const uint32_t nodeID = mpScene->getGeometryInstance(index).globalMatrixID;
-            bool shared = false;
-            for (const auto& moving : mMovingNodes)
-                shared |= moving.nodeID == nodeID;
-            if (shared)
-            {
-                logWarning("DopplerToFPathTracerInline: '{}' shares its scene-graph node with another moving object, "
-                           "so they cannot move separately; load the scene with SceneBuilderFlags.DontOptimizeGraph.",
-                           name);
-                continue;
-            }
-            mMovingNodes.push_back({nodeID, mBaseTransforms[nodeID], motion});
-        }
-    }
-    for (const auto& [name, found] : used)
-        if (!found)
-            logWarning("DopplerToFPathTracerInline: no scene object is named '{}' (mesh or material name).", name);
-    mNodesDirty = false;
-}
-
-void DopplerToFPathTracerInline::applyPose(RenderContext* pRenderContext, float time)
-{
-    // Rigid motion over time t: x(t) = center + R(angular t) (x - center) + linear t, applied to the node's base
-    // transform (nodes without a parent: the local transform is the world transform).
-    for (const auto& moving : mMovingNodes)
-    {
-        const Motion& m = moving.motion;
-        float4x4 motion = math::matrixFromTranslation(m.linear * time);
-        const float angle = length(m.angular) * time;
-        if (angle != 0.f)
-        {
-            const float4x4 rotation = math::matrixFromRotation(angle, normalize(m.angular));
-            motion = mul(motion, mul(math::matrixFromTranslation(m.center),
-                                     mul(rotation, math::matrixFromTranslation(-m.center))));
-        }
-        mpScene->updateNodeTransform(moving.nodeID, mul(motion, moving.base));
-    }
-    // Moves the instances and rebuilds the acceleration structure when it is next bound.
-    mpScene->update(pRenderContext, 0.0);
-}
-
-void DopplerToFPathTracerInline::restoreBasePose()
-{
-    if (!mpScene)
-        return;
-    for (const auto& moving : mMovingNodes)
-        mpScene->updateNodeTransform(moving.nodeID, moving.base);
 }
 
 float DopplerToFPathTracerInline::sampleTime(uint pair) const
@@ -308,6 +225,7 @@ float DopplerToFPathTracerInline::sampleTime(uint pair) const
 
 void DopplerToFPathTracerInline::execute(RenderContext* pRenderContext, const RenderData& renderData)
 {
+    mLaserInput.update(renderData, "DopplerToFPathTracerInline");
     if (mOptionsChanged)
     {
         InlinePass::flagOptionsChanged(renderData);
@@ -320,7 +238,10 @@ void DopplerToFPathTracerInline::execute(RenderContext* pRenderContext, const Re
         return;
     }
     if (mNodesDirty)
-        findMovingNodes();
+    {
+        mMover.prepare(mpScene, mOptions.velocities, kPassName);
+        mNodesDirty = false;
+    }
     if (!mpComputePass)
         mpComputePass = InlinePass::createScenePass(mpDevice, pRenderContext, mpScene, mpSampleGenerator, kShaderFile,
             getShaderDefines(renderData));
@@ -332,13 +253,20 @@ void DopplerToFPathTracerInline::execute(RenderContext* pRenderContext, const Re
     std::vector<float> times = {sampleTime(pair)};
     const float T = mOptions.exposureTime;
     if (mOptions.antithetic == Antithetic::HalfPeriod)
-        times.push_back(float(std::fmod(double(times[0]) + 0.5 / mOptions.heterodyneFrequency, double(T))));
+    {
+        // Half a heterodyne period away, wrapped into [0, T) with a positive modulo: with a negative frequency the
+        // offset is negative, and fmod would have left the partner before the exposure.
+        double partner = double(times[0]) + 0.5 / mOptions.heterodyneFrequency;
+        partner -= double(T) * std::floor(partner / double(T));
+        const float partnerTime = float(partner);
+        times.push_back(partnerTime < T ? partnerTime : 0.f);
+    }
     else if (mOptions.antithetic == Antithetic::Mirror)
         times.push_back(T - times[0]);
 
     auto var = mpComputePass->getRootVar();
     const uint2 frameDim = uint2(pColor->getWidth(), pColor->getHeight());
-    LaserState::resolve(renderData).bindShaderData(var["Laser"]);
+    mLaserInput.get().bindShaderData(var["Laser"]);
     var["gOutputColor"] = pColor;
     var["CB"]["gFrameDim"] = frameDim;
     var["CB"]["gSamplesPerPixel"] = mOptions.pathTracing.samplesPerPixel;
@@ -348,9 +276,9 @@ void DopplerToFPathTracerInline::execute(RenderContext* pRenderContext, const Re
     var["CB"]["gTimeWeight"] = 1.f / float(times.size());
     for (size_t i = 0; i < times.size(); ++i)
     {
-        if (!mMovingNodes.empty())
+        if (!mMover.empty())
         {
-            applyPose(pRenderContext, times[i]);
+            mMover.apply(pRenderContext, times[i]);
             mpScene->bindShaderDataForRaytracing(pRenderContext, var["gScene"]);
         }
         // Random replay: the partner time uses the same random numbers; otherwise its own.
@@ -360,31 +288,47 @@ void DopplerToFPathTracerInline::execute(RenderContext* pRenderContext, const Re
         var["CB"]["gAddToOutput"] = i > 0;
         mpComputePass->execute(pRenderContext, uint3(frameDim, 1));
     }
-    restoreBasePose();
+    mMover.restore();
     mFrameCount++;
 }
 
 void DopplerToFPathTracerInline::renderUI(Gui::Widgets& widget)
 {
     bool dirty = false;
-    dirty |= widget.var("Modulation frequency (MHz)", mOptions.modulationFrequency, 0.001f, 1e5f);
-    dirty |= widget.var("Heterodyne frequency (Hz)", mOptions.heterodyneFrequency, -1e6f, 1e6f);
-    dirty |= widget.var("Exposure time (s)", mOptions.exposureTime, 1e-6f, 10.f);
-    dirty |= widget.var("Phase (periods)", mOptions.phase, -1.f, 1.f);
+    auto options = mOptions;
+    dirty |= widget.var("Modulation frequency (MHz)", options.modulationFrequency, 0.001f, 1e5f);
+    dirty |= widget.var("Heterodyne frequency (Hz)", options.heterodyneFrequency, -1e6f, 1e6f);
+    dirty |= widget.var("Exposure time (s)", options.exposureTime, 1e-6f, 10.f);
+    dirty |= widget.var("Phase (periods)", options.phase, -1.f, 1.f);
     widget.text(fmt::format("Frame (time pair): {}", mFrameCount));
     if (auto group = widget.group("Sampling", true))
-        dirty |= mOptions.pathTracing.renderSamplingUI(group, " Each vertex is connected to the light.");
+        dirty |= options.pathTracing.renderSamplingUI(group, " Each vertex is connected to the light.");
+    if (auto group = widget.group("Output", true))
+        dirty |= options.pathTracing.renderOutputUI(group, true, true);
     if (dirty)
+    {
+        try
+        {
+            validateOptions(options);
+        }
+        catch (const std::exception& e)
+        {
+            mUIWarning = e.what();
+            return;
+        }
+        mUIWarning.clear();
+        mOptions = options;
         mOptionsChanged = true;
+    }
+    if (!mUIWarning.empty())
+        widget.text(mUIWarning);
 }
 
 void DopplerToFPathTracerInline::setScene(RenderContext* pRenderContext, const ref<Scene>& pScene)
 {
-    restoreBasePose();
+    mMover.reset();
     mpComputePass = nullptr;
     mFrameCount = 0;
-    mMovingNodes.clear();
-    mBaseTransforms.clear();
     mNodesDirty = true;
     mpScene = pScene;
 }

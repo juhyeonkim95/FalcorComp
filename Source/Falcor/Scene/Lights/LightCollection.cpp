@@ -50,14 +50,16 @@ namespace Falcor
         const char kFinalizeIntegrationFile[] = "Scene/Lights/FinalizeIntegration.cs.slang";
     }
 
-    LightCollection::LightCollection(ref<Device> pDevice, RenderContext* pRenderContext, Scene* pScene, bool force)
+    LightCollection::LightCollection(ref<Device> pDevice, RenderContext* pRenderContext, Scene* pScene, bool allTriangles,
+        float maxTriangleArea)
         : mpDevice(pDevice)
         , mpScene(pScene)
     {
         FALCOR_ASSERT(mpScene);
 
         // Setup the lights.
-        mForce = force;
+        mAllTriangles = allTriangles;
+        mMaxTriangleArea = maxTriangleArea;
         setupMeshLights(*mpScene);
 
         // Create program for integrating emissive textures.
@@ -189,7 +191,7 @@ namespace Falcor
             // Only mesh lights with basic materials are supported.
             auto pMaterial = scene.getMaterial(MaterialID::fromSlang( instanceData.materialID ))->toBasicMaterial();
 
-            if (pMaterial && (pMaterial->isEmissive() || mForce))
+            if (pMaterial && (pMaterial->isEmissive() || mAllTriangles))
             {
                 // We've found a mesh instance with an emissive material => Setup mesh light data.
                 MeshLightData meshLight;
@@ -513,14 +515,13 @@ namespace Falcor
         // Iterate over the emissive triangles.
         for (uint32_t triIdx = 0; triIdx < triCount; triIdx++)
         {
-            if(mForce){
+            if (mAllTriangles)
+            {
+                // Weighted by area. Triangles larger than mMaxTriangleArea (world space) are left out, e.g. an NLOS
+                // relay wall that would take most samples; they remain scene geometry.
                 mMeshLightTriangles[triIdx].flux = mMeshLightTriangles[triIdx].area;
-
-                // Hardcoded NLOS heuristic: exclude the large backwall from triangle sampling.
-                // The cutoff is per-triangle world-space area; the wall remains scene geometry.
-                if(mMeshLightTriangles[triIdx].area > 10000){
-                    mMeshLightTriangles[triIdx].flux = 0.0;
-                }
+                if (mMeshLightTriangles[triIdx].area > mMaxTriangleArea)
+                    mMeshLightTriangles[triIdx].flux = 0.f;
             }
             if (mMeshLightTriangles[triIdx].flux > 0.f)
             {
@@ -710,14 +711,12 @@ namespace Falcor
                 meshLightTri.flux = fluxData[triIdx].flux;
                 meshLightTri.averageRadiance = fluxData[triIdx].averageRadiance;
 
-                if(mForce){
-                    meshLightTri.flux = meshLightTri.area;
-                    meshLightTri.averageRadiance = float3(1.0f);
-                    // Match the hardcoded NLOS backwall exclusion in updateActiveTriangleList().
-                    if(meshLightTri.area > 10000){
-                        meshLightTri.flux = 0.0;
-                        meshLightTri.averageRadiance = float3(0.0f);
-                    }
+                if (mAllTriangles)
+                {
+                    // As in updateActiveTriangleList(): weighted by area, without the triangles above the cutoff.
+                    const bool included = meshLightTri.area <= mMaxTriangleArea;
+                    meshLightTri.flux = included ? meshLightTri.area : 0.f;
+                    meshLightTri.averageRadiance = float3(included ? 1.f : 0.f);
                 }
             }
         }

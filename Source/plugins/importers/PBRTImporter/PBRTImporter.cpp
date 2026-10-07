@@ -1929,7 +1929,8 @@ void PBRTImporter::importScene(
         timeReport.measure("Parsing pbrt scene");
 
         pbrt::BuilderContext ctx{pbrtScene, builder};
-        ctx.usePBRTMaterials = builder.getSettings().getOption("PBRTImporter:usePBRTMaterials", true); // was false
+        // FalcorComp: pbrt's own materials by default (upstream: false, converted to StandardMaterial).
+        ctx.usePBRTMaterials = builder.getSettings().getOption("PBRTImporter:usePBRTMaterials", true);
         pbrt::buildScene(ctx);
         timeReport.measure("Building pbrt scene");
         timeReport.printToLog();

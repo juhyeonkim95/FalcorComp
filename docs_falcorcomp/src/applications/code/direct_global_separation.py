@@ -17,7 +17,7 @@ testbed.clock.pause()
 SHIFTS = 25           # checkerboards shifted by fifths of a cell, 5 x 5
 # Indirect samples per pixel of each image. An antithetic sample also traces its
 # antithetic path, so it gets half as many.
-SPP = {"bsdf": 64, "antithetic": 32}
+SPP = {"naive": 64, "antithetic": 32}
 CONVERGED_SPP = 2048  # samples per pixel of the white images
 
 # 2. The projector and the render graph
@@ -95,12 +95,12 @@ def tone_map(image):
 
 
 results = {}
-for name, method in [("naive", "bsdf"), ("antithetic", "antithetic")]:
+for method in ["naive", "antithetic"]:
     direct, global_ = separate(capture(method))
     errors = [np.mean(luminance(direct - true_direct) ** 2),
               np.mean(luminance(global_ - true_global) ** 2)]
-    print(f"{name} ({SPP[method]} spp): MSE direct {errors[0]:.2e}, global {errors[1]:.2e}")
-    results[name] = (direct, global_, errors, SPP[method])
+    print(f"{method} ({SPP[method]} spp): MSE direct {errors[0]:.2e}, global {errors[1]:.2e}")
+    results[method] = (direct, global_, errors, SPP[method])
 
 # 6. Show the components and their squared errors
 # The 1024 x 1024 images are shown smaller, filtered (interpolation="antialiased").

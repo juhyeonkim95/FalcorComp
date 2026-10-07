@@ -9,7 +9,6 @@ import RenderPasses.Shared.Shaders.Utils.RayUtils;
 #include "Scene/SceneDefines.slangh"
 #include "Utils/Math/MathConstants.slangh"
 
-import Utils.Math.MathHelpers;
 import Utils.Sampling.SampleGenerator;
 import Scene.RaytracingInline;
 import RenderPasses.Shared.Shaders.Lights.Laser;
@@ -34,10 +33,7 @@ RWTexture2D<float4> gOutputColor;
 static const uint kMaxBounces = MAX_BOUNCES;
 static const bool kComputeDirect = COMPUTE_DIRECT;
 static const bool kUseImportanceSampling = USE_IMPORTANCE_SAMPLING;
-static const bool kUseEnvBackground = USE_ENV_BACKGROUND;
 
-static const float3 kDefaultBackgroundColor = float3(0, 0, 0);
-static const float kRoundTripTolerance = 0.01f; // Round-trip error allowed, relative to the shift distance.
 
 
 // Connection of `surface` to the light, weighted by the modulation of the whole path.
@@ -91,7 +87,7 @@ float3 estimateWithAntithetic(ShadingData previous, IMaterialInstance previousMa
     if (!(areaJacobian > 0.f) || !isfinite(areaJacobian)) return primalEstimate;
     float3 shiftedPosition = shiftedVertex.posW;
 
-#if ANTITHETIC_ROUND_TRIP_CHECK
+#if SHIFT_ROUND_TRIP_CHECK
     // Keep the shift only if shifting the partner back (-dt) returns to `surface`. Where it is kept, the forward and
     // backward shifts are then exact inverses and one-to-one, as AntitheticMIS needs, even when the Newton solve
     // could land elsewhere (e.g. on another surface with the ray-trace charts).
@@ -101,7 +97,7 @@ float3 estimateWithAntithetic(ShadingData previous, IMaterialInstance previousMa
         returnedVertex, debugInfo, sg);
     if (!(reverseJacobian > 0.f) || !isfinite(reverseJacobian)) return primalEstimate;
     float3 returnedPosition = returnedVertex.posW;
-    if (length(returnedPosition - surface.posW) > kRoundTripTolerance * length(shiftedPosition - surface.posW))
+    if (!shiftReturned(returnedPosition, surface.posW, shiftedPosition))
         return primalEstimate;
 #endif
 
@@ -204,8 +200,8 @@ float3 tracePath(const uint2 pixel, const uint2 frameDim)
     }
     else
     {
-        // Background pixel.
-        outColor = kUseEnvBackground ? gScene.envMap.eval(primaryRayDir) : kDefaultBackgroundColor;
+        // A background pixel sees no laser light: the environment is not part of the measurement.
+        outColor = 0.f;
     }
 
     return outColor;

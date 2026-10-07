@@ -14,6 +14,10 @@ import RenderPasses.Shared.Shaders.ReSTIR.PathReconstruction;
 import RenderPasses.Shared.Shaders.ShiftMapping.ShiftMapping;
 import RenderPasses.Shared.Shaders.ShiftMapping.NewtonSolver;
 
+#ifndef DEBUG_NEWTON_ITERATIONS
+#define DEBUG_NEWTON_ITERATIONS 0
+#endif
+
 // Balanced ratios with scaled mass, target and Jacobian factors. No logs and
 // no reciprocal of a tiny target are needed; all products here are <= 1.
 float spatialPairCoefficient(float sourceMass, float sourceTarget,
@@ -82,9 +86,9 @@ struct ReconnectionSuffix
 {
     ShadingData vertex;
     IMaterialInstance material; // Only if isSurface.
-    bool isSurface;
-    float length;
-    float3 irradiance;
+    bool isSurface = false;
+    float length = 0.f;
+    float3 irradiance = float3(0.f);
 };
 
 ReconnectionSuffix loadReconnectionSuffix(Reservoir reservoir, float3 lightPosition, float3 lightDirection)
@@ -117,11 +121,11 @@ struct ShiftedPath
 {
     HitInfo hit;
     ShadingData vertex;
-    float3 prefixEnd; // a on the target prefix.
-    float3 f;
-    float jacobian;
-    float mappingJacobian; // Jacobian of the shift mapping alone (debug statistics).
-    float totalPathLength;
+    float3 prefixEnd = float3(0.f); // a on the target prefix.
+    float3 f = float3(0.f);
+    float jacobian = 0.f;
+    float mappingJacobian = 0.f; // Jacobian of the shift mapping alone (debug statistics).
+    float totalPathLength = 0.f;
 };
 
 // Shift the reconnection vertex x of `source` (gate sourceGate) to the camera prefix of another pixel (primary hit
@@ -155,9 +159,22 @@ bool shiftToPrefix(Reservoir source, VertexData x, ReconnectionSuffix suffix, Sh
     VertexData shiftedData;
     shifted.hit = pathLengthAwareShiftMapping(a, source.rcVertexHit, x, suffix.vertex, shiftSource, condition,
         jacobian, shiftedData, debugInfo, sg);
+#if SHIFT_ROUND_TRIP_CHECK
+    // Keep the shift only if the reverse shift maps x' back to x. Both pixels of a pair then agree on the shifts they
+    // accept (the canonical side solves the same two shifts), wherever the solver could reach another root.
+    if (jacobian > 0.f && !kShiftMappingIsIdentity)
+    {
+        if (!shiftRoundTrips(source.rcPrevVertexPosition, x, sourceNext, a.posW, shifted.hit, shiftedData, suffix.vertex,
+                condition, sg))
+            jacobian = 0.f;
+    }
+#endif
     shifted.prefixEnd = a.posW;
     shifted.mappingJacobian = jacobian;
-    jacobian *= K;
+    // A length-aware shift scales the path length's distance from the gate by K (shrink mapping; K = 1 otherwise),
+    // which scales the Jacobian by K. The identity shift moves nothing, so its Jacobian stays 1.
+    if (!kShiftMappingIsIdentity)
+        jacobian *= K;
     // A rejected/non-finite shift must have zero support, not NaN weight.
     jacobian = select(isfinite(jacobian), max(jacobian, 0.f), 0.f);
     if (jacobian == 0.f)
@@ -189,7 +206,7 @@ bool shiftToPrefix(Reservoir source, VertexData x, ReconnectionSuffix suffix, Sh
         prefixLength, suffix.length, targetGate, suffix.irradiance, sg, suffix.isSurface, K,
         source.rcNextVertexBounce > 0);
     // A zero target (e.g. outside the gate) needs no visibility ray.
-    if (any(shifted.f != 0.f)) shifted.f *= checkVisibility(a, shifted.vertex);
+    if (any(shifted.f != 0.f)) shifted.f *= float(checkVisibility(a, shifted.vertex));
     return true;
 }
 
@@ -431,6 +448,9 @@ void combineReservoirWithShiftMapping(
         return;
     }
 
+#if IS_SCENE_DYNAMIC
+    // A re-lit suffix (updateLight; static scenes returned above).
+
     // No valid sample.
     if (source.W == 0.f)
     {
@@ -454,7 +474,6 @@ void combineReservoirWithShiftMapping(
 
     // Keep the source target f and full length intact for pairwise MIS and the shift dt.
     Reservoir suffixSource = source;
-#if IS_SCENE_DYNAMIC
     // Slang/HLSL logical operators must not guard calls with inout side effects.
     // Spatial/shrink callers pass updateLight=false and must keep cached lighting.
     if (updateLight)
@@ -467,14 +486,12 @@ void combineReservoirWithShiftMapping(
             return;
         }
     }
-#endif
     VertexData x = gScene.getVertexData(source.rcVertexHit.getTriangleHit());
     ReconnectionSuffix suffix = loadReconnectionSuffix(suffixSource, lightPosition, lightDirection);
 
     // The source path's own y. A re-lit suffix may start at another y (a moved light); then the source's y is its
     // original next vertex, or the source frame's light for a point-light endpoint.
     ShadingData sourceNext = suffix.vertex;
-#if IS_SCENE_DYNAMIC
     if (updateLight)
     {
         if (source.rcNextVertexHit.isValid())
@@ -486,7 +503,6 @@ void combineReservoirWithShiftMapping(
             sourceNext.faceN = sourceLightDirection;
         }
     }
-#endif
     ShiftedPath shifted;
     if (!shiftToPrefix(source, x, suffix, sourceNext, sourceGate, primary, primaryMaterial, primaryLength,
             targetGate, K, criteria, sg, debugInfo, shifted))
@@ -494,7 +510,6 @@ void combineReservoirWithShiftMapping(
         combineUnsupportedShift(destination, source, isCanonical, sg);
         return;
     }
-#if IS_SCENE_DYNAMIC
     if (updateLight && shifted.jacobian > 0.f)
     {
         if (suffixSource.rcNextVertexBounce > 0)
@@ -509,7 +524,6 @@ void combineReservoirWithShiftMapping(
             shifted.f *= light.valid ? float(checkLightVisibility(shifted.vertex, light)) : 0.f;
         }
     }
-#endif
     float shiftedTarget = getReservoirWeight(shifted.f);
 #if DEBUG_NEWTON_ITERATIONS
     debugInfo.newtonStats = finalizeReuseStatistics(
@@ -540,6 +554,7 @@ void combineReservoirWithShiftMapping(
             destination.totalPathLength = shifted.totalPathLength;
         }
     }
+#endif
 }
 
 // Pairwise MIS weight of the canonical sample of `source` against another pixel (mass otherMass, primary hit

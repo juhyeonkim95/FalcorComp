@@ -39,9 +39,10 @@ using namespace Falcor;
 /// How the vertex lit by the projector is reached from the camera path (SAMPLING_METHOD in the shader).
 enum class StructuredLightSamplingMethod : uint32_t
 {
-    BSDF = 0,       ///< BSDF sampling.
+    Naive = 0,      ///< BSDF sampling.
     Antithetic = 1, ///< BSDF sampling, each sample paired with its antithetic partner in projector space.
-    Projector = 2,  ///< Sampled from the projector, stratified along the pattern axis, and connected.
+    Projector = 2,  ///< Sampled from the projector, stratified along the pattern axis, and connected. Kept for
+                    ///< comparisons, but not documented or offered in the UI: "projector" in scripts only.
 };
 
 /** Structured-light path tracer: a projector shows a signed pattern and camera paths are connected to it.
@@ -92,6 +93,7 @@ private:
     ProjectorPatternData mPatternData;
     uint mFrameCount = 0;
     bool mOptionsChanged = false;
+    std::string mUIWarning; ///< Why the last UI edit was rejected.
 
     ref<Scene> mpScene;
     ref<SampleGenerator> mpSampleGenerator;

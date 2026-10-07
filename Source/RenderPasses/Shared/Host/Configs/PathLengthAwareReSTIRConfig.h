@@ -2,10 +2,12 @@
 #include "ConfigUtils.h"
 #include "ShiftMappingConfig.h"
 #include "PathTracingConfig.h"
+#include "../InlinePassUtils.h"
 #include "Utils/Sampling/SampleGenerator.h"
 #include "RenderGraph/RenderPass.h"
 #include "Scene/Scene.h"
 #include <algorithm>
+#include <cmath>
 #include <memory>
 #include <utility>
 
@@ -19,11 +21,29 @@ struct PathLengthAwareReSTIRConfig
     /// single-pass kernel. Same results either way; the shift `no` always uses the single pass.
     bool spatialReuseTwoPass = true;
     bool useTemporalReuse = false;
-    float temporalHistoryLength = 20.0f;    ///< History cap in frames of samples; 0 ignores it, negative is uncapped.
+    float temporalHistoryLength = 20.0f;    ///< History cap in frames of samples; 0 ignores the history.
 
     ShiftMappingConfig shiftMapping;
     float reconnectionRoughnessThreshold = 0.25f; ///< Both vertices of a reconnection segment must be rougher.
     float reconnectionMinDistance = 0.f;          ///< A reconnection segment must be longer (scene units).
+
+    void validate() const
+    {
+        shiftMapping.validate();
+        if (spatialReuseIteration > 16)
+            FALCOR_THROW("spatialReuseIteration must be in [0, 16].");
+        if (spatialReuseNeighborCount < 1 || spatialReuseNeighborCount > 64)
+            FALCOR_THROW("spatialReuseNeighborCount must be in [1, 64].");
+        if (!std::isfinite(spatialReuseGatherRadius) || spatialReuseGatherRadius <= 0.f)
+            FALCOR_THROW("spatialReuseGatherRadius must be finite and greater than zero.");
+        // An uncapped history's sample count grows by the neighbor count each frame until it overflows.
+        if (!std::isfinite(temporalHistoryLength) || temporalHistoryLength < 0.f)
+            FALCOR_THROW("temporalHistoryLength must be finite and non-negative.");
+        if (!std::isfinite(reconnectionRoughnessThreshold) || reconnectionRoughnessThreshold < 0.f)
+            FALCOR_THROW("reconnectionRoughnessThreshold must be finite and non-negative.");
+        if (!std::isfinite(reconnectionMinDistance) || reconnectionMinDistance < 0.f)
+            FALCOR_THROW("reconnectionMinDistance must be finite and non-negative.");
+    }
 
     bool parse(const std::string& key, const Properties::ConstValue& value)
     {
@@ -71,19 +91,25 @@ struct PathLengthAwareReSTIRConfig
         return defines;
     }
 
-    /// Sets the shift mapping constants (ShiftMappingCB) under `shiftmapVar`.
-    void bindShiftMapping(const ShaderVar& shiftmapVar) const
+    /// Sets the shift mapping constants (ShiftMappingCB) under `var`.
+    void bindShiftMapping(const ShaderVar& var) const
     {
-        shiftMapping.bindShaderData(shiftmapVar);
+        shiftMapping.bindShaderData(var);
     }
 
-    /// Sets the spatial reuse neighbor count, radius and reconnection threshold under `spatialVar`.
+    /// Sets a ReconnectionCriteria (Shared/Shaders/ReSTIR/PathReconstruction.slang) at `var`.
+    void bindReconnectionCriteria(const ShaderVar& var) const
+    {
+        var["roughnessThreshold"] = reconnectionRoughnessThreshold;
+        var["minDistance"] = reconnectionMinDistance;
+    }
+
+    /// Sets the spatial reuse neighbor count, radius and reconnection criteria under `spatialVar`.
     void bindSpatialReuse(const ShaderVar& spatialVar) const
     {
         spatialVar["neighborCount"] = spatialReuseNeighborCount;
         spatialVar["gatherRadius"] = spatialReuseGatherRadius;
-        spatialVar["reconnectionRoughnessThreshold"] = reconnectionRoughnessThreshold;
-        spatialVar["reconnectionMinDistance"] = reconnectionMinDistance;
+        bindReconnectionCriteria(spatialVar["reconnection"]);
     }
 
     /// Spatial and temporal reuse. `temporalNote` is appended to the Temporal reuse tooltip.
@@ -110,9 +136,9 @@ struct PathLengthAwareReSTIRConfig
 
         if (useTemporalReuse)
         {
-            dirty |= widget.var("History length (frames)", temporalHistoryLength, -1.f, 100000.f);
+            dirty |= widget.var("History length (frames)", temporalHistoryLength, 0.f, 100000.f);
             widget.tooltip("Cap on the history's sample count, in frames of samples per pixel. 0 ignores the "
-                           "history; a negative value leaves it uncapped.", true);
+                           "history.", true);
         }
         return dirty;
     }
@@ -168,11 +194,13 @@ public:
     /// when `dynamicLight`), a light change otherwise, and depth of field.
     void invalidateHistory(const Scene& scene, bool lightChanged, bool dynamicLight)
     {
-        auto allowedUpdates =
-            IScene::UpdateFlags::CameraMoved | IScene::UpdateFlags::CameraPropertiesChanged | IScene::UpdateFlags::CameraSwitched;
+        // SceneGraphChanged comes with every animated node, also a camera animated by the scene itself; moving geometry
+        // or lights also raises GeometryMoved / LightsMoved, which stay disallowed.
+        auto allowedUpdates = IScene::UpdateFlags::CameraMoved | IScene::UpdateFlags::CameraPropertiesChanged |
+                              IScene::UpdateFlags::CameraSwitched | IScene::UpdateFlags::SceneGraphChanged;
         if (dynamicLight)
             allowedUpdates |= IScene::UpdateFlags::LightsMoved | IScene::UpdateFlags::LightIntensityChanged |
-                              IScene::UpdateFlags::LightPropertiesChanged | IScene::UpdateFlags::SceneGraphChanged;
+                              IScene::UpdateFlags::LightPropertiesChanged;
         if ((scene.getUpdates() & ~allowedUpdates) != IScene::UpdateFlags::None || (!dynamicLight && lightChanged) ||
             scene.getCamera()->getApertureRadius() > 0.f)
             temporalHistoryValid = false;
@@ -211,14 +239,20 @@ public:
             desc.addTypeConformances(pScene->getTypeConformances());
             desc.addShaderLibrary(kReflectTypesFile).csEntry("main");
             mpReflectTypes = ComputePass::create(pDevice, desc, DefineList(), false);
+            mReflectDefines.clear();
         }
         DefineList reflectDefines = pScene->getSceneDefines();
         reflectDefines.add(pSampleGenerator->getDefines());
         reflectDefines.add(pathTracing.getDefines());
         reflectDefines.add(getReservoirDefines(pathTracing, isSceneDynamic));
-        // Set (not add) the defines to replace stale state; recreating the vars recompiles if needed.
-        mpReflectTypes->getProgram()->setDefines(reflectDefines);
-        mpReflectTypes->setVars(nullptr);
+        // Set (not add) the defines to replace stale state; recreating the vars recompiles if needed. Only when they
+        // change: new vars every frame cost CPU time.
+        if (reflectDefines != mReflectDefines)
+        {
+            mpReflectTypes->getProgram()->setDefines(reflectDefines);
+            mpReflectTypes->setVars(nullptr);
+            mReflectDefines = reflectDefines;
+        }
 
         if (any(mHistoryDim != frameDim))
             temporalHistoryValid = false;
@@ -264,24 +298,32 @@ public:
         }
     }
 
-    /// Runs `iterations` spatial reuse passes, swapping the reservoirs before each. `spatialVar` receives
-    /// prevReservoirs, currReservoirs and a fresh gRandomSeed.
-    void runSpatialReuse(
-        RenderContext* pRenderContext,
-        const ref<ComputePass>& pPass,
-        const ShaderVar& spatialVar,
-        uint iterations,
-        uint& randomSeed,
-        uint2 frameDim
-    )
+    /// Binds what a spatial reuse pass (`rootVar`) reads from its SpatialReuse (CB.gSpatialReuse) and does not change
+    /// between iterations: the frame, the neighbor offsets, `config`'s reuse parameters, the primary hit, motion and
+    /// color channels, and with `usePairs` the pair records; and `config`'s shift mapping (ShiftMappingCB).
+    void bindSpatialReuse(
+        const ShaderVar& rootVar,
+        const RenderData& renderData,
+        const PathLengthAwareReSTIRConfig& config,
+        uint frameCount,
+        bool useBinReuse,
+        bool usePairs
+    ) const
     {
-        for (uint iteration = 0; iteration < iterations; iteration++)
+        const ShaderVar var = rootVar["CB"]["gSpatialReuse"];
+        var["gFrameCount"] = frameCount;
+        var["gFrameDim"] = renderData.getDefaultTextureDims();
+        var["neighborOffsets"] = neighborOffsets;
+        var["useBinReuse"] = useBinReuse;
+        config.bindSpatialReuse(var);
+        InlinePass::bindChannels(var, renderData, InlinePass::kPrimaryHitAndMotionInputChannels);
+        InlinePass::bindChannels(var, renderData, InlinePass::kColorOutputChannels);
+        if (usePairs)
         {
-            swapReservoirs();
-            spatialVar["gRandomSeed"] = randomSeed++;
-            bindReservoirs(spatialVar);
-            pPass->execute(pRenderContext, {frameDim.x, frameDim.y, 1});
+            var["pairs"] = reusePairs;
+            var["pairCandidateValid"] = spatialCandidateValid;
         }
+        config.bindShiftMapping(rootVar["ShiftMappingCB"]);
     }
 
     /// (Re)allocates reusePairs, the pair records (ReusePair; `pairsVar` is a shader buffer of them) of the two-pass
@@ -311,30 +353,44 @@ public:
                 false);
     }
 
-    /// Spatial reuse split into two passes (SPATIAL_REUSE_PAIRS) per iteration and chunk of `chunkBins` bins:
-    /// `pPairPass` with `pairsPerPixel` threads per pixel along x (a candidate each) and the chunk's bins along z, then
-    /// the resampling pass `pPass`.
-    /// Both get the reservoirs, the same seed and the chunk (pairFirstBin, pairBinCount).
+    /// Runs `iterations` spatial reuse iterations, swapping the reservoirs before each; the passes get them and a fresh
+    /// gRandomSeed in their CB.gSpatialReuse. Without `pPairPass`, an iteration is the resampling pass `pPass`. With
+    /// it, spatial reuse is split into two passes (SPATIAL_REUSE_PAIRS) per iteration and chunk of `chunkBins` of the
+    /// `binCount` bins: `pPairPass` with `pairsPerPixel` threads per pixel along x (a candidate each) and the chunk's
+    /// bins along z, then `pPass`; both get the same seed and the chunk (pairFirstBin, pairBinCount).
     void runSpatialReuse(
         RenderContext* pRenderContext,
         const ref<ComputePass>& pPairPass,
-        const ShaderVar& pairVar,
         uint pairsPerPixel,
         const ref<ComputePass>& pPass,
-        const ShaderVar& spatialVar,
         uint iterations,
         uint& randomSeed,
         uint2 frameDim,
-        uint binCount,
-        uint chunkBins
+        uint binCount = 1,
+        uint chunkBins = 1
     )
     {
+        const ShaderVar spatialVar = pPass->getRootVar()["CB"]["gSpatialReuse"];
+        if (!pPairPass)
+        {
+            for (uint iteration = 0; iteration < iterations; iteration++)
+            {
+                swapReservoirs();
+                spatialVar["gRandomSeed"] = randomSeed++;
+                spatialVar["lastIteration"] = iteration + 1 == iterations;
+                bindReservoirs(spatialVar);
+                pPass->execute(pRenderContext, {frameDim.x, frameDim.y, 1});
+            }
+            return;
+        }
+        const ShaderVar pairVar = pPairPass->getRootVar()["CB"]["gSpatialReuse"];
         for (uint iteration = 0; iteration < iterations; iteration++)
         {
             swapReservoirs();
             for (const ShaderVar* var : {&pairVar, &spatialVar})
             {
                 (*var)["gRandomSeed"] = randomSeed;
+                (*var)["lastIteration"] = iteration + 1 == iterations;
                 bindReservoirs(*var);
             }
             randomSeed++;
@@ -416,5 +472,6 @@ private:
     }
 
     ref<ComputePass> mpReflectTypes;
+    DefineList mReflectDefines; ///< The defines mpReflectTypes was last set up with.
     uint2 mHistoryDim = uint2(0);
 };

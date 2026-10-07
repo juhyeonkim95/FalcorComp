@@ -3,19 +3,34 @@
 // TimeGateMode::Box; macros in imported Slang modules are not exported.
 static const uint kTimeGateBox = 1;
 
-// Which of the first 64 bins of a pixel have received a candidate this frame, so that their reservoirs are in memory.
-// The other bins start as empty reservoirs in registers instead of being cleared in memory first (most bins never get a
-// candidate); bins from 64 on are still cleared up front.
+// Bins from 64 on of each pixel: one bit per bin (TouchedBins), getTouchedWordCount() words per pixel.
+RWStructuredBuffer<uint> gTouchedBins;
+
+uint getTouchedWordCount()
+{
+    return gTimeBin > 64 ? (gTimeBin - 64 + 31) / 32 : 0;
+}
+
+// Which bins of a pixel have received a candidate this frame, so that their reservoirs are in memory. The other bins
+// start as empty reservoirs in registers instead of being cleared in memory first (most bins never get a candidate).
+// The first 64 bins are tracked in registers, the others in gTouchedBins (cleared per pixel; 1 bit instead of a
+// 112-byte reservoir clear per bin).
 struct TouchedBins
 {
     uint2 bits;
+    uint highBase; // The pixel's first word in gTouchedBins.
 
-    bool inMemory(uint bin) { return bin >= 64 || ((bits[bin >> 5] >> (bin & 31)) & 1) != 0; }
+    bool inMemory(uint bin)
+    {
+        if (bin < 64) return ((bits[bin >> 5] >> (bin & 31)) & 1) != 0;
+        return ((gTouchedBins[highBase + ((bin - 64) >> 5)] >> ((bin - 64) & 31)) & 1) != 0;
+    }
 
     [mutating]
     void add(uint bin)
     {
         if (bin < 64) bits[bin >> 5] |= 1u << (bin & 31);
+        else gTouchedBins[highBase + ((bin - 64) >> 5)] |= 1u << ((bin - 64) & 31);
     }
 };
 
@@ -43,7 +58,8 @@ void submitHistogramCandidate(uint pixelIndex, ReconnectionState rc, ShadingData
         // Selection needs only wSum: the stored reservoir is rewritten only if the candidate is selected. M is set at
         // finalization, and a selection sets every field in use.
         Reservoir reservoir = Reservoir();
-        const float previousWeightSum = touched.inMemory(bin) ? gCurrReservoirs[index].wSum : 0.f;
+        float previousWeightSum = 0.f;
+        if (touched.inMemory(bin)) previousWeightSum = gCurrReservoirs[index].wSum;
         reservoir.wSum = previousWeightSum;
         if (submitCandidate(reservoir, rc, surface, material, light, connection, totalLength, gate,
                 throughput, 1.f, gSamplesPerPixel, lightSeed, true, rng))
@@ -62,18 +78,21 @@ float3 tracePath(uint2 pixel, uint2 frameDim)
     HitInfo primaryHit = HitInfo(gVBuffer[pixel]);
     if (!primaryHit.isValid())
     {
+#if TEMPORAL_REUSE_PAIRS
+        gTemporalHistoryPixel[pixelIndex] = kNoHistory;
+#endif
         for (uint bin = 0; bin < gTimeBin; ++bin)
         {
-            storeReservoir(pixelIndex * gTimeBin + bin, Reservoir());
-            gTransientHistogram[uint3(pixel, bin)] = 0.f;
+            storeReservoir(reservoirIndex(pixelIndex, bin), Reservoir());
+            if (gWriteHistogram) gTransientHistogram[uint3(pixel, bin)] = 0.f;
         }
         return 0.f;
     }
-    // The finalization below stores every bin's reservoir (storeReservoir) and histogram texel; only bins past the mask
-    // need a clear, for candidate submission.
+    // The finalization below stores every bin's reservoir (storeReservoir) and histogram texel.
     TouchedBins touched = {};
-    for (uint bin = 64; bin < gTimeBin; ++bin)
-        gCurrReservoirs[pixelIndex * gTimeBin + bin] = Reservoir();
+    touched.highBase = pixelIndex * getTouchedWordCount();
+    for (uint word = 0; word < getTouchedWordCount(); ++word)
+        gTouchedBins[touched.highBase + word] = 0;
 
     float3 cameraPosition = gScene.camera.getPosition();
     ShadingData primary = loadShadingData(primaryHit, cameraPosition, getPrimaryRayDir(pixel, frameDim, gViewW));
@@ -100,10 +119,11 @@ float3 tracePath(uint2 pixel, uint2 frameDim)
         rc.prefixSeed = bsdfRng.getCurrentSeed();
 
         // Match the histogram PT convention: primary = depth zero.
-        for (uint depth = 0; depth < max(1u, uint(MAX_BOUNCES)) &&
+        for (uint depth = 0; depth < uint(MAX_BOUNCES) &&
             pathLength < maxPathLength && any(throughput > 0.f); ++depth)
         {
-            if (depth > 0 || COMPUTE_DIRECT)
+            // A candidate at a vertex without a non-delta lobe would be zero.
+            if ((depth > 0 || COMPUTE_DIRECT != 0) && hasNonDeltaLobe(surface, material))
             {
                 LightSample light = {};
                 uint lightSeed = lightRng.getCurrentSeed();
@@ -121,7 +141,7 @@ float3 tracePath(uint2 pixel, uint2 frameDim)
             if (rc.bounce > 0) ++rc.postBounce;
             if (depth + 1 >= MAX_BOUNCES) break;
 
-            bool previousDiffuse = material.getProperties(surface).roughness > gReconnectionRoughnessThreshold;
+            bool previousDiffuse = gReconnection.isRough(material.getProperties(surface).roughness);
             uint sampleSeed = bsdfRng.getCurrentSeed();
             BSDFSample sample = {};
             if (!material.sample(surface, bsdfRng, sample, USE_IMPORTANCE_SAMPLING)) break;
@@ -142,9 +162,9 @@ float3 tracePath(uint2 pixel, uint2 frameDim)
             float segmentLength = length(surface.posW - previousPosition);
             // Match time-gated generation and shared prefix replay.
             pathLength += segmentLength * segmentIoR;
-            bool currentDiffuse = material.getProperties(surface).roughness > gReconnectionRoughnessThreshold;
+            bool currentDiffuse = gReconnection.isRough(material.getProperties(surface).roughness);
             rc.recordHit(hit, surface, previousPosition, sample, depth + 1,
-                previousDiffuse && currentDiffuse && segmentLength > gReconnectionMinDistance,
+                previousDiffuse && currentDiffuse && gReconnection.isLongEnough(segmentLength),
                 segmentLength, segmentIoR, suffixDirectionWeight, sampleSeed);
         }
     }
@@ -155,19 +175,30 @@ float3 tracePath(uint2 pixel, uint2 frameDim)
     if (history.valid)
         previousMaterial = gScene.materials.getMaterialInstance(history.primary, ExplicitLodTextureSampler(0.f));
 #endif
+    bool writeHistogram = gWriteHistogram;
+#if TEMPORAL_REUSE_PAIRS
+    // Found once here for the temporal kernels, which run one thread per pixel and bin. They rewrite the histogram of
+    // pixels with a history.
+    {
+        TemporalHistory history = getTemporalHistory(pixel);
+        gTemporalHistoryPixel[pixelIndex] = history.valid ? history.pixelIndex : kNoHistory;
+        writeHistogram = writeHistogram && !history.valid;
+    }
+#endif
 
     float3 integratedRadiance = 0.f;
     for (uint bin = 0; bin < gTimeBin; ++bin)
     {
         uint index = pixelIndex * gTimeBin + bin;
-        Reservoir reservoir = touched.inMemory(bin) ? gCurrReservoirs[index] : Reservoir();
+        Reservoir reservoir = Reservoir();
+        if (touched.inMemory(bin)) reservoir = gCurrReservoirs[index];
         reservoir.finalizeW();
         // Each bin had gSamplesPerPixel path trials, including paths contributing zero.
         reservoir.M = gSamplesPerPixel;
 #if USE_TEMPORAL_REUSE && !TEMPORAL_REUSE_PAIRS
         if (history.valid)
         {
-            Reservoir previous = loadPrevReservoir(history.pixelIndex * gTimeBin + bin);
+            Reservoir previous = loadPrevReservoir(reservoirIndex(history.pixelIndex, bin));
             previous.M = temporalHistoryMass(previous.M, gTemporalHistoryLength, gSamplesPerPixel);
             if (previous.M > 0.f)
             {
@@ -177,14 +208,14 @@ float3 tracePath(uint2 pixel, uint2 frameDim)
                 ReuseDomain last = { history.primary, previousMaterial, history.primaryLength, gateCenter, gLaserOrigin,
                     gLaserDirection, gLaserPower, gLaserCosAngle };
                 reservoir = mergeReservoirPair(reservoir, current, previous, last, 1.f, false,
-                    getReconnectionCriteria(), rng);
+                    gReconnection, rng);
             }
         }
 #endif
-        storeReservoir(index, reservoir);
+        storeReservoir(reservoirIndex(pixelIndex, bin), reservoir);
         float3 radiance = reservoir.W * reservoir.f;
         integratedRadiance += radiance;
-        gTransientHistogram[uint3(pixel, bin)] = toHistogramTexel(radiance / gBinWidth);
+        if (writeHistogram) gTransientHistogram[uint3(pixel, bin)] = toHistogramTexel(radiance / gBinWidth);
     }
 #if TEMPORAL_REUSE_PAIRS
     // The merges (TemporalReuse.cs.slang) draw next.

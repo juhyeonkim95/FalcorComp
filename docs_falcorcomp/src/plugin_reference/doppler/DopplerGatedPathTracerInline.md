@@ -14,7 +14,8 @@ $$
 
 with the path velocity $u$ of the [Doppler spectrum path tracer](DopplerHistogramPathTracerInline.md), the gate
 center $f_c$ and the gate width $w$ (MHz). Dividing by $w$ gives radiance per MHz, the unit of the spectrum: a box
-gate one bin wide at the center of a bin gives that bin of the spectrum.
+gate one bin wide at the center of a bin gives that bin of the spectrum (the box is half-open, $[f_c - w/2, f_c + w/2)$,
+like the bins, so that a static path, at exactly 0 MHz, falls in one bin of both).
 
 The scene does not move. Every object is given an instantaneous velocity (see
 [Velocities](#doppler-velocities)), which only decides the shift of each path. A light connection outside the gate
@@ -41,9 +42,8 @@ Gate:
 * - `frequencyGateMode`
   - string
   - Gate kernel, the same as the time-gated path tracer's: `box`, `tent`, `gaussian`, `exp` (one-sided
-    exponential), `exp_two_side` (two-sided exponential), `cos` or `all` (no gating); see
-    [the kernels](#gate-kernels), with the shift in place of the path length. `epanechnikov` and `perlin` are also
-    accepted, but act like `all`. (Default: `box`)
+    exponential), `exp_two_side` (two-sided exponential), `epanechnikov`, `perlin`, `cos` or `all` (no gating); see
+    [the kernels](#gate-kernels), with the shift in place of the path length. (Default: `box`)
 * - `shiftGate`
   - boolean
   - Move the gate one step per frame from `frequencyMin` towards `frequencyMax`, then start again. (Default: `false`)
@@ -115,6 +115,7 @@ The tall box of the Cornell box approaches at 20 m/s and the short box recedes; 
 
 ```python
 testbed.load_scene("cornell-box/scene-v4-nolight.pbrt", falcor.SceneBuilderFlags.DontMergeMaterials)
+graph = testbed.create_render_graph("DopplerGated")
 graph.create_pass("VBuffer", "VBufferRT", {"samplePattern": "Center", "sampleCount": 1})
 graph.create_pass("Light", "LaserLight", {"isLightSourceLaser": False, "laserCollocated": True})
 graph.create_pass("Tracer", "DopplerGatedPathTracerInline", {
@@ -128,6 +129,7 @@ graph.add_edge("VBuffer.viewW", "Tracer.viewW")
 graph.add_edge("Light", "Tracer")
 graph.add_edge("Tracer.color", "Accumulate.input")
 graph.mark_output("Accumulate.output")
+testbed.render_graph = graph
 ```
 
 The [Doppler spectrum tutorial](../../tutorials/doppler_spectrum_offline.md) renders the same scene as a spectrum.

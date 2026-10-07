@@ -72,9 +72,9 @@ def frame_time(method):
     return (time.perf_counter() - start) / 500
 
 
-cost = {method: frame_time(method) for method in ["bsdf", "antithetic"]}
-SPP = {"bsdf": NAIVE_SPP, "antithetic": round(NAIVE_SPP * cost["bsdf"] / cost["antithetic"])}
-print(f"frame time: naive {1000 * cost['bsdf']:.2f} ms, antithetic {1000 * cost['antithetic']:.2f} ms; "
+cost = {method: frame_time(method) for method in ["naive", "antithetic"]}
+SPP = {"naive": NAIVE_SPP, "antithetic": round(NAIVE_SPP * cost["naive"] / cost["antithetic"])}
+print(f"frame time: naive {1000 * cost['naive']:.2f} ms, antithetic {1000 * cost['antithetic']:.2f} ms; "
       f"antithetic gets {SPP['antithetic']} spp")
 
 # 4. Capture the code images
@@ -87,7 +87,7 @@ direct_images = {}
 
 def capture(base_bit, axis, indirect_method):
     """Images of bits 0 (finest) to BITS - 1 of an XOR code along `axis`, divided by the
-    white image. indirect_method: "bsdf" (naive), "antithetic", or None (converged)."""
+    white image. indirect_method: "naive", "antithetic", or None (converged)."""
     images = []
     for bit in range(BITS):
         pattern = {"pattern": "xor", "patternBaseBit": base_bit, "patternBit": bit, "patternAxis": axis}
@@ -158,7 +158,7 @@ def reconstruct(indirect_method):
 
 
 results = [("Converged", reconstruct(None))]
-for name, method in [("Naive", "bsdf"), ("Antithetic", "antithetic")]:
+for name, method in [("Naive", "naive"), ("Antithetic", "antithetic")]:
     results.append((f"{name}, {SPP[method]} spp", reconstruct(method)))
 
 # 7. Show the depth (the z coordinate) and the difference from the converged result

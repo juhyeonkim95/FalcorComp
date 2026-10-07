@@ -56,17 +56,18 @@ const ChannelList kDebugOutputChannels = {
     { "mappingDistance", "gMappingDistance", "Sum of coordinate and world displacement for successful solves", false, ResourceFormat::RG32Float },
 };
 
-const char kRandomSeed[] = "randomSeed";
+const char kSeed[] = "seed";
 const char kIsSceneDynamic[] = "isSceneDynamic";
 const char kDebugNewtonIterations[] = "debugNewtonIterations";
 const char kUseShrinkMapping[] = "useShrinkMapping";
-const char kTimeGateWindowRough[] = "timeGateWindowRough";
-const char kRoughTimeGateSampleRatio[] = "roughTimeGateSampleRatio";
+const char kWideGateWindow[] = "wideGateWindow";
+const char kWideGateSampleRatio[] = "wideGateSampleRatio";
 } // namespace
 
 TimeGatedReSTIRInline::TimeGatedReSTIRInline(ref<Device> pDevice, const Properties& props) : RenderPass(pDevice)
 {
     parseProperties(props);
+    validateOptions(mOptions);
 
     // Create a sample generator.
     mpSampleGenerator = SampleGenerator::create(mpDevice, SAMPLE_GENERATOR_TINY_UNIFORM);
@@ -80,9 +81,30 @@ void TimeGatedReSTIRInline::incrementTimeGateFrame()
 
 void TimeGatedReSTIRInline::setTimeGateInfo(float timeMin, float timeMax, uint timeBin)
 {
-    mOptions.timeGate.timeMin = timeMin;
-    mOptions.timeGate.timeMax = timeMax;
-    mOptions.timeGate.timeBin = timeBin;
+    TimeGateConfig timeGate = mOptions.timeGate;
+    timeGate.timeMin = timeMin;
+    timeGate.timeMax = timeMax;
+    timeGate.timeBin = timeBin;
+    timeGate.validate(true);
+    mOptions.timeGate = timeGate;
+}
+
+void TimeGatedReSTIRInline::validateOptions(const Options& options)
+{
+    options.timeGate.validate(true);
+    options.pathTracing.validate();
+    options.ellipsoidalSampling.validate();
+    options.restir.validate();
+    if (!std::isfinite(options.wideGateWindow) || options.wideGateWindow < 0.f)
+        FALCOR_THROW("wideGateWindow must be finite and non-negative (0 uses 10 x timeGateWindow).");
+    if (!std::isfinite(options.wideGateSampleRatio))
+        FALCOR_THROW("wideGateSampleRatio must be finite.");
+    // Dynamic suffix replay reconstructs BSDF steps after y only. An ellipsoidal candidate
+    // inserts x or y (both reevaluated exactly); inserting a vertex after y needs a walk
+    // that reaches y and continues, i.e. maxBounces >= 4.
+    if (options.isSceneDynamic && options.ellipsoidalSampling.samplingMethod != EllipsoidalSamplingMethod::Direct &&
+        options.pathTracing.maxBounces > 3)
+        FALCOR_THROW("Ellipsoidal initial sampling with isSceneDynamic=true requires maxBounces <= 3.");
 }
 
 void TimeGatedReSTIRInline::parseProperties(const Properties& props)
@@ -92,7 +114,7 @@ void TimeGatedReSTIRInline::parseProperties(const Properties& props)
         if (mOptions.timeGate.parse(key, value) || mOptions.ellipsoidalSampling.parse(key, value) ||
             mOptions.pathTracing.parse(key, value) || mOptions.restir.parse(key, value))
             continue;
-        if (key == kRandomSeed)
+        if (key == kSeed)
             mRandomSeed = value;
         else if (key == kIsSceneDynamic)
             mOptions.isSceneDynamic = value;
@@ -100,22 +122,14 @@ void TimeGatedReSTIRInline::parseProperties(const Properties& props)
             mOptions.debugNewtonIterations = value;
         else if (key == kUseShrinkMapping)
             mOptions.useShrinkMapping = value;
-        else if (key == kTimeGateWindowRough)
-            mOptions.timeGateWindowRough = value;
-        else if (key == kRoughTimeGateSampleRatio)
-            mOptions.roughTimeGateSampleRatio = value;
+        else if (key == kWideGateWindow)
+            mOptions.wideGateWindow = value;
+        else if (key == kWideGateSampleRatio)
+            mOptions.wideGateSampleRatio = value;
         else
             logWarning("Unknown property '{}' in TimeGatedReSTIRInline properties.", key);
     }
     mOptions.timeGate.applyTimeCenter(props);
-    if (mOptions.ellipsoidalSampling.samplingMethod != EllipsoidalSamplingMethod::Direct &&
-        mOptions.ellipsoidalSampling.triSampler != EmissiveLightSamplerType::Uniform && mOptions.ellipsoidalSampling.triSampler != EmissiveLightSamplerType::LightBVH)
-        FALCOR_THROW("Ellipsoidal initial sampling requires the Uniform or LightBVH triangle sampler.");
-    // Dynamic suffix replay reconstructs BSDF steps after y only. An ellipsoidal candidate
-    // inserts x or y (both reevaluated exactly); inserting a vertex after y needs a walk
-    // that reaches y and continues, i.e. maxBounces >= 4.
-    if (mOptions.isSceneDynamic && mOptions.ellipsoidalSampling.samplingMethod != EllipsoidalSamplingMethod::Direct && mOptions.pathTracing.maxBounces > 3)
-        FALCOR_THROW("Ellipsoidal initial sampling with isSceneDynamic=true requires maxBounces <= 3.");
 }
 
 Properties TimeGatedReSTIRInline::getProperties() const
@@ -125,29 +139,39 @@ Properties TimeGatedReSTIRInline::getProperties() const
     mOptions.ellipsoidalSampling.serialize(props);
     mOptions.pathTracing.serialize(props);
     mOptions.restir.serialize(props);
-    props[kRandomSeed] = mRandomSeed;
+    props[kSeed] = mRandomSeed;
     props[kIsSceneDynamic] = mOptions.isSceneDynamic;
     props[kDebugNewtonIterations] = mOptions.debugNewtonIterations;
     props[kUseShrinkMapping] = mOptions.useShrinkMapping;
-    props[kTimeGateWindowRough] = mOptions.timeGateWindowRough;
-    props[kRoughTimeGateSampleRatio] = mOptions.roughTimeGateSampleRatio;
+    props[kWideGateWindow] = mOptions.wideGateWindow;
+    props[kWideGateSampleRatio] = mOptions.wideGateSampleRatio;
     return props;
 }
 
 void TimeGatedReSTIRInline::setProperties(const Properties& props)
 {
-    const auto previousSamplingMethod = mOptions.ellipsoidalSampling.samplingMethod;
-    const auto previousTriSampler = mOptions.ellipsoidalSampling.triSampler;
-    parseProperties(props);
-    // Same rebuilds as a UI edit: the emissive sampler's defines are only added when the programs are created.
-    if (mOptions.ellipsoidalSampling.triSampler != previousTriSampler)
-        mTriangleSampler.reset();
-    if (mOptions.ellipsoidalSampling.samplingMethod != previousSamplingMethod || mOptions.ellipsoidalSampling.triSampler != previousTriSampler)
+    const Options previous = mOptions;
+    const uint previousSeed = mRandomSeed;
+    // Invalid properties throw and leave the options (and the seed) unchanged.
+    try
     {
-        mpComputePass = nullptr;
-        mpSpatialReusePass = nullptr;
-        mpSpatialReusePairsPass = nullptr;
+        InlinePass::applyProperties(mOptions, [&] { parseProperties(props); }, validateOptions);
     }
+    catch (...)
+    {
+        mRandomSeed = previousSeed;
+        throw;
+    }
+    onOptionsChanged(previous);
+}
+
+void TimeGatedReSTIRInline::onOptionsChanged(const Options& previous)
+{
+    // The triangle sampler follows the options in prepare(), and its defines are part of getShaderDefines().
+    // The debug outputs are part of the reflection.
+    if (mOptions.debugNewtonIterations != previous.debugNewtonIterations)
+        requestRecompile();
+    // Pass the flag to downstream passes (accumulation reset) and discard the ReSTIR history.
     mOptionsChanged = true;
 }
 
@@ -166,17 +190,17 @@ RenderPassReflection TimeGatedReSTIRInline::reflect(const CompileData& compileDa
 DefineList TimeGatedReSTIRInline::getShaderDefines(const RenderData& renderData) const
 {
     DefineList defines = mOptions.pathTracing.getDefines();
-    defines.add(LaserState::resolve(renderData).getDefines());
+    defines.add(mLaserInput.get().getDefines());
     defines.add(InlinePass::getSceneLightDefines(*mpScene));
     defines.add(mOptions.restir.getDefines());
 
     // Specialize away the entire extra reservoir/shift path when it has no samples. The shader computes the
-    // same count from gRoughTimeGateSampleRatio, so changing the ratio or samplesPerPixel does not recompile.
+    // same count from gWideGateSampleRatio, so changing the ratio or samplesPerPixel does not recompile.
     uint32_t wideSampleCount = 0;
     if (mOptions.useShrinkMapping && mOptions.ellipsoidalSampling.samplingMethod == EllipsoidalSamplingMethod::Direct &&
-        mOptions.pathTracing.samplesPerPixel > 0 && std::isfinite(mOptions.wideGateWindow()) &&
-        mOptions.timeGate.timeGateWindow > 0.f && mOptions.wideGateWindow() > mOptions.timeGate.timeGateWindow &&
-        std::isfinite(mOptions.roughTimeGateSampleRatio) &&
+        mOptions.pathTracing.samplesPerPixel > 0 && std::isfinite(mOptions.effectiveWideGateWindow()) &&
+        mOptions.timeGate.timeGateWindow > 0.f && mOptions.effectiveWideGateWindow() > mOptions.timeGate.timeGateWindow &&
+        std::isfinite(mOptions.wideGateSampleRatio) &&
         (mOptions.timeGate.timeGateMode == TimeGateMode::Box || mOptions.timeGate.timeGateMode == TimeGateMode::Tent))
     {
         wideSampleCount = std::min(uint32_t(float(mOptions.pathTracing.samplesPerPixel) * shrinkSampleRatio()),
@@ -188,6 +212,7 @@ DefineList TimeGatedReSTIRInline::getShaderDefines(const RenderData& renderData)
     defines.add(PathLengthAwareReSTIRResources::getReservoirDefines(mOptions.pathTracing, mOptions.isSceneDynamic));
 
     defines.add("LIGHT_SAMPLING_METHOD", std::to_string((uint32_t)mOptions.ellipsoidalSampling.samplingMethod));
+    defines.add(mTriangleSampler.getDefines());
     defines.add("DIRECT_CONNECTION", std::to_string((uint32_t)EllipsoidalSamplingMethod::Direct));
     defines.add("ELLIPSOIDAL_CONNECTION", std::to_string((uint32_t)EllipsoidalSamplingMethod::Ellipsoidal));
     defines.add("ELLIPSOIDAL_DIRECT_MIS", std::to_string((uint32_t)EllipsoidalSamplingMethod::EllipsoidalDirectMIS));
@@ -200,28 +225,27 @@ DefineList TimeGatedReSTIRInline::getShaderDefines(const RenderData& renderData)
 
 void TimeGatedReSTIRInline::bindShaderData(const ShaderVar& var, const RenderData& renderData)
 {
-    mTriangleSampler.bindShaderData(var["emissiveSampler"]);
+    mTriangleSampler.bindShaderData(var);
     var["gPrevReservoirs"] = mReSTIR.prevReservoirs;
     var["gCurrReservoirs"] = mReSTIR.currReservoirs;
 
     var["CB"]["gFrameCount"] = mFrameCount;
     var["CB"]["gFrameDim"] = renderData.getDefaultTextureDims();
-    var["CB"]["gReconnectionRoughnessThreshold"] = mOptions.restir.reconnectionRoughnessThreshold;
-    var["CB"]["gReconnectionMinDistance"] = mOptions.restir.reconnectionMinDistance;
+    mOptions.restir.bindReconnectionCriteria(var["CB"]["gReconnection"]);
     var["CB"]["gEllipsoidRoughnessThreshold"] = mOptions.ellipsoidalSampling.ellipsoidRoughnessThreshold;
     var["CB"]["gSamplesPerPixel"] = mOptions.pathTracing.samplesPerPixel;
     var["CB"]["gTemporalHistoryLength"] = mOptions.restir.temporalHistoryLength;
-    var["CB"]["gRoughTimeGateSampleRatio"] = shrinkSampleRatio();
+    var["CB"]["gWideGateSampleRatio"] = shrinkSampleRatio();
 
     mLaser.bindShaderData(var["Laser"]);
 
     mOptions.timeGate.bindShaderData(var["TimeGate"], mGate);
-    var["TimeGate"]["gTimeGateWindowRough"] = mOptions.wideGateWindow();
+    var["TimeGate"]["gWideGateWindow"] = mOptions.effectiveWideGateWindow();
     mOptions.restir.bindShiftMapping(var["ShiftMappingCB"]);
 
     InlinePass::bindChannels(var, renderData, InlinePass::kPrimaryHitAndMotionInputChannels);
     InlinePass::bindChannels(var, renderData, InlinePass::kColorOutputChannels);
-    if (mOptions.pathTracing.computeDirect)
+    if (mOptions.pathTracing.hasDirect())
         var["gDirectColor"] = mpDirectColor;
 
     if (mOptions.restir.useTemporalReuse)
@@ -242,29 +266,14 @@ void TimeGatedReSTIRInline::bindShaderData(const ShaderVar& var, const RenderDat
 void TimeGatedReSTIRInline::bindSpatialReuse(const ref<ComputePass>& pass, const RenderData& renderData)
 {
     auto rootVar = pass->getRootVar();
-    auto var = rootVar["CB"]["gSpatialReuse"];
-    const uint2 frameDim = renderData.getDefaultTextureDims();
-
-    var["gFrameCount"] = mFrameCount;
-    var["gFrameDim"] = frameDim;
-    var["neighborOffsets"] = mReSTIR.neighborOffsets;
-    var["useBinReuse"] = false; // A time gate has a single bin.
-    mOptions.restir.bindSpatialReuse(var);
-
-    InlinePass::bindChannels(var, renderData, InlinePass::kPrimaryHitAndMotionInputChannels);
-    InlinePass::bindChannels(var, renderData, InlinePass::kColorOutputChannels);
+    // A time gate has a single bin: no bin reuse.
+    mReSTIR.bindSpatialReuse(rootVar, renderData, mOptions.restir, mFrameCount, false, useSpatialReusePairs());
     if (mOptions.debugNewtonIterations)
-        InlinePass::bindChannels(var, renderData, kDebugOutputChannels);
+        InlinePass::bindChannels(rootVar["CB"]["gSpatialReuse"], renderData, kDebugOutputChannels);
 
     mOptions.timeGate.bindShaderData(rootVar["TimeGate"], mGate);
-    rootVar["TimeGate"]["gTimeGateWindowRough"] = mOptions.wideGateWindow();
+    rootVar["TimeGate"]["gWideGateWindow"] = mOptions.effectiveWideGateWindow();
     mLaser.bindShaderData(rootVar["Laser"]);
-    mOptions.restir.bindShiftMapping(rootVar["ShiftMappingCB"]);
-    if (useSpatialReusePairs())
-    {
-        var["pairs"] = mReSTIR.reusePairs;
-        var["pairCandidateValid"] = mReSTIR.spatialCandidateValid;
-    }
 }
 
 void TimeGatedReSTIRInline::spatialReuse(RenderContext* pRenderContext, const RenderData& renderData)
@@ -292,13 +301,8 @@ void TimeGatedReSTIRInline::spatialReuse(RenderContext* pRenderContext, const Re
         pRenderContext->clearUAV(renderData.getTexture("mappingDistance")->getUAV().get(), float4(0.f));
     }
 
-    auto var = mpSpatialReusePass->getRootVar()["CB"]["gSpatialReuse"];
-    if (useSpatialReusePairs())
-        mReSTIR.runSpatialReuse(pRenderContext, mpSpatialReusePairsPass,
-            mpSpatialReusePairsPass->getRootVar()["CB"]["gSpatialReuse"], candidateCount, mpSpatialReusePass, var,
-            mOptions.restir.spatialReuseIteration, mRandomSeed, frameDim, 1, 1);
-    else
-        mReSTIR.runSpatialReuse(pRenderContext, mpSpatialReusePass, var, mOptions.restir.spatialReuseIteration, mRandomSeed, frameDim);
+    mReSTIR.runSpatialReuse(pRenderContext, useSpatialReusePairs() ? mpSpatialReusePairsPass : ref<ComputePass>(),
+        candidateCount, mpSpatialReusePass, mOptions.restir.spatialReuseIteration, mRandomSeed, frameDim);
 }
 
 void TimeGatedReSTIRInline::addDirect(RenderContext* pRenderContext, const RenderData& renderData)
@@ -315,6 +319,7 @@ void TimeGatedReSTIRInline::addDirect(RenderContext* pRenderContext, const Rende
 
 void TimeGatedReSTIRInline::execute(RenderContext* pRenderContext, const RenderData& renderData)
 {
+    mLaserInput.update(renderData, "TimeGatedReSTIRInline");
     if (mOptionsChanged)
     {
         mReSTIR.temporalHistoryValid = false;
@@ -337,38 +342,35 @@ void TimeGatedReSTIRInline::execute(RenderContext* pRenderContext, const RenderD
     }
 
     // Dynamic mode supports moving cameras/lights, but not geometry or material changes.
-    mLaser = LaserState::resolve(renderData);
+    mLaser = mLaserInput.get();
     mReSTIR.invalidateHistory(*mpScene, mLaser != mPreviousLaser, mOptions.isSceneDynamic);
 
     mTriangleSampler.prepare(pRenderContext, mpScene, mOptions.ellipsoidalSampling);
     if (!mpComputePass)
     {
         DefineList defines = getShaderDefines(renderData);
-        defines.add(mTriangleSampler.getDefines());
         mpComputePass = InlinePass::createScenePass(mpDevice, pRenderContext, mpScene, mpSampleGenerator, kShaderFile, defines);
     }
     if (!mpSpatialReusePass)
     {
         DefineList defines = getShaderDefines(renderData);
-        defines.add(mTriangleSampler.getDefines());
         defines.add("NEIGHBOR_OFFSET_COUNT", std::to_string(PathLengthAwareReSTIRResources::kNeighborOffsetCount));
         mpSpatialReusePass = InlinePass::createScenePass(mpDevice, pRenderContext, mpScene, mpSampleGenerator, kSpatialReuseFile, defines);
     }
     if (useSpatialReusePairs() && !mpSpatialReusePairsPass)
     {
         DefineList defines = getShaderDefines(renderData);
-        defines.add(mTriangleSampler.getDefines());
         defines.add("NEIGHBOR_OFFSET_COUNT", std::to_string(PathLengthAwareReSTIRResources::kNeighborOffsetCount));
         mpSpatialReusePairsPass = InlinePass::createScenePass(mpDevice, pRenderContext, mpScene, mpSampleGenerator, kSpatialReusePairsFile, defines);
     }
     const uint2 frameDim = renderData.getDefaultTextureDims();
-    if (mOptions.pathTracing.computeDirect &&
+    if (mOptions.pathTracing.hasDirect() &&
         (!mpDirectColor || mpDirectColor->getWidth() != frameDim.x || mpDirectColor->getHeight() != frameDim.y))
     {
         mpDirectColor = mpDevice->createTexture2D(frameDim.x, frameDim.y, ResourceFormat::RGBA32Float, 1, 1, nullptr,
             ResourceBindFlags::ShaderResource | ResourceBindFlags::UnorderedAccess);
     }
-    else if (!mOptions.pathTracing.computeDirect)
+    else if (!mOptions.pathTracing.hasDirect())
         mpDirectColor = nullptr;
     mReSTIR.prepare(mpDevice, mpScene, mpSampleGenerator, mOptions.pathTracing, mOptions.isSceneDynamic, 1, frameDim,
         mOptions.restir.useTemporalReuse, renderData.getTexture("vbuffer")->getFormat());
@@ -384,7 +386,7 @@ void TimeGatedReSTIRInline::execute(RenderContext* pRenderContext, const RenderD
 
     spatialReuse(pRenderContext, renderData);
     // The primary-hit direct lighting is added after reuse; it never enters the reservoirs.
-    if (mOptions.pathTracing.computeDirect)
+    if (mOptions.pathTracing.hasDirect())
         addDirect(pRenderContext, renderData);
     mFrameCount++;
 
@@ -403,11 +405,8 @@ void TimeGatedReSTIRInline::execute(RenderContext* pRenderContext, const RenderD
 void TimeGatedReSTIRInline::renderUI(Gui::Widgets& widget)
 {
     bool dirty = false;
-    // Settings validated together; a rejected edit restores them.
-    const auto previousSamplingMethod = mOptions.ellipsoidalSampling.samplingMethod;
-    const auto previousTriSampler = mOptions.ellipsoidalSampling.triSampler;
-    const uint previousMaxBounces = mOptions.pathTracing.maxBounces;
-    const bool previousSceneDynamic = mOptions.isSceneDynamic;
+    // An edit that fails validation is undone.
+    const Options previous = mOptions;
 
     if (auto group = widget.group("Time gate", true))
     {
@@ -418,27 +417,26 @@ void TimeGatedReSTIRInline::renderUI(Gui::Widgets& widget)
     if (auto group = widget.group("Initial sampling", true))
     {
         dirty |= mOptions.pathTracing.renderSamplingUI(group, " The primary hit is not connected to the laser spot.");
-        // Ellipsoidal initial sampling supports the Uniform and LightBVH triangle samplers only.
-        dirty |= mOptions.ellipsoidalSampling.renderUI(group, false);
+        dirty |= mOptions.ellipsoidalSampling.renderUI(group);
 
         if (mOptions.ellipsoidalSampling.samplingMethod == EllipsoidalSamplingMethod::Direct)
         {
             dirty |= group.checkbox("Shrink mapping", mOptions.useShrinkMapping);
-            group.tooltip("Trace paths with a wider gate and shrink them into the gate with the path-length shift, "
+            group.tooltip("Trace paths with a wide gate and shrink them into the gate with the path-length shift, "
                           "which finds more candidates for a narrow gate. Box or Tent gate only.", true);
             if (mOptions.useShrinkMapping)
             {
-                float wideWindow = mOptions.wideGateWindow();
+                float wideWindow = mOptions.effectiveWideGateWindow();
                 if (group.var("Wide gate window", wideWindow, 0.f, 1000.0f))
                 {
-                    mOptions.timeGateWindowRough = wideWindow;
+                    mOptions.wideGateWindow = wideWindow;
                     dirty = true;
                 }
-                group.tooltip("Width of the wider gate, in path-length units. Until set, 10 x Gate window.", true);
-                dirty |= group.var("Wide gate path fraction", mOptions.roughTimeGateSampleRatio, 0.f, 1.f);
+                group.tooltip("Width of the wide gate, in path-length units. Until set, 10 x Gate window.", true);
+                dirty |= group.var("Wide gate path fraction", mOptions.wideGateSampleRatio, 0.f, 1.f);
                 group.tooltip("Fraction of the paths per pixel traced with the wide gate; the others use the gate "
                               "itself.", true);
-                if (!(mOptions.wideGateWindow() > mOptions.timeGate.timeGateWindow))
+                if (!(mOptions.effectiveWideGateWindow() > mOptions.timeGate.timeGateWindow))
                     group.text("Off: the wide gate must be wider than Gate window.");
                 else if (mOptions.timeGate.timeGateMode != TimeGateMode::Box && mOptions.timeGate.timeGateMode != TimeGateMode::Tent)
                     group.text("Off: shrink mapping needs a Box or Tent gate.");
@@ -464,26 +462,17 @@ void TimeGatedReSTIRInline::renderUI(Gui::Widgets& widget)
 
     if (dirty)
     {
-        mUIWarning.clear();
-        // Same constraint as parseProperties(): see the comment there.
-        if (mOptions.isSceneDynamic && mOptions.ellipsoidalSampling.samplingMethod != EllipsoidalSamplingMethod::Direct && mOptions.pathTracing.maxBounces > 3)
+        try
         {
-            mUIWarning = "Ellipsoidal sampling with a dynamic light supports at most 3 bounces.";
-            mOptions.ellipsoidalSampling.samplingMethod = previousSamplingMethod;
-            mOptions.pathTracing.maxBounces = previousMaxBounces;
-            mOptions.isSceneDynamic = previousSceneDynamic;
+            validateOptions(mOptions);
+            mUIWarning.clear();
+            onOptionsChanged(previous);
         }
-        // Rebuild the sampler and programs: the emissive sampler's defines are only added when they are created.
-        if (mOptions.ellipsoidalSampling.triSampler != previousTriSampler)
-            mTriangleSampler.reset();
-        if (mOptions.ellipsoidalSampling.samplingMethod != previousSamplingMethod || mOptions.ellipsoidalSampling.triSampler != previousTriSampler)
+        catch (const std::exception& e)
         {
-            mpComputePass = nullptr;
-            mpSpatialReusePass = nullptr;
-            mpSpatialReusePairsPass = nullptr;
+            mUIWarning = e.what();
+            mOptions = previous;
         }
-        // Pass the flag to downstream passes (accumulation reset) and discard the ReSTIR history.
-        mOptionsChanged = true;
     }
     if (!mUIWarning.empty())
         widget.text(mUIWarning);

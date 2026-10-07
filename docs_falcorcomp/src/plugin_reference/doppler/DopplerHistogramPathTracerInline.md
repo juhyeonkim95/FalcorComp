@@ -15,8 +15,8 @@ $$
 
 where $\lambda$ is the laser wavelength and $u$ the *path velocity*: over the path's segments $x_k \to x_{k+1}$ (from
 the light towards the camera, direction $\hat{d}_k$, refractive index $\eta_k$), the velocity of their endpoints along
-the segment. $\Delta f$ is positive when the path shortens, for example for an object coming towards a camera with the
-light next to it.
+the segment. Refractive indices are not implemented yet: $\eta_k = 1$ on every segment. $\Delta f$ is positive when the
+path shortens, for example for an object coming towards a camera with the light next to it.
 
 The scene does not move. Every object is given an instantaneous velocity (see
 [Velocities](#doppler-velocities)), which only decides the bin of each path; the contribution is that of the static
@@ -70,7 +70,8 @@ Spectrum:
     ([FMCW](#doppler-fmcw)). `0` is a single-frequency laser. (Default: `0`)
 * - `chirpDuration`
   - float
-  - Duration $T$ of each sweep, µs. Used when `chirpBandwidth` is positive. (Default: `10`)
+  - Duration $T$ of each sweep, µs. Used when `chirpBandwidth` is positive. Assumed much longer
+    than every path's round-trip time $l/c$; this is not checked. (Default: `10`)
 * - `frequencyMin`, `frequencyMax`
   - float
   - Range of Doppler shifts (with a chirp, of beat frequencies), MHz. Paths outside `[frequencyMin, frequencyMax)`
@@ -104,7 +105,8 @@ Sampling and output, as for the [transient histogram path tracer](../transient/T
 * - `maxBounces`
   - integer
   - Maximum number of surface vertices on a camera path, counting the primary hit. Each vertex is connected to the
-    light (the primary hit only with `computeDirect`). Paths are not cut off by length. (Default: `3`)
+    light (the primary hit only with `computeDirect`). Paths are not cut off by length.
+    `0` renders no light. (Default: `3`)
 * - `computeDirect`
   - boolean
   - Include the path camera -> primary hit -> light. (Default: `false`)
@@ -113,11 +115,13 @@ Sampling and output, as for the [transient histogram path tracer](../transient/T
   - Importance-sample the BSDF when extending a camera path. (Default: `true`)
 * - `accumulate`
   - boolean
-  - Sum the frames in the spectrum, restarting when the camera moves, a setting changes, or `reset_spectrum()` is
-    called; divide by the number of frames for the mean. Off, each frame writes its own spectrum. (Default: `false`)
+  - Sum the frames in the spectrum, restarting when the camera moves, a setting changes, the render graph is
+    recompiled (e.g. on a resize), or `reset()` is called; divide by the number of frames for the mean. Off,
+    each frame writes its own spectrum. (Default: `false`)
 * - `useSingleChannel`
   - boolean
-  - Store one channel per bin, chosen by `singleChannel`. (Default: `false`)
+  - Store one channel per bin, chosen by `singleChannel`; `color` holds the same channel in all
+    three channels. (Default: `false`)
 * - `singleChannel`
   - string
   - `luminance`, `red`, `green` or `blue`. (Default: `red`)
@@ -126,7 +130,8 @@ Sampling and output, as for the [transient histogram path tracer](../transient/T
   - Honor alpha-tested materials when tracing rays. (Default: `false`)
 * - `outputSize`, `fixedOutputSize`
   - string, integer pair
-  - Size of the outputs, as for the transient histogram path tracer. (Default: `Default`, `[512, 512]`)
+  - Size of the outputs, as for the transient histogram path tracer; the `vbuffer` input must have the same size.
+    (Default: `Default`, `[512, 512]`)
 ```
 
 ## Light
@@ -148,21 +153,23 @@ the camera: `isLightSourceLaser = false` with `laserCollocated = true` puts a po
   - Primary ray directions, from `VBufferRT`.
 * - `spectrum` (output)
   - Doppler spectrum (with a chirp, the up-chirp spectrum), `width x height x frequencyBin`, radiance per MHz.
-    RGBA32Float, or R32Float with `useSingleChannel`. `to_numpy()` returns `(frequencyBin, height, width, 4)` (or
-    without the last axis).
+    RGBA32Float (the alpha channel counts the samples that added light to the bin), or R32Float with
+    `useSingleChannel`. `to_numpy()` returns `(frequencyBin, height, width, 4)` (or without the last axis).
 * - `spectrumDown` (output, with a chirp)
   - The down-chirp spectrum, as `spectrum`.
 * - `color` (output)
   - The steady image (the spectrum summed over all shifts, including those outside the range), RGBA32Float.
 ```
 
-From Python: `reset_spectrum()`, `set_velocity(...)`, `clear_velocities()` and `get_object_names()`, which returns
-`(instance, mesh name, material name)` for every object of the scene.
+From Python: `reset()`, `set_velocity(...)`, `clear_velocities()` and `get_object_names()`, which returns
+`(instance, mesh name, material name, movable)` for every object of the scene.
 
 ## Example
 
 ```python
 testbed.load_scene("cornell-box/scene-v4-nolight.pbrt", falcor.SceneBuilderFlags.DontMergeMaterials)
+graph = testbed.create_render_graph("DopplerSpectrum")
+graph.create_pass("VBuffer", "VBufferRT", {"samplePattern": "Center", "sampleCount": 1})
 graph.create_pass("Light", "LaserLight", {"isLightSourceLaser": False, "laserCollocated": True})
 graph.create_pass("Tracer", "DopplerHistogramPathTracerInline", {
     "samplesPerPixel": 64, "maxBounces": 3, "computeDirect": True,
@@ -172,12 +179,15 @@ graph.create_pass("Tracer", "DopplerHistogramPathTracerInline", {
 graph.add_edge("VBuffer.vbuffer", "Tracer.vbuffer")
 graph.add_edge("VBuffer.viewW", "Tracer.viewW")
 graph.add_edge("Light", "Tracer")
+graph.mark_output("Tracer.spectrum")
+testbed.render_graph = graph
 ```
 
 An FMCW lidar with a 1 GHz chirp over 1 µs, whose beat frequencies fall between 0 and 100 MHz in this scene:
 
 ```python
-graph.create_pass("Tracer", "DopplerHistogramPathTracerInline", {
+# The same graph with this tracer instead:
+graph.update_pass("Tracer", {
     "samplesPerPixel": 64, "maxBounces": 3, "computeDirect": True,
     "wavelength": 1550.0, "chirpBandwidth": 1.0, "chirpDuration": 1.0,
     "frequencyMin": 0.0, "frequencyMax": 100.0, "frequencyBin": 512,

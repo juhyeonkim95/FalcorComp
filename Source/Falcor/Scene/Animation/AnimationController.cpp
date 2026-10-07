@@ -49,6 +49,7 @@ namespace Falcor
         , mGlobalMatrices(pScene->mSceneGraph.size())
         , mInvTransposeGlobalMatrices(pScene->mSceneGraph.size())
         , mMatricesChanged(pScene->mSceneGraph.size())
+        , mMatricesUploadedLast(pScene->mSceneGraph.size())
         , mpScene(pScene)
     {
         // Create GPU resources.
@@ -340,19 +341,22 @@ namespace Falcor
 
         if (uploadAll)
         {
-            // Upload all matrices.
+            // Upload all matrices. The caller copies them to the previous-frame buffers.
             mpWorldMatricesBuffer->setBlob(mGlobalMatrices.data(), 0, mpWorldMatricesBuffer->getSize());
             mpInvTransposeWorldMatricesBuffer->setBlob(mInvTransposeGlobalMatrices.data(), 0, mpInvTransposeWorldMatricesBuffer->getSize());
+            std::fill(mMatricesUploadedLast.begin(), mMatricesUploadedLast.end(), false);
         }
         else
         {
-            // Upload changed matrices only.
+            // Upload changed matrices only: the ones changed now, and the ones changed by the last upload, which the
+            // swapped-in buffer holds from the update before (e.g. a node edited in one update and not the next).
+            auto needsUpload = [&](size_t i) { return mMatricesChanged[i] || mMatricesUploadedLast[i]; };
             for (size_t i = 0; i < mGlobalMatrices.size();)
             {
                 // Detect ranges of consecutive matrices that have all changed or not.
                 size_t offset = i;
-                bool changed = mMatricesChanged[i];
-                while (i < mGlobalMatrices.size() && mMatricesChanged[i] == changed) ++i;
+                bool changed = needsUpload(i);
+                while (i < mGlobalMatrices.size() && needsUpload(i) == changed) ++i;
 
                 // Upload range of changed matrices.
                 if (changed)
@@ -362,6 +366,7 @@ namespace Falcor
                     mpInvTransposeWorldMatricesBuffer->setBlob(&mInvTransposeGlobalMatrices[offset], offset * sizeof(float4x4), count * sizeof(float4x4));
                 }
             }
+            mMatricesUploadedLast = mMatricesChanged;
         }
     }
 

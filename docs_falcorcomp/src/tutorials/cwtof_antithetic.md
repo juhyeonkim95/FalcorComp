@@ -18,7 +18,7 @@ sign. The two are combined with multiple importance sampling (see
 [Antithetic sampling](#cwtof-antithetic)).
 
 $y'$ has two coordinates on the surface and one condition on the path length, so one more condition fixes it: the
-gauge. Here the antithetic vertex is found with `shiftmapMethod` = `barycentric`:
+gauge. Here the antithetic vertex is found with `shiftMappingMethod` = `barycentric`:
 
 - The unknowns are the barycentric coordinates of $y'$ on $y$'s triangle, so $y'$ stays on the triangle (the shift
   fails if it would leave it).
@@ -27,9 +27,10 @@ gauge. Here the antithetic vertex is found with `shiftmapMethod` = `barycentric`
 - The Jacobian of the map, which multiple importance sampling needs, comes from the implicit function theorem at
   the solution.
 
-The default `radial` shift solves the same condition in closed form along a ray on the vertex's plane; it is a
-little faster and exactly invertible. The Newton-based methods follow the average gradient, which can leave a small
-bias where the gauge has several solutions; `antitheticRoundTripCheck` removes it at the cost of a second shift.
+The default `radial` shift solves the same condition with a 1D search along a ray on the vertex's plane, from the point
+of the plane with the shortest path (found in closed form); it is a little faster and exactly invertible. Newton's
+method is local, so rarely (near the shortest path, or with a ray chart on curved surfaces) the backward shift reaches
+another solution; `shiftRoundTripCheck` removes most of the small bias this leaves, at the cost of a second shift.
 
 ## 1. Load the scene
 

@@ -6,14 +6,25 @@ import Scene.RaytracingInline;
 // import LoadShadingData;
 
 #include "Scene/SceneDefines.slangh"
+#ifndef USE_ALPHA_TEST
+#define USE_ALPHA_TEST 0
+#endif
 #include "Utils/Math/MathConstants.slangh"
+#include "RenderPasses/Shared/Shaders/ShiftMapping/ShiftMappingMethods.slangh"
+
+// ray_trace_chart gives the ray directions Cartesian slopes (CartesianRayChart); ray_trace and area_adaptive use the
+// polar equal-area hemisphere. A compile-time choice, so that only one parameterization is compiled.
+#if defined(SHIFT_MAPPING_METHOD) && SHIFT_MAPPING_METHOD == SHIFT_MAPPING_RAY_TRACE_CHART
+#define RAY_CHART_CARTESIAN 1
+#else
+#define RAY_CHART_CARTESIAN 0
+#endif
 
 export struct RayTraceHemisphereChart:IShiftChart
 {
     // Geometry
     float3 p1, p2, p2o;
     float3 t2, b2, n2;
-    bool useCartesianChart;
     HitInfo hit;
     float hitT;
     // The hit's position and face normal, loaded once per hit (update, or setHit from known vertex data).
@@ -24,7 +35,6 @@ export struct RayTraceHemisphereChart:IShiftChart
     {
         this.p1 = p1; this.p2 = p2; this.p2o = p2o;
         this.t2 = t2; this.b2 = b2; this.n2 = n2;
-        this.useCartesianChart = false;
         this.hit = HitInfo(); this.hitT = 0.f;
         this.hitPosition = float3(0.f); this.hitFaceNormal = float3(0.f);
     }
@@ -46,10 +56,24 @@ export struct RayTraceHemisphereChart:IShiftChart
         return coordinates;
     }
 
+    float3 firstEndpoint() { return p1; }
+    float3 secondEndpoint() { return p2; }
+    [mutating]
+    void setEndpoints(float3 p1, float3 p2) { this.p1 = p1; this.p2 = p2; }
+
+    // The surface is wherever the rays hit: only the straight path p1 -> p2 bounds the length.
+    float lengthLowerBound() { return length(p1 - p2); }
+
+    // The metric varies over the chart; the gauges use the coordinates' gradient.
+    float3 metric() { return float3(1.f, 0.f, 1.f); }
+
     bool validCoordinates(float2 coordinates)
     {
-        if (useCartesianChart) return CartesianRayChart::isValid(coordinates);
+#if RAY_CHART_CARTESIAN
+        return CartesianRayChart::isValid(coordinates);
+#else
         return all(isfinite(coordinates)) && coordinates.x > 1e-6f && coordinates.x < 1.f - 1e-6f;
+#endif
     }
 
     // --- hemisphere direction (LOCAL) ---
@@ -92,10 +116,11 @@ export struct RayTraceHemisphereChart:IShiftChart
         out float3 duu, out float3 duv, out float3 dvv)
     {
         float3 localD, localU, localV, localUU, localUV, localVV;
-        if (useCartesianChart)
-            CartesianRayChart::derivatives(coordinates, localD, localU, localV, localUU, localUV, localVV);
-        else
-            dirPartialsLocal(coordinates.x, coordinates.y, localD, localU, localV, localUU, localUV, localVV);
+#if RAY_CHART_CARTESIAN
+        CartesianRayChart::derivatives(coordinates, localD, localU, localV, localUU, localUV, localVV);
+#else
+        dirPartialsLocal(coordinates.x, coordinates.y, localD, localU, localV, localUU, localUV, localVV);
+#endif
         d = toWorld(localD); du = toWorld(localU); dv = toWorld(localV);
         duu = toWorld(localUU); duv = toWorld(localUV); dvv = toWorld(localVV);
     }
@@ -114,17 +139,26 @@ export struct RayTraceHemisphereChart:IShiftChart
         hitT = 0.f;
         if (!validCoordinates(coordinates)) return;
         float2 et = project(coordinates);
-        float3 dL = useCartesianChart ? CartesianRayChart::direction(et) : dirLocal(et.x, et.y);
+#if RAY_CHART_CARTESIAN
+        float3 dL = CartesianRayChart::direction(et);
+#else
+        float3 dL = dirLocal(et.x, et.y);
+#endif
         float3 d  = toWorld(dL); // unit
 
         Ray ray = Ray(p2o, d, 0.0f, FLT_MAX);
-        SceneRayQuery<0> sceneRayQuery;
+        SceneRayQuery<USE_ALPHA_TEST> sceneRayQuery;
         hit = sceneRayQuery.traceRay(ray, hitT);
         if (hit.isValid() && hit.getType() == HitType::Triangle)
         {
-            VertexData v = gScene.getVertexData(hit.getTriangleHit());
-            hitPosition = v.posW;
-            hitFaceNormal = v.faceNormalW;
+            // Only the position and the face normal, from the triangle's vertices: getVertexData would interpolate
+            // every attribute at every trial. eval() orients the normal toward the ray, so its sign does not matter.
+            TriangleHit triangle = hit.getTriangleHit();
+            float3 vertices[3];
+            gScene.getVertexPositionsW(triangle.instanceID, triangle.primitiveIndex, vertices);
+            float3 weights = triangle.getBarycentricWeights();
+            hitPosition = weights.x * vertices[0] + weights.y * vertices[1] + weights.z * vertices[2];
+            hitFaceNormal = normalize(cross(vertices[1] - vertices[0], vertices[2] - vertices[0]));
         }
     }
 

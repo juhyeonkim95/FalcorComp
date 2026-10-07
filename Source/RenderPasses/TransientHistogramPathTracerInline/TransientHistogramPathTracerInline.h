@@ -34,6 +34,7 @@
 #include "../Shared/Host/Configs/PathTracingConfig.h"
 #include "../Shared/Host/LaserState.h"
 #include "../Shared/Host/InlinePassUtils.h"
+#include "../Shared/Host/SceneTriangles.h"
 
 using namespace Falcor;
 
@@ -54,8 +55,11 @@ public:
     }
     TransientHistogramPathTracerInline(ref<Device> pDevice, const Properties& props);
     Properties getProperties() const override;
+    void setProperties(const Properties& props) override;
     RenderPassReflection reflect(const CompileData& compileData) override;
     void execute(RenderContext* pRenderContext, const RenderData& renderData) override;
+    /// A recompile (e.g. a new output or a resize) allocates new textures: restart the in-place sum.
+    void compile(RenderContext* pRenderContext, const CompileData& compileData) override { resetHistogram(); }
     void renderUI(Gui::Widgets& widget) override;
     void setScene(RenderContext* pRenderContext, const ref<Scene>& pScene) override;
     /// With accumulate, restarts the sum.
@@ -74,6 +78,8 @@ private:
         uint2 fixedOutputSize = {512, 512}; ///< Output size when outputSize is Fixed.
     };
     static void validateOptions(const Options& options);
+    /// Rebuilds what the new options need (after a UI edit or setProperties) and flags the change.
+    void onOptionsChanged(const Options& previous);
     void parseProperties(const Properties& props);
     const ChannelList& histogramChannels() const;
     bool needsReset(const RenderData& renderData) const;
@@ -87,6 +93,8 @@ private:
     bool mOptionsChanged = false;
     std::string mUIWarning; ///< Why the last UI edit was rejected.
     ref<Scene> mpScene;
+    LaserInput mLaserInput; ///< The laser of this frame, from the LaserLight pass.
     ref<SampleGenerator> mpSampleGenerator;
     ref<ComputePass> mpComputePass;
+    SceneTriangles mTriangles; ///< tri_approx: every scene triangle.
 };

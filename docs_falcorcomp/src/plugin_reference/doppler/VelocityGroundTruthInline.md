@@ -28,7 +28,8 @@ and they differ:
   - no
 ```
 
-The visibility of the light is ignored. Pixels without a hit are NaN.
+The visibility of the light is ignored. Pixels without a hit are NaN; with `path_length`, so are pixels whose ray
+hits another object at `dt` than at time 0 (an object edge, where the length difference is not a velocity).
 
 ## Parameters
 
@@ -68,11 +69,15 @@ The visibility of the light is ignored. Pixels without a hit are NaN.
   - Velocity of the direct path, m/s, R32Float; NaN without a hit.
 ```
 
-The light is set on the `LaserLight` pass. From Python: `set_velocity(...)` and `get_object_names()`.
+The light is set on the `LaserLight` pass. From Python: `set_velocity(...)`, `clear_velocities()` and `get_object_names()`, which returns
+`(instance, mesh name, material name, movable)` for every object of the scene.
 
 ## Example
 
 ```python
+testbed.load_scene("cornell-box-moving/scene.pyscene",
+                   falcor.SceneBuilderFlags.DontMergeMaterials | falcor.SceneBuilderFlags.DontOptimizeGraph)
+graph = testbed.create_render_graph("Truth")
 graph.create_pass("Light", "LaserLight", {"isLightSourceLaser": False, "laserCollocated": True})
 graph.create_pass("Truth", "VelocityGroundTruthInline", {
     "mode": "path_length", "dt": 1e-3,
@@ -80,6 +85,7 @@ graph.create_pass("Truth", "VelocityGroundTruthInline", {
 })
 graph.add_edge("Light", "Truth")
 graph.mark_output("Truth.velocity")
+testbed.render_graph = graph
 ```
 
 The [Doppler ToF tutorial](../../tutorials/doppler_tof_offline.md) compares the three modes.

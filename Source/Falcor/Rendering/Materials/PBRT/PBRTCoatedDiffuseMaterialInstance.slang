@@ -100,7 +100,7 @@ struct PBRTCoatedDiffuseMaterialInstance : MaterialInstanceBase, IMaterialInstan
         p.roughness = interfaceD.getIsotropicRoughness();
         p.specularReflectionAlbedo = float3(1.0f);
 
-        // ADDED for SVGF!
+        // FalcorComp: the albedo that SVGF-style denoisers demodulate by (upstream leaves 0 for this material).
         p.diffuseReflectionAlbedo = diffuseAlbedo;
 
         return p;

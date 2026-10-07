@@ -1,5 +1,5 @@
 #include "Utils/Math/MathConstants.slangh"
-import Utils.Geometry.Ellipsoid;
+import RenderPasses.Shared.Shaders.Geometry.Ellipsoid;
 
 struct SampleResultArea
 {
@@ -320,6 +320,16 @@ float pdfUniformEllipsoidTriangleArc(
 // Multiply by the length PDF and triangle-selection PMF to obtain p_A(y).
 float evalTriangleEllipsoidPdf(Ellipsoid E, float3 p1, float3 p2, float3 p3, float3 p)
 {
+    // p is a point of the triangle (a ray hit) and E is built from p's path length, so p lies on E and on the
+    // triangle's plane by construction. Those are not re-tested in unit-sphere space, whose anisotropic scaling
+    // amplifies rounding on thin ellipsoids: rejecting valid points there, which the sampler does produce, made the
+    // two techniques count them twice. Only a loose world-space plane test, relative to the triangle size, remains.
+    float3 worldNormal = cross(p2 - p1, p3 - p1);
+    float worldNormalLength = length(worldNormal);
+    if (!(worldNormalLength > 0.f)) return 0.f;
+    float edge = max(length(p2 - p1), max(length(p3 - p2), length(p1 - p3)));
+    if (abs(dot(worldNormal, p - p1)) > 1e-3f * edge * worldNormalLength) return 0.f;
+
     float3 q1 = toUnitSphereSpace(E, p1);
     float3 q2 = toUnitSphereSpace(E, p2);
     float3 q3 = toUnitSphereSpace(E, p3);
@@ -328,7 +338,6 @@ float evalTriangleEllipsoidPdf(Ellipsoid E, float3 p1, float3 p2, float3 p3, flo
     if (dot(planeNormal, planeNormal) <= 1e-20) return 0.f;
     float3 n = normalize(planeNormal);
     float d = -dot(n, q1);
-    if (abs(dot(q, q) - 1.f) > 1e-4 || abs(dot(n, q) + d) > 1e-4) return 0.f;
 
     float3 helper = abs(n.z) < 0.999f ? float3(0,0,1) : float3(0,1,0);
     float3 e1 = normalize(cross(helper, n));

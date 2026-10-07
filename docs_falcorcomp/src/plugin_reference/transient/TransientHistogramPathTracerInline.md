@@ -10,8 +10,8 @@ H_i = \frac{1}{\Delta} \int f(\bar{\mathbf{x}})\, \mathbf{1}\!\left[\ell(\bar{\m
 \qquad t_i = \text{timeMin} + i\Delta,
 $$
 
-where $f$ is the path contribution and $\ell$ the optical length (segment lengths weighted by the
-index of refraction). $H_i$ is radiance per unit path length, so $\sum_i H_i \Delta$ is the
+where $f$ is the path contribution and $\ell$ the optical length (the sum of the segment lengths:
+refractive indices are not implemented yet). $H_i$ is radiance per unit path length, so $\sum_i H_i \Delta$ is the
 radiance of all paths in the range. Camera paths start at the primary hits from `VBufferRT` and
 stop once they are longer than `timeMax`.
 
@@ -33,11 +33,12 @@ Histogram:
   - Description
 * - `timeMin`, `timeMax`
   - float
-  - Path-length range of the histogram. Paths outside `[timeMin, timeMax)` are not recorded.
+  - Path-length range of the histogram. Paths outside `[timeMin, timeMax)` are not recorded, except
+    that the `tent` filter's first and last bins reach half a bin beyond it.
     (Default: `9`, `12`)
 * - `timeBin`
   - integer
-  - Number of bins $B$. (Default: `512`)
+  - Number of bins $B$. (Default: `64`)
 * - `histogramFilter`
   - string
   - The bin filter: `box` or `tent`; with kernel density estimation, the kernel: `box`, `tent`,
@@ -68,7 +69,8 @@ Sampling:
 * - `maxBounces`
   - integer
   - Maximum number of surface vertices on a camera path, counting the primary hit. Each vertex
-    is connected to the laser spot (the primary hit only with `computeDirect`). (Default: `3`)
+    is connected to the laser spot (the primary hit only with `computeDirect`).
+    `0` renders no light. (Default: `3`)
 * - `samplingMethod`
   - string
   - `direct` or `tri_approx`. See [Sampling methods](#sampling-methods). (Default: `direct`)
@@ -95,8 +97,8 @@ Output:
   - Sum the frames in the histogram. See [Accumulation](#accumulation). (Default: `false`)
 * - `useSingleChannel`
   - boolean
-  - Store one channel per bin, chosen by `singleChannel`, which quarters the histogram's memory.
-    The `color` output stays RGB. (Default: `false`)
+  - Store one channel per bin, chosen by `singleChannel`, which quarters the histogram's memory;
+    `color` holds the same channel in all three channels. (Default: `false`)
 * - `singleChannel`
   - string
   - The channel kept by `useSingleChannel`: `luminance`, `red`, `green` or `blue`.
@@ -107,7 +109,8 @@ Output:
 * - `outputSize`
   - string
   - Size of the outputs: `Default` (the size of the render graph's output), `Fixed`, `Full`,
-    `Half`, `Quarter` or `Double`. (Default: `Default`)
+    `Half`, `Quarter` or `Double`. The `vbuffer` input must have the same size: give `VBufferRT`
+    the same `outputSize` (the pass raises an error otherwise). (Default: `Default`)
 * - `fixedOutputSize`
   - integer pair
   - Output size with `outputSize` `Fixed`. (Default: `[512, 512]`)
@@ -119,8 +122,10 @@ Output:
 Without kernel density estimation, a path is added to the bins with a filter:
 
 - `box`: to the bin that contains its length.
-- `tent`: split between that bin and the next one, in proportion to where its length falls in the
-  bin.
+- `tent`: split between the two bins whose centers are nearest to its length, in proportion to its
+  distance to them: a tent one bin wide on each side of every bin center, as in
+  [TransientHistogramReSTIRInline](TransientHistogramReSTIRInline.md). The first and last bins also
+  take paths up to half a bin outside the range.
 
 With `useKernelDensityEstimation`, every path is spread over all bins with the kernel chosen by
 `histogramFilter`. The kernel starts at `initialWindowRatio x (timeMax - timeMin)` wide for a frame's
@@ -138,7 +143,8 @@ With `accumulate`, the histogram is the *sum* of the frames rendered since the l
 is much cheaper than a separate accumulation pass for large histograms. Divide it by the number
 of frames to get the mean; `TransientHistogramViewer` does this on its own. The sum restarts when
 the camera moves, the scene changes, a setting of this pass or an upstream pass (e.g. the laser)
-changes, or a script calls `reset_histogram()`.
+changes, the render graph is recompiled (e.g. on a resize or a new output), or a script calls
+`reset()`.
 
 (sampling-methods)=
 ## Sampling methods
@@ -146,11 +152,13 @@ changes, or a script calls `reset_histogram()`.
 - `direct`: trace camera paths and connect every vertex to the laser spot, as the time-gated path
   tracer does.
 - `tri_approx`: a deterministic approximation of the paths primary hit -> one scene triangle ->
-  laser spot, integrated over every triangle of the scene (a single intermediate bounce). It
+  laser spot, integrated over the scene's triangles (a single intermediate bounce). It
   tests visibility at triangle centers and interpolates the path length linearly over each
   triangle, so it is biased; `samplesPerPixel`, `maxBounces`, `computeDirect`,
   `useImportanceSampling`, `histogramFilter` and kernel density estimation do not apply. It
-  assumes a collimated laser.
+  assumes a collimated laser. It uses the same triangles as the time-gated passes' ellipsoidal
+  connections (see [the time-gated path tracer](#connection-sampling)), but with a fixed area cutoff:
+  triangles larger than 10000 (world-space area) are left out.
 
 ## Laser
 
@@ -170,11 +178,13 @@ The laser is set on the `LaserLight` pass, as for the
 * - `viewW` (input, optional)
   - Primary ray directions, from `VBufferRT`.
 * - `histogram` (output)
-  - Transient histogram $H$, `width x height x timeBin`. RGBA32Float (the alpha channel is an
-    auxiliary weight), or R32Float with `useSingleChannel`.
+  - Transient histogram $H$, `width x height x timeBin`. RGBA32Float (the alpha channel sums the
+    filter or kernel weights of the samples that added light to the bin), or R32Float with
+    `useSingleChannel`.
 * - `color` (output)
-  - Radiance of the frame, summed over all path lengths the camera paths reach (with `tri_approx`,
-    over the histogram's range), RGBA32Float.
+  - The frame's histogram integrated over path length (the sum of its bins times the bin width):
+    the radiance of the paths that fall in the histogram, weighted by the filter or kernel,
+    RGBA32Float. Paths that reach no bin are not shaded.
 ```
 
 The pass also publishes the histogram's range and the number of summed frames to the render
@@ -184,6 +194,12 @@ without extra settings.
 ## Example
 
 ```python
+testbed.load_scene("cornell-box/scene-v4-nolight.pbrt", falcor.SceneBuilderFlags.DontMergeMaterials)
+graph = testbed.create_render_graph("Transient")
+graph.create_pass("VBuffer", "VBufferRT", {"samplePattern": "Center", "sampleCount": 1})
+graph.create_pass("Laser", "LaserLight", {
+    "laserPosition": [0.0, 1.7, 6.8], "laserDirection": [0.0, 0.0, -1.0], "laserPower": [170.0, 120.0, 40.0],
+})
 graph.create_pass("Tracer", "TransientHistogramPathTracerInline", {
     "samplesPerPixel": 16, "maxBounces": 6,
     "timeMin": 16.75, "timeMax": 18.03, "timeBin": 64,
@@ -194,6 +210,7 @@ graph.add_edge("Laser", "Tracer")  # run the laser pass first
 graph.create_pass("Accumulate", "TransientHistogramAccumulatePass", {})
 graph.add_edge("Tracer.histogram", "Accumulate.input")
 graph.mark_output("Accumulate.output")
+testbed.render_graph = graph
 ```
 
 See the [transient rendering tutorial](../../tutorials/transient_offline.md) for a complete

@@ -29,7 +29,7 @@ NAIVE = {"useAntitheticSampling": False}
 # The antithetic vertex is found by Newton's method on the triangle's barycentric
 # coordinates, moving along the average path-length gradient.
 ANTITHETIC = {"useAntitheticSampling": True,
-              "shiftmapMethod": "barycentric", "gaugeMode": "avg_grad"}
+              "shiftMappingMethod": "barycentric", "gaugeMode": "avg_grad"}
 
 
 def create_graph(properties):

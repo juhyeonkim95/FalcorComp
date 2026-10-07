@@ -190,7 +190,6 @@ struct PathTracer
         {
             guideData.setGuideNormal(bsdfProperties.guideNormal);
             // Use sum of reflection/transmission albedo as they are denoised together.
-            // guideData.setAlbedo(bsdfProperties.diffuseReflectionAlbedo + bsdfProperties.diffuseTransmissionAlbedo);
             guideData.setAlbedo(bsdfProperties.diffuseReflectionAlbedo + bsdfProperties.diffuseTransmissionAlbedo);
             guideData.setReflectionPos(sd.posW);
 
@@ -291,7 +290,7 @@ struct PathTracer
         // Create sample generator.
         const uint maxSpp = kSamplesPerPixel > 0 ? kSamplesPerPixel : kMaxSamplesPerPixel;
 
-        // motion vector
+        // useReprojSeed: seed at the pixel the motion vector reprojects to, so that samples follow the surface.
         if(params.useReprojSeed){
             const float2 motion = mvec[pixel].xy;
             const int2 prevPixel = int2(float2(pixel) + motion.xy * params.frameDim + float2(0.5, 0.5));
@@ -1183,10 +1182,6 @@ struct PathTracer
         if (kSamplesPerPixel == 1)
         {
             // Write color directly to frame buffer.
-            // float x = luminance(path.L);
-            // float x2 = luminance(path.guideData.getAlbedo());
-            // x = x / (x2 + 1e-10);
-            // outputColor[pixel] = float4(x, x, x, 1.f);
             outputColor[pixel] = float4(path.L, 1.f);
         }
         else

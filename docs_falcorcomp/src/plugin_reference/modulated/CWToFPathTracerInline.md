@@ -80,7 +80,7 @@ Sampling:
 * - `maxBounces`
   - integer
   - Maximum number of surface vertices on a camera path, counting the primary hit. Each vertex is
-    connected to the light. (Default: `3`)
+    connected to the light. `0` renders no light. (Default: `3`)
 * - `useImportanceSampling`
   - boolean
   - Importance-sample the BSDF when extending the camera path; otherwise use the material's
@@ -100,7 +100,7 @@ Antithetic shift mapping (used with `useAntitheticSampling`):
 * - Parameter
   - Type
   - Description
-* - `shiftmapMethod`
+* - `shiftMappingMethod`
   - string
   - How the antithetic vertex is found: `radial` (along the ray from the path length's minimum on the
     vertex's plane), or one of the Newton-based path-length-aware shift mappings: `local_tangent`,
@@ -110,29 +110,39 @@ Antithetic shift mapping (used with `useAntitheticSampling`):
   - string
   - Newton-based methods only: fixes the direction left free by the one path-length constraint.
     `constant`: the vertex moves orthogonally to the chart axis `gaugeAxis`; `grad`: along the
-    path-length gradient at the start; `avg_grad`: along the average of the gradients at both ends.
+    path-length gradient at the start; `avg_grad`: along the average of the gradients at both ends,
+    where the length changes fastest, so the move is as short as possible. `grad` is not symmetric
+    (the backward shift follows the gradient at the other end), so it biases the estimate.
     (Default: `avg_grad`)
 * - `gaugeAxis`
   - float2
   - Chart axis of the `constant` gauge; `(0, 0)` picks a random axis per shift. (Default: `(1, 0)`)
 * - `NewtonMaxIteration`
   - integer
-  - Newton-based methods only: maximum Newton iterations per shift. (Default: `5`)
+  - Newton-based methods only: maximum Newton iterations per shift. (Default: `10`)
 * - `NewtonRelativeTolerance`
   - float
-  - Tolerance of the shift solve on the path length, relative to the path-length change of the shift
-    (at least `1e-6`). Also used by `radial`. (Default: `0.002`)
+  - Tolerance of the shift solve on the path length, relative to the path-length change of the shift,
+    and at least the float32 resolution of the path lengths involved. Also used by `radial`. Looser
+    solves make the antithetic shifts only approximately inverse. (Default: `1e-6`)
 * - `rayChartMaxDisplacement`
   - float
   - `ray_trace`, `ray_trace_chart`, and `area_adaptive` on faces of area at most `0.01` (which it
     shifts with the ray chart) only: rejects shifts that move the vertex farther than this in chart
     coordinates, where the reverse shift may not return to the original vertex. `0` disables.
     (Default: `0`)
-* - `antitheticRoundTripCheck`
+* - `shiftRoundTripCheck`
   - boolean
-  - Keep an antithetic vertex only if shifting it back returns to the starting vertex (within 1% of the shift
-    distance). This makes the Newton-based methods unbiased, at the cost of a second shift;
-    `radial` does not need it. (Default: `false`)
+  - Keep an antithetic vertex only if shifting it back returns to the starting vertex, at the cost
+    of a second shift. `radial` does not need it. Newton's method is local, so with the Newton-based
+    methods a rare shift reaches another solution than its reverse, mostly with a ray chart; the
+    check removes most of the small bias this leaves. (Default: `false`)
+* - `shiftReachCheck`
+  - boolean
+  - Newton-based methods with `avg_grad` only: keep an antithetic vertex only if the first Newton
+    step from each end lands within half the move of the other end, so that shifting back returns
+    to the start. No extra cost, but it also rejects valid vertices, which raises the variance.
+    (Default: `false`)
 ```
 
 Output:
@@ -184,8 +194,9 @@ This needs the two shifts to be exact inverses of each other. The `radial` shift
 it: it moves the vertex along the ray from $m$, the point of the vertex's plane with the shortest
 path length (found in closed form with the mirror construction), and the path length increases along
 every such ray, so each target length has one solution on the ray, and the backward shift lands back
-on the start. The Newton-based methods follow the average gradient, which can pick a different
-solution near $m$ and leave a small bias; `antitheticRoundTripCheck` removes it. `radial` works on
+on the start. The Newton-based methods move the vertex along the average gradient, the shortest
+move; Newton's method is local, so a rare shift near $m$ reaches another solution than its reverse
+and leaves a small bias, which `shiftRoundTripCheck` removes. `radial` works on
 planar faces: on finely tessellated curved surfaces, fewer vertices find an antithetic vertex on their
 own plane, which reduces the variance reduction but not the correctness.
 
@@ -213,13 +224,15 @@ camera is usually modeled with a point light at the camera: `isLightSourceLaser 
   - Primary ray directions, from `VBufferRT`.
 * - `color` (output)
   - CW-ToF measurement $I$, RGBA32Float. With the signed weight it can be negative. Pixels with no
-    primary hit are black, or show the unmodulated environment map when the scene uses it as
-    background.
+    primary hit are black: the environment map is not part of the measurement.
 ```
 
 ## Example
 
 ```python
+testbed.load_scene("cornell-box/scene-v4-nolight.pbrt", falcor.SceneBuilderFlags.DontMergeMaterials)
+graph = testbed.create_render_graph("CWToF")
+graph.create_pass("VBuffer", "VBufferRT", {"samplePattern": "Center", "sampleCount": 1})
 graph.create_pass("Light", "LaserLight", {"isLightSourceLaser": False, "laserCollocated": True})
 graph.create_pass("Tracer", "CWToFPathTracerInline", {
     "samplesPerPixel": 8, "maxBounces": 3, "computeDirect": False,
@@ -228,6 +241,8 @@ graph.create_pass("Tracer", "CWToFPathTracerInline", {
 graph.add_edge("VBuffer.vbuffer", "Tracer.vbuffer")
 graph.add_edge("VBuffer.viewW", "Tracer.viewW")
 graph.add_edge("Light", "Tracer")  # run the light pass first
+graph.mark_output("Tracer.color")
+testbed.render_graph = graph
 ```
 
 See the [CW-ToF tutorial](../../tutorials/cwtof_offline.md) for a complete script.

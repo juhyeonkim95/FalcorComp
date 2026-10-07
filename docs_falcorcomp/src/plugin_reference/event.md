@@ -33,6 +33,9 @@ graph.get_pass("TracerA").fixedSeed = frame       # r_{t-1}: TracerA.color -> co
 graph.get_pass("TracerB").fixedSeed = frame + 1   # r_t:     TracerB.color -> color2
 ```
 
+Create the tracers with a `fixedSeed` property (`{"fixedSeed": 0}`), which also turns on `PathTracer`'s
+`useFixedSeed`: the Python attribute `fixedSeed` only changes the seed, and a tracer without `useFixedSeed` ignores it.
+
 `PathTracer` gives sample $k$ of seed $s$ the random numbers of stream $s \cdot n + k$ ($n$ samples per pixel), so
 different seeds never share random numbers. With the same seed, a pixel's path makes the same random decisions in
 both frames; the paths differ where the scene moved, and sometimes a bounce reaches a different object, which leaves
@@ -58,7 +61,9 @@ a rare large difference.
   - The frame's image, RGBA32Float.
 ```
 
-The first frame after a reset has no previous frame: its differences are 0.
+The first frame after a reset has no previous frame: its differences are 0. The passes do not reset by themselves
+when the scene changes or the camera jumps to another view: call their `reset()` then, or the next difference
+compares the two.
 
 ```{toctree}
 :maxdepth: 1

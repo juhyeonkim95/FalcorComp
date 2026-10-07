@@ -22,8 +22,7 @@ explicit, and the projector ray gives the antithetic vertex (see [Antithetic sam
 ## The script
 
 The script is that of the [CW-ToF tutorial](cwtof_antithetic.md), with the structured-light pass in place of the
-CW-ToF pass. The projector sits 0.4 to the right of the camera and covers the whole box; `naive` uses
-`samplingMethod` = `bsdf`.
+CW-ToF pass. The projector sits 0.4 to the right of the camera and covers the whole box.
 
 ```{literalinclude} code/structured_light_antithetic.py
 :language: python
@@ -62,7 +61,7 @@ CW-ToF pass. The projector sits 0.4 to the right of the camera and covers the wh
 The wavelength is in projector coordinates, which span $[0, 1]$ across the projector's field of view: 0.01 gives
 100 periods. As for CW-ToF, the finer the pattern, the more the indirect light cancels and the more antithetic
 sampling helps: 17 times lower error at the finest pattern. Here it stays ahead even at the coarsest pattern: the
-mirror image is at most half a period away, and the projector ray keeps it on nearby geometry.
+mirror image is less than one period away, and the projector ray keeps it on nearby geometry.
 
 The full script: {download}`structured_light_antithetic.py <code/structured_light_antithetic.py>`. It takes about
 two minutes, most of it for the references.

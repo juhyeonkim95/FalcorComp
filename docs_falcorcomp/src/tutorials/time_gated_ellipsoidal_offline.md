@@ -62,21 +62,24 @@ the list. On a GPU this list is the problem: for detailed meshes it can hold tho
 far more than a thread can keep, which spills registers and memory.
 
 `TimeGatedPathTracerInline` never builds the list. It samples the triangle by walking a BVH, the light BVH that
-Falcor builds for emissive triangles, here built over all the scene's triangles (`emissiveSampler` = `LightBVH`):
+Falcor builds for emissive triangles, here built over all the scene's triangles (`ellipsoidTriangleSampler` = `LightBVH`):
 
 1. **Length**: the length of $x \to y \to$ laser spot is drawn from the gate, and with $x$ and the laser spot as
    foci it defines the ellipsoid.
 2. **Node**: from the root, the walk goes into one of the two children at random, with a weight equal to the total
-   area of the child's triangles, or zero if the child's bounding box does not intersect the ellipsoid. Large
-   regions near the ellipsoid are visited more often, and regions it cannot reach are never visited.
-3. **Triangle**: in the leaf, one of the triangles the ellipsoid actually crosses is picked.
+   area of the child's triangles. The weight is zero, and the child is never visited, if its bounding box cannot
+   hold a point of the ellipsoid's surface: the box misses the ellipsoid's bounding box, lies entirely outside the
+   ellipsoid (its distances to the two foci add up to more than the length) or entirely inside it, or lies behind the
+   surface at $x$ or at the laser spot. The test uses only the box, so a box that passes can still hold triangles the
+   ellipsoid does not cross.
+3. **Triangle**: every leaf holds one triangle, which is taken without testing whether the ellipsoid crosses it.
 4. **Point**: $y$ is sampled on the curve where the ellipsoid crosses the triangle (an ellipse in the triangle's
    plane, clipped to the triangle): in coordinates where the ellipsoid is the unit sphere, the curve is a circle, and
    $y$ is uniform in angle over its arcs inside the triangle.
 5. **Visibility**: a ray from $x$ towards $y$ must hit that triangle first; otherwise the sample is rejected.
 
 The probability of every step is known, so the density of $y$ is too, and it is recomputed for multiple importance
-sampling by walking the BVH again. The bounding-box test is conservative: a leaf can be reached whose triangles the
+sampling by walking the BVH again. The bounding-box test is conservative: a leaf can be reached whose triangle the
 ellipsoid misses, and that sample then fails instead of being drawn again. This keeps the cost of a connection to
 one walk down the tree, at the price of some failed samples.
 
@@ -88,7 +91,7 @@ Two more changes from the original method:
 - **Connections to the light only**: the ellipsoidal vertex is inserted only when the camera path connects to the
   laser spot (next-event estimation), not between subpaths as in bidirectional path tracing.
 
-`emissiveSampler` = `Uniform` picks any scene triangle with the same probability, without looking at the
+`ellipsoidTriangleSampler` = `Uniform` picks any scene triangle with the same probability, without looking at the
 ellipsoid, as a baseline: most of its samples miss.
 
 ## 1. Load the scene
@@ -104,7 +107,7 @@ ellipsoid, as a baseline: most of its samples miss.
 The graph is the one from [Time-gated rendering (offline)](time_gated_offline.md); only
 `samplingMethod` changes between the three renders. The other ellipsoidal options keep their
 defaults: the scene triangle is chosen with a light BVH over the scene's triangles
-(`emissiveSampler`), and with `ellipsoidal` only vertices rougher than
+(`ellipsoidTriangleSampler`), and with `ellipsoidal` only vertices rougher than
 `specularRoughnessThresholdEllipsoid` (0.25) insert an ellipsoidal vertex.
 
 ```{literalinclude} code/time_gated_ellipsoidal_equal_time.py

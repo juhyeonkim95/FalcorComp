@@ -163,18 +163,6 @@
                 "linux-gcc-base",
                 "ci"
             ]
-        },
-        {
-            "name": "GCC_11.3.0x86_64-linux-gnu",
-            "displayName": "GCC_11.3.0x86_64-linux-gnu",
-            "description": "Makefiles, Release, system GCC (C = /usr/bin/gcc, CXX = /usr/bin/g++)",
-            "binaryDir": "${sourceDir}/build/${presetName}",
-            "cacheVariables": {
-                "CMAKE_INSTALL_PREFIX": "${sourceDir}/out/install/${presetName}",
-                "CMAKE_C_COMPILER": "/usr/bin/gcc",
-                "CMAKE_CXX_COMPILER": "/usr/bin/g++",
-                "CMAKE_BUILD_TYPE": "Release"
-            }
         }
     ],
     "buildPresets": [

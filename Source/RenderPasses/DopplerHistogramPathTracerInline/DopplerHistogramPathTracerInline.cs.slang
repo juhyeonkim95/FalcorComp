@@ -40,11 +40,13 @@
 import RenderPasses.Shared.Shaders.Utils.LoadShadingData;
 import RenderPasses.Shared.Shaders.Lights.LaserLightSampler;
 import RenderPasses.Shared.Shaders.Lights.LightConnection;
+import RenderPasses.Shared.Shaders.Utils.PathVelocity;
 #include "Scene/SceneDefines.slangh"
 #include "Utils/Math/MathConstants.slangh"
 
 import Utils.Sampling.SampleGenerator;
 import RenderPasses.Shared.Shaders.Utils.TransientHistogram;
+import RenderPasses.Shared.Shaders.Utils.SingleChannel;
 import RenderPasses.Shared.Shaders.Utils.RayUtils;
 import Scene.RaytracingInline;
 import RenderPasses.Shared.Shaders.Lights.Laser;
@@ -68,15 +70,6 @@ cbuffer CB
 Texture2D<PackedHitInfo> gVBuffer;
 Texture2D<float4> gViewW; // Optional
 
-// Instantaneous rigid motion of each geometry instance: v(x) = linear + angular x (x - center).
-struct InstanceVelocity
-{
-    float4 linear;
-    float4 angular;
-    float4 center;
-};
-StructuredBuffer<InstanceVelocity> gInstanceVelocities;
-
 // Outputs
 RWTexture2D<float4> gOutputColor;
 RWTexture3D<HistogramTexel> gSpectrum;
@@ -88,36 +81,6 @@ RWTexture3D<HistogramTexel> gSpectrumDown;
 static const uint kMaxBounces = MAX_BOUNCES;
 static const bool kComputeDirect = COMPUTE_DIRECT;
 static const bool kUseImportanceSampling = USE_IMPORTANCE_SAMPLING;
-
-// Velocity of the scene surface point posW, hit by `hit`.
-float3 surfaceVelocity(HitInfo hit, float3 posW)
-{
-    if (!hit.isValid() || hit.getType() != HitType::Triangle) return float3(0.f);
-    InstanceVelocity motion = gInstanceVelocities[hit.getInstanceID().index];
-    return motion.linear.xyz + cross(motion.angular.xyz, posW - motion.center.xyz);
-}
-
-// Path-velocity term of the segment between q (the light side) and p (the camera side), with refractive index eta:
-// eta (v_q - v_p) . (p - q) / |p - q|.
-float segmentVelocity(float3 p, float3 vp, float3 q, float3 vq, float eta)
-{
-    float3 d = p - q;
-    float len = length(d);
-    return len > 0.f ? eta * dot(vq - vp, d / len) : 0.f;
-}
-
-// Path-velocity terms of the connection from surface point s (velocity vs) to the light: to the laser spot and on to
-// the laser origin, or to the point light.
-float connectionVelocity(float3 s, float3 vs, LightSample light, float3 lightOrigin)
-{
-#if IS_LIGHT_SOURCE_LASER
-    float3 spot = light.posW();
-    float3 vSpot = surfaceVelocity(light.hit, spot);
-    return segmentVelocity(s, vs, spot, vSpot, 1.f) + segmentVelocity(spot, vSpot, lightOrigin, gLightVelocity, 1.f);
-#else
-    return segmentVelocity(s, vs, light.posW(), gLightVelocity, 1.f);
-#endif
-}
 
 // The bin of `frequency` in the half-open range [frequencyMin, frequencyMax); false outside it.
 bool frequencyBin(float frequency, out uint bin)
@@ -133,6 +96,7 @@ bool frequencyBin(float frequency, out uint bin)
 // values are radiance density per unit frequency (MHz), summed across frames.
 void accumulateToSpectrum(uint2 pixel, float pathLength, float pathVelocity, float3 radiance)
 {
+    if (all(radiance == 0.f)) return; // E.g. a blocked connection: no texel to update.
     HistogramTexel value = toHistogramTexel(radiance / (gFrequencyBinWidth * gSamplesPerPixel));
     float doppler = pathVelocity * gShiftPerVelocity; // f_D
     uint bin;
@@ -154,7 +118,7 @@ float3 tracePath(const uint2 pixel, const uint2 frameDim)
     ShadingData primary = loadShadingData(primaryHit, cameraOrigin, getPrimaryRayDir(pixel, frameDim, gViewW));
     float3 primaryVelocity = surfaceVelocity(primaryHit, primary.posW);
     // The camera segment (primary hit -> camera), in air.
-    float primarySegment = segmentVelocity(cameraOrigin, gSensorVelocity, primary.posW, primaryVelocity, 1.f);
+    float primarySegment = segmentVelocity(cameraOrigin, gSensorVelocity, primary.posW, primaryVelocity);
     float primaryLength = length(primary.posW - cameraOrigin);
     SampleGenerator sg = createPixelSampleGenerator(pixel, gFrameCount, kPathSampleStream);
     LaserLightSampler lightSampler = createLaserLightSampler();
@@ -167,10 +131,10 @@ float3 tracePath(const uint2 pixel, const uint2 frameDim)
         float pathLength = primaryLength;    // Optical length of the camera path so far, m.
         float3 throughput = 1.f;
         // As the transient histogram path tracer: the primary vertex is depth zero.
-        for (uint depth = 0; depth < max(1u, kMaxBounces) && any(throughput > 0.f); ++depth)
+        for (uint depth = 0; depth < kMaxBounces && any(throughput > 0.f); ++depth)
         {
             IMaterialInstance material = gScene.materials.getMaterialInstance(surface, ExplicitLodTextureSampler(0.f));
-            if (depth > 0 || kComputeDirect)
+            if ((depth > 0 || kComputeDirect) && hasNonDeltaLobe(surface, material))
             {
                 LightSample light = {};
                 lightSampler.generateLightSample(sg, light);
@@ -180,14 +144,14 @@ float3 tracePath(const uint2 pixel, const uint2 frameDim)
                     float3 contribution = throughput * connection.bsdfCosine * connection.incidentRadiance;
                     radiance += contribution;
                     float totalVelocity =
-                        pathVelocity + connectionVelocity(surface.posW, velocity, light, lightSampler.laserOrigin);
+                        pathVelocity + connectionVelocity(surface.posW, velocity, light, lightSampler.laserOrigin, gLightVelocity);
                     // The connection to the light, in air, and on to the laser origin.
                     float totalLength = pathLength + connection.distance + light.laserT;
                     accumulateToSpectrum(pixel, totalLength, totalVelocity, contribution);
                 }
             }
             if (depth + 1 >= kMaxBounces) break;
-            BSDFSample bsdfSample;
+            BSDFSample bsdfSample = {};
             if (!material.sample(surface, sg, bsdfSample, kUseImportanceSampling)) break;
             throughput *= bsdfSample.weight;
             float3 origin = surface.computeRayOrigin(!bsdfSample.isLobe(LobeType::Transmission));
@@ -211,5 +175,9 @@ void main(uint3 dispatchThreadId: SV_DispatchThreadID)
 {
     uint2 pixel = dispatchThreadId.xy;
     if (any(pixel >= gFrameDim)) return;
-    gOutputColor[pixel] = float4(tracePath(pixel, gFrameDim), 1.f);
+    float3 color = tracePath(pixel, gFrameDim);
+#if USE_SINGLE_CHANNEL
+    color = float3(selectChannel(color));
+#endif
+    gOutputColor[pixel] = float4(color, 1.f);
 }

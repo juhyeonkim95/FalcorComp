@@ -57,26 +57,34 @@ public:
     VelocityGroundTruthInline(ref<Device> pDevice, const Properties& props);
     ~VelocityGroundTruthInline() override { mMover.restore(); }
     Properties getProperties() const override;
+    void setProperties(const Properties& props) override;
     RenderPassReflection reflect(const CompileData& compileData) override;
     void execute(RenderContext* pRenderContext, const RenderData& renderData) override;
     void setScene(RenderContext* pRenderContext, const ref<Scene>& pScene) override;
 
     enum class Mode { Doppler = 0, PathLength = 1, Projection = 2 };
     void setVelocity(const std::string& name, float3 linear, float3 angular, float3 center);
+    void clearVelocities();
     /// (instance index, mesh name, material name, movable) of every geometry instance of the scene.
     std::vector<std::tuple<uint32_t, std::string, std::string, bool>> getObjectNames() const;
 
 private:
+    struct Options
+    {
+        Mode mode = Mode::Doppler;
+        float dt = 1e-3f;                        ///< path_length: time step, s.
+        float3 direction = float3(0.f, 0.f, 1.f); ///< projection: direction (normalized when used).
+        float3 sensorVelocity = float3(0.f);     ///< doppler: camera velocity, m/s.
+        float3 lightVelocity = float3(0.f);      ///< doppler: light origin velocity, m/s.
+        ObjectMotions velocities;
+    };
+    static void validateOptions(const Options& options);
     void parseProperties(const Properties& props);
 
-    Mode mMode = Mode::Doppler;
-    float mDt = 1e-3f;                        ///< path_length: time step, s.
-    float3 mDirection = float3(0.f, 0.f, 1.f); ///< projection: direction (normalized).
-    float3 mSensorVelocity = float3(0.f);     ///< doppler: camera velocity, m/s.
-    float3 mLightVelocity = float3(0.f);      ///< doppler: light origin velocity, m/s.
-    ObjectMotions mVelocities;
+    Options mOptions;
     bool mVelocitiesDirty = true;
     ref<Scene> mpScene;
+    LaserInput mLaserInput; ///< The laser of this frame, from the LaserLight pass.
     ref<SampleGenerator> mpSampleGenerator;
     ref<ComputePass> mpComputePass;
     ref<Buffer> mpInstanceVelocities;

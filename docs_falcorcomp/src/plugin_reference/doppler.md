@@ -32,6 +32,11 @@ to its instantaneous rigid motion, v(x) = linear + angular × (x − center):
   that are not listed do not move.
 - A name matches a geometry instance's mesh name, its material name, or `"#<instance index>"`. A name that matches
   nothing is reported in the log. `get_object_names()` lists the names of a scene's objects.
+- An object listed under several of its names takes the most specific one: `"#<instance index>"`, then its mesh
+  name, then its material name. For example, a material name moves every object made of it, and a mesh name gives one
+  of them another motion. Every pass resolves names the same way.
+- Motions are in world space: `linear`, `angular` and `center` are world coordinates, also for an object whose
+  scene-graph node has a parent.
 - Falcor merges identical materials when it loads a scene, and then they lose their names (in the Cornell box, every
   white surface becomes `Floor`). Load scenes with `SceneBuilderFlags.DontMergeMaterials` to keep them; pbrt triangle
   meshes have no names, so with pbrt scenes you name objects by their material.

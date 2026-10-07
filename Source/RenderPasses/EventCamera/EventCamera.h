@@ -27,6 +27,7 @@
  **************************************************************************/
 #pragma once
 #include "Falcor.h"
+#include "../Shared/Host/InlinePassUtils.h"
 #include "RenderGraph/RenderPass.h"
 
 using namespace Falcor;
@@ -37,7 +38,8 @@ using namespace Falcor;
  *   current seed r_t; dI_t = I^1_t - I^2_{t-1}, the pair that shares r_{t-1}. Primal = (I^1_t + I^2_t) / 2.
  * dL_t = log(Ie + lum(new)) - log(Ie + lum(old)) for the same pair. The seeds are set on the tracers by the caller.
  * With subframes = N, N executions (scene held still) are averaged into one event frame; the outputs keep the last
- * event frame until the next one completes, and the dictionary key "eventFrameReady" tells EventGenerator.
+ * event frame until the next one completes, and the EventGenerator fed by deltaL generates events only then (a
+ * dictionary key per deltaL texture). A non-finite sample gives no difference and leaves the history.
  */
 class EventDifference : public RenderPass
 {
@@ -49,6 +51,7 @@ public:
     }
     EventDifference(ref<Device> pDevice, const Properties& props);
     Properties getProperties() const override;
+    void setProperties(const Properties& props) override;
     RenderPassReflection reflect(const CompileData& compileData) override;
     void execute(RenderContext* pRenderContext, const RenderData& renderData) override;
 
@@ -58,9 +61,16 @@ public:
     uint32_t getEventFrame() const { return mEventFrame; }
 
 private:
-    bool mCorrelated = true;
-    float mIntensityBias = 1e-8f;
-    uint32_t mSubframes = 1;
+    struct Options
+    {
+        bool correlated = true;
+        float intensityBias = 1e-8f;
+        uint32_t subframes = 1;
+    };
+    static void validateOptions(const Options& options);
+    void parseProperties(const Properties& props);
+
+    Options mOptions;
 
     uint32_t mSubframe = 0;   ///< Index of the next execution within the event frame.
     uint32_t mEventFrame = 0; ///< Completed event frames since the last reset.
@@ -85,6 +95,7 @@ public:
     static ref<EventSVGF> create(ref<Device> pDevice, const Properties& props) { return make_ref<EventSVGF>(pDevice, props); }
     EventSVGF(ref<Device> pDevice, const Properties& props);
     Properties getProperties() const override;
+    void setProperties(const Properties& props) override;
     RenderPassReflection reflect(const CompileData& compileData) override;
     void execute(RenderContext* pRenderContext, const RenderData& renderData) override;
 
@@ -92,31 +103,41 @@ public:
     void reset() { mFrameCount = 0; mClearHistory = true; }
 
 private:
+    struct Options
+    {
+        /// a-trous iterations, 0 to 10 (0: the accumulation is not filtered). Signed, so that a negative value is
+        /// rejected instead of wrapping around.
+        int32_t iterations = 4;
+        int32_t feedbackTap = 1; ///< a-trous iteration fed back to the next frame (-1: the unfiltered accumulation).
+        float phiColor = 10.f;
+        float phiNormal = 128.f;
+        float alpha = 0.1f;
+        float momentsAlpha = 0.2f;
+        float intensityBias = 1e-8f;
+        bool useDemodulation = true;
+        bool useDifferenceAwareFiltering = true;
+        bool useTemporalAccumulation = true;
+        bool useDenoisedDifference = true;
+        bool useDifferenceVariance = true; ///< The difference's own variance sets its edge-stopping width.
+    };
+    static void validateOptions(const Options& options);
+    void parseProperties(const Properties& props);
     void allocate(uint2 dim);
     void clearHistory(RenderContext* pRenderContext);
 
-    uint32_t mIterations = 4;
-    int32_t mFeedbackTap = 1; ///< a-trous iteration fed back to the next frame (-1: the unfiltered accumulation).
-    float mPhiColor = 10.f;
-    float mPhiNormal = 128.f;
-    float mAlpha = 0.1f;
-    float mMomentsAlpha = 0.2f;
-    float mIntensityBias = 1e-8f;
-    bool mUseDemodulation = true;
-    bool mUseDifferenceAwareFiltering = true;
-    bool mUseTemporalAccumulation = true;
-    bool mUseDenoisedDifference = true;
-    bool mUseDifferenceVariance = true; ///< The difference's own variance sets its edge-stopping width.
+    Options mOptions;
 
     uint32_t mFrameCount = 0;
     bool mClearHistory = true;
     uint2 mDim = uint2(0);
-    ref<ComputePass> mpReproject, mpAtrous, mpFinalize;
+    ref<ComputePass> mpReproject, mpFilterMoments, mpAtrous, mpFinalize, mpCopyFeedback;
     // History: [0] the current frame, [1] the previous one; swapped every frame.
     ref<Texture> mpZN[2], mpMoments[2], mpHistory[2], mpReprojected[2];
-    ref<Texture> mpPrevFiltered, mpPrevPrevFiltered; ///< Feedback-tap illumination of frames t-1 and t-2.
+    /// Feedback-tap illumination (primal, difference) of frames t-1 and t-2.
+    ref<Texture> mpPrevFiltered, mpPrevPrevFiltered;
     ref<Texture> mpPrevIllumination2, mpPrevAlbedoEmission, mpPrevFinalIllumination;
-    ref<Texture> mpIllumination, mpPingPong[2];
+    /// The a-trous ping-pong; [0] first holds the temporal accumulation (the filters' input).
+    ref<Texture> mpPingPong[2];
     ref<Texture> mpEmitter; ///< Emitter in the current or the previous frame (R8).
 };
 
@@ -124,6 +145,8 @@ private:
  * - probabilistic: floor(|dL|/C) events plus one more with probability frac(|dL|/C), with the sign of dL (the
  *   threshold phase is uniform, Kim et al. Sec. 4.6 and App. B).
  * - accumulate: per-pixel residual r = L - L_ref; r += dL, n = trunc(r / C), r -= n C (Eq. 22).
+ * Fed by an EventDifference with subframes, it generates only on the frames that complete an event frame and outputs
+ * no events on the others. A non-finite dL makes no events.
  */
 class EventGenerator : public RenderPass
 {
@@ -135,6 +158,7 @@ public:
     }
     EventGenerator(ref<Device> pDevice, const Properties& props);
     Properties getProperties() const override;
+    void setProperties(const Properties& props) override;
     RenderPassReflection reflect(const CompileData& compileData) override;
     void execute(RenderContext* pRenderContext, const RenderData& renderData) override;
 
@@ -144,12 +168,19 @@ public:
     enum class Mode { Probabilistic = 0, Accumulate = 1 };
 
 private:
-    Mode mMode = Mode::Probabilistic;
-    float mThreshold = 0.2f;
-    uint32_t mSeed = 0;
+    struct Options
+    {
+        Mode mode = Mode::Probabilistic;
+        float threshold = 0.2f;
+        uint32_t seed = 0;
+    };
+    static void validateOptions(const Options& options);
+    void parseProperties(const Properties& props);
+
+    Options mOptions;
 
     uint32_t mFrame = 0;
     bool mClearResidual = true;
     ref<ComputePass> mpPass;
-    ref<Texture> mpResidual, mpEvents;
+    ref<Texture> mpResidual;
 };

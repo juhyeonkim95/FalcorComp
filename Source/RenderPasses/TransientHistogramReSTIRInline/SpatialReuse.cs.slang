@@ -37,7 +37,8 @@ void main(uint3 dispatchThreadId: SV_DispatchThreadID)
 #else
         float3 density = gSpatialReuse.resampleGate(pixel, gTimeBin, bin, binCenter(bin)) / gBinWidth;
 #endif
-        gTransientHistogram[uint3(pixel, bin)] = toHistogramTexel(density);
+        // Only the last iteration's histogram is final; earlier iterations' would be overwritten.
+        if (gSpatialReuse.lastIteration) gTransientHistogram[uint3(pixel, bin)] = toHistogramTexel(density);
         integratedRadiance += density * gBinWidth;
     }
     gSpatialReuse.gOutputColor[pixel] = float4(integratedRadiance, 1.f);

@@ -60,6 +60,14 @@ void shadeLightConnection(inout LightConnection connection, ShadingData surface,
     connection.incidentRadiance = light.evalLi(surface.posW, rng) * float(visible);
 }
 
+// Whether next-event estimation at `surface` can contribute. A material with only delta lobes (a smooth mirror or
+// glass) reflects no light toward a sampled light direction: its eval() is zero, so a connection there would cost a
+// light sample (for a laser, the beam ray), a visibility ray and a BSDF evaluation for nothing.
+bool hasNonDeltaLobe(ShadingData surface, IMaterialInstance material)
+{
+    return (material.getLobeTypes(surface) & uint(LobeType::NonDelta)) != 0;
+}
+
 // Invalid or degenerate light samples yield a zero connection.
 LightConnection evaluateLightConnection(ShadingData surface, IMaterialInstance material,
     LightSample light, inout SampleGenerator rng)

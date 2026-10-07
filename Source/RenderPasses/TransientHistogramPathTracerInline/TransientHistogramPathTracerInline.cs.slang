@@ -11,9 +11,11 @@ import Rendering.Lights.LightHelpers;
 import Utils.Color.ColorHelpers;
 import RenderPasses.Shared.Shaders.Utils.TimeGate;
 import RenderPasses.Shared.Shaders.Utils.TransientHistogram;
+import RenderPasses.Shared.Shaders.Utils.SingleChannel;
 import RenderPasses.Shared.Shaders.Utils.RayUtils;
 import Scene.RaytracingInline;
 import RenderPasses.Shared.Shaders.Lights.Laser;
+import RenderPasses.Shared.Shaders.Lights.SceneTriangles; // tri_approx: every scene triangle.
 
 cbuffer CB
 {
@@ -47,30 +49,69 @@ void addHistogramBin(uint2 pixel, uint bin, float3 radiance, float weight = 1.f)
     gTransientHistogram[uint3(pixel, bin)] += toHistogramTexel(radiance) * weight;
 }
 
-void accumulateToHistogram(uint2 pixel, float pathLength, float3 radiance, float window)
+// Whether a path of this length can add to a bin: only then is its light connection shaded. Exact for the bin filters,
+// conservative for the kernels.
+bool reachesHistogram(float pathLength, float window)
 {
-    if (!isfinite(pathLength)) return;
+#if USE_KERNEL_DENSITY_ESTIMATION
+    float reach = getKernelReachGivenWindow(window);
+    return pathLength >= binCenter(0) - reach && pathLength <= binCenter(gTimeBin - 1) + reach;
+#elif HISTOGRAM_FILTER == HISTOGRAM_FILTER_TENT
+    float coordinate = (pathLength - gTimeMin) / gBinWidth - 0.5f; // In bin centers.
+    return coordinate > -1.f && coordinate < float(gTimeBin);
+#else
+    return pathLength >= gTimeMin && pathLength < gTimeMax;
+#endif
+}
+
+// Adds a path to the bins its filter or kernel reaches. Returns the fraction of its radiance added over all bins: the
+// histogram's integral over path length grows by radiance * fraction / gSamplesPerPixel, and so does the color output,
+// which is that integral.
+float accumulateToHistogram(uint2 pixel, float pathLength, float3 radiance, float window)
+{
+    if (!isfinite(pathLength)) return 0.f;
+    // A zero contribution (e.g. a blocked connection) adds nothing: skip its texel writes.
+    const bool zero = all(radiance == 0.f);
 #if USE_KERNEL_DENSITY_ESTIMATION
     radiance /= window * gSamplesPerPixel;
+    float total = 0.f;
     for (uint bin = 0; bin < gTimeBin; ++bin)
     {
         float center = binCenter(bin);
         float weight = pathLengthImportanceGivenWindow(pathLength, center, window);
-        if (weight > 0.f) addHistogramBin(pixel, bin, radiance * weight);
+        if (!(weight > 0.f)) continue;
+        if (!zero) addHistogramBin(pixel, bin, radiance * weight);
+        total += weight;
     }
+    return total * gBinWidth / window;
 #else
-    // Half-open range prevents gTimeMax from being incorrectly added to the final bin.
-    if (pathLength < gTimeMin || pathLength >= gTimeMax) return;
-    float coordinate = (pathLength - gTimeMin) / gBinWidth;
-    uint bin = min(uint(coordinate), gTimeBin - 1);
     radiance /= gBinWidth * gSamplesPerPixel;
-#if HISTOGRAM_FILTER == HISTOGRAM_FILTER_BOX
-    addHistogramBin(pixel, bin, radiance);
-#elif HISTOGRAM_FILTER == HISTOGRAM_FILTER_TENT
-    // Retain the existing interpolation and final-bin clamping convention.
-    float residual = frac(coordinate);
-    addHistogramBin(pixel, bin, radiance, 1.f - residual);
-    addHistogramBin(pixel, min(bin + 1, gTimeBin - 1), radiance, residual);
+#if HISTOGRAM_FILTER == HISTOGRAM_FILTER_TENT
+    // A tent of half-width one bin around each bin center (as ReSTIR's bins): the path splits between the two bins
+    // whose centers are nearest to its length, and reaches the first and last bins from up to half a bin outside the
+    // range.
+    float coordinate = (pathLength - gTimeMin) / gBinWidth - 0.5f; // In bin centers.
+    if (!(coordinate > -1.f && coordinate < float(gTimeBin))) return 0.f;
+    float lowerBin = floor(coordinate);
+    float upperWeight = coordinate - lowerBin;
+    float total = 0.f;
+    if (lowerBin >= 0.f)
+    {
+        if (!zero) addHistogramBin(pixel, uint(lowerBin), radiance, 1.f - upperWeight);
+        total += 1.f - upperWeight;
+    }
+    if (lowerBin + 1.f < float(gTimeBin))
+    {
+        if (!zero) addHistogramBin(pixel, uint(lowerBin + 1.f), radiance, upperWeight);
+        total += upperWeight;
+    }
+    return total;
+#else
+    // Box: the bin that contains the length. The half-open range keeps gTimeMax out of the last bin.
+    if (pathLength < gTimeMin || pathLength >= gTimeMax) return 0.f;
+    uint bin = min(uint((pathLength - gTimeMin) / gBinWidth), gTimeBin - 1);
+    if (!zero) addHistogramBin(pixel, bin, radiance);
+    return 1.f;
 #endif
 #endif
 }
@@ -90,6 +131,8 @@ float3 tracePath(const uint2 pixel, const uint2 frameDim)
 #if USE_KERNEL_DENSITY_ESTIMATION
     // Ad hoc extension: paths beyond the histogram range can contribute through KDE support.
     const float maxPathLength = 1.5f * gTimeMax;
+#elif HISTOGRAM_FILTER == HISTOGRAM_FILTER_TENT
+    const float maxPathLength = gTimeMax + 0.5f * gBinWidth; // The last bin's tent reaches half a bin past the range.
 #else
     const float maxPathLength = gTimeMax;
 #endif
@@ -100,24 +143,26 @@ float3 tracePath(const uint2 pixel, const uint2 frameDim)
         float3 throughput = 1.f;
         // Preserve the legacy bounce convention: the primary vertex is depth zero,
         // and maxBounces=3 permits two subsequent scattering vertices.
-        for (uint depth = 0; depth < max(1u, kMaxBounces) && pathLength < maxPathLength && any(throughput > 0.f); ++depth)
+        for (uint depth = 0; depth < kMaxBounces && pathLength < maxPathLength && any(throughput > 0.f); ++depth)
         {
             IMaterialInstance material = gScene.materials.getMaterialInstance(surface, ExplicitLodTextureSampler(0.f));
-            if (depth > 0 || kComputeDirect)
+            if ((depth > 0 || kComputeDirect) && hasNonDeltaLobe(surface, material))
             {
                 LightSample light = {};
                 lightSampler.generateLightSample(sg, light);
-                if (light.valid)
+                bool connected;
+                LightConnection connection = connectToLight(surface, light, connected);
+                float totalLength = pathLength + connection.distance + light.laserT;
+                // A path that reaches no bin contributes to neither output: skip its visibility ray and BSDF.
+                if (connected && reachesHistogram(totalLength, window))
                 {
-                    LightConnection connection = evaluateLightConnection(surface, material, light, sg);
-                    float totalLength = pathLength + connection.distance + light.laserT;
+                    shadeLightConnection(connection, surface, material, light, sg);
                     float3 contribution = throughput * connection.bsdfCosine * connection.incidentRadiance;
-                    radiance += contribution;
-                    accumulateToHistogram(pixel, totalLength, contribution, window);
+                    radiance += contribution * accumulateToHistogram(pixel, totalLength, contribution, window);
                 }
             }
             if (depth + 1 >= kMaxBounces) break;
-            BSDFSample bsdfSample;
+            BSDFSample bsdfSample = {};
             if (!material.sample(surface, sg, bsdfSample, kUseImportanceSampling)) break;
             throughput *= bsdfSample.weight;
             float3 origin = surface.computeRayOrigin(!bsdfSample.isLobe(LobeType::Transmission));
@@ -210,10 +255,10 @@ float3 tracePathTriangleApprox(const uint2 pixel, const uint2 frameDim)
     const float epsilon = 1e-4f;
     const float2 barycentrics[3] = {float2(epsilon, epsilon), float2(1.f - epsilon, epsilon), float2(epsilon, 1.f - epsilon)};
     float3 radiance = 0.f;
-    uint triangleCount = gScene.triCollection.getActiveTriangleCount();
+    uint triangleCount = gSceneTriangles.getActiveTriangleCount();
     for (uint i = 0; i < triangleCount; ++i)
     {
-        EmissiveTriangle triangle = gScene.triCollection.getTriangle(gScene.triCollection.activeTriangles[i]);
+        EmissiveTriangle triangle = gSceneTriangles.getTriangle(gSceneTriangles.activeTriangles[i]);
         float3 center = (triangle.posW[0] + triangle.posW[1] + triangle.posW[2]) / 3.f;
         float3 toCenter = center - primary.posW;
         if (!(dot(toCenter, toCenter) > 0.f) || !(triangle.area > 0.f)) continue;
@@ -280,6 +325,9 @@ void main(uint3 dispatchThreadId: SV_DispatchThreadID)
     float3 color = tracePath(pixel, gFrameDim);
 #elif LIGHT_SAMPLING_METHOD == TRIANGLE_APPROX
     float3 color = tracePathTriangleApprox(pixel, gFrameDim);
+#endif
+#if USE_SINGLE_CHANNEL
+    color = float3(selectChannel(color));
 #endif
     gOutputColor[pixel] = float4(color, 1.f);
 }

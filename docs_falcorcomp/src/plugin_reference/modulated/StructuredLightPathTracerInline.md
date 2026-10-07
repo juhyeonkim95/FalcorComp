@@ -26,6 +26,11 @@ projector's right and $v$ along its up. It emits $I_0\,P(\xi) / \cos^3\theta$ to
 coordinates $\xi$, where $\theta$ is the angle to its axis and $I_0$ is `projectorIntensity`, so that
 the image plane is lit uniformly.
 
+By default the projector sits at the camera and looks along its view (`projectorCollocated`), which
+lights what the camera sees but carries no depth information. Giving `projectorPosition`,
+`projectorDirection` or `projectorUp` places it there instead, unless `projectorCollocated` is also
+given.
+
 ```{list-table}
 :header-rows: 1
 :widths: 25 10 65
@@ -33,15 +38,20 @@ the image plane is lit uniformly.
 * - Parameter
   - Type
   - Description
+* - `projectorCollocated`
+  - boolean
+  - Place the projector at the camera, every frame: its position, view direction and up. (Default:
+    `true`, or `false` when `projectorPosition`, `projectorDirection` or `projectorUp` is given)
 * - `projectorPosition`
   - float3
-  - Projector center, in world space. (Default: `(0, 0, 0)`)
+  - Projector center, in world space, without `projectorCollocated`. (Default: `(0, 0, 0)`)
 * - `projectorDirection`
   - float3
-  - Viewing direction (normalized when used). (Default: `(0, 0, -1)`)
+  - Viewing direction (normalized when used), without `projectorCollocated`. (Default: `(0, 0, -1)`)
 * - `projectorUp`
   - float3
-  - Up hint: $v$ runs along it, made orthogonal to the direction. (Default: `(0, 1, 0)`)
+  - Up hint: $v$ runs along it, made orthogonal to the direction; without `projectorCollocated`.
+    (Default: `(0, 1, 0)`)
 * - `projectorFov`
   - float2
   - Full field of view along $u$ and $v$, in degrees. (Default: `(22.62, 22.62)`)
@@ -90,11 +100,11 @@ the image plane is lit uniformly.
   - `gray`, `xor`: the pattern has $2^\text{bits}$ columns. (Default: `10`)
 * - `patternBit`
   - integer
-  - `gray`, `xor`: the bit shown, `0` for the finest stripes. (Default: `0`)
+  - `gray`, `xor`: the bit shown, `0` for the finest stripes; below `patternBits`. (Default: `0`)
 * - `patternBaseBit`
   - integer
-  - `xor`: the base bit XORed with the higher bits (`0` for XOR-02, `1` for XOR-04, ...).
-    (Default: `0`)
+  - `xor`: the base bit XORed with the higher bits (`0` for XOR-02, `1` for XOR-04, ...); below
+    `patternBits`. (Default: `0`)
 * - `checkerCells`
   - uint2
   - `checkerboard`: cells along $u$ and $v$. (Default: `(16, 16)`)
@@ -142,15 +152,19 @@ tracer.set_pattern_data(values, antithetic_index=matching)
 tracer.set_pattern_data(values, interval_ids=ids, intervals=intervals)
 ```
 
-- `values`: `0` or `1` per column (along `patternAxis`), shown as $-1$ and $+1$.
+- `values`: `0` or `1` per column (along `patternAxis`), shown as $-1$ and $+1$; other values raise an
+  error.
 - `antithetic_index`: for each column, the column it is paired with, of the opposite value (for
   example the optimal-transport matching of the 0s and 1s). The pairing must be symmetric.
 - `interval_ids` and `intervals`: for each column, the interval it belongs to, and for each interval
   `(srcStart, srcEnd, dstStart, dstEnd)`, in columns: the interval is mapped linearly onto another
   one, which must map back onto it.
 
-Give the matching or the intervals, or neither (no antithetic map), not both. `set_pattern_data`
-warns when the matching is not symmetric or does not pair opposite values, or when the intervals do
+Give the matching or the intervals (`interval_ids` and `intervals` together), or neither (no
+antithetic map), not both. It raises an error when an entry is out of range: a partner or interval
+id past the last column or interval, an interval with start >= end or past the last column, or a
+column outside its interval's source range or not assigned to the interval whose source contains it
+(the source ranges must partition the columns). It warns when the matching is not symmetric or does not pair opposite values, or when the intervals do
 not map back onto themselves, which makes antithetic sampling biased or ineffective. Rendering with
 `pattern = arbitrary` before `set_pattern_data` is called raises an error.
 
@@ -169,28 +183,19 @@ not map back onto themselves, which makes antithetic sampling biased or ineffect
 * - `maxBounces`
   - integer
   - Maximum number of surface vertices on a camera path, counting the primary hit.
-    (Default: `3`)
+    `0` renders no light. (Default: `3`)
 * - `samplingMethod`
   - string
-  - How the vertex lit by the projector is reached from the camera path: `bsdf` (BSDF sampling,
-    then a connection to the projector), `antithetic` (the same, with each BSDF sample paired with
-    its antithetic vertex) or `projector` (the vertex is sampled from the projector, stratified
-    along the pattern axis, and connected to the camera path). (Default: `antithetic`)
-* - `projectorSampleCount`
-  - integer
-  - `projector` only: projector samples per camera-path vertex. (Default: `1`)
+  - How the vertex lit by the projector is reached from the camera path: `naive` (BSDF sampling,
+    then a connection to the projector) or `antithetic` (the same, with each BSDF sample paired with
+    its antithetic vertex; see [Antithetic sampling](#structured-light-antithetic)). (Default: `antithetic`)
 * - `useImportanceSampling`
   - boolean
   - Importance-sample the BSDF when extending the camera path; otherwise use the material's
     reference sampler (cosine-weighted for standard materials). (Default: `true`)
 ```
 
-The `projector` method has high variance where the sampled vertex falls close to the camera-path
-vertex (for example in corners), because it is not combined with BSDF sampling; it is mainly a
-baseline for comparisons. Its connections are one-sided: they do not pass through the
-camera-path vertex or the sampled vertex by transmission.
-
-For every method, a vertex is lit by the projector only on the side its path arrived from: the projector never
+With either method, a vertex is lit by the projector only on the side its path arrived from: the projector never
 lights a surface through it, so it does not light the inside of glass or other transmissive objects (they still
 transmit the light that reflects off other surfaces).
 
@@ -237,7 +242,7 @@ or for neither; otherwise the primal sample is used alone, which keeps the estim
   - Primary ray directions, from `VBufferRT`.
 * - `color` (output)
   - Structured-light measurement $I$, RGBA32Float. With the signed pattern it can be negative.
-    Pixels without a primary hit show the environment map if the scene has one, black otherwise.
+    Pixels without a primary hit are black: the environment map is not part of the measurement.
 ```
 
 The output options `computeDirect` (default `true` here), `useSingleChannel`, `singleChannel` and
@@ -246,6 +251,9 @@ The output options `computeDirect` (default `true` here), `useSingleChannel`, `s
 ## Example
 
 ```python
+testbed.load_scene("cornell-box/scene-v4-nolight.pbrt", falcor.SceneBuilderFlags.DontMergeMaterials)
+graph = testbed.create_render_graph("StructuredLight")
+graph.create_pass("VBuffer", "VBufferRT", {"samplePattern": "Center", "sampleCount": 1})
 graph.create_pass("Tracer", "StructuredLightPathTracerInline", {
     "samplesPerPixel": 8, "maxBounces": 3, "computeDirect": False,
     "projectorPosition": [0.4, 1.0, 6.8], "projectorDirection": [0.0, 0.0, -1.0],
@@ -254,6 +262,8 @@ graph.create_pass("Tracer", "StructuredLightPathTracerInline", {
 })
 graph.add_edge("VBuffer.vbuffer", "Tracer.vbuffer")
 graph.add_edge("VBuffer.viewW", "Tracer.viewW")
+graph.mark_output("Tracer.color")
+testbed.render_graph = graph
 ```
 
 See the [structured light tutorial](../../tutorials/structured_light_offline.md) for a complete

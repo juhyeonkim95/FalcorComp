@@ -29,7 +29,7 @@ CWTOF = {
     "useSingleChannel": True, "singleChannel": "luminance",
 }
 NAIVE = {"useAntitheticSampling": False}
-ANTITHETIC = {"useAntitheticSampling": True, "shiftmapMethod": "barycentric"}
+ANTITHETIC = {"useAntitheticSampling": True, "shiftMappingMethod": "barycentric"}
 
 
 def create_graph(properties):

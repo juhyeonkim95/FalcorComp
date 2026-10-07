@@ -97,10 +97,32 @@ testbed.frame()                                                   # one noisy fr
 image = graph.get_output("Tracer.color").to_numpy()               # 512 x 512 x RGBA
 ```
 
+A pass's settings can also be changed between frames, with the names used to create it:
+`graph.get_pass("Tracer").set_properties({"timeCenter": 17.6})`. Settings left out keep their
+values, an invalid value raises an error and leaves the pass unchanged, and
+`graph.get_pass("Tracer").properties` returns the current settings.
+
 The same graph can run in an interactive window, where the camera and the render pass's settings
 can be changed while it renders. The [tutorials](../tutorials/index.md) build such graphs step by
 step, and the [plugin reference](../plugin_reference/time_gated.md) describes every render pass and
 its settings.
+
+(differences-from-falcor)=
+## Differences from Falcor
+
+falcorcomp changes two behaviors of Falcor itself, which also show in Falcor's own render passes:
+
+- **pbrt scenes keep pbrt's materials.** Falcor's pbrt importer converts materials to its `StandardMaterial` unless
+  its setting `PBRTImporter:usePBRTMaterials` is on; falcorcomp turns it on by default, so `diffuse`, `conductor`,
+  `dielectric`, `diffusetransmission`, `coateddiffuse` and `coatedconductor` keep pbrt's BSDFs (`thindielectric` is
+  still converted). `Testbed` loads scenes with the default; in Mogwai,
+  `m.addOptions({"PBRTImporter": {"usePBRTMaterials": False}})` before loading a scene restores the conversion.
+- **pbrt materials report an albedo for denoising.** In Falcor, the pbrt `conductor`, `dielectric` and `coateddiffuse`
+  materials report no diffuse albedo (zero). SVGF-style denoisers divide by that albedo (demodulation), so falcorcomp
+  reports one: the reflectance at normal incidence for `conductor`, 1 for `dielectric` and the base layer's
+  reflectance for `coateddiffuse`. Everything that reads the albedo sees it: the path tracer's albedo and NRD guide
+  outputs, the G-buffer's diffuse albedo and RTXDI. A `coatedconductor` still reports none, so SVGF and
+  [`EventSVGF`](../plugin_reference/event/EventSVGF.md) cannot demodulate it.
 
 ## Research
 

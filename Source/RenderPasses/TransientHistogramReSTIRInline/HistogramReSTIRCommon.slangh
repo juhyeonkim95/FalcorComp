@@ -36,9 +36,10 @@ cbuffer CB
     uint gFrameCount;    // Frame count since scene was loaded.
     
     uint gSamplesPerPixel;
-    float gReconnectionRoughnessThreshold;
-    float gReconnectionMinDistance;
+    ReconnectionCriteria gReconnection;
     float gTemporalHistoryLength;
+    // Whether this pass writes the histogram: only the frame's last stage does (spatial reuse rewrites every texel).
+    bool gWriteHistogram;
 #if USE_TEMPORAL_REUSE
     bool gTemporalHistoryValid;
     float3 gPreviousCameraPosition;
@@ -47,13 +48,6 @@ cbuffer CB
     uint gPairFirstBin; // Chunk of bins of the two-pass temporal reuse.
     uint gPairBinCount;
 #endif
-}
-
-
-ReconnectionCriteria getReconnectionCriteria()
-{
-    ReconnectionCriteria criteria = { gReconnectionRoughnessThreshold, gReconnectionMinDistance };
-    return criteria;
 }
 
 // Inputs
@@ -79,6 +73,10 @@ RWStructuredBuffer<float2> gCurrSummaries;
 // random state after path tracing, which the merges continue.
 RWStructuredBuffer<ReusePair> gTemporalPairs;
 RWStructuredBuffer<uint> gTemporalRandomState;
+// The history pixel of each pixel this frame (getTemporalHistory), found once by initial generation; kNoHistory without
+// one (also without a primary hit). The temporal kernels skip such pixels and reload the others' history.
+RWStructuredBuffer<uint> gTemporalHistoryPixel;
+static const uint kNoHistory = 0xffffffffu;
 #endif
 
 // Outputs
@@ -86,50 +84,56 @@ RWTexture2D<float4> gOutputColor;
 
 RWTexture3D<HistogramTexel> gTransientHistogram;
 
+// The reservoir (and summary) of a pixel and bin.
+ReservoirIndex reservoirIndex(uint pixelIndex, uint bin)
+{
+    return makeReservoirIndex(pixelIndex, bin, gTimeBin, gFrameDim.x * gFrameDim.y);
+}
+
 // Finalized reservoirs, with their summaries if RESERVOIR_SUMMARIES (then an empty reservoir is not stored).
-Reservoir loadPrevReservoir(uint index)
+Reservoir loadPrevReservoir(ReservoirIndex index)
 {
 #if RESERVOIR_SUMMARIES
     return loadSummarizedReservoir(gPrevReservoirs, gPrevSummaries, index);
 #else
-    return gPrevReservoirs[index];
+    return gPrevReservoirs[index.reservoir];
 #endif
 }
 
-Reservoir loadCurrReservoir(uint index)
+Reservoir loadCurrReservoir(ReservoirIndex index)
 {
 #if RESERVOIR_SUMMARIES
     return loadSummarizedReservoir(gCurrReservoirs, gCurrSummaries, index);
 #else
-    return gCurrReservoirs[index];
+    return gCurrReservoirs[index.reservoir];
 #endif
 }
 
 // W and M of a finalized reservoir.
-float2 getPrevSummary(uint index)
+float2 getPrevSummary(ReservoirIndex index)
 {
 #if RESERVOIR_SUMMARIES
-    return gPrevSummaries[index];
+    return gPrevSummaries[index.summary];
 #else
-    return float2(gPrevReservoirs[index].W, gPrevReservoirs[index].M);
+    return float2(gPrevReservoirs[index.reservoir].W, gPrevReservoirs[index.reservoir].M);
 #endif
 }
 
-float2 getCurrSummary(uint index)
+float2 getCurrSummary(ReservoirIndex index)
 {
 #if RESERVOIR_SUMMARIES
-    return gCurrSummaries[index];
+    return gCurrSummaries[index.summary];
 #else
-    return float2(gCurrReservoirs[index].W, gCurrReservoirs[index].M);
+    return float2(gCurrReservoirs[index.reservoir].W, gCurrReservoirs[index.reservoir].M);
 #endif
 }
 
-void storeReservoir(uint index, Reservoir reservoir)
+void storeReservoir(ReservoirIndex index, Reservoir reservoir)
 {
 #if RESERVOIR_SUMMARIES
     storeSummarizedReservoir(gCurrReservoirs, gCurrSummaries, index, reservoir);
 #else
-    gCurrReservoirs[index] = reservoir;
+    gCurrReservoirs[index.reservoir] = reservoir;
 #endif
 }
 
@@ -141,11 +145,31 @@ TemporalHistory getTemporalHistory(uint2 pixel)
     TemporalHistory history = {};
     if (gTemporalHistoryValid && gTemporalHistoryLength != 0.f)
         history = findTemporalHistory(pixel, gFrameDim, gMotionVector, gTemporalVBuffer, gPreviousCameraPosition);
+    if (history.valid)
+    {
+        // Reuse only a history on the same surface (not a disocclusion), as TG ReSTIR does. Every kernel that merges
+        // the history decides the same way; the test needs only the primary hit's vertex data.
+        HitInfo primaryHit = HitInfo(gVBuffer[pixel]);
+        if (primaryHit.getType() != HitType::Triangle) return {};
+        TriangleHit triangleHit = primaryHit.getTriangleHit();
+        VertexData vertex = gScene.getVertexData(triangleHit);
+        float3 toCamera = gScene.camera.getPosition() - vertex.posW;
+        float3 orientedNormal = dot(vertex.faceNormalW, toCamera) >= 0.f ? vertex.faceNormalW : -vertex.faceNormalW;
+        if (!isSameSurface(gScene.getMaterialID(triangleHit.instanceID), orientedNormal, length(toCamera), history))
+            history.valid = false;
+    }
     return history;
 }
 #endif
 
 #if TEMPORAL_REUSE_PAIRS
+// The history whose pixel initial generation found (gTemporalHistoryPixel), reloaded from last frame's V-buffer.
+TemporalHistory loadPixelHistory(uint historyPixel)
+{
+    uint2 previousPixel = uint2(historyPixel % gFrameDim.x, historyPixel / gFrameDim.x);
+    return loadTemporalHistory(previousPixel, gFrameDim, gTemporalVBuffer, gPreviousCameraPosition);
+}
+
 uint getTemporalPairIndex(uint pixelIndex, uint bin)
 {
     return (bin - gPairFirstBin) * gFrameDim.x * gFrameDim.y + pixelIndex;

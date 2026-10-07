@@ -48,8 +48,9 @@ Doppler ToF.
 :link: doppler_spectrum_offline
 :link-type: doc
 
-Render the Doppler spectrum of the Cornell box with `DopplerHistogramPathTracerInline` while its boxes move, look
-at the spectra of single pixels, and render a single Doppler-gated image with `DopplerGatedPathTracerInline`.
+Render the Doppler spectrum of the Cornell box with `DopplerHistogramPathTracerInline`, with velocities given to its
+boxes (the scene itself stays still), look at the spectra of single pixels, and render a single Doppler-gated image
+with `DopplerGatedPathTracerInline`.
 ```
 
 ```{grid-item-card} FMCW lidar (offline)

@@ -34,6 +34,7 @@ static void regVelocityGroundTruthInline(pybind11::module& m)
     pybind11::class_<VelocityGroundTruthInline, RenderPass, ref<VelocityGroundTruthInline>> pass(m, "VelocityGroundTruthInline");
     pass.def("set_velocity", &VelocityGroundTruthInline::setVelocity, "name"_a, "linear"_a,
         "angular"_a = float3(0.f), "center"_a = float3(0.f));
+    pass.def("clear_velocities", &VelocityGroundTruthInline::clearVelocities);
     pass.def("get_object_names", &VelocityGroundTruthInline::getObjectNames);
 }
 
@@ -60,6 +61,7 @@ const std::map<std::string, VelocityGroundTruthInline::Mode> kModes = {
 VelocityGroundTruthInline::VelocityGroundTruthInline(ref<Device> pDevice, const Properties& props) : RenderPass(pDevice)
 {
     parseProperties(props);
+    validateOptions(mOptions);
     mpSampleGenerator = SampleGenerator::create(mpDevice, SAMPLE_GENERATOR_TINY_UNIFORM);
 }
 
@@ -73,39 +75,51 @@ void VelocityGroundTruthInline::parseProperties(const Properties& props)
             auto it = kModes.find(mode);
             if (it == kModes.end())
                 FALCOR_THROW("mode must be doppler, path_length or projection.");
-            mMode = it->second;
+            mOptions.mode = it->second;
         }
         else if (key == "dt")
-            mDt = value;
+            mOptions.dt = value;
         else if (key == "direction")
-            mDirection = value;
+            mOptions.direction = value;
         else if (key == "sensorVelocity")
-            mSensorVelocity = value;
+            mOptions.sensorVelocity = value;
         else if (key == "lightVelocity")
-            mLightVelocity = value;
+            mOptions.lightVelocity = value;
         else if (key == "velocities")
-            mVelocities = parseObjectMotions(value);
+            mOptions.velocities = parseObjectMotions(value);
         else
             logWarning("Unknown property '{}' in {} properties.", key, kPassName);
     }
-    if (mMode == Mode::PathLength && !(mDt > 0.f))
+}
+
+void VelocityGroundTruthInline::validateOptions(const Options& options)
+{
+    if (options.mode == Mode::PathLength && !(options.dt > 0.f))
         FALCOR_THROW("dt must be positive.");
-    if (!(length(mDirection) > 0.f))
+    if (!(length(options.direction) > 0.f))
         FALCOR_THROW("direction must be nonzero.");
-    mDirection = normalize(mDirection);
+}
+
+void VelocityGroundTruthInline::setProperties(const Properties& props)
+{
+    // Invalid properties throw and leave the options unchanged.
+    InlinePass::applyProperties(mOptions, [&] { parseProperties(props); }, validateOptions);
+    // The velocity buffer and, for path_length, the moving nodes follow the motions and the mode.
+    if (props.has("velocities") || props.has("mode"))
+        mVelocitiesDirty = true;
 }
 
 Properties VelocityGroundTruthInline::getProperties() const
 {
     Properties props;
     for (const auto& [name, mode] : kModes)
-        if (mode == mMode)
+        if (mode == mOptions.mode)
             props["mode"] = name;
-    props["dt"] = mDt;
-    props["direction"] = mDirection;
-    props["sensorVelocity"] = mSensorVelocity;
-    props["lightVelocity"] = mLightVelocity;
-    props["velocities"] = serializeObjectMotions(mVelocities);
+    props["dt"] = mOptions.dt;
+    props["direction"] = mOptions.direction;
+    props["sensorVelocity"] = mOptions.sensorVelocity;
+    props["lightVelocity"] = mOptions.lightVelocity;
+    props["velocities"] = serializeObjectMotions(mOptions.velocities);
     return props;
 }
 
@@ -118,7 +132,13 @@ RenderPassReflection VelocityGroundTruthInline::reflect(const CompileData& compi
 
 void VelocityGroundTruthInline::setVelocity(const std::string& name, float3 linear, float3 angular, float3 center)
 {
-    mVelocities[name] = ObjectMotion{linear, angular, center};
+    mOptions.velocities[name] = ObjectMotion{linear, angular, center};
+    mVelocitiesDirty = true;
+}
+
+void VelocityGroundTruthInline::clearVelocities()
+{
+    mOptions.velocities.clear();
     mVelocitiesDirty = true;
 }
 
@@ -133,6 +153,7 @@ std::vector<std::tuple<uint32_t, std::string, std::string, bool>> VelocityGround
 
 void VelocityGroundTruthInline::execute(RenderContext* pRenderContext, const RenderData& renderData)
 {
+    mLaserInput.update(renderData, "VelocityGroundTruthInline");
     const ref<Texture> pVelocity = renderData.getTexture("velocity");
     if (!mpScene)
     {
@@ -141,41 +162,45 @@ void VelocityGroundTruthInline::execute(RenderContext* pRenderContext, const Ren
     }
     if (mVelocitiesDirty)
     {
-        mpInstanceVelocities = createInstanceVelocityBuffer(mpDevice, *mpScene, mVelocities, kPassName);
-        if (mMode == Mode::PathLength)
-            mMover.prepare(mpScene, mVelocities, kPassName);
+        mpInstanceVelocities = createInstanceVelocityBuffer(mpDevice, *mpScene, mOptions.velocities, kPassName);
+        if (mOptions.mode == Mode::PathLength)
+            mMover.prepare(mpScene, mOptions.velocities, kPassName);
         mVelocitiesDirty = false;
     }
-    DefineList defines = LaserState::resolve(renderData).getDefines();
+    DefineList defines = mLaserInput.get().getDefines();
     if (!mpComputePass)
         mpComputePass = InlinePass::createScenePass(mpDevice, pRenderContext, mpScene, mpSampleGenerator, kShaderFile, defines);
     InlinePass::updateScenePassDefines(pRenderContext, mpComputePass, mpScene, mpSampleGenerator, defines);
 
     const uint2 frameDim = uint2(pVelocity->getWidth(), pVelocity->getHeight());
     if (!mpFirstLength || mpFirstLength->getWidth() != frameDim.x || mpFirstLength->getHeight() != frameDim.y)
-        mpFirstLength = mpDevice->createTexture2D(frameDim.x, frameDim.y, ResourceFormat::R32Float, 1, 1, nullptr,
+        mpFirstLength = mpDevice->createTexture2D(frameDim.x, frameDim.y, ResourceFormat::RG32Float, 1, 1, nullptr,
             ResourceBindFlags::UnorderedAccess | ResourceBindFlags::ShaderResource);
 
     auto var = mpComputePass->getRootVar();
-    LaserState::resolve(renderData).bindShaderData(var["Laser"]);
+    mLaserInput.get().bindShaderData(var["Laser"]);
     var["gVelocity"] = pVelocity;
     var["gFirstLength"] = mpFirstLength;
     var["gInstanceVelocities"] = mpInstanceVelocities;
     var["CB"]["gFrameDim"] = frameDim;
-    var["CB"]["gMode"] = uint(mMode);
-    var["CB"]["gDirection"] = mDirection;
-    var["CB"]["gSensorVelocity"] = mSensorVelocity;
-    var["CB"]["gLightVelocity"] = mLightVelocity;
-    var["CB"]["gDt"] = mDt;
+    var["CB"]["gMode"] = uint(mOptions.mode);
+    var["CB"]["gDirection"] = normalize(mOptions.direction);
+    var["CB"]["gSensorVelocity"] = mOptions.sensorVelocity;
+    var["CB"]["gLightVelocity"] = mOptions.lightVelocity;
+    var["CB"]["gDt"] = mOptions.dt;
 
     // path_length: the path length at time 0 (the scene's pose), then again at dt, along the same pixel rays.
+    // Rebind the scene first: the last frame moved it to dt and back, and the binding still holds the TLAS of the
+    // moved pose.
+    if (mOptions.mode == Mode::PathLength && !mMover.empty())
+        mpScene->bindShaderDataForRaytracing(pRenderContext, var["gScene"]);
     var["CB"]["gStage"] = 0u;
     mpComputePass->execute(pRenderContext, uint3(frameDim, 1));
-    if (mMode == Mode::PathLength)
+    if (mOptions.mode == Mode::PathLength)
     {
         if (!mMover.empty())
         {
-            mMover.apply(pRenderContext, mDt);
+            mMover.apply(pRenderContext, mOptions.dt);
             mpScene->bindShaderDataForRaytracing(pRenderContext, var["gScene"]);
         }
         var["CB"]["gStage"] = 1u;

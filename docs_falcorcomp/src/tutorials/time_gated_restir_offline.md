@@ -37,7 +37,7 @@ the reuse options:
   spatial reuse, each resampling 5 neighbors within 10 pixels.
 - `useTemporalReuse`: off. Temporal reuse also reuses paths from earlier frames, which is meant
   for online rendering; here every frame is independent and `AccumulatePass` averages them.
-- `shiftmapMethod`, `gaugeMode`, `reconnectionRoughnessThreshold`: how a neighbor's path is shifted to
+- `shiftMappingMethod`, `gaugeMode`, `reconnectionRoughnessThreshold`: how a neighbor's path is shifted to
   this pixel while keeping its length. The defaults do not shift paths (`no`), so set them.
 
 ```{literalinclude} code/time_gated_restir_offline.py

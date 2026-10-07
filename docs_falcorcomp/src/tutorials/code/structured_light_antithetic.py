@@ -29,7 +29,7 @@ STRUCTURED_LIGHT = {
     "pattern": "periodic", "waveform": "cos", "patternAxis": "u",
     "useSingleChannel": True, "singleChannel": "luminance",
 }
-NAIVE = {"samplingMethod": "bsdf"}
+NAIVE = {"samplingMethod": "naive"}
 # Each sampled vertex is paired with the point the projector lights through the
 # mirror image of its projector coordinate within the period, where the cos has
 # the opposite sign.

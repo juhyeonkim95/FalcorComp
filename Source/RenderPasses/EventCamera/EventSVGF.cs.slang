@@ -1,6 +1,7 @@
 /** EventSVGF (Kim et al., EGSR 2026): SVGF on the demodulated primal and on the non-motion-aligned frame difference
  * from correlated sampling; see EventCamera.h. Kernels, per frame:
  * - reproject: demodulation, temporal accumulation of the primal and of the difference (Eq. 15-16), moments;
+ * - filterMoments: while a history is short, the variance (and value) estimated spatially, as SVGF does;
  * - atrous: one a-trous iteration, with the difference-aware edge-stopping weight (Eq. 12) for the difference;
  * - finalize: remodulation (Eq. 19) and the brightness change (Eq. 21).
  * Illumination textures hold (primal, difference, variance of the difference, variance of the primal).
@@ -48,6 +49,10 @@ Texture2D gPrevHistory; // (history length of the primal, consecutive frames wit
 RWTexture2D<float4> gHistory;
 Texture2D<float> gPrevReprojected; // Frame t-1's reprojection of the frame t-2 feedback, at the same pixel.
 RWTexture2D<float> gReprojected;
+// The current frame's gZN, gMoments and gHistory, as the filters read them (shader resources, not UAVs).
+Texture2D gCurrZN;
+Texture2D gCurrMoments;
+Texture2D gCurrHistory;
 RWTexture2D<float> gPrevIllumination2;         // Demodulated color2 of frame t-1; updated in place.
 RWTexture2D<float4> gPrevAlbedoEmission;       // (albedo, emission, emitted luminance) of frame t-1, as remodulated; in place.
 RWTexture2D<float> gPrevFinalIllumination;     // Denoised primal of frame t-1; updated in place.
@@ -59,6 +64,9 @@ RWTexture2D<float4> gIllumination;
 Texture2D gAtrousInput;
 RWTexture2D<float4> gAtrousOutput;
 
+// Feedback tap (copyFeedback): the (primal, difference) illumination that becomes frame t-1's.
+RWTexture2D<float2> gFeedbackOut;
+
 // Outputs.
 Texture2D gFiltered;
 RWTexture2D<float4> gDeltaI;
@@ -69,7 +77,7 @@ RWTexture2D<float4> gPrimal;
 /// (albedo, emission) luminance used to demodulate and remodulate; (1, 0) without demodulation.
 float2 modulation(float3 albedo, float3 emission)
 {
-    if (!gUseDemodulation)
+    if (gUseDemodulation == 0)
         return float2(1.0, 0.0);
     return float2(max(luminance(albedo), kMinAlbedo), luminance(emission));
 }
@@ -85,15 +93,21 @@ bool isEmitter(int2 pixel)
     return gEmitter[pixel] > 0.5f;
 }
 
-/// Pixel `coord` of the previous frame shows the same surface: inside the image (one-pixel border excluded), depth
-/// within 5% and normals within acos(0.9).
+/// The previous frame's sample at the same pixel shows the same surface: depth within 5% and normals within acos(0.9).
+bool isSameSurface(float z, float zPrev, float3 normal, float3 normalPrev)
+{
+    if (abs(zPrev - z) > 0.05f * abs(z))
+        return false;
+    return dot(normal, normalPrev) >= 0.9f;
+}
+
+/// Pixel `coord` of the previous frame, reprojected, shows the same surface: inside the image (one-pixel border
+/// excluded, where reprojection is unreliable) and isSameSurface().
 bool isConsistent(int2 coord, float z, float zPrev, float3 normal, float3 normalPrev)
 {
     if (any(coord < int2(1, 1)) || any(coord > int2(gFrameDim) - int2(1, 1)))
         return false;
-    if (abs(zPrev - z) > 0.05f * abs(z))
-        return false;
-    return dot(normal, normalPrev) >= 0.9f;
+    return isSameSurface(z, zPrev, normal, normalPrev);
 }
 
 float computeWeight(float depthCenter, float depthP, float phiDepth, float3 normalCenter, float3 normalP, float phiNormal,
@@ -186,7 +200,7 @@ void reproject(uint3 dispatchThreadId: SV_DispatchThreadID)
     const float z = zn.x;
     const float3 normal = oct_to_ndir_snorm(zn.zw);
     const float4 znPrev = gPrevZN[pixel];
-    const bool sameSurface = isConsistent(pixel, z, znPrev.x, normal, oct_to_ndir_snorm(znPrev.zw));
+    const bool sameSurface = isSameSurface(z, znPrev.x, normal, oct_to_ndir_snorm(znPrev.zw));
 
     const PrevData prev = loadPrevData(pixel, z, normal);
     const float historyLength = min(32.0f, prev.valid ? prev.historyLength + 1.0f : 1.0f);
@@ -195,8 +209,15 @@ void reproject(uint3 dispatchThreadId: SV_DispatchThreadID)
     // Demodulated primal (I^1_t + I^2_t) / 2 and difference I^1_t - I^2_{t-1} (the pair sharing the seed r_{t-1}).
     const float3 emission = gEmission[pixel].rgb;
     const float2 albedoEmission = modulation(gAlbedo[pixel].rgb, emission);
-    const float illumination1 = demodulate(gColor1[pixel].rgb, albedoEmission);
-    const float illumination2 = demodulate(gColor2[pixel].rgb, albedoEmission);
+    float illumination1 = demodulate(gColor1[pixel].rgb, albedoEmission);
+    float illumination2 = demodulate(gColor2[pixel].rgb, albedoEmission);
+    // A non-finite sample (NaN or Inf from the renderer) would spread through the filter and stay in the history: use
+    // the history's value instead.
+    const float fallback = prev.valid ? prev.illumination : 0.f;
+    if (!isfinite(illumination1))
+        illumination1 = fallback;
+    if (!isfinite(illumination2))
+        illumination2 = fallback;
     const float prevIllumination2 = gPrevIllumination2[pixel];
     gPrevIllumination2[pixel] = illumination2;
     const float primal = 0.5f * (illumination1 + illumination2);
@@ -213,7 +234,7 @@ void reproject(uint3 dispatchThreadId: SV_DispatchThreadID)
     // position, minus frame t-2's feedback where frame t-1 reprojected this pixel.
     const float predicted = prev.difference + prev.prevPrevIllumination - gPrevReprojected[pixel];
     const bool prevReprojected = gPrevHistory[pixel].x >= 2; // Frame t-1 reprojected this pixel: the third term exists.
-    const bool accumulate = historyLength >= 3 && sameSurface && prev.diffValid && prevReprojected && gUseTemporalAccumulation;
+    const bool accumulate = historyLength >= 3 && sameSurface && prev.diffValid && prevReprojected && gUseTemporalAccumulation != 0;
     // The difference exists from the second frame on: its samples number historyLength - 1.
     const float alphaDifference = (prev.valid && historyLength >= 2) ? max(gAlpha, 1.0 / (historyLength - 1)) : 1.0;
     // Frames the difference has been accumulated over, for its moments.
@@ -232,10 +253,91 @@ void reproject(uint3 dispatchThreadId: SV_DispatchThreadID)
     }
     const float differenceVariance = max(0.f, differenceMoments.y - differenceMoments.x * differenceMoments.x);
 
-    gIllumination[pixel] = float4(primalAccumulated, differenceAccumulated, differenceVariance, variance);
-    gMoments[pixel] = float4(moments, differenceMoments);
+    float4 accumulated = float4(primalAccumulated, differenceAccumulated, differenceVariance, variance);
+    float4 allMoments = float4(moments, differenceMoments);
+    // Overflow (e.g. a huge sample squared): restart from this frame's values.
+    if (!all(isfinite(accumulated)) || !all(isfinite(allMoments)))
+    {
+        accumulated = float4(primal, emitter ? 0.f : difference, 0.f, 0.f);
+        allMoments = float4(primal, 0.f, 0.f, 0.f);
+    }
+    gIllumination[pixel] = accumulated;
+    gMoments[pixel] = allMoments;
     gHistory[pixel] = float4(historyLength, sameSurfaceLength, differenceHistoryLength, 0.0);
     gReprojected[pixel] = prev.illumination;
+}
+
+// While the primal's or the difference's history is shorter than 4 frames, its temporal variance is unreliable: 0 right
+// after a restart, which would stop the a-trous filter. As SVGF's filterMoments, estimate the variance (and the value)
+// spatially over a 7x7 cross-bilateral neighborhood, with a boost for the first frames. The difference only takes
+// neighbors that are no emitter and show the same surfaces in the previous frame too.
+[numthreads(16, 16, 1)]
+void filterMoments(uint3 dispatchThreadId: SV_DispatchThreadID)
+{
+    const int2 pixel = dispatchThreadId.xy;
+    if (any(pixel >= int2(gFrameDim)))
+        return;
+
+    const float4 center = gAtrousInput.Load(int3(pixel, 0));
+    const float4 history = gCurrHistory[pixel];
+    const bool primalShort = history.x < 4.0;
+    const bool differenceShort = history.z < 4.0 && !isEmitter(pixel);
+    const float2 zCenter = gCurrZN[pixel].xy;
+    if ((!primalShort && !differenceShort) || zCenter.x < 0)
+    {
+        gAtrousOutput[pixel] = center;
+        return;
+    }
+    const float3 nCenter = oct_to_ndir_snorm(gCurrZN[pixel].zw);
+    const float4 znCenterPrev = gPrevZN[pixel];
+    const float3 nCenterPrev = oct_to_ndir_snorm(znCenterPrev.zw);
+    const float phiDepth = max(zCenter.y, 1e-8) * 3.0;
+    const float phiDepthPrev = max(znCenterPrev.y, 1e-8) * 3.0;
+
+    float sumW = 0.0;
+    float sumWDiff = 0.0;
+    float2 sumValue = float2(0.0);
+    float4 sumMoments = float4(0.0);
+    for (int yy = -3; yy <= 3; yy++)
+    {
+        for (int xx = -3; xx <= 3; xx++)
+        {
+            const int2 p = pixel + int2(xx, yy);
+            if (any(p < int2(0, 0)) || any(p >= int2(gFrameDim)))
+                continue;
+            const float4 illuminationP = gAtrousInput.Load(int3(p, 0));
+            const float4 momentsP = gCurrMoments[p];
+            const float4 znP = gCurrZN[p];
+            const float distance = length(float2(xx, yy));
+            const float w = computeWeight(zCenter.x, znP.x, phiDepth * distance, nCenter, oct_to_ndir_snorm(znP.zw),
+                gPhiNormal, center.r, illuminationP.r, gPhiColor);
+            sumW += w;
+            sumValue.x += w * illuminationP.r;
+            sumMoments.xy += w * momentsP.xy;
+            // The previous frame's surfaces too (the difference pairs the two frames), without a luminance term.
+            const float4 znPPrev = gPrevZN[p];
+            const float wPrev = isEmitter(p) ? 0.0 : computeWeight(znCenterPrev.x, znPPrev.x, phiDepthPrev * distance,
+                nCenterPrev, oct_to_ndir_snorm(znPPrev.zw), gPhiNormal, 0.0, 0.0, 1.0);
+            sumWDiff += w * wPrev;
+            sumValue.y += w * wPrev * illuminationP.g;
+            sumMoments.zw += w * wPrev * momentsP.zw;
+        }
+    }
+    float4 result = center;
+    if (primalShort)
+    {
+        sumW = max(sumW, 1e-6f);
+        const float2 m = sumMoments.xy / sumW;
+        result.r = sumValue.x / sumW;
+        result.a = max(0.0, m.y - m.x * m.x) * 4.0 / max(history.x, 1.0);
+    }
+    if (differenceShort && sumWDiff > 1e-6f)
+    {
+        const float2 m = sumMoments.zw / sumWDiff;
+        result.g = sumValue.y / sumWDiff;
+        result.b = max(0.0, m.y - m.x * m.x) * 4.0 / max(history.z, 1.0);
+    }
+    gAtrousOutput[pixel] = result;
 }
 
 // 3x3 Gaussian of the variances (difference in .x, primal in .y) around the pixel.
@@ -257,20 +359,20 @@ void atrous(uint3 dispatchThreadId: SV_DispatchThreadID)
         return;
 
     const float4 center = gAtrousInput.Load(int3(pixel, 0));
-    const float2 zCenter = gZN[pixel].xy;
+    const float2 zCenter = gCurrZN[pixel].xy;
     if (zCenter.x < 0)
     {
         // No valid depth: environment, not filtered.
         gAtrousOutput[pixel] = center;
         return;
     }
-    const float3 nCenter = oct_to_ndir_snorm(gZN[pixel].zw);
+    const float3 nCenter = oct_to_ndir_snorm(gCurrZN[pixel].zw);
     const float4 znCenterPrev = gPrevZN[pixel];
     const float3 nCenterPrev = oct_to_ndir_snorm(znCenterPrev.zw);
 
     const float2 variance = filteredVariance(pixel);
     const float phiLuminance = gPhiColor * sqrt(max(0.0, 1e-10 + variance.y));
-    const float phiDifference = gUseDifferenceVariance ? gPhiColor * sqrt(max(0.0, 1e-10 + variance.x)) : phiLuminance * 0.5;
+    const float phiDifference = gUseDifferenceVariance != 0 ? gPhiColor * sqrt(max(0.0, 1e-10 + variance.x)) : phiLuminance * 0.5;
     const float phiDepth = max(zCenter.y, 1e-8) * gStepSize;
     const float phiDepthPrev = max(znCenterPrev.y, 1e-8) * gStepSize;
     const float kernelWeights[3] = { 1.0, 2.0 / 3.0, 1.0 / 6.0 };
@@ -288,7 +390,7 @@ void atrous(uint3 dispatchThreadId: SV_DispatchThreadID)
                 continue;
             const float kernel = kernelWeights[abs(xx)] * kernelWeights[abs(yy)];
             const float4 illuminationP = gAtrousInput.Load(int3(p, 0));
-            const float4 znP = gZN[p];
+            const float4 znP = gCurrZN[p];
             const float4 znPPrev = gPrevZN[p];
             const float distance = length(float2(xx, yy));
 
@@ -297,7 +399,7 @@ void atrous(uint3 dispatchThreadId: SV_DispatchThreadID)
                 gPhiNormal, center.r, illuminationP.r, phiLuminance);
             // Difference (Eq. 12): also the previous frame's features, and the difference itself.
             float wPrev = 1.0;
-            if (gUseDifferenceAwareFiltering)
+            if (gUseDifferenceAwareFiltering != 0)
                 wPrev = computeWeight(znCenterPrev.x, znPPrev.x, phiDepthPrev * distance, nCenterPrev,
                     oct_to_ndir_snorm(znPPrev.zw), gPhiNormal, center.g, illuminationP.g, phiDifference);
             // Emitters carry no difference (finalize uses the primal difference there): leave them out.
@@ -322,7 +424,7 @@ void finalize(uint3 dispatchThreadId: SV_DispatchThreadID)
     if (any(pixel >= int2(gFrameDim)))
         return;
 
-    const float4 zn = gZN[pixel];
+    const float4 zn = gCurrZN[pixel];
     const float4 znPrev = gPrevZN[pixel];
     // (albedo, emission) for remodulation, and the luminance of the emission (to detect emitters).
     const float emitted = luminance(gEmission[pixel].rgb);
@@ -346,18 +448,43 @@ void finalize(uint3 dispatchThreadId: SV_DispatchThreadID)
     {
         // Same surface in both frames and no emitter in either: the denoised difference; otherwise the difference
         // of the denoised primals (exact for the remodulated primals).
-        const bool sameSurface = isConsistent(pixel, zn.x, znPrev.x, oct_to_ndir_snorm(zn.zw), oct_to_ndir_snorm(znPrev.zw)) &&
+        const bool sameSurface = isSameSurface(zn.x, znPrev.x, oct_to_ndir_snorm(zn.zw), oct_to_ndir_snorm(znPrev.zw)) &&
             emitted == 0 && prevEmitted == 0;
-        deltaIllumination = (sameSurface && gUseDenoisedDifference) ? illuminationDifference : illumination - prevIllumination;
+        deltaIllumination = (sameSurface && gUseDenoisedDifference != 0) ? illuminationDifference : illumination - prevIllumination;
         // Eq. 19 and 21.
         deltaI = albedo * deltaIllumination + (albedo - prevAlbedo) * prevIllumination + (emission - prevEmission);
-        // The current intensity prevI + dI is clamped at 0, so dL is bounded by the intensity bias.
         const float prevI = prevAlbedo * prevIllumination + prevEmission;
+        // A denoised difference that makes the current intensity negative is noise: use the difference of the denoised
+        // primals, whose current intensity is the current primal. (Clamping it at 0 gave dL ~ log(Ie), a burst of
+        // events that the next frames, measured from the primal, do not take back.)
+        if (prevI + deltaI <= 0.0)
+        {
+            deltaIllumination = illumination - prevIllumination;
+            deltaI = albedo * deltaIllumination + (albedo - prevAlbedo) * prevIllumination + (emission - prevEmission);
+        }
+        // The intensities are still clamped at 0 (a negative denoised primal), so dL stays bounded by the bias.
         deltaL = log(gIntensityBias + max(prevI + deltaI, 0.0)) - log(gIntensityBias + max(prevI, 0.0));
+        if (!isfinite(deltaL) || !isfinite(deltaI))
+        {
+            deltaIllumination = 0.0;
+            deltaI = 0.0;
+            deltaL = 0.0;
+        }
     }
     gDeltaIllumination[pixel] = deltaIllumination;
     gDeltaI[pixel] = float4(deltaI, deltaI, deltaI, 0.0);
     gDeltaL[pixel] = deltaL;
-    const float3 primal = gUseDemodulation ? gAlbedo[pixel].rgb * illumination + gEmission[pixel].rgb : float3(illumination);
+    const float3 primal = gUseDemodulation != 0 ? gAlbedo[pixel].rgb * illumination + gEmission[pixel].rgb : float3(illumination);
     gPrimal[pixel] = float4(primal, 1.0);
+}
+
+/// Copies the (primal, difference) channels of gAtrousInput, the feedback tap, to gFeedbackOut (the next frame's
+/// gPrevFiltered): only those two are read back.
+[numthreads(16, 16, 1)]
+void copyFeedback(uint3 dispatchThreadId: SV_DispatchThreadID)
+{
+    const int2 pixel = dispatchThreadId.xy;
+    if (any(pixel >= int2(gFrameDim)))
+        return;
+    gFeedbackOut[pixel] = gAtrousInput.Load(int3(pixel, 0)).rg;
 }

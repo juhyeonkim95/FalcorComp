@@ -1,22 +1,18 @@
 # Installation
 
-falcorcomp is distributed as binary wheels for Linux and Windows, for Python 3.9 to 3.13. A wheel
+falcorcomp is distributed as binary wheels for 64-bit Linux, for Python 3.9 to 3.13. A wheel
 contains Falcor, its render passes and their shaders, so no separate Falcor build is needed.
+Windows wheels are not available yet.
 
 ## Requirements
 
-- **Operating system:** 64-bit Linux or Windows. macOS is not supported.
-  - Linux: x86_64 with glibc 2.35 or newer (for example, Ubuntu 22.04 or later).
-  - Windows: Windows 10 (version 20H2 or later) or Windows 11.
+- **Operating system:** 64-bit Linux: x86_64 with glibc 2.35 or newer (for example, Ubuntu 22.04 or
+  later). Windows is not supported yet, and macOS is not supported.
 - **GPU:** an NVIDIA GPU with hardware ray tracing (RTX), and a recent NVIDIA driver. falcorcomp
-  renders with Vulkan on Linux and with Direct3D 12 on Windows.
-- **Python:** 64-bit Python 3.9, 3.10, 3.11, 3.12 or 3.13.
-  - Linux: the Python must include its shared library, for example `libpython3.12.so.1.0` for
-    Python 3.12. Conda environments and most system Pythons include it; on Debian or Ubuntu,
-    install it with `sudo apt install libpython3.X` for your version `3.X`.
-  - Windows: Python from [python.org](https://www.python.org/downloads/windows/) or conda. The
-    Microsoft Visual C++ Redistributable for Visual Studio 2015-2022 must be installed; most
-    systems already have it.
+  renders with Vulkan.
+- **Python:** 64-bit Python 3.9, 3.10, 3.11, 3.12 or 3.13, with its shared library, for example
+  `libpython3.12.so.1.0` for Python 3.12. Conda environments and most system Pythons include it; on
+  Debian or Ubuntu, install it with `sudo apt install libpython3.X` for your version `3.X`.
 
 ## Installing with pip
 
@@ -29,24 +25,10 @@ conda activate falcorcomp
 
 or with a virtual environment:
 
-::::{tab-set}
-:::{tab-item} Linux
-:sync: linux
-
 ```bash
 python3 -m venv falcorcomp-env
 source falcorcomp-env/bin/activate
 ```
-:::
-:::{tab-item} Windows
-:sync: windows
-
-```bat
-py -3.12 -m venv falcorcomp-env
-falcorcomp-env\Scripts\activate
-```
-:::
-::::
 
 falcorcomp is currently published on TestPyPI. Its only dependency, NumPy, comes from PyPI:
 
@@ -54,25 +36,12 @@ falcorcomp is currently published on TestPyPI. Its only dependency, NumPy, comes
 pip install --index-url https://test.pypi.org/simple/ --extra-index-url https://pypi.org/simple/ falcorcomp
 ```
 
-pip picks the wheel for your operating system and Python version. To install a wheel file you
-downloaded instead, choose the one whose name matches your Python version (`cp312` is Python 3.12):
-
-::::{tab-set}
-:::{tab-item} Linux
-:sync: linux
+pip picks the wheel for your Python version. To install a wheel file you downloaded instead,
+choose the one whose name matches your Python version (`cp312` is Python 3.12):
 
 ```bash
 pip install falcorcomp-0.1.4-cp312-cp312-manylinux_2_35_x86_64.whl
 ```
-:::
-:::{tab-item} Windows
-:sync: windows
-
-```bat
-pip install falcorcomp-0.1.4-cp312-cp312-win_amd64.whl
-```
-:::
-::::
 
 ## Verifying the installation
 
@@ -84,11 +53,8 @@ python -c "import falcorcomp as falcor; falcor.Testbed(create_window=False); pri
 
 ## Shader cache
 
-Compiled shaders are cached per user, so the first run of a render pass is slower than later
-ones:
-
-- Linux: `~/.cache/falcorcomp/<version>/shadercache` (or under `$XDG_CACHE_HOME` when it is set)
-- Windows: `%USERPROFILE%\.cache\falcorcomp\<version>\shadercache`
+Compiled shaders are cached per user, in `~/.cache/falcorcomp/<version>/shadercache` (under
+`$XDG_CACHE_HOME` when it is set), so the first run of a render pass is slower than later ones.
 
 Set the environment variable `FALCOR_SHADER_CACHE_PATH` to use another directory, or to an empty
 string to disable the cache.
@@ -110,10 +76,6 @@ and the CUDA toolkit. By default the build uses the Python that Falcor downloads
 for another version, add `-DFALCOR_USE_SYSTEM_PYTHON=ON` to the configure command and run it from
 an environment with that Python.
 
-::::{tab-set}
-:::{tab-item} Linux
-:sync: linux
-
 ```bash
 # CMAKE_CUDA_COMPILER keeps CUDA enabled when nvcc is not on PATH; the policy minimum is needed with CMake 4.
 cmake -S . -B build/GCC_11.3.0x86_64-linux-gnu-nogtk -DCMAKE_BUILD_TYPE=Release -DFALCOR_ENABLE_GTK=OFF \
@@ -123,44 +85,39 @@ pip install auditwheel patchelf
 python3 packaging/falcorcomp/build_wheel.py --build-dir build/GCC_11.3.0x86_64-linux-gnu-nogtk
 pip install build/GCC_11.3.0x86_64-linux-gnu-nogtk/falcorcomp/dist/falcorcomp-*.whl
 ```
-:::
-:::{tab-item} Windows
-:sync: windows
 
-This needs Visual Studio 2022 with the "Desktop development with C++" workload and a Windows 10
-or 11 SDK. Run these in the "x64 Native Tools Command Prompt for VS 2022":
-
-```bat
-setup.bat
-tools\.packman\cmake\bin\cmake.exe --preset windows-ninja-msvc
-tools\.packman\cmake\bin\cmake.exe --build build\windows-ninja-msvc --config Release
-python packaging\falcorcomp\build_wheel.py --build-dir build\windows-ninja-msvc
-```
-
-Then install the wheel it writes to `build\windows-ninja-msvc\falcorcomp\dist\` with
-`pip install <wheel file>`.
-:::
-::::
+The wheel can be built only on Linux so far: `build_wheel.py` does not support Windows yet.
 
 Run `build_wheel.py` with the same Python the build used: the wheel only works with that version.
+
+### Tests
+
+The render passes come with regression tests in `Source/RenderPasses/<Pass>/tests/`. All but
+`TimeGatedReSTIRInline/tests/test_paired_shift_math.py`, which checks the shift equations in NumPy,
+render on the GPU. Continuous integration builds the source and runs only that NumPy test: run the
+GPU tests yourself after a change to the passes. From the repository root, with a source build:
+
+```bash
+source build/linux-gcc/bin/Release/setpath.sh  # Or your build's bin/setpath.sh.
+python Source/RenderPasses/TimeGatedReSTIRInline/tests/test_initial_sampling.py
+```
+
+The tests render the tutorial Cornell box in `docs_falcorcomp/src/tutorials/scenes/`.
+`test_surface_reuse.py` also renders the Cornell box with the dragon, and skips it without the dragon
+mesh (`meshes/dragon.ply` next to its `.pbrt` file, not in the repository).
 
 ## Troubleshooting
 
 `ERROR: No matching distribution found for falcorcomp`
-: There are wheels for Python 3.9 to 3.13 on 64-bit Linux (x86_64) and Windows. Check
-  `python --version`, and that the Python is 64-bit.
+: There are wheels for Python 3.9 to 3.13 on 64-bit Linux (x86_64) only. Check `python --version`,
+  and that the Python is 64-bit.
 
-`ImportError: falcorcomp needs libpython3.X.so.1.0` (Linux)
+`ImportError: falcorcomp needs libpython3.X.so.1.0`
 : The shared Python library is missing. Install it (`sudo apt install libpython3.X`) or use a
   conda environment.
 
-`ImportError: DLL load failed` (Windows)
-: Install the latest Microsoft Visual C++ Redistributable for Visual Studio 2015-2022 (x64), and
-  update the NVIDIA driver.
-
 The `Testbed` fails to create a device
-: Update the NVIDIA driver. On Linux, check that Vulkan works (for example, with `vulkaninfo`); on
-  Windows, check that the GPU supports DirectX 12 ray tracing (DXR 1.1).
+: Update the NVIDIA driver, and check that Vulkan works (for example, with `vulkaninfo`).
 
 ## License
 

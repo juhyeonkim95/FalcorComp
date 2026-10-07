@@ -25,13 +25,13 @@ import RenderPasses.Shared.Shaders.Utils.Waveform;
 
 cbuffer ProjectorPatternCB
 {
-    uint gPatternAxis;   // Projector coordinate the pattern varies along: 0 = u, 1 = v.
-    float gPatternSign;  // -1 inverts the pattern.
-    uint gUnsignedModulation; // Show 0.5 p + 0.5 instead of p.
+    uint gPatternAxis;        // Projector coordinate the pattern varies along: 0 = u, 1 = v.
+    float gPatternSign;       // -1 inverts the pattern.
+    uint gPatternUnsigned;    // Show 0.5 p + 0.5 instead of p.
 
-    uint gWaveform;      // Periodic: WAVEFORM_* (Waveform.slang).
-    float gWavelength;   // Periodic: period in uv units.
-    float gPhase;        // Periodic: offset in periods, subtracted as for CW-ToF: w(coord / wavelength - phase).
+    uint gPatternWaveform;    // Periodic: WAVEFORM_* (Waveform.slang).
+    float gPatternWavelength; // Periodic: period in uv units.
+    float gPatternPhase;      // Periodic: offset in periods, subtracted as for CW-ToF: w(coord / wavelength - phase).
 
     uint gPatternBits;   // Gray, XOR: 2^bits columns.
     uint gPatternBit;    // Gray, XOR: bit shown, 0 = finest.
@@ -108,14 +108,14 @@ struct ConstantPattern : IProjectorPattern
 struct PeriodicPattern : IProjectorPattern
 {
     /// Position in the pattern, in periods.
-    float periods(float2 uv) { return axisCoord(uv) / gWavelength - gPhase; }
+    float periods(float2 uv) { return axisCoord(uv) / gPatternWavelength - gPatternPhase; }
 
-    float eval(float2 uv) { return evalWaveform(gWaveform, periods(uv)); }
+    float eval(float2 uv) { return evalWaveform(gPatternWaveform, periods(uv)); }
 
     /// Mirror image within the period (mirrorWaveformOffset), its own inverse.
     float2 antitheticCoord(float2 uv, float u)
     {
-        return withAxisCoord(uv, axisCoord(uv) + mirrorWaveformOffset(gWaveform, periods(uv)) * gWavelength);
+        return withAxisCoord(uv, axisCoord(uv) + mirrorWaveformOffset(gPatternWaveform, periods(uv)) * gPatternWavelength);
     }
 
     float antitheticJacobian(float2 uv) { return 1.f; }

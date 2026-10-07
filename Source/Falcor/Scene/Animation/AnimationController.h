@@ -167,6 +167,9 @@ namespace Falcor
         std::vector<float4x4> mGlobalMatrices;
         std::vector<float4x4> mInvTransposeGlobalMatrices;
         std::vector<bool> mMatricesChanged;         ///< Flag per matrix, true if matrix changed since last frame.
+        /// Flag per matrix, true if the last incremental upload changed it. The world-matrix buffers are swapped before
+        /// every incremental upload, so the buffer written still holds these matrices from the update before.
+        std::vector<bool> mMatricesUploadedLast;
 
         bool mFirstUpdate = true;       ///< True if this is the first update.
         bool mEnabled = true;           ///< True if animations are enabled.

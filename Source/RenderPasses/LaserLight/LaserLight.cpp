@@ -1,6 +1,7 @@
 #include "LaserLight.h"
 #include "../Shared/Host/InlinePassUtils.h"
 #include <algorithm>
+#include <atomic>
 #include <cmath>
 
 static void regLaserLight(pybind11::module& m)
@@ -47,6 +48,7 @@ float angleDegrees(float cosAngle)
 LaserLight::LaserLight(ref<Device> pDevice, const Properties& props) : RenderPass(pDevice)
 {
     parseProperties(props);
+    mPosition = mLaser.origin;
 }
 
 void LaserLight::parseProperties(const Properties& props)
@@ -87,34 +89,55 @@ Properties LaserLight::getProperties() const
 
 void LaserLight::setProperties(const Properties& props)
 {
-    parseProperties(props);
+    // An invalid property (e.g. a zero direction) throws and leaves the light unchanged.
+    const LaserState laser = mLaser;
+    const float3 velocity = mVelocity;
+    try
+    {
+        parseProperties(props);
+    }
+    catch (...)
+    {
+        mLaser = laser;
+        mVelocity = velocity;
+        throw;
+    }
+    mPosition = mLaser.origin; // The motion restarts from laserPosition.
     mOptionsChanged = true;
 }
 
 void LaserLight::updateLaserInfo(const float3& position, const float3& direction)
 {
-    mLaser.origin = position;
     mLaser.direction = normalizeDirection(direction);
+    mLaser.origin = position;
+    mPosition = position;
 }
 
 void LaserLight::execute(RenderContext* pRenderContext, const RenderData& renderData)
 {
-    if (mOptionsChanged)
-    {
-        InlinePass::flagOptionsChanged(renderData);
-        mOptionsChanged = false;
-    }
-
     LaserState laser = mLaser;
+    laser.origin = mPosition;
     if (mLaser.collocated && mpScene)
     {
         const auto& pCamera = mpScene->getCamera();
         laser.origin = pCamera->getPosition();
         laser.direction = normalize(pCamera->getTarget() - pCamera->getPosition());
     }
-    laser.publish(renderData);
+    // Shared by all LaserLight passes, so that a replacement pass never repeats a token the users have seen.
+    static std::atomic<uint32_t> sToken{0};
+    uint32_t token = ++sToken;
+    if (token == 0)
+        token = ++sToken;
+    laser.publish(renderData, token);
 
-    mLaser.origin += mVelocity;
+    // Downstream accumulation restarts when the light changes: a UI edit, properties, update_laser_info,
+    // laserVelocity, or a collocated laser following the camera.
+    if (mOptionsChanged || laser != mPublished)
+        InlinePass::flagOptionsChanged(renderData);
+    mOptionsChanged = false;
+    mPublished = laser;
+
+    mPosition += mVelocity;
 }
 
 void LaserLight::renderUI(Gui::Widgets& widget)
@@ -123,7 +146,8 @@ void LaserLight::renderUI(Gui::Widgets& widget)
 
     dirty |= widget.checkbox("Laser source", mLaser.isLaser);
     widget.tooltip("On: the light is the spot where the laser beam hits the scene, and the beam length adds to the "
-                   "path length.\nOff: a point light at the laser position.", true);
+                   "path length.\nOff: a point light at the laser position, lighting the half-space in front of "
+                   "laserDirection.", true);
 
     dirty |= widget.checkbox("Laser collocated", mLaser.collocated);
     widget.tooltip("Place the laser at the camera, aimed at the camera target, instead of at laserPosition and "
@@ -131,7 +155,16 @@ void LaserLight::renderUI(Gui::Widgets& widget)
 
     if (!mLaser.collocated)
     {
-        dirty |= widget.var("laserPosition", mLaser.origin, -FLT_MAX, FLT_MAX, 0.001f, false, "%.4f");
+        if (widget.var("laserPosition", mLaser.origin, -FLT_MAX, FLT_MAX, 0.001f, false, "%.4f"))
+        {
+            mPosition = mLaser.origin; // The motion restarts from the new position.
+            dirty = true;
+        }
+        if (any(mVelocity != float3(0.f)))
+        {
+            widget.text(fmt::format("Moving with laserVelocity, now at ({:.4f}, {:.4f}, {:.4f})", mPosition.x,
+                mPosition.y, mPosition.z));
+        }
         float3 direction = mLaser.direction;
         if (widget.var("laserDirection", direction, -1.f, 1.f, 0.001f, false, "%.4f") && length(direction) > 0.f)
         {
@@ -143,13 +176,16 @@ void LaserLight::renderUI(Gui::Widgets& widget)
     dirty |= widget.var("laserPower", mLaser.power, 0.f, FLT_MAX, 0.001f, false, "%.4f");
     widget.tooltip("Power of the laser (or intensity of the point light), per color channel.", true);
 
-    float angle = angleDegrees(mLaser.cosAngle);
-    if (widget.var("laserAngle", angle, 0.f, 90.f, 0.1f, false, "%.2f"))
+    if (mLaser.isLaser) // A point light has no cone.
     {
-        mLaser.cosAngle = cosAngleDegrees(angle);
-        dirty = true;
+        float angle = angleDegrees(mLaser.cosAngle);
+        if (widget.var("laserAngle", angle, 0.f, 90.f, 0.1f, false, "%.2f"))
+        {
+            mLaser.cosAngle = cosAngleDegrees(angle);
+            dirty = true;
+        }
+        widget.tooltip("Half-angle of the laser cone in degrees. 0 = collimated beam.", true);
     }
-    widget.tooltip("Half-angle of the laser cone in degrees. 0 = collimated beam.", true);
 
     // Downstream passes restart their accumulation when the light changes.
     if (dirty)

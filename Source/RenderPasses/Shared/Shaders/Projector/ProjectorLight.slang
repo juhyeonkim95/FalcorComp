@@ -31,11 +31,11 @@ struct ProjectorLight
 
     float3 position() { return gProjectorPosition; }
 
-    /// Pattern value at uv: in [-1, 1], or in [0, 1] with gUnsignedModulation.
+    /// Pattern value at uv: in [-1, 1], or in [0, 1] with gPatternUnsigned.
     float patternValue(float2 uv)
     {
         float value = gPatternSign * pattern.eval(uv);
-        return gUnsignedModulation != 0 ? 0.5f * value + 0.5f : value;
+        return gPatternUnsigned != 0 ? 0.5f * value + 0.5f : value;
     }
 
     /// Projector uv of a world-space point; false outside the frustum.

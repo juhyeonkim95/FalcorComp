@@ -21,7 +21,7 @@ PT = {"samplesPerPixel": 37, "maxBounces": 6, **GATE}
 RESTIR = {"samplesPerPixel": 32, "maxBounces": 6, **GATE,
           "spatialReuseIteration": 1, "spatialReuseNeighborCount": 3,
           "useTemporalReuse": True, "temporalHistoryLength": 10.0,
-          "shiftmapMethod": "local_tangent", "gaugeMode": "avg_grad",
+          "shiftMappingMethod": "local_tangent", "gaugeMode": "avg_grad",
           "reconnectionRoughnessThreshold": 0.05}
 
 # 2. Build the render graph: both tracers share the V-buffer and the laser

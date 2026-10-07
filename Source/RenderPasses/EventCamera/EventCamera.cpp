@@ -26,6 +26,7 @@
  # OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  **************************************************************************/
 #include "EventCamera.h"
+#include <cmath>
 #include "RenderGraph/RenderPassHelpers.h"
 
 static void regEventCamera(pybind11::module& m)
@@ -55,7 +56,12 @@ namespace
 const char kDifferenceShader[] = "RenderPasses/EventCamera/EventDifference.cs.slang";
 const char kSVGFShader[] = "RenderPasses/EventCamera/EventSVGF.cs.slang";
 const char kGeneratorShader[] = "RenderPasses/EventCamera/EventGenerator.cs.slang";
-const char kEventFrameReady[] = "eventFrameReady";
+/// Dictionary key: whether the event frame in EventDifference output `pDeltaL` completed this frame. Keyed by the
+/// texture, so that an EventGenerator follows only the EventDifference that feeds it (absent: complete every frame).
+std::string eventFrameReadyKey(const Texture* pDeltaL)
+{
+    return fmt::format("eventFrameReady:{}", static_cast<const void*>(pDeltaL));
+}
 
 const ChannelList kDifferenceInputs = {
     { "color1", "gColor1", "Render of the current frame (correlated: with the previous frame's seed)", false },
@@ -85,7 +91,7 @@ const ChannelList kGeneratorInputs = {
     { "deltaL", "gDeltaL", "Brightness change of the event frame", false },
 };
 const ChannelList kGeneratorOutputs = {
-    { "events", "", "Signed event count of the last event frame", false, ResourceFormat::R32Float },
+    { "events", "", "Signed event count of the event frame completed this frame (0 if none)", false, ResourceFormat::R32Float },
 };
 
 ref<Texture> ensureTexture(ref<Device> pDevice, ref<Texture> pTexture, uint2 dim, ResourceFormat format, bool& created)
@@ -102,6 +108,13 @@ ref<Texture> ensureTexture(ref<Device> pDevice, ref<Texture> pTexture, uint2 dim
 
 EventDifference::EventDifference(ref<Device> pDevice, const Properties& props) : RenderPass(pDevice)
 {
+    parseProperties(props);
+    validateOptions(mOptions);
+    mpPass = ComputePass::create(mpDevice, kDifferenceShader, "main");
+}
+
+void EventDifference::parseProperties(const Properties& props)
+{
     for (const auto& [key, value] : props)
     {
         if (key == "sampling")
@@ -109,28 +122,42 @@ EventDifference::EventDifference(ref<Device> pDevice, const Properties& props) :
             const std::string sampling = value;
             if (sampling != "independent" && sampling != "correlated")
                 FALCOR_THROW("sampling must be independent or correlated.");
-            mCorrelated = sampling == "correlated";
+            mOptions.correlated = sampling == "correlated";
         }
         else if (key == "intensityBias")
-            mIntensityBias = value;
+            mOptions.intensityBias = value;
         else if (key == "subframes")
-            mSubframes = value;
+            mOptions.subframes = value;
         else
             logWarning("Unknown property '{}' in EventDifference properties.", key);
     }
-    if (mSubframes < 1)
-        FALCOR_THROW("subframes must be at least 1.");
-    if (!(mIntensityBias > 0.f))
-        FALCOR_THROW("intensityBias must be positive.");
-    mpPass = ComputePass::create(mpDevice, kDifferenceShader, "main");
+}
+
+void EventDifference::validateOptions(const Options& options)
+{
+    // Upper bounds also catch negative values, which wrap around in the unsigned properties.
+    if (options.subframes < 1 || options.subframes > (1u << 24))
+        FALCOR_THROW("subframes must be in [1, 2^24].");
+    if (!(options.intensityBias > 0.f) || !std::isfinite(options.intensityBias))
+        FALCOR_THROW("intensityBias must be finite and positive.");
+}
+
+void EventDifference::setProperties(const Properties& props)
+{
+    const Options previous = mOptions;
+    // Invalid properties throw and leave the options unchanged.
+    InlinePass::applyProperties(mOptions, [&] { parseProperties(props); }, validateOptions);
+    // The history was rendered with the previous sampling or event-frame length.
+    if (mOptions.correlated != previous.correlated || mOptions.subframes != previous.subframes)
+        reset();
 }
 
 Properties EventDifference::getProperties() const
 {
     Properties props;
-    props["sampling"] = mCorrelated ? "correlated" : "independent";
-    props["intensityBias"] = mIntensityBias;
-    props["subframes"] = mSubframes;
+    props["sampling"] = mOptions.correlated ? "correlated" : "independent";
+    props["intensityBias"] = mOptions.intensityBias;
+    props["subframes"] = mOptions.subframes;
     return props;
 }
 
@@ -152,7 +179,7 @@ void EventDifference::execute(RenderContext* pRenderContext, const RenderData& r
 {
     const ref<Texture> pColor1 = renderData.getTexture("color1");
     const ref<Texture> pColor2 = renderData.getTexture("color2");
-    if (mCorrelated && !pColor2)
+    if (mOptions.correlated && !pColor2)
         FALCOR_THROW("EventDifference: sampling 'correlated' needs the input color2.");
 
     const uint2 dim = uint2(pColor1->getWidth(), pColor1->getHeight());
@@ -166,6 +193,7 @@ void EventDifference::execute(RenderContext* pRenderContext, const RenderData& r
     if (created)
     {
         reset();
+        pRenderContext->clearUAV(mpHistory->getUAV().get(), float4(0.f));
         pRenderContext->clearUAV(mpDeltaI->getUAV().get(), float4(0.f));
         pRenderContext->clearUAV(mpDeltaL->getUAV().get(), float4(0.f));
         pRenderContext->clearUAV(mpPrimal->getUAV().get(), float4(0.f));
@@ -174,12 +202,12 @@ void EventDifference::execute(RenderContext* pRenderContext, const RenderData& r
     auto var = mpPass->getRootVar();
     var["CB"]["gFrameDim"] = dim;
     var["CB"]["gSubframe"] = mSubframe;
-    var["CB"]["gSubframes"] = mSubframes;
-    var["CB"]["gCorrelated"] = uint(mCorrelated);
+    var["CB"]["gSubframes"] = mOptions.subframes;
+    var["CB"]["gCorrelated"] = uint(mOptions.correlated);
     var["CB"]["gHasHistory"] = uint(mEventFrame > 0);
-    var["CB"]["gIntensityBias"] = mIntensityBias;
+    var["CB"]["gIntensityBias"] = mOptions.intensityBias;
     var["gColor1"] = pColor1;
-    var["gColor2"] = mCorrelated ? pColor2 : pColor1;
+    var["gColor2"] = mOptions.correlated ? pColor2 : pColor1;
     var["gSum1"] = mpSum1;
     var["gSum2"] = mpSum2;
     var["gHistory"] = mpHistory;
@@ -188,11 +216,11 @@ void EventDifference::execute(RenderContext* pRenderContext, const RenderData& r
     var["gPrimal"] = mpPrimal;
     mpPass->execute(pRenderContext, uint3(dim, 1));
 
-    const bool ready = mSubframe + 1 == mSubframes;
+    const bool ready = mSubframe + 1 == mOptions.subframes;
     mSubframe = ready ? 0 : mSubframe + 1;
     if (ready)
         mEventFrame++;
-    renderData.getDictionary()[kEventFrameReady] = ready;
+    renderData.getDictionary()[eventFrameReadyKey(renderData.getTexture("deltaL").get())] = ready;
 
     // The outputs keep the last complete event frame.
     pRenderContext->copyResource(renderData.getTexture("deltaI").get(), mpDeltaI.get());
@@ -204,60 +232,92 @@ void EventDifference::execute(RenderContext* pRenderContext, const RenderData& r
 
 EventSVGF::EventSVGF(ref<Device> pDevice, const Properties& props) : RenderPass(pDevice)
 {
+    parseProperties(props);
+    validateOptions(mOptions);
+    mpReproject = ComputePass::create(mpDevice, kSVGFShader, "reproject");
+    mpFilterMoments = ComputePass::create(mpDevice, kSVGFShader, "filterMoments");
+    mpAtrous = ComputePass::create(mpDevice, kSVGFShader, "atrous");
+    mpFinalize = ComputePass::create(mpDevice, kSVGFShader, "finalize");
+    mpCopyFeedback = ComputePass::create(mpDevice, kSVGFShader, "copyFeedback");
+}
+
+void EventSVGF::parseProperties(const Properties& props)
+{
     for (const auto& [key, value] : props)
     {
         if (key == "iterations")
-            mIterations = value;
+            mOptions.iterations = value;
         else if (key == "feedbackTap")
-            mFeedbackTap = value;
+            mOptions.feedbackTap = value;
         else if (key == "phiColor")
-            mPhiColor = value;
+            mOptions.phiColor = value;
         else if (key == "phiNormal")
-            mPhiNormal = value;
+            mOptions.phiNormal = value;
         else if (key == "alpha")
-            mAlpha = value;
+            mOptions.alpha = value;
         else if (key == "momentsAlpha")
-            mMomentsAlpha = value;
+            mOptions.momentsAlpha = value;
         else if (key == "intensityBias")
-            mIntensityBias = value;
+            mOptions.intensityBias = value;
         else if (key == "useDemodulation")
-            mUseDemodulation = value;
+            mOptions.useDemodulation = value;
         else if (key == "useDifferenceAwareFiltering")
-            mUseDifferenceAwareFiltering = value;
+            mOptions.useDifferenceAwareFiltering = value;
         else if (key == "useTemporalAccumulation")
-            mUseTemporalAccumulation = value;
+            mOptions.useTemporalAccumulation = value;
         else if (key == "useDenoisedDifference")
-            mUseDenoisedDifference = value;
+            mOptions.useDenoisedDifference = value;
         else if (key == "useDifferenceVariance")
-            mUseDifferenceVariance = value;
+            mOptions.useDifferenceVariance = value;
 
         else
             logWarning("Unknown property '{}' in EventSVGF properties.", key);
     }
-    if (mIterations < 1)
-        FALCOR_THROW("iterations must be at least 1.");
-    if (!(mIntensityBias > 0.f))
-        FALCOR_THROW("intensityBias must be positive.");
-    mpReproject = ComputePass::create(mpDevice, kSVGFShader, "reproject");
-    mpAtrous = ComputePass::create(mpDevice, kSVGFShader, "atrous");
-    mpFinalize = ComputePass::create(mpDevice, kSVGFShader, "finalize");
+}
+
+void EventSVGF::validateOptions(const Options& options)
+{
+    // The a-trous step doubles each iteration.
+    if (options.iterations < 0 || options.iterations > 10)
+        FALCOR_THROW("iterations must be in [0, 10].");
+    if (options.feedbackTap < -1)
+        FALCOR_THROW("feedbackTap must be at least -1 (-1 feeds back the unfiltered accumulation).");
+    if (!(options.phiColor > 0.f) || !std::isfinite(options.phiColor) || !(options.phiNormal >= 0.f) || !std::isfinite(options.phiNormal))
+        FALCOR_THROW("phiColor must be finite and positive, phiNormal finite and non-negative.");
+    if (!(options.alpha > 0.f && options.alpha <= 1.f) || !(options.momentsAlpha > 0.f && options.momentsAlpha <= 1.f))
+        FALCOR_THROW("alpha and momentsAlpha must be in (0, 1].");
+    if (!(options.intensityBias > 0.f) || !std::isfinite(options.intensityBias))
+        FALCOR_THROW("intensityBias must be finite and positive.");
+}
+
+void EventSVGF::setProperties(const Properties& props)
+{
+    const Options previous = mOptions;
+    // Invalid properties throw and leave the options unchanged.
+    InlinePass::applyProperties(mOptions, [&] { parseProperties(props); }, validateOptions);
+    // The history holds values these options shape; the filter weights apply from the next frame on.
+    if (mOptions.iterations != previous.iterations || mOptions.feedbackTap != previous.feedbackTap ||
+        mOptions.useDemodulation != previous.useDemodulation ||
+        mOptions.useTemporalAccumulation != previous.useTemporalAccumulation ||
+        mOptions.useDenoisedDifference != previous.useDenoisedDifference || mOptions.intensityBias != previous.intensityBias)
+        reset();
 }
 
 Properties EventSVGF::getProperties() const
 {
     Properties props;
-    props["iterations"] = mIterations;
-    props["feedbackTap"] = mFeedbackTap;
-    props["phiColor"] = mPhiColor;
-    props["phiNormal"] = mPhiNormal;
-    props["alpha"] = mAlpha;
-    props["momentsAlpha"] = mMomentsAlpha;
-    props["intensityBias"] = mIntensityBias;
-    props["useDemodulation"] = mUseDemodulation;
-    props["useDifferenceAwareFiltering"] = mUseDifferenceAwareFiltering;
-    props["useTemporalAccumulation"] = mUseTemporalAccumulation;
-    props["useDenoisedDifference"] = mUseDenoisedDifference;
-    props["useDifferenceVariance"] = mUseDifferenceVariance;
+    props["iterations"] = mOptions.iterations;
+    props["feedbackTap"] = mOptions.feedbackTap;
+    props["phiColor"] = mOptions.phiColor;
+    props["phiNormal"] = mOptions.phiNormal;
+    props["alpha"] = mOptions.alpha;
+    props["momentsAlpha"] = mOptions.momentsAlpha;
+    props["intensityBias"] = mOptions.intensityBias;
+    props["useDemodulation"] = mOptions.useDemodulation;
+    props["useDifferenceAwareFiltering"] = mOptions.useDifferenceAwareFiltering;
+    props["useTemporalAccumulation"] = mOptions.useTemporalAccumulation;
+    props["useDenoisedDifference"] = mOptions.useDenoisedDifference;
+    props["useDifferenceVariance"] = mOptions.useDifferenceVariance;
     return props;
 }
 
@@ -276,20 +336,21 @@ void EventSVGF::allocate(uint2 dim)
         return mpDevice->createTexture2D(dim.x, dim.y, format, 1, 1, nullptr,
             ResourceBindFlags::UnorderedAccess | ResourceBindFlags::ShaderResource);
     };
+    // 161 B per pixel. History lengths are integers up to 32, exact in half floats; the feedback taps keep the two
+    // channels read back (primal, difference).
     for (int i = 0; i < 2; i++)
     {
         mpZN[i] = create(ResourceFormat::RGBA32Float);
         mpMoments[i] = create(ResourceFormat::RGBA32Float);
-        mpHistory[i] = create(ResourceFormat::RGBA32Float);
+        mpHistory[i] = create(ResourceFormat::RGBA16Float);
         mpReprojected[i] = create(ResourceFormat::R32Float);
         mpPingPong[i] = create(ResourceFormat::RGBA32Float);
     }
-    mpPrevFiltered = create(ResourceFormat::RGBA32Float);
-    mpPrevPrevFiltered = create(ResourceFormat::RGBA32Float);
+    mpPrevFiltered = create(ResourceFormat::RG32Float);
+    mpPrevPrevFiltered = create(ResourceFormat::RG32Float);
     mpPrevIllumination2 = create(ResourceFormat::R32Float);
     mpPrevAlbedoEmission = create(ResourceFormat::RGBA32Float);
     mpPrevFinalIllumination = create(ResourceFormat::R32Float);
-    mpIllumination = create(ResourceFormat::RGBA32Float);
     mpEmitter = create(ResourceFormat::R8Unorm);
     mDim = dim;
 }
@@ -321,17 +382,16 @@ void EventSVGF::execute(RenderContext* pRenderContext, const RenderData& renderD
         auto var = pPass->getRootVar();
         var["CB"]["gFrameDim"] = dim;
         var["CB"]["gFrameCount"] = mFrameCount;
-        var["CB"]["gAlpha"] = mAlpha;
-        var["CB"]["gMomentsAlpha"] = mMomentsAlpha;
-        var["CB"]["gUseDemodulation"] = uint(mUseDemodulation);
-        var["CB"]["gUseTemporalAccumulation"] = uint(mUseTemporalAccumulation);
-        var["CB"]["gPhiColor"] = mPhiColor;
-        var["CB"]["gPhiNormal"] = mPhiNormal;
-        var["CB"]["gUseDifferenceAwareFiltering"] = uint(mUseDifferenceAwareFiltering);
-        var["CB"]["gUseDenoisedDifference"] = uint(mUseDenoisedDifference);
-        var["CB"]["gIntensityBias"] = mIntensityBias;
-        var["CB"]["gUseDifferenceVariance"] = uint(mUseDifferenceVariance);
-        var["gZN"] = mpZN[0];
+        var["CB"]["gAlpha"] = mOptions.alpha;
+        var["CB"]["gMomentsAlpha"] = mOptions.momentsAlpha;
+        var["CB"]["gUseDemodulation"] = uint(mOptions.useDemodulation);
+        var["CB"]["gUseTemporalAccumulation"] = uint(mOptions.useTemporalAccumulation);
+        var["CB"]["gPhiColor"] = mOptions.phiColor;
+        var["CB"]["gPhiNormal"] = mOptions.phiNormal;
+        var["CB"]["gUseDifferenceAwareFiltering"] = uint(mOptions.useDifferenceAwareFiltering);
+        var["CB"]["gUseDenoisedDifference"] = uint(mOptions.useDenoisedDifference);
+        var["CB"]["gIntensityBias"] = mOptions.intensityBias;
+        var["CB"]["gUseDifferenceVariance"] = uint(mOptions.useDifferenceVariance);
         var["gPrevZN"] = mpZN[1];
         return var;
     };
@@ -352,11 +412,12 @@ void EventSVGF::execute(RenderContext* pRenderContext, const RenderData& renderD
         var["gMoments"] = mpMoments[0];
         var["gPrevHistory"] = mpHistory[1];
         var["gHistory"] = mpHistory[0];
+        var["gZN"] = mpZN[0];
         var["gPrevReprojected"] = mpReprojected[1];
         var["gReprojected"] = mpReprojected[0];
         var["gPrevIllumination2"] = mpPrevIllumination2;
         var["gPrevAlbedoEmission"] = mpPrevAlbedoEmission;
-        var["gIllumination"] = mpIllumination;
+        var["gIllumination"] = mpPingPong[0];
         var["gEmitterOut"] = mpEmitter;
         mpReproject->execute(pRenderContext, uint3(dim, 1));
     }
@@ -365,31 +426,50 @@ void EventSVGF::execute(RenderContext* pRenderContext, const RenderData& renderD
     auto feedback = [&](const ref<Texture>& pSource)
     {
         std::swap(mpPrevFiltered, mpPrevPrevFiltered);
-        pRenderContext->copyResource(mpPrevFiltered.get(), pSource.get());
+        auto var = mpCopyFeedback->getRootVar();
+        var["CB"]["gFrameDim"] = dim;
+        var["gAtrousInput"] = pSource;
+        var["gFeedbackOut"] = mpPrevFiltered;
+        mpCopyFeedback->execute(pRenderContext, uint3(dim, 1));
     };
-    ref<Texture> pFiltered = mpIllumination;
+    // Spatial variance where a history is short, from the temporal accumulation in ping-pong [0] into [1].
+    {
+        auto var = bindCommon(mpFilterMoments);
+        var["gAtrousInput"] = mpPingPong[0];
+        var["gAtrousOutput"] = mpPingPong[1];
+        var["gCurrZN"] = mpZN[0];
+        var["gCurrMoments"] = mpMoments[0];
+        var["gCurrHistory"] = mpHistory[0];
+        var["gEmitter"] = mpEmitter;
+        mpFilterMoments->execute(pRenderContext, uint3(dim, 1));
+    }
+    // The tap is at most the last iteration. Without a tap inside the a-trous loop (feedbackTap -1, or no iterations)
+    // the temporal accumulation is fed back, before the loop overwrites it.
+    const int32_t tap = std::min(mOptions.feedbackTap, mOptions.iterations - 1);
+    if (tap < 0)
+        feedback(mpPingPong[0]);
+    ref<Texture> pFiltered = mpPingPong[1];
     {
         auto var = bindCommon(mpAtrous);
+        var["gCurrZN"] = mpZN[0];
         var["gEmitter"] = mpEmitter;
-        const int32_t tap = std::min(mFeedbackTap, int32_t(mIterations) - 1);
-        for (uint32_t i = 0; i < mIterations; i++)
+        for (int32_t i = 0; i < mOptions.iterations; i++)
         {
             const ref<Texture>& pTarget = mpPingPong[i % 2];
-            var["CB"]["gStepSize"] = int(1u << i);
+            var["CB"]["gStepSize"] = 1 << i;
             var["gAtrousInput"] = pFiltered;
             var["gAtrousOutput"] = pTarget;
             mpAtrous->execute(pRenderContext, uint3(dim, 1));
             pFiltered = pTarget;
-            if (int32_t(i) == tap)
+            if (i == tap)
                 feedback(pFiltered);
         }
-        if (mFeedbackTap < 0)
-            feedback(mpIllumination);
     }
 
     // 3. Remodulation, dI and dL.
     {
         auto var = bindCommon(mpFinalize);
+        var["gCurrZN"] = mpZN[0];
         var["gAlbedo"] = renderData.getTexture("albedo");
         var["gEmission"] = renderData.getTexture("emission");
         var["gFiltered"] = pFiltered;
@@ -411,36 +491,56 @@ void EventSVGF::execute(RenderContext* pRenderContext, const RenderData& renderD
 
 EventGenerator::EventGenerator(ref<Device> pDevice, const Properties& props) : RenderPass(pDevice)
 {
+    parseProperties(props);
+    validateOptions(mOptions);
+    mpPass = ComputePass::create(mpDevice, kGeneratorShader, "main");
+}
+
+void EventGenerator::parseProperties(const Properties& props)
+{
     for (const auto& [key, value] : props)
     {
         if (key == "mode")
         {
             const std::string mode = value;
             if (mode == "probabilistic")
-                mMode = Mode::Probabilistic;
+                mOptions.mode = Mode::Probabilistic;
             else if (mode == "accumulate")
-                mMode = Mode::Accumulate;
+                mOptions.mode = Mode::Accumulate;
             else
                 FALCOR_THROW("mode must be probabilistic or accumulate.");
         }
         else if (key == "threshold")
-            mThreshold = value;
+            mOptions.threshold = value;
         else if (key == "seed")
-            mSeed = value;
+            mOptions.seed = value;
         else
             logWarning("Unknown property '{}' in EventGenerator properties.", key);
     }
-    if (!(mThreshold > 0.f))
-        FALCOR_THROW("threshold must be positive.");
-    mpPass = ComputePass::create(mpDevice, kGeneratorShader, "main");
+}
+
+void EventGenerator::validateOptions(const Options& options)
+{
+    if (!(options.threshold > 0.f) || !std::isfinite(options.threshold))
+        FALCOR_THROW("threshold must be finite and positive.");
+}
+
+void EventGenerator::setProperties(const Properties& props)
+{
+    const Options previous = mOptions;
+    // Invalid properties throw and leave the options unchanged.
+    InlinePass::applyProperties(mOptions, [&] { parseProperties(props); }, validateOptions);
+    // Switching between probabilistic and accumulated events starts the residuals afresh.
+    if (mOptions.mode != previous.mode)
+        reset();
 }
 
 Properties EventGenerator::getProperties() const
 {
     Properties props;
-    props["mode"] = mMode == Mode::Probabilistic ? "probabilistic" : "accumulate";
-    props["threshold"] = mThreshold;
-    props["seed"] = mSeed;
+    props["mode"] = mOptions.mode == Mode::Probabilistic ? "probabilistic" : "accumulate";
+    props["threshold"] = mOptions.threshold;
+    props["seed"] = mOptions.seed;
     return props;
 }
 
@@ -464,30 +564,31 @@ void EventGenerator::execute(RenderContext* pRenderContext, const RenderData& re
     const uint2 dim = uint2(pDeltaL->getWidth(), pDeltaL->getHeight());
     bool created = false;
     mpResidual = ensureTexture(mpDevice, mpResidual, dim, ResourceFormat::R32Float, created);
-    mpEvents = ensureTexture(mpDevice, mpEvents, dim, ResourceFormat::R32Float, created);
     if (created)
-    {
         reset();
-        pRenderContext->clearUAV(mpEvents->getUAV().get(), float4(0.f));
-    }
 
-    // Only once per event frame: EventDifference may average several executions into one.
-    const bool ready = renderData.getDictionary().getValue(kEventFrameReady, true);
-    if (ready)
+    // Only once per event frame: the EventDifference that produced deltaL may average several executions into one.
+    // Frames that complete no event frame output no events, so that summing the output over frames counts each once.
+    const ref<Texture> pEvents = renderData.getTexture("events");
+    const bool ready = renderData.getDictionary().getValue(eventFrameReadyKey(pDeltaL.get()), true);
+    if (!ready)
+    {
+        pRenderContext->clearUAV(pEvents->getUAV().get(), float4(0.f));
+    }
+    else
     {
         auto var = mpPass->getRootVar();
         var["CB"]["gFrameDim"] = dim;
-        var["CB"]["gMode"] = uint(mMode);
-        var["CB"]["gThreshold"] = mThreshold;
+        var["CB"]["gMode"] = uint(mOptions.mode);
+        var["CB"]["gThreshold"] = mOptions.threshold;
         var["CB"]["gFrame"] = mFrame;
-        var["CB"]["gSeed"] = mSeed;
+        var["CB"]["gSeed"] = mOptions.seed;
         var["CB"]["gClearResidual"] = uint(mClearResidual);
         var["gDeltaL"] = pDeltaL;
         var["gResidual"] = mpResidual;
-        var["gEvents"] = mpEvents;
+        var["gEvents"] = pEvents;
         mpPass->execute(pRenderContext, uint3(dim, 1));
         mFrame++;
         mClearResidual = false;
     }
-    pRenderContext->copyResource(renderData.getTexture("events").get(), mpEvents.get());
 }

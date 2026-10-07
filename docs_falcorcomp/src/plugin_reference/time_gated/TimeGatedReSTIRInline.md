@@ -22,7 +22,9 @@ The time gate is set as for the path tracer:
 * - `timeGateMode`
   - string
   - Gate kernel: `box`, `tent`, `gaussian`, `exp` (one-sided exponential), `exp_two_side`
-    (two-sided exponential), `cos` or `all` (no gating). See [the kernels](#gate-kernels). (Default: `box`)
+    (two-sided exponential), `epanechnikov`, `perlin` or `all` (no gating). See
+    [the kernels](#gate-kernels). `cos` is not available: its negative weights cannot be resampled.
+    (Default: `box`)
 * - `timeGateWindow`
   - float
   - Gate width $\Delta$, in path-length units. (Default: `0.05`)
@@ -58,7 +60,7 @@ Initial sampling, the candidate paths each pixel starts from in every frame:
   - integer
   - Maximum number of surface vertices on a candidate path, counting the primary hit and any
     vertex inserted by an ellipsoidal connection. The primary hit itself is not connected to the
-    laser spot. (Default: `3`)
+    laser spot. `0` renders no light. (Default: `3`)
 * - `samplingMethod`
   - string
   - How a candidate path's vertices are connected to the laser spot: `direct`, `ellipsoidal` or
@@ -68,23 +70,28 @@ Initial sampling, the candidate paths each pixel starts from in every frame:
   - float
   - With `ellipsoidal`, a vertex uses an ellipsoidal connection only if its roughness is above
     this value. (Default: `0.25`)
-* - `emissiveSampler`
+* - `ellipsoidTriangleSampler`
   - string
   - How an ellipsoidal connection picks the scene triangle to place its vertex on: `Uniform` or
     `LightBVH`. Unused with `direct`. (Default: `LightBVH`)
+* - `ellipsoidMaxTriangleArea`
+  - float
+  - Triangles larger than this (world-space area) never hold an ellipsoidal vertex, e.g. an NLOS
+    relay wall that would take most samples; paths through them come from BSDF sampling. Unused with
+    `direct`. (Default: `10000`)
 * - `useImportanceSampling`
   - boolean
   - Importance-sample the BSDF when extending a candidate path. (Default: `true`)
 * - `useShrinkMapping`
   - boolean
-  - Shrink mapping: trace candidate paths with a wider gate and shrink them into the gate. See
+  - Shrink mapping: trace candidate paths with a wide gate and shrink them into the gate. See
     [Shrink mapping](#restir-wide-gate). (Default: `false`)
-* - `timeGateWindowRough`
+* - `wideGateWindow`
   - float
-  - Width of the wider gate. 0 uses 10 x `timeGateWindow`. (Default: `0`)
-* - `roughTimeGateSampleRatio`
+  - Width of the wide gate. 0 uses 10 x `timeGateWindow`. (Default: `0`)
+* - `wideGateSampleRatio`
   - float
-  - Fraction of the camera paths traced with the wider gate, clamped to [0, 1]; the others use the
+  - Fraction of the camera paths traced with the wide gate, clamped to [0, 1]; the others use the
     gate itself. (Default: `1`)
 ```
 
@@ -118,13 +125,13 @@ Reuse:
     input is connected. (Default: `false`)
 * - `temporalHistoryLength`
   - float
-  - Cap on the history's sample count, in frames of `samplesPerPixel`. 0 ignores the history; a
-    negative value leaves it uncapped. (Default: `20`)
+  - Cap on the history's sample count, in frames of `samplesPerPixel`; 0 ignores the history.
+    Must not be negative. (Default: `20`)
 * - `isSceneDynamic`
   - boolean
   - Keep the temporal history when the laser moves or changes, re-evaluating the lighting of
     reused paths. Otherwise any laser change discards the history. (Default: `false`)
-* - `randomSeed`
+* - `seed`
   - integer
   - Seed of the random numbers in spatial reuse; it advances with every round. (Default: `0`)
 ```
@@ -138,7 +145,7 @@ Shift mapping:
 * - Parameter
   - Type
   - Description
-* - `shiftmapMethod`
+* - `shiftMappingMethod`
   - string
   - The chart on which the reconnection vertex is moved: `no` (naive reuse: the vertex stays
     fixed), `local_tangent`, `barycentric`, `ray_trace`, `area_adaptive`, `ray_trace_chart` or
@@ -155,24 +162,42 @@ Shift mapping:
   - string
   - Fixes the direction the path-length constraint leaves free. `constant`: the vertex moves
     orthogonally to `gaugeAxis`; `grad`: along the path-length gradient at the start; `avg_grad`:
-    along the average of the gradients at both ends. `radial` ignores it. (Default: `constant`)
+    along the average of the gradients at both ends, where the length changes fastest, so the move
+    is as short as possible. `grad` is not symmetric (the reverse shift follows the gradient at the
+    other end), so it biases reuse. `radial` ignores it. (Default: `constant`)
 * - `gaugeAxis`
   - float pair
   - Chart-space axis for `constant`. `[0, 0]` picks a random axis for every shift.
     (Default: `[1, 0]`)
 * - `NewtonMaxIteration`
   - integer
-  - Maximum Newton iterations per shift. `radial` does not use it. (Default: `5`)
+  - Maximum Newton iterations per shift. A solve cut off by the cap can fail in one direction of a pair only, which
+    biases reuse (with temporal reuse and ray charts most: `ray_trace_chart` in the Cornell box +1.9 % at `5`,
+    +0.5 % at `10`). Solves whose target length no point of the chart reaches stop at once. `radial` does not use
+    it. (Default: `10`)
 * - `NewtonRelativeTolerance`
   - float
-  - Tolerance of the shift solve on the path length, relative to the path-length change of the shift. Looser
-    solves leave the forward and reverse shifts slightly inconsistent, which biases reuse. (Default: `0.0002`)
+  - Tolerance of the shift solve on the path length, relative to the path-length change of the shift, and at least
+    the float32 resolution of the path lengths involved. Looser solves leave the forward and reverse shifts slightly
+    inconsistent, which biases reuse. (Default: `1e-6`)
 * - `rayChartMaxDisplacement`
   - float
   - `ray_trace`, `ray_trace_chart` and `area_adaptive` only: rejects shifts that move the vertex farther than this in
     chart coordinates. Large moves can make the reverse shift converge to a different vertex, which biases reuse.
     Small caps (`0.01` for `ray_trace`, `0.02`-`0.05` for `ray_trace_chart`) remove that bias but reject many shifts,
     which raises the variance. `0` disables. (Default: `0`)
+* - `shiftRoundTripCheck`
+  - boolean
+  - Keep a shift only if the reverse shift maps it back to its start, at the cost of a second shift. Newton's method
+    is local, so a rare shift reaches another solution than its reverse, mostly with a ray chart; the check removes
+    most of the bias this leaves. `radial` does not need it. See [Shift mapping](#restir-shift-mapping).
+    (Default: `false`)
+* - `shiftReachCheck`
+  - boolean
+  - `avg_grad` only: keep a shift only if the first Newton step from each end lands within half the move of the
+    other end, so that the reverse solve comes back. It costs no extra evaluation and removes most of the bias of
+    shifts near the path length's minimum, but also rejects valid shifts, which raises the variance. See
+    [Shift mapping](#restir-shift-mapping). (Default: `false`)
 ```
 
 Other:
@@ -238,13 +263,37 @@ a different gate), so its length changes too. The shift keeps the rest of the pa
 *reconnection vertex*, the first vertex where the path may reconnect (a segment whose two
 vertices are both rougher than `reconnectionRoughnessThreshold` and that is longer than
 `reconnectionMinDistance`), so that the shifted path has the length it needs. The move is a Newton
-solve on a 2D chart around that vertex, chosen by `shiftmapMethod`; the path-length constraint
+solve on a 2D chart around that vertex, chosen by `shiftMappingMethod`; the path-length constraint
 fixes only one direction, and `gaugeMode` fixes the other. `radial` instead moves the vertex along
 the ray, in the vertex's plane, from the point where the path length is shortest (a 1D search), so
 it needs no gauge. With `no`, the vertex is not moved, so the shifted path often no longer fits
 the gate.
 
-`local_tangent` with `avg_grad` is a good starting point, and is what the tutorials use.
+Reuse is unbiased only if the shift from a pixel to its neighbor and the shift back are inverse. The two equations
+(the path length and the gauge) have more than one solution, and Newton's method is local: it finds the solution its
+start leads to, from the vertex for the forward shift and from the moved vertex for the reverse. The solve therefore
+converges both equations and keeps a solution only on its start's branch: the path lengths at both ends change the
+same way along the move, the move keeps the orientation, and with a ray chart the vertex stays on its object. With
+`avg_grad` and `shiftReachCheck`, it also keeps a solution only within the reach of Newton's method from both ends:
+the first Newton step from each end must land within half the move of the other end. Both pixels of a pair evaluate
+the same tests, so they accept the same shifts.
+
+`avg_grad` moves the vertex along the path-length gradient, where the length changes fastest on the surface, so the
+move is as short as the length change allows and both solves start close to their solutions. `constant` moves the
+vertex along a fixed chart axis, which needs a long move wherever the gradient is nearly orthogonal to that axis.
+`local_tangent` with `avg_grad` is a good starting point, and the tutorials use it.
+
+Because Newton's method is local, a rare shift can still reach another solution than its reverse. This happens near
+the minimum of the path length, where `avg_grad`'s two solutions come close (in a transient histogram: the bins at
+the onset of a bounce), and with a ray chart, whose coordinates do not follow the surface. In our tests with temporal
+reuse, against the exact `radial` shift: `local_tangent` with `avg_grad` within 0.1 % (a transient histogram: -0.08 %
+with `shiftReachCheck`, -0.5 % without); `ray_trace_chart` +0.4 % with `avg_grad` on a finely tessellated model
+(+1.9 % without the reach check) and +0.5 % with `constant` in the Cornell box. `shiftRoundTripCheck` removes most of
+the rest, at the cost of a second shift. Both checks are off by default: without temporal reuse the bias is small,
+and both cost more than they save there (Cornell box scenes, spatial reuse, equal time: 8-20 % more error with the
+reach check, which rejects valid shifts too, and 8-39 % with the round-trip check, which takes up to 50 % longer
+with ray charts). Turn one on for temporal reuse, transient histograms or ray charts. `radial` is one-to-one without
+either check.
 
 ## Moving the gate
 
@@ -262,24 +311,34 @@ Changing an option in the UI or with `set_properties()` discards the history.
 The temporal history is discarded, and the next frame starts from its own samples only, when:
 
 - an option changes in the UI or with `set_properties()`,
-- the scene changes in any way other than camera motion (without `isSceneDynamic`, a laser change
-  counts too),
+- the scene changes in any way other than camera motion, including a camera animated by the scene
+  (without `isSceneDynamic`, a laser change counts too),
 - the frame size changes, or
 - the camera uses depth of field.
+
+Per pixel, the history is reused only if it saw the same surface: the same material, an orientation
+within about 45 degrees and a distance within 10 % (otherwise, e.g. where the camera's motion uncovers
+a surface, the pixel starts from its own samples).
+
+## Limitations
+
+- Static scene geometry: the camera may move (and, with `isSceneDynamic`, the laser), but objects may not move or
+  deform; the history is discarded when geometry changes, as above.
+- Layered materials (for example pbrt's `coateddiffuse` and `coatedconductor`) are not supported.
 
 (restir-wide-gate)=
 ## Shrink mapping
 
 With `useShrinkMapping`, `direct` sampling and a `box` or `tent` gate, a fraction
-`roughTimeGateSampleRatio` of the candidate paths is traced against a wider gate,
-`timeGateWindowRough` (10 x `timeGateWindow` unless set), and shrunk into the gate with the
+`wideGateSampleRatio` of the candidate paths is traced against the wide gate, of width
+`wideGateWindow` (10 x `timeGateWindow` unless set), and shrunk into the gate with the
 path-length shift. This finds candidates for very narrow gates that direct sampling rarely hits.
-It has no effect when the wider gate is not wider than `timeGateWindow`, or when
-`roughTimeGateSampleRatio` x `samplesPerPixel` is below 1.
+It has no effect when the wide gate is not wider than `timeGateWindow`, or when
+`wideGateSampleRatio` x `samplesPerPixel` is below 1.
 
-With a fraction of 1, every candidate uses the wider gate, and paths whose shift fails are lost:
+With a fraction of 1, every candidate uses the wide gate, and paths whose shift fails are lost:
 in a test on the Cornell box (0.01 gate), the image was about 7 % darker than the reference. A
-fraction below 1 keeps some candidates on the gate itself; with 0.5 and a 5 x wider gate the
+fraction below 1 keeps some candidates on the gate itself; with 0.5 and a wide gate 5 x the gate the
 difference was under 1 %.
 
 (restir-connection-sampling)=
@@ -287,7 +346,9 @@ difference was under 1 %.
 
 As for the [path tracer](TimeGatedPathTracerInline.md): `direct` connects every vertex to the
 laser spot, `ellipsoidal` inserts a vertex whose length fits the gate, and `ellipsoidal_direct_mis`
-combines both. With `isSceneDynamic`, ellipsoidal sampling supports at most 3 bounces.
+combines both. With `isSceneDynamic`, ellipsoidal sampling supports at most 3 bounces. The same surfaces
+as in the path tracer can hold the ellipsoidal vertex (see [its connection sampling](#connection-sampling)): the
+triangles are collected once per scene, so animated geometry is not followed.
 
 ## Laser
 
@@ -319,16 +380,24 @@ The laser is set on the `LaserLight` pass, as for the [path tracer](#laser).
 ## Example
 
 ```python
+testbed.load_scene("cornell-box/scene-v4-nolight.pbrt", falcor.SceneBuilderFlags.DontMergeMaterials)
+graph = testbed.create_render_graph("TimeGatedReSTIR")
+graph.create_pass("VBuffer", "VBufferRT", {"samplePattern": "Center", "sampleCount": 1})
+graph.create_pass("Laser", "LaserLight", {
+    "laserPosition": [0.0, 1.7, 6.8], "laserDirection": [0.0, 0.0, -1.0], "laserPower": [170.0, 120.0, 40.0],
+})
 graph.create_pass("Tracer", "TimeGatedReSTIRInline", {
     "samplesPerPixel": 16, "maxBounces": 6,
     "timeGateMode": "box", "timeGateWindow": 0.02, "timeCenter": 17.337,
     "spatialReuseIteration": 3, "spatialReuseNeighborCount": 5,
-    "shiftmapMethod": "local_tangent", "gaugeMode": "avg_grad",
+    "shiftMappingMethod": "local_tangent", "gaugeMode": "avg_grad",
     "reconnectionRoughnessThreshold": 0.05,
 })
 graph.add_edge("VBuffer.vbuffer", "Tracer.vbuffer")
 graph.add_edge("VBuffer.viewW", "Tracer.viewW")
 graph.add_edge("Laser", "Tracer")  # run the laser pass first
+graph.mark_output("Tracer.color")
+testbed.render_graph = graph
 ```
 
 See the [offline](../../tutorials/time_gated_restir_offline.md) and
