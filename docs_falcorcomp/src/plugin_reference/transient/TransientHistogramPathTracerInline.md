@@ -96,8 +96,8 @@ Output:
   - Sum the frames in the histogram. See [Accumulation](#accumulation). (Default: `false`)
 * - `useSingleChannel`
   - boolean
-  - Store one channel per bin, chosen by `singleChannel`, which quarters the histogram's memory.
-    The `color` output stays RGB. (Default: `false`)
+  - Store one channel per bin, chosen by `singleChannel`, which quarters the histogram's memory;
+    `color` holds the same channel in all three channels. (Default: `false`)
 * - `singleChannel`
   - string
   - The channel kept by `useSingleChannel`: `luminance`, `red`, `green` or `blue`.

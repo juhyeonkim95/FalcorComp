@@ -109,8 +109,8 @@ struct PathTracingConfig
         if (showSingleChannel)
         {
             dirty |= widget.checkbox("Single channel", useSingleChannel);
-            widget.tooltip("Keep one channel. The time-gated passes write it to all three; the histogram passes "
-                           "store one float per bin. The ReSTIR passes also resample by it.", true);
+            widget.tooltip("Keep one channel. Images hold it in all three channels; histograms and spectra store one "
+                           "float per bin. The ReSTIR passes also resample by it.", true);
             if (useSingleChannel)
             {
                 static const Gui::DropdownList kChannelList = {

@@ -88,8 +88,9 @@ Time sampling:
 
 Sampling and output, as for the [time-gated path tracer](../time_gated/TimeGatedPathTracerInline.md):
 `samplesPerPixel` (default `128`), `maxBounces` (default `3`), `computeDirect` (default `false`),
-`useImportanceSampling` and `useAlphaTest`. The output is RGB (`useSingleChannel` has no effect). Each frame traces
-the pixel-center camera ray itself, in the scene at time $t$, so the pass takes no V-buffer.
+`useImportanceSampling`, `useAlphaTest`, and `useSingleChannel` with `singleChannel`, which write the chosen channel
+to all three channels of the output. Each frame traces the pixel-center camera ray itself, in the scene at time $t$,
+so the pass takes no V-buffer.
 
 (doppler-tof-moving-objects)=
 ## Moving objects

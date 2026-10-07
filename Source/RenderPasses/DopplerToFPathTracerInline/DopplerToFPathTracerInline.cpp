@@ -303,6 +303,8 @@ void DopplerToFPathTracerInline::renderUI(Gui::Widgets& widget)
     widget.text(fmt::format("Frame (time pair): {}", mFrameCount));
     if (auto group = widget.group("Sampling", true))
         dirty |= options.pathTracing.renderSamplingUI(group, " Each vertex is connected to the light.");
+    if (auto group = widget.group("Output", true))
+        dirty |= options.pathTracing.renderOutputUI(group, true, true);
     if (dirty)
     {
         try

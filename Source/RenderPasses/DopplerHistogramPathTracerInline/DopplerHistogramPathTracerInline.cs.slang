@@ -46,6 +46,7 @@ import RenderPasses.Shared.Shaders.Utils.PathVelocity;
 
 import Utils.Sampling.SampleGenerator;
 import RenderPasses.Shared.Shaders.Utils.TransientHistogram;
+import RenderPasses.Shared.Shaders.Utils.SingleChannel;
 import RenderPasses.Shared.Shaders.Utils.RayUtils;
 import Scene.RaytracingInline;
 import RenderPasses.Shared.Shaders.Lights.Laser;
@@ -174,5 +175,9 @@ void main(uint3 dispatchThreadId: SV_DispatchThreadID)
 {
     uint2 pixel = dispatchThreadId.xy;
     if (any(pixel >= gFrameDim)) return;
-    gOutputColor[pixel] = float4(tracePath(pixel, gFrameDim), 1.f);
+    float3 color = tracePath(pixel, gFrameDim);
+#if USE_SINGLE_CHANNEL
+    color = float3(selectChannel(color));
+#endif
+    gOutputColor[pixel] = float4(color, 1.f);
 }

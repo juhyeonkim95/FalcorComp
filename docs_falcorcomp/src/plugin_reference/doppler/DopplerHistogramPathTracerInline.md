@@ -118,7 +118,8 @@ Sampling and output, as for the [transient histogram path tracer](../transient/T
     each frame writes its own spectrum. (Default: `false`)
 * - `useSingleChannel`
   - boolean
-  - Store one channel per bin, chosen by `singleChannel`. (Default: `false`)
+  - Store one channel per bin, chosen by `singleChannel`; `color` holds the same channel in all
+    three channels. (Default: `false`)
 * - `singleChannel`
   - string
   - `luminance`, `red`, `green` or `blue`. (Default: `red`)

@@ -11,6 +11,7 @@ import Rendering.Lights.LightHelpers;
 import Utils.Color.ColorHelpers;
 import RenderPasses.Shared.Shaders.Utils.TimeGate;
 import RenderPasses.Shared.Shaders.Utils.TransientHistogram;
+import RenderPasses.Shared.Shaders.Utils.SingleChannel;
 import RenderPasses.Shared.Shaders.Utils.RayUtils;
 import Scene.RaytracingInline;
 import RenderPasses.Shared.Shaders.Lights.Laser;
@@ -324,6 +325,9 @@ void main(uint3 dispatchThreadId: SV_DispatchThreadID)
     float3 color = tracePath(pixel, gFrameDim);
 #elif LIGHT_SAMPLING_METHOD == TRIANGLE_APPROX
     float3 color = tracePathTriangleApprox(pixel, gFrameDim);
+#endif
+#if USE_SINGLE_CHANNEL
+    color = float3(selectChannel(color));
 #endif
     gOutputColor[pixel] = float4(color, 1.f);
 }
