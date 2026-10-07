@@ -191,6 +191,19 @@ bool isAABBCuttingEllipsoid(Ellipsoid E, float3 origin, float3 extent)
            (delta.z - eps <= (E.aabbExtent.z + extent.z));
 }
 
+// Points within this angle (radians) above the plane through a focus count as behind it: they see the focus at grazing
+// angles, where its cosine vanishes. The same test rejects them in sampling and pdf evaluation, so the BSDF technique
+// keeps those paths.
+static const float kGrazingTolerance = 1e-4f;
+
+// Whether point v lies in the closed half-space behind the plane through p with normal n, up to grazing angles (the
+// L1 length bounds the distance from above, without a square root).
+bool isBehindPlane(float3 v, float3 p, float3 n)
+{
+    float3 toV = v - p;
+    return dot(toV, n) <= kGrazingTolerance * (abs(toV.x) + abs(toV.y) + abs(toV.z));
+}
+
 bool boxInNegativeHalfSpace(float3 minB, float3 maxB, float3 p, float3 n)
 {
     // Extreme point of the box in direction of n (support point).
@@ -199,16 +212,28 @@ bool boxInNegativeHalfSpace(float3 minB, float3 maxB, float3 p, float3 n)
     v.y = (n.y > 0.0f) ? maxB.y : minB.y;
     v.z = (n.z > 0.0f) ? maxB.z : minB.z;
 
-    // If even the farthest point along +n is on the negative side,
-    // then the whole box is in the negative half-space.
-    float d = dot(v - p, n);
-    return d < 0.0f;
+    // If even the farthest point along +n is (at most grazingly) behind the plane, so is the whole box: the closed
+    // half-space also removes boxes lying in the plane, such as the floor under a focus on the floor.
+    return isBehindPlane(v, p, n);
+}
+
+// Distance from p to the box origin +- extent (zero inside it).
+float distanceToAABB(float3 p, float3 origin, float3 extent)
+{
+    return length(max(abs(p - origin) - extent, 0.f));
+}
+
+// Whether the box lies entirely outside the ellipsoid, the points q with |q - p1| + |q - p2| <= t: every q in the box
+// has |q - p1| + |q - p2| >= dist(p1, box) + dist(p2, box). Much tighter than the overlap of bounding boxes.
+bool isAABBOutsideEllipsoid(Ellipsoid E, float3 origin, float3 extent)
+{
+    return distanceToAABB(E.p1, origin, extent) + distanceToAABB(E.p2, origin, extent) > E.t;
 }
 
 bool isAABBValidForEllipoid(Ellipsoid E, float3 origin, float3 extent)
 {
-    // (1) Exclude: AABB not cutting ellipsoid AABB
-    if(!isAABBCuttingEllipsoid(E, origin, extent))
+    // (1) Exclude: AABB not cutting ellipsoid AABB, or entirely outside the ellipsoid.
+    if(!isAABBCuttingEllipsoid(E, origin, extent) || isAABBOutsideEllipsoid(E, origin, extent))
         return false;
     
     // (2) Exclude: AABB is in negative half-plane at both foci.
