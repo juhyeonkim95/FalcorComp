@@ -84,7 +84,7 @@ private:
     DefineList getShaderDefines(const RenderData& renderData) const;
     /// Shrink mapping's wide-gate path fraction, clamped to [0, 1]; the host and the shader derive the wide path
     /// count from it the same way.
-    float shrinkSampleRatio() const { return std::clamp(mOptions.roughTimeGateSampleRatio, 0.f, 1.f); }
+    float shrinkSampleRatio() const { return std::clamp(mOptions.wideGateSampleRatio, 0.f, 1.f); }
     void spatialReuse(RenderContext* pRenderContext, const RenderData& renderData);
     void addDirect(RenderContext* pRenderContext, const RenderData& renderData);
 
@@ -97,13 +97,13 @@ private:
         PathLengthAwareReSTIRConfig restir;
         bool isSceneDynamic = false;          ///< Keep the history when the light moves, re-evaluating reused paths.
         bool debugNewtonIterations = false;   ///< Adds the newtonStatistics and mappingDistance outputs.
-        /// Direct sampling with a box or tent gate: trace paths with a wider gate and shrink them into the gate.
+        /// Direct sampling with a box or tent gate: trace paths with a wide gate and shrink them into the gate.
         bool useShrinkMapping = false;
-        float timeGateWindowRough = 0.0f;      ///< Width of the wide gate; 0 means 10 x timeGateWindow.
-        float roughTimeGateSampleRatio = 1.0f; ///< Fraction of the paths traced with the wide gate.
+        float wideGateWindow = 0.0f;      ///< Width of the wide gate; 0 means 10 x timeGateWindow.
+        float wideGateSampleRatio = 1.0f; ///< Fraction of the paths traced with the wide gate.
 
-        /// Width of the wide gate that shrink mapping traces.
-        float wideGateWindow() const { return timeGateWindowRough > 0.f ? timeGateWindowRough : 10.f * timeGate.timeGateWindow; }
+        /// Width of the wide gate in use: wideGateWindow, or 10 x timeGateWindow while that is 0.
+        float effectiveWideGateWindow() const { return wideGateWindow > 0.f ? wideGateWindow : 10.f * timeGate.timeGateWindow; }
     };
     Options mOptions;
     /// Throws if `options` are invalid: checked on creation, set_properties(), set_time_gate_info() and UI edits.

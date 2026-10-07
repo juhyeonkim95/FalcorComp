@@ -10,12 +10,12 @@ import Scene.RaytracingInline;
 // Returns whether the connection can contribute: connected and inside the gate. Otherwise its radiance stays zero,
 // and callers skip shadeLightConnection() (a visibility ray and a BSDF evaluation) and whatever only scales it.
 bool connectToLightGated(ShadingData surface, LightSample light, float pathLength, out LightConnection connection,
-    out float totalLength, out float gate, bool useRoughGate = false)
+    out float totalLength, out float gate, bool useWideGate = false)
 {
     bool connected;
     connection = connectToLight(surface, light, connected);
     totalLength = pathLength + connection.distance + light.laserT;
-    gate = pathLengthImportance(totalLength, gTimeCenter, useRoughGate);
+    gate = pathLengthImportance(totalLength, gTimeCenter, useWideGate);
     return connected && gate != 0.f;
 }
 

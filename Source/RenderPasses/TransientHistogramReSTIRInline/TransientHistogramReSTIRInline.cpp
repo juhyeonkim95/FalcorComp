@@ -200,7 +200,7 @@ void TransientHistogramReSTIRInline::bindTimeGate(const ShaderVar& var) const
     // Each bin is a box gate one bin wide.
     mOptions.histogram.bindShaderData(var);
     var["TimeGate"]["gTimeGateWindow"] = mOptions.histogram.binWidth();
-    var["TimeGate"]["gTimeGateWindowRough"] = mOptions.histogram.binWidth();
+    var["TimeGate"]["gWideGateWindow"] = mOptions.histogram.binWidth();
 }
 
 void TransientHistogramReSTIRInline::bindShaderData(const ShaderVar& var, const RenderData& renderData)

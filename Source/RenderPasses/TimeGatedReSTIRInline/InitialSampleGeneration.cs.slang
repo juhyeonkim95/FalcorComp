@@ -35,7 +35,7 @@ cbuffer CB
     ReconnectionCriteria gReconnection;
     float gEllipsoidRoughnessThreshold;
     float gTemporalHistoryLength;
-    float gRoughTimeGateSampleRatio; // Shrink mapping: fraction of the paths traced with the wide gate, in [0, 1].
+    float gWideGateSampleRatio; // Shrink mapping: fraction of the paths traced with the wide gate, in [0, 1].
 #if USE_TEMPORAL_REUSE
     bool gTemporalHistoryValid;
     float3 gPreviousCameraPosition;
@@ -133,7 +133,7 @@ Reservoir mergeGateReservoirs(Reservoir narrow, Reservoir wide, uint narrowCount
     narrow.M = float(narrowCount);
     wide.M = float(wideCount);
     // K is the narrow/wide gate-width ratio: L' = gTimeCenter + K*(L-gTimeCenter).
-    const float K = gTimeGateWindow / gTimeGateWindowRough;
+    const float K = gTimeGateWindow / gWideGateWindow;
     // Expanding the canonical narrow sample only evaluates competing wide support.
     // A failed expansion or no-RC path retains the full narrow contribution.
     ReuseDomain domain = { primary, primaryMaterial, primaryLength, gTimeCenter, gLaserOrigin, gLaserDirection, gLaserPower,
@@ -230,7 +230,7 @@ float3 tracePath(uint2 pixel, uint2 frameDim)
 #endif
 #if USE_SHRINK_MAPPING
     // The host enables shrink mapping only when this count is positive; ratio 1 uses only wide samples.
-    const uint wideCount = min(uint(float(gSamplesPerPixel) * gRoughTimeGateSampleRatio), gSamplesPerPixel);
+    const uint wideCount = min(uint(float(gSamplesPerPixel) * gWideGateSampleRatio), gSamplesPerPixel);
     const uint narrowCount = gSamplesPerPixel - wideCount;
     Reservoir wideReservoir = Reservoir();
     const float wideSampleWeight = float(gSamplesPerPixel) / float(wideCount);
@@ -246,10 +246,10 @@ float3 tracePath(uint2 pixel, uint2 frameDim)
 
     for (uint sampleIndex = 0; sampleIndex < gSamplesPerPixel; ++sampleIndex)
     {
-        bool useRoughGate = false;
+        bool useWideGate = false;
 #if USE_SHRINK_MAPPING
-        useRoughGate = sampleIndex >= narrowCount;
-        float maxPathLength = getMaxPathLength(gTimeCenter, useRoughGate);
+        useWideGate = sampleIndex >= narrowCount;
+        float maxPathLength = getMaxPathLength(gTimeCenter, useWideGate);
 #endif
         ShadingData surface = primary;
         IMaterialInstance material = primaryMaterial;
@@ -331,7 +331,7 @@ float3 tracePath(uint2 pixel, uint2 frameDim)
                 float totalLength, gate;
                 // Outside the gate the candidate contributes zero: skip its visibility ray and BSDF evaluation. It is
                 // still submitted (M and the reservoir's random draws are unchanged).
-                bool contributes = connectToLightGated(surface, light, pathLength, connection, totalLength, gate, useRoughGate);
+                bool contributes = connectToLightGated(surface, light, pathLength, connection, totalLength, gate, useWideGate);
                 if (contributes) shadeLightConnection(connection, surface, material, light, rng);
                 float techniqueWeight = 1.f;
 #if LIGHT_SAMPLING_METHOD != DIRECT_CONNECTION
@@ -343,7 +343,7 @@ float3 tracePath(uint2 pixel, uint2 frameDim)
 #if USE_SHRINK_MAPPING
                 // submitCandidate divides by gSamplesPerPixel. Correct that to 1/N_i
                 // so each gate reservoir separately estimates its full gate integral.
-                if (useRoughGate)
+                if (useWideGate)
                     submitCandidate(wideReservoir, rc, surface, material, light, connection, totalLength, gate,
                         throughput, wideSampleWeight, gSamplesPerPixel, lightSeed, false, rng);
                 else

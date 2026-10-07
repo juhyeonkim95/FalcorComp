@@ -84,14 +84,14 @@ Initial sampling, the candidate paths each pixel starts from in every frame:
   - Importance-sample the BSDF when extending a candidate path. (Default: `true`)
 * - `useShrinkMapping`
   - boolean
-  - Shrink mapping: trace candidate paths with a wider gate and shrink them into the gate. See
+  - Shrink mapping: trace candidate paths with a wide gate and shrink them into the gate. See
     [Shrink mapping](#restir-wide-gate). (Default: `false`)
-* - `timeGateWindowRough`
+* - `wideGateWindow`
   - float
-  - Width of the wider gate. 0 uses 10 x `timeGateWindow`. (Default: `0`)
-* - `roughTimeGateSampleRatio`
+  - Width of the wide gate. 0 uses 10 x `timeGateWindow`. (Default: `0`)
+* - `wideGateSampleRatio`
   - float
-  - Fraction of the camera paths traced with the wider gate, clamped to [0, 1]; the others use the
+  - Fraction of the camera paths traced with the wide gate, clamped to [0, 1]; the others use the
     gate itself. (Default: `1`)
 ```
 
@@ -288,15 +288,15 @@ a surface, the pixel starts from its own samples).
 ## Shrink mapping
 
 With `useShrinkMapping`, `direct` sampling and a `box` or `tent` gate, a fraction
-`roughTimeGateSampleRatio` of the candidate paths is traced against a wider gate,
-`timeGateWindowRough` (10 x `timeGateWindow` unless set), and shrunk into the gate with the
+`wideGateSampleRatio` of the candidate paths is traced against the wide gate, of width
+`wideGateWindow` (10 x `timeGateWindow` unless set), and shrunk into the gate with the
 path-length shift. This finds candidates for very narrow gates that direct sampling rarely hits.
-It has no effect when the wider gate is not wider than `timeGateWindow`, or when
-`roughTimeGateSampleRatio` x `samplesPerPixel` is below 1.
+It has no effect when the wide gate is not wider than `timeGateWindow`, or when
+`wideGateSampleRatio` x `samplesPerPixel` is below 1.
 
-With a fraction of 1, every candidate uses the wider gate, and paths whose shift fails are lost:
+With a fraction of 1, every candidate uses the wide gate, and paths whose shift fails are lost:
 in a test on the Cornell box (0.01 gate), the image was about 7 % darker than the reference. A
-fraction below 1 keeps some candidates on the gate itself; with 0.5 and a 5 x wider gate the
+fraction below 1 keeps some candidates on the gate itself; with 0.5 and a wide gate 5 x the gate the
 difference was under 1 %.
 
 (restir-connection-sampling)=

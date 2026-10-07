@@ -18,7 +18,7 @@ import Utils.Math.MathHelpers;
 cbuffer TimeGate
 {
     float gTimeGateWindow;
-    float gTimeGateWindowRough;
+    float gWideGateWindow;
     uint gTimeGateMode;
     float gTimeCenter;
     float gPreviousTimeCenter;
@@ -69,9 +69,9 @@ float perlinGate(float v)
 	return 2.f * s * s * s * (1.f + 3.f * u + 6.f * u * u);
 }
 
-float getMaxPathLength(float target_distance, bool use_rough = false)
+float getMaxPathLength(float target_distance, bool useWideGate = false)
 {
-	float target_time_gate_window = use_rough ? gTimeGateWindowRough : gTimeGateWindow;
+	float target_time_gate_window = useWideGate ? gWideGateWindow : gTimeGateWindow;
 	switch(gTimeGateMode)
 	{	
 		case TIME_GATE_ALL:{
@@ -116,9 +116,9 @@ bool canReachGate(float pathLength, float3 x, float3 lightOrigin, float maxPathL
  * Evaluate Path Length Importance Function
  */
 
- float pathLengthImportance(float distance, float target_distance, bool use_rough = false)
+ float pathLengthImportance(float distance, float target_distance, bool useWideGate = false)
  {
-	float target_time_gate_window = use_rough ? gTimeGateWindowRough : gTimeGateWindow;
+	float target_time_gate_window = useWideGate ? gWideGateWindow : gTimeGateWindow;
 	float v = (distance - target_distance) / (target_time_gate_window);
     switch(gTimeGateMode)
 	{	
@@ -210,9 +210,9 @@ bool canReachGate(float pathLength, float3 x, float3 lightOrigin, float maxPathL
 
  
  // Density of samplePathLength(), including its finite support.
- float evalPdfPathLength(float distance, float target_distance, bool use_rough = false)
+ float evalPdfPathLength(float distance, float target_distance, bool useWideGate = false)
  {
-    float width = use_rough ? gTimeGateWindowRough : gTimeGateWindow;
+    float width = useWideGate ? gWideGateWindow : gTimeGateWindow;
     if (!(width > 0.f)) return 0.f;
     switch (gTimeGateMode)
     {
@@ -232,9 +232,9 @@ bool canReachGate(float pathLength, float3 x, float3 lightOrigin, float maxPathL
     return 0.f; // No length sampler is implemented for the other gate modes (all, cos, Perlin).
  }
 
- void samplePathLength(float t, float u, out float tau, out float pdf, bool use_rough = false)
+ void samplePathLength(float t, float u, out float tau, out float pdf, bool useWideGate = false)
  {
-	float target_time_gate_window = use_rough ? gTimeGateWindowRough : gTimeGateWindow;
+	float target_time_gate_window = useWideGate ? gWideGateWindow : gTimeGateWindow;
 	float a = 0.5 * target_time_gate_window;
 	tau = t;
 	pdf = 0.f;
