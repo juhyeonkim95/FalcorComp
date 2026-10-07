@@ -93,7 +93,7 @@ Reuse:
   - float
   - Cap on the history's sample count, in frames of `samplesPerPixel`; 0 ignores the history.
     Must not be negative. (Default: `20`)
-* - `randomSeed`
+* - `seed`
   - integer
   - Seed of the random numbers in spatial reuse; it advances with every round. (Default: `0`)
 ```

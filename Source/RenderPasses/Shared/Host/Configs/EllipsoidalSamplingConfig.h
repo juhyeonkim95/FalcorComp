@@ -38,7 +38,7 @@ struct EllipsoidalSamplingConfig
     {
         if (key == "samplingMethod")
             samplingMethod = parseEnumProperty(kEllipsoidalSamplingMethods, value, key);
-        else if (key == "emissiveSampler")
+        else if (key == "ellipsoidTriangleSampler")
             triSampler = value;
         else if (key == "specularRoughnessThresholdEllipsoid")
             ellipsoidRoughnessThreshold = value;
@@ -53,7 +53,7 @@ struct EllipsoidalSamplingConfig
     void validate() const
     {
         if (usesEllipsoid() && triSampler != EmissiveLightSamplerType::Uniform && triSampler != EmissiveLightSamplerType::LightBVH)
-            FALCOR_THROW("emissiveSampler must be Uniform or LightBVH for ellipsoidal sampling.");
+            FALCOR_THROW("ellipsoidTriangleSampler must be Uniform or LightBVH for ellipsoidal sampling.");
         if (!(maxTriangleArea > 0.f))
             FALCOR_THROW("ellipsoidMaxTriangleArea must be greater than zero.");
     }
@@ -61,7 +61,7 @@ struct EllipsoidalSamplingConfig
     void serialize(Properties& props) const
     {
         props["samplingMethod"] = enumPropertyName(kEllipsoidalSamplingMethods, samplingMethod);
-        props["emissiveSampler"] = triSampler;
+        props["ellipsoidTriangleSampler"] = triSampler;
         props["specularRoughnessThresholdEllipsoid"] = ellipsoidRoughnessThreshold;
         props["ellipsoidMaxTriangleArea"] = maxTriangleArea;
     }

@@ -93,7 +93,7 @@ Sampling:
   - float
   - With `ellipsoidal`, a vertex uses an ellipsoidal connection only if its roughness is above
     this value. (Default: `0.25`)
-* - `emissiveSampler`
+* - `ellipsoidTriangleSampler`
   - string
   - How an ellipsoidal connection picks the scene triangle to place its vertex on: `Uniform` or
     `LightBVH`. Unused with `direct`. (Default: `LightBVH`)
@@ -153,7 +153,7 @@ Every camera-path vertex $x$ is connected to the laser spot:
 - `ellipsoidal`: insert a vertex $y$ so that $x \to y \to$ laser spot has a length inside the
   gate. The remaining length is drawn from the gate kernel, and $y$ is placed where the
   ellipsoid with foci $x$ and the laser spot crosses a scene triangle chosen by
-  `emissiveSampler`. This finds the rare paths that fit a narrow gate.
+  `ellipsoidTriangleSampler`. This finds the rare paths that fit a narrow gate.
 - `ellipsoidal_direct_mis`: both, combined with the balance heuristic.
 
 The `cos` and `all` kernels have no length to draw from, and `perlin` has no length sampler, so with

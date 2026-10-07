@@ -62,7 +62,7 @@ the list. On a GPU this list is the problem: for detailed meshes it can hold tho
 far more than a thread can keep, which spills registers and memory.
 
 `TimeGatedPathTracerInline` never builds the list. It samples the triangle by walking a BVH, the light BVH that
-Falcor builds for emissive triangles, here built over all the scene's triangles (`emissiveSampler` = `LightBVH`):
+Falcor builds for emissive triangles, here built over all the scene's triangles (`ellipsoidTriangleSampler` = `LightBVH`):
 
 1. **Length**: the length of $x \to y \to$ laser spot is drawn from the gate, and with $x$ and the laser spot as
    foci it defines the ellipsoid.
@@ -88,7 +88,7 @@ Two more changes from the original method:
 - **Connections to the light only**: the ellipsoidal vertex is inserted only when the camera path connects to the
   laser spot (next-event estimation), not between subpaths as in bidirectional path tracing.
 
-`emissiveSampler` = `Uniform` picks any scene triangle with the same probability, without looking at the
+`ellipsoidTriangleSampler` = `Uniform` picks any scene triangle with the same probability, without looking at the
 ellipsoid, as a baseline: most of its samples miss.
 
 ## 1. Load the scene
@@ -104,7 +104,7 @@ ellipsoid, as a baseline: most of its samples miss.
 The graph is the one from [Time-gated rendering (offline)](time_gated_offline.md); only
 `samplingMethod` changes between the three renders. The other ellipsoidal options keep their
 defaults: the scene triangle is chosen with a light BVH over the scene's triangles
-(`emissiveSampler`), and with `ellipsoidal` only vertices rougher than
+(`ellipsoidTriangleSampler`), and with `ellipsoidal` only vertices rougher than
 `specularRoughnessThresholdEllipsoid` (0.25) insert an ellipsoidal vertex.
 
 ```{literalinclude} code/time_gated_ellipsoidal_equal_time.py

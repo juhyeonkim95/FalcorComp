@@ -28,7 +28,7 @@ def render(testbed, mode, sampler="LightBVH", iterations=0, radius=8., threshold
         "laserCollocated": False, "isLightSourceLaser": laser,
     })
     graph.create_pass("P", "TimeGatedReSTIRInline", {
-        "samplingMethod": mode, "emissiveSampler": sampler,
+        "samplingMethod": mode, "ellipsoidTriangleSampler": sampler,
         "samplesPerPixel": 32, "maxBounces": 6,
         "timeGateMode": "box", "timeGateWindow": .5,
         "timeMin": 17.337, "timeMax": 17.337, "timeBin": 1,

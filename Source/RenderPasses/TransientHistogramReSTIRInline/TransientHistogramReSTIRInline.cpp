@@ -64,7 +64,7 @@ const ChannelList kHistogramOutputChannelSingle = {
 const char kUseBinReuse[] = "useBinReuse";
 const char kSkipEmptyReservoirs[] = "skipEmptyReservoirs";
 const char kTemporalReuseTwoPass[] = "temporalReuseTwoPass";
-const char kRandomSeed[] = "randomSeed";
+const char kSeed[] = "seed";
 } // namespace
 
 TransientHistogramReSTIRInline::TransientHistogramReSTIRInline(ref<Device> pDevice, const Properties& props) : RenderPass(pDevice)
@@ -103,7 +103,7 @@ void TransientHistogramReSTIRInline::parseProperties(const Properties& props)
             mOptions.skipEmptyReservoirs = value;
         else if (key == kTemporalReuseTwoPass)
             mOptions.temporalReuseTwoPass = value;
-        else if (key == kRandomSeed)
+        else if (key == kSeed)
             mRandomSeed = value;
         else
             logWarning("Unknown property '{}' in TransientHistogramReSTIRInline properties.", key);
@@ -145,7 +145,7 @@ Properties TransientHistogramReSTIRInline::getProperties() const
     props[kUseBinReuse] = mOptions.useBinReuse;
     props[kSkipEmptyReservoirs] = mOptions.skipEmptyReservoirs;
     props[kTemporalReuseTwoPass] = mOptions.temporalReuseTwoPass;
-    props[kRandomSeed] = mRandomSeed;
+    props[kSeed] = mRandomSeed;
     return props;
 }
 

@@ -70,7 +70,7 @@ Initial sampling, the candidate paths each pixel starts from in every frame:
   - float
   - With `ellipsoidal`, a vertex uses an ellipsoidal connection only if its roughness is above
     this value. (Default: `0.25`)
-* - `emissiveSampler`
+* - `ellipsoidTriangleSampler`
   - string
   - How an ellipsoidal connection picks the scene triangle to place its vertex on: `Uniform` or
     `LightBVH`. Unused with `direct`. (Default: `LightBVH`)
@@ -131,7 +131,7 @@ Reuse:
   - boolean
   - Keep the temporal history when the laser moves or changes, re-evaluating the lighting of
     reused paths. Otherwise any laser change discards the history. (Default: `false`)
-* - `randomSeed`
+* - `seed`
   - integer
   - Seed of the random numbers in spatial reuse; it advances with every round. (Default: `0`)
 ```

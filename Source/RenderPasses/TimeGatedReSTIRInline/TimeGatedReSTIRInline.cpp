@@ -56,7 +56,7 @@ const ChannelList kDebugOutputChannels = {
     { "mappingDistance", "gMappingDistance", "Sum of coordinate and world displacement for successful solves", false, ResourceFormat::RG32Float },
 };
 
-const char kRandomSeed[] = "randomSeed";
+const char kSeed[] = "seed";
 const char kIsSceneDynamic[] = "isSceneDynamic";
 const char kDebugNewtonIterations[] = "debugNewtonIterations";
 const char kUseShrinkMapping[] = "useShrinkMapping";
@@ -114,7 +114,7 @@ void TimeGatedReSTIRInline::parseProperties(const Properties& props)
         if (mOptions.timeGate.parse(key, value) || mOptions.ellipsoidalSampling.parse(key, value) ||
             mOptions.pathTracing.parse(key, value) || mOptions.restir.parse(key, value))
             continue;
-        if (key == kRandomSeed)
+        if (key == kSeed)
             mRandomSeed = value;
         else if (key == kIsSceneDynamic)
             mOptions.isSceneDynamic = value;
@@ -139,7 +139,7 @@ Properties TimeGatedReSTIRInline::getProperties() const
     mOptions.ellipsoidalSampling.serialize(props);
     mOptions.pathTracing.serialize(props);
     mOptions.restir.serialize(props);
-    props[kRandomSeed] = mRandomSeed;
+    props[kSeed] = mRandomSeed;
     props[kIsSceneDynamic] = mOptions.isSceneDynamic;
     props[kDebugNewtonIterations] = mOptions.debugNewtonIterations;
     props[kUseShrinkMapping] = mOptions.useShrinkMapping;
