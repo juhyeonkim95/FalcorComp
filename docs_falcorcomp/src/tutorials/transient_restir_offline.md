@@ -36,7 +36,7 @@ plus the reuse options:
   spatial reuse, each resampling 5 neighbors within 10 pixels, in every bin.
 - `useTemporalReuse`: off, so that every frame is independent and
   `TransientHistogramAccumulatePass` averages them. The comparison below also tries it on.
-- `shiftmapMethod`, `gaugeMode`, `reconnectionRoughnessThreshold`: how a neighbor's path is
+- `shiftMappingMethod`, `gaugeMode`, `reconnectionRoughnessThreshold`: how a neighbor's path is
   shifted to this pixel while keeping its length. The defaults do not shift paths (`no`), so set
   them.
 

@@ -1,8 +1,8 @@
 # Sphinx configuration for the falcorcomp documentation.
 
 project = "falcorcomp"
-author = "falcorcomp developers"
-copyright = "2026, falcorcomp developers"
+author = "Juhyeon Kim"
+copyright = "2026, Juhyeon Kim"
 
 extensions = [
     "myst_parser",
@@ -27,3 +27,6 @@ html_title = "falcorcomp"
 html_logo = "_static/logo_icon.png"  # the icon from ../assets/logo.png, without the text
 html_static_path = ["_static"]
 html_css_files = ["custom.css"]
+# Furo escapes the copyright text; author_link.js links the author's name in the footer to
+# https://juhyeonkim.netlify.app/.
+html_js_files = ["author_link.js"]

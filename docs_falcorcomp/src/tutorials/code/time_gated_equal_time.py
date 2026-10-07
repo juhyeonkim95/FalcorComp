@@ -19,7 +19,7 @@ PT = {"samplesPerPixel": 16, "maxBounces": 6, **GATE}
 RESTIR = {**PT,
           "spatialReuseIteration": 3, "spatialReuseNeighborCount": 5,
           "spatialReuseGatherRadius": 10.0, "useTemporalReuse": False,
-          "shiftmapMethod": "local_tangent", "gaugeMode": "avg_grad",
+          "shiftMappingMethod": "local_tangent", "gaugeMode": "avg_grad",
           "reconnectionRoughnessThreshold": 0.05}
 
 

@@ -18,7 +18,7 @@ struct TransientHistogramConfig
 
     float timeMin = 9.f;
     float timeMax = 12.f;
-    uint timeBin = 512;
+    uint timeBin = 64; ///< Memory grows with W x H x bins (ReSTIR: two reservoirs of ~100 B per bin and pixel).
     TimeGateMode filter = TimeGateMode::Box; ///< Bin filter (Box/Tent), or the kernel with KDE.
     bool useKernelDensityEstimation = false;
     float initialWindowRatio = 1.f;          ///< KDE: kernel width of a frame's first sample / histogram range, in (0, 1].
@@ -45,8 +45,18 @@ struct TransientHistogramConfig
         histogramVar["gBinWidth"] = binWidth();
     }
 
-    void validate() const
+    /// `allowKernelDensityEstimation`: whether the pass implements kernel density estimation.
+    void validate(bool allowKernelDensityEstimation = true) const
     {
+        if (useKernelDensityEstimation && !allowKernelDensityEstimation)
+            FALCOR_THROW("This pass does not support kernel density estimation (useKernelDensityEstimation).");
+        const bool binFilter = filter == TimeGateMode::Box || filter == TimeGateMode::Tent;
+        if (!useKernelDensityEstimation && !binFilter)
+            FALCOR_THROW("histogramFilter must be 'box' or 'tent' (other kernels need useKernelDensityEstimation).");
+        if (useKernelDensityEstimation && !binFilter && filter != TimeGateMode::Gaussian &&
+            filter != TimeGateMode::Epanechnikov && filter != TimeGateMode::Perlin)
+            FALCOR_THROW("With kernel density estimation, histogramFilter must be 'box', 'tent', 'gaussian', "
+                         "'epanechnikov' or 'perlin'.");
         if (timeBin == 0)
             FALCOR_THROW("timeBin must be positive.");
         if (!std::isfinite(timeMin) || !std::isfinite(timeMax) || timeMin >= timeMax || !(binWidth() > 0.f))
@@ -55,7 +65,9 @@ struct TransientHistogramConfig
             FALCOR_THROW("initialWindowRatio must be finite and in (0, 1]. Zero would produce a zero KDE bandwidth.");
     }
 
-    bool parse(const std::string& key, const Properties::ConstValue& value)
+    /// `allowKernelDensityEstimation`: whether the pass implements kernel density estimation; the KDE keys are the
+    /// pass's properties only then.
+    bool parse(const std::string& key, const Properties::ConstValue& value, bool allowKernelDensityEstimation = true)
     {
         if (key == "timeMin")
             timeMin = value;
@@ -65,23 +77,26 @@ struct TransientHistogramConfig
             timeBin = value;
         else if (key == "histogramFilter")
             filter = parseEnumProperty(kTimeGateModes, value, key);
-        else if (key == "useKernelDensityEstimation")
+        else if (allowKernelDensityEstimation && key == "useKernelDensityEstimation")
             useKernelDensityEstimation = value;
-        else if (key == "initialWindowRatio")
+        else if (allowKernelDensityEstimation && key == "initialWindowRatio")
             initialWindowRatio = value;
         else
             return false;
         return true;
     }
 
-    void serialize(Properties& props) const
+    void serialize(Properties& props, bool allowKernelDensityEstimation = true) const
     {
         props["timeMin"] = timeMin;
         props["timeMax"] = timeMax;
         props["timeBin"] = timeBin;
         props["histogramFilter"] = enumPropertyName(kTimeGateModes, filter);
-        props["useKernelDensityEstimation"] = useKernelDensityEstimation;
-        props["initialWindowRatio"] = initialWindowRatio;
+        if (allowKernelDensityEstimation)
+        {
+            props["useKernelDensityEstimation"] = useKernelDensityEstimation;
+            props["initialWindowRatio"] = initialWindowRatio;
+        }
     }
 
     /// Range, bins and filter. `allowKernelDensityEstimation` shows the KDE controls.

@@ -2,16 +2,18 @@
 
 Run after building TimeGatedReSTIRInline and sourcing bin/setpath.sh.
 Checks finite output, exact self reuse, and nontrivial neighbor reuse, not unbiasedness.
+The dragon scene needs meshes/dragon.ply next to its .pbrt file, which the repository does not include; without it,
+that scene is skipped.
 """
 import falcor
 import numpy as np
-from test_initial_sampling import ROOT, render
+from test_initial_sampling import SCENES, render
 
 
 def check(testbed, method, laser=True, gauge="avg_grad"):
     options = dict(shift_method=method, laser=laser, gauge_mode=gauge, frames=2)
     base = render(testbed, "direct", **options)
-    identity = render(testbed, "direct", iterations=3, radius=0., **options)
+    identity = render(testbed, "direct", iterations=3, radius=.5, **options)  # Every neighbor is the pixel itself.
     np.testing.assert_allclose(identity, base, rtol=2e-4, atol=1e-6)
     reused = render(testbed, "direct", iterations=3, **options)
     assert not np.allclose(reused, base), (method, laser, gauge, "no neighbor reuse")
@@ -26,7 +28,10 @@ def main():
         ("cornell-box", ("no", "local_tangent", "barycentric", "ray_trace", "area_adaptive", "ray_trace_chart")),
         ("cornell-box-dragon-diffuse", ("ray_trace", "area_adaptive", "ray_trace_chart")),
     ]:
-        testbed.load_scene(str(ROOT / "experiments/scene" / scene / "scene-v4-nolight.pbrt"))
+        if scene == "cornell-box-dragon-diffuse" and not (SCENES / scene / "meshes/dragon.ply").is_file():
+            print(scene, "SKIPPED: meshes/dragon.ply not found", flush=True)
+            continue
+        testbed.load_scene(str(SCENES / scene / "scene-v4-nolight.pbrt"))
         testbed.resize_frame_buffer(33, 25)
         testbed.scene.camera.aspectRatio = 33 / 25
         testbed.scene.camera.apertureRadius = 0.

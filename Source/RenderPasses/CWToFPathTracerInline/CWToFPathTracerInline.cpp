@@ -38,7 +38,6 @@ namespace
 {
 const char kShaderFile[] = "RenderPasses/CWToFPathTracerInline/CWToFPathTracerInline.cs.slang";
 const char kUseAntitheticSampling[] = "useAntitheticSampling";
-const char kAntitheticRoundTripCheck[] = "antitheticRoundTripCheck";
 
 } // namespace
 
@@ -47,9 +46,8 @@ CWToFPathTracerInline::CWToFPathTracerInline(ref<Device> pDevice, const Properti
     // Defaults that differ from the shared configs': the primary-hit term carries most of the signal, and the
     // antithetic shift needs a shift mapping with inverse forward and backward shifts.
     mOptions.pathTracing.computeDirect = true;
-    mOptions.shiftMapping.shiftmapMethod = ShiftMappingMethod::Radial;
+    mOptions.shiftMapping.shiftMappingMethod = ShiftMappingMethod::Radial;
     mOptions.shiftMapping.gaugeMode = GaugeMode::OrthoAvgGrad;
-    mOptions.shiftMapping.newtonRelativeTolerance = 0.002f;
 
     parseProperties(props);
     validateOptions(mOptions);
@@ -63,6 +61,7 @@ void CWToFPathTracerInline::validateOptions(const Options& options)
 {
     options.continuousWave.validate();
     options.pathTracing.validate();
+    options.shiftMapping.validate();
 }
 
 void CWToFPathTracerInline::parseProperties(const Properties& props)
@@ -74,8 +73,6 @@ void CWToFPathTracerInline::parseProperties(const Properties& props)
             continue;
         if (key == kUseAntitheticSampling)
             mOptions.useAntitheticSampling = value;
-        else if (key == kAntitheticRoundTripCheck)
-            mOptions.antitheticRoundTripCheck = value;
         else
             logWarning("Unknown property '{}' in CWToFPathTracerInline properties.", key);
     }
@@ -88,7 +85,6 @@ Properties CWToFPathTracerInline::getProperties() const
     mOptions.pathTracing.serialize(props);
     mOptions.shiftMapping.serialize(props);
     props[kUseAntitheticSampling] = mOptions.useAntitheticSampling;
-    props[kAntitheticRoundTripCheck] = mOptions.antitheticRoundTripCheck;
     return props;
 }
 
@@ -112,11 +108,10 @@ RenderPassReflection CWToFPathTracerInline::reflect(const CompileData& compileDa
 DefineList CWToFPathTracerInline::getShaderDefines(const RenderData& renderData) const
 {
     DefineList defines = mOptions.pathTracing.getDefines();
-    defines.add(LaserState::resolve(renderData).getDefines());
+    defines.add(mLaserInput.get().getDefines());
     defines.add(InlinePass::getSceneLightDefines(*mpScene));
     defines.add(mOptions.shiftMapping.getDefines());
     defines.add("USE_ANTITHETIC_SAMPLING", mOptions.useAntitheticSampling ? "1" : "0");
-    defines.add("ANTITHETIC_ROUND_TRIP_CHECK", mOptions.antitheticRoundTripCheck ? "1" : "0");
 
     // For optional I/O resources, set 'is_valid_<name>' defines to inform the program of which ones it can access.
     defines.add(getValidResourceDefines(InlinePass::kPrimaryHitInputChannels, renderData));
@@ -129,7 +124,7 @@ void CWToFPathTracerInline::bindShaderData(const ShaderVar& var, const RenderDat
     var["CB"]["gFrameCount"] = mFrameCount;
     var["CB"]["gFrameDim"] = renderData.getDefaultTextureDims();
     var["CB"]["gSamplesPerPixel"] = mOptions.pathTracing.samplesPerPixel;
-    LaserState::resolve(renderData).bindShaderData(var["Laser"]);
+    mLaserInput.get().bindShaderData(var["Laser"]);
     mOptions.continuousWave.bindShaderData(var["ContinuousWave"]);
     mOptions.shiftMapping.bindShaderData(var["ShiftMappingCB"]);
 
@@ -139,6 +134,7 @@ void CWToFPathTracerInline::bindShaderData(const ShaderVar& var, const RenderDat
 
 void CWToFPathTracerInline::execute(RenderContext* pRenderContext, const RenderData& renderData)
 {
+    mLaserInput.update(renderData, "CWToFPathTracerInline");
     if (mOptionsChanged)
     {
         InlinePass::flagOptionsChanged(renderData);
@@ -185,9 +181,6 @@ void CWToFPathTracerInline::renderUI(Gui::Widgets& widget)
     {
         if (auto group = widget.group("Antithetic shift mapping", true))
         {
-            dirty |= group.checkbox("Round-trip check", options.antitheticRoundTripCheck);
-            group.tooltip("Keep a shift only if shifting the partner back returns to the start, so the forward and "
-                          "backward shifts are exact inverses. Costs a second Newton solve.", true);
             dirty |= options.shiftMapping.renderUI(group,
                 "How the antithetic vertex is found: it is moved on its surface so the path length changes by the "
                 "antithetic offset.\nRadial (the default): along the ray from the path length's minimum on the "
@@ -204,10 +197,21 @@ void CWToFPathTracerInline::renderUI(Gui::Widgets& widget)
     // In execute() we will pass the flag to other passes for reset of temporal data etc.
     if (dirty)
     {
-        validateOptions(options);
+        try
+        {
+            validateOptions(options);
+        }
+        catch (const std::exception& e)
+        {
+            mUIWarning = e.what();
+            return;
+        }
+        mUIWarning.clear();
         mOptions = options;
         mOptionsChanged = true;
     }
+    if (!mUIWarning.empty())
+        widget.text(mUIWarning);
 }
 
 void CWToFPathTracerInline::setScene(RenderContext* pRenderContext, const ref<Scene>& pScene)

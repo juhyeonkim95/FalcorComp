@@ -4,7 +4,8 @@ These tutorials render with the path tracers of [ToF rendering](index.md), but s
 camera path reaches the laser differently. With the default `direct` sampling, every path vertex
 is connected straight to the laser spot, so with a narrow gate only the few paths whose length
 happens to fit contribute. *Ellipsoidal sampling* inserts a vertex whose position makes the path's
-length fit the gate, so every path it samples contributes.
+length fit the gate, so every path it samples contributes. The script saves its comparison with Pillow 10.1 or
+newer (`pip install pillow`).
 
 ## Time-gated rendering
 

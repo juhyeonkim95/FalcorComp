@@ -182,7 +182,7 @@ struct PBRTConductorMaterialInstance : MaterialInstanceBase, IMaterialInstance
         p.roughness = bsdf.D.getIsotropicRoughness();
         p.specularReflectionAlbedo = float3(1.0f); // TODO: Compute approximate albedo from eta/k
 
-        // ADDED for SVGF!
+        // FalcorComp: the albedo that SVGF-style denoisers demodulate by (upstream leaves 0 for this material).
         p.diffuseReflectionAlbedo = bsdf.evalSVGFAlbedo();
 
         return p;

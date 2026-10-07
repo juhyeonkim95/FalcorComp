@@ -28,7 +28,8 @@ the settings can be changed while it runs.
 
 Before you start:
 
-- Install falcorcomp (see [Installation](../getting_started/installation.md)).
+- Install falcorcomp (see [Installation](../getting_started/installation.md)), and Pillow 10.1 or newer, with which
+  some scripts save their images (`pip install pillow`).
 - Download the scene, {download}`scene-v4-nolight.pbrt <scenes/cornell-box/scene-v4-nolight.pbrt>`,
   and save it as `cornell-box/scene-v4-nolight.pbrt` next to the scripts. (The Cornell box is by
   Benedikt Bitterli, released under {download}`CC0 <scenes/cornell-box/LICENSE.txt>`.)

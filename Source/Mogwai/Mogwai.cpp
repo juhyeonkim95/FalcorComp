@@ -712,12 +712,14 @@ namespace Mogwai
 
             executeActiveGraph(pRenderContext);
 
-            // Blit main graph output to frame buffer.
+            // Blit main graph output to frame buffer. blit() reads a 2D texture: a 3D output (a transient histogram or a
+            // Doppler spectrum) bound in its place is invalid and can crash the driver, so it is not shown.
             if (mGraphs[mActiveGraph].mainOutput.size())
             {
                 ref<Texture> pOutTex = pGraph->getOutput(mGraphs[mActiveGraph].mainOutput)->asTexture();
                 FALCOR_ASSERT(pOutTex);
-                pRenderContext->blit(pOutTex->getSRV(), pTargetFbo->getRenderTargetView(0));
+                if (pOutTex->getType() == Resource::Type::Texture2D || pOutTex->getType() == Resource::Type::Texture2DMultisample)
+                    pRenderContext->blit(pOutTex->getSRV(), pTargetFbo->getRenderTargetView(0));
             }
 
             if (getSettings().getOption("PipedOutput:enable", false))

@@ -1,19 +1,18 @@
 #include "Scene/SceneDefines.slangh"
 __exported import Scene.Shading;
-import Scene.Material.ShadingUtils;
-import Utils.Math.MathHelpers;
 
 /**
- * Setup ShadingData based on loaded vertex/material attributes for a hit point.
+ * Vertex data and material ID of a hit point.
  * @param[in] hit Hit information.
- * @param[in] rayOrigin Ray origin.
- * @param[in] rayDir Normalized ray direction.
- * @return ShadingData struct.
+ * @param[in] rayOrigin Origin of the ray that found the hit: SDF-grid hits lie along it.
+ * @param[in] rayDir Normalized direction of that ray.
+ * @param[out] materialID Material ID.
+ * @return VertexData struct.
  */
-ShadingData loadShadingData(const HitInfo hit, const float3 rayOrigin, const float3 rayDir)
+VertexData loadHitVertexData(const HitInfo hit, const float3 rayOrigin, const float3 rayDir, out uint materialID)
 {
     VertexData v = {};
-    uint materialID = {};
+    materialID = {};
 
 #if SCENE_HAS_GEOMETRY_TYPE(GEOMETRY_TYPE_TRIANGLE_MESH)
     if (hit.getType() == HitType::Triangle)
@@ -48,9 +47,37 @@ ShadingData loadShadingData(const HitInfo hit, const float3 rayOrigin, const flo
     }
 #endif
 
-    ShadingData sd = gScene.materials.prepareShadingData(v, materialID, -rayDir);
-    
-    return sd;
+    return v;
+}
+
+/**
+ * Setup ShadingData based on loaded vertex/material attributes for a hit point.
+ * @param[in] hit Hit information.
+ * @param[in] rayOrigin Ray origin.
+ * @param[in] rayDir Normalized ray direction.
+ * @return ShadingData struct.
+ */
+ShadingData loadShadingData(const HitInfo hit, const float3 rayOrigin, const float3 rayDir)
+{
+    uint materialID;
+    VertexData v = loadHitVertexData(hit, rayOrigin, rayDir, materialID);
+    return gScene.materials.prepareShadingData(v, materialID, -rayDir);
+}
+
+/**
+ * ShadingData of a hit found along one ray and seen along another direction, e.g. a point found by a ray from a
+ * light or projector, shaded for the path vertex that sees it.
+ * @param[in] hit Hit information.
+ * @param[in] rayOrigin Origin of the ray that found the hit.
+ * @param[in] rayDir Normalized direction of that ray.
+ * @param[in] viewDir Normalized direction from the viewer to the hit point.
+ * @return ShadingData struct.
+ */
+ShadingData loadShadingData(const HitInfo hit, const float3 rayOrigin, const float3 rayDir, const float3 viewDir)
+{
+    uint materialID;
+    VertexData v = loadHitVertexData(hit, rayOrigin, rayDir, materialID);
+    return gScene.materials.prepareShadingData(v, materialID, -viewDir);
 }
 
 /**

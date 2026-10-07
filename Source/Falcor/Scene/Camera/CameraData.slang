@@ -64,16 +64,8 @@ struct CameraData
     float    apertureRadius         = 0.0f;                     ///< Camera aperture radius in scene units.
     float    shutterSpeed           = 0.004f;                   ///< Camera shutter speed in seconds.
     float    ISOSpeed               = 100.0f;                   ///< Camera film speed based on ISO standards.
-    float2   _padding1;
-    
-    float3   _padding2;
-    float    prevNearZ              = 0.1f;
-    float3   prevCameraU            = float3(0, 0, 1);          ///< Camera base vector U. Normalized it indicates the right image plane vector. The length is dependent on the FOV.
-    float    prevFarZ               = 1000.0f;                  ///< Camera far plane.
-    float3   prevCameraV            = float3(0, 1, 0);          ///< Camera base vector V. Normalized it indicates the up image plane vector. The length is dependent on the FOV.
-    float    prevJitterX            = 0.0f;                     ///< Eventual camera jitter along the x axis expressed as a subpixel offset divided by screen width (positive value shifts the image right).
-    float3   prevCameraW            = float3(1, 0, 0);          ///< Camera base vector W. Normalized it indicates the forward direction. The length is the camera focal distance.
-    float    prevJitterY            = 0.0f;                     ///< Eventual camera jitter along the y axis expressed as a subpixel offset divided by screen height (positive value shifts the image up).
+    float    prevJitterX            = 0.0f;                     ///< jitterX of the previous frame (FalcorComp: GBufferRT useCurrentJitter = false).
+    float    prevJitterY            = 0.0f;                     ///< jitterY of the previous frame.
 };
 
 END_NAMESPACE_FALCOR

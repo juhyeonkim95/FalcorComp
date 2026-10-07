@@ -32,7 +32,7 @@
 static void regTransientHistogramReSTIRInline(pybind11::module& m)
 {
     pybind11::class_<TransientHistogramReSTIRInline, RenderPass, ref<TransientHistogramReSTIRInline>> pass(m, "TransientHistogramReSTIRInline");
-    pass.def("reset_histogram", &TransientHistogramReSTIRInline::resetHistogram);
+    pass.def("reset", &TransientHistogramReSTIRInline::resetHistogram);
 }
 
 extern "C" FALCOR_API_EXPORT void registerPlugin(Falcor::PluginRegistry& registry)
@@ -64,12 +64,13 @@ const ChannelList kHistogramOutputChannelSingle = {
 const char kUseBinReuse[] = "useBinReuse";
 const char kSkipEmptyReservoirs[] = "skipEmptyReservoirs";
 const char kTemporalReuseTwoPass[] = "temporalReuseTwoPass";
-const char kRandomSeed[] = "randomSeed";
+const char kSeed[] = "seed";
 } // namespace
 
 TransientHistogramReSTIRInline::TransientHistogramReSTIRInline(ref<Device> pDevice, const Properties& props) : RenderPass(pDevice)
 {
     parseProperties(props);
+    validateOptions(mOptions);
 
     // Create a sample generator.
     mpSampleGenerator = SampleGenerator::create(mpDevice, SAMPLE_GENERATOR_TINY_UNIFORM);
@@ -81,11 +82,19 @@ void TransientHistogramReSTIRInline::resetHistogram()
     mNeedToClearHistogram = true;
 }
 
+void TransientHistogramReSTIRInline::validateOptions(const Options& options)
+{
+    // The ReSTIR bins use the Box or Tent filter; kernel density estimation is the path tracer's.
+    options.histogram.validate(false);
+    options.pathTracing.validate();
+    options.restir.validate();
+}
+
 void TransientHistogramReSTIRInline::parseProperties(const Properties& props)
 {
     for (const auto& [key, value] : props)
     {
-        if (mOptions.histogram.parse(key, value) || mOptions.pathTracing.parse(key, value) ||
+        if (mOptions.histogram.parse(key, value, false) || mOptions.pathTracing.parse(key, value) ||
             mOptions.restir.parse(key, value))
             continue;
         if (key == kUseBinReuse)
@@ -94,23 +103,49 @@ void TransientHistogramReSTIRInline::parseProperties(const Properties& props)
             mOptions.skipEmptyReservoirs = value;
         else if (key == kTemporalReuseTwoPass)
             mOptions.temporalReuseTwoPass = value;
-        else if (key == kRandomSeed)
+        else if (key == kSeed)
             mRandomSeed = value;
         else
             logWarning("Unknown property '{}' in TransientHistogramReSTIRInline properties.", key);
     }
 }
 
+void TransientHistogramReSTIRInline::onOptionsChanged(const Options& previous)
+{
+    mOptionsChanged = true;
+    // The histogram texture depends on the bin count and channel count.
+    if (mOptions.histogram.timeBin != previous.histogram.timeBin ||
+        mOptions.pathTracing.useSingleChannel != previous.pathTracing.useSingleChannel)
+        requestRecompile();
+}
+
+void TransientHistogramReSTIRInline::setProperties(const Properties& props)
+{
+    const Options previous = mOptions;
+    const uint previousSeed = mRandomSeed;
+    // Invalid properties throw and leave the options (and the seed) unchanged.
+    try
+    {
+        InlinePass::applyProperties(mOptions, [&] { parseProperties(props); }, validateOptions);
+    }
+    catch (...)
+    {
+        mRandomSeed = previousSeed;
+        throw;
+    }
+    onOptionsChanged(previous);
+}
+
 Properties TransientHistogramReSTIRInline::getProperties() const
 {
     Properties props;
-    mOptions.histogram.serialize(props);
+    mOptions.histogram.serialize(props, false);
     mOptions.pathTracing.serialize(props);
     mOptions.restir.serialize(props);
     props[kUseBinReuse] = mOptions.useBinReuse;
     props[kSkipEmptyReservoirs] = mOptions.skipEmptyReservoirs;
     props[kTemporalReuseTwoPass] = mOptions.temporalReuseTwoPass;
-    props[kRandomSeed] = mRandomSeed;
+    props[kSeed] = mRandomSeed;
     return props;
 }
 
@@ -140,7 +175,7 @@ RenderPassReflection TransientHistogramReSTIRInline::reflect(const CompileData& 
 DefineList TransientHistogramReSTIRInline::getShaderDefines(const RenderData& renderData) const
 {
     DefineList defines = mOptions.pathTracing.getDefines();
-    defines.add(LaserState::resolve(renderData).getDefines());
+    defines.add(mLaserInput.get().getDefines());
     defines.add(InlinePass::getSceneLightDefines(*mpScene));
     defines.add(mOptions.restir.getDefines());
     defines.add(PathLengthAwareReSTIRResources::getReservoirDefines(mOptions.pathTracing, false));
@@ -165,7 +200,7 @@ void TransientHistogramReSTIRInline::bindTimeGate(const ShaderVar& var) const
     // Each bin is a box gate one bin wide.
     mOptions.histogram.bindShaderData(var);
     var["TimeGate"]["gTimeGateWindow"] = mOptions.histogram.binWidth();
-    var["TimeGate"]["gTimeGateWindowRough"] = mOptions.histogram.binWidth();
+    var["TimeGate"]["gWideGateWindow"] = mOptions.histogram.binWidth();
 }
 
 void TransientHistogramReSTIRInline::bindShaderData(const ShaderVar& var, const RenderData& renderData)
@@ -180,10 +215,12 @@ void TransientHistogramReSTIRInline::bindShaderData(const ShaderVar& var, const 
 
     var["CB"]["gFrameCount"] = mFrameCount;
     var["CB"]["gFrameDim"] = renderData.getDefaultTextureDims();
-    var["CB"]["gReconnectionRoughnessThreshold"] = mOptions.restir.reconnectionRoughnessThreshold;
-    var["CB"]["gReconnectionMinDistance"] = mOptions.restir.reconnectionMinDistance;
+    mOptions.restir.bindReconnectionCriteria(var["CB"]["gReconnection"]);
     var["CB"]["gSamplesPerPixel"] = mOptions.pathTracing.samplesPerPixel;
     var["CB"]["gTemporalHistoryLength"] = mOptions.restir.temporalHistoryLength;
+    // Spatial reuse, when it runs, rewrites every histogram texel; initial generation and temporal reuse write it only
+    // if they are the frame's last stage.
+    var["CB"]["gWriteHistogram"] = mOptions.restir.spatialReuseIteration == 0;
     mLaser.bindShaderData(var["Laser"]);
     bindTimeGate(var);
 
@@ -199,6 +236,7 @@ void TransientHistogramReSTIRInline::bindShaderData(const ShaderVar& var, const 
     {
         var["gTemporalPairs"] = mReSTIR.reusePairs;
         var["gTemporalRandomState"] = mpTemporalRandomState;
+        var["gTemporalHistoryPixel"] = mpTemporalHistoryPixel;
     }
 
     InlinePass::bindChannels(var, renderData, InlinePass::kPrimaryHitAndMotionInputChannels);
@@ -209,29 +247,14 @@ void TransientHistogramReSTIRInline::bindShaderData(const ShaderVar& var, const 
 void TransientHistogramReSTIRInline::bindSpatialReuse(const ref<ComputePass>& pass, const RenderData& renderData)
 {
     auto rootVar = pass->getRootVar();
-    auto var = rootVar["CB"]["gSpatialReuse"];
-    const uint2 frameDim = renderData.getDefaultTextureDims();
-
-    var["gFrameCount"] = mFrameCount;
-    var["gFrameDim"] = frameDim;
-    var["neighborOffsets"] = mReSTIR.neighborOffsets;
-    var["useBinReuse"] = mOptions.useBinReuse;
-    mOptions.restir.bindSpatialReuse(var);
-
-    InlinePass::bindChannels(var, renderData, InlinePass::kPrimaryHitAndMotionInputChannels);
-    InlinePass::bindChannels(var, renderData, InlinePass::kColorOutputChannels);
+    mReSTIR.bindSpatialReuse(rootVar, renderData, mOptions.restir, mFrameCount, mOptions.useBinReuse,
+        useSpatialReusePairs());
     // The histogram is a pass-level global, outside the shared SpatialReuse struct; only the resampling pass writes it.
     if (pass == mpSpatialReusePass)
         InlinePass::bindChannels(rootVar, renderData, histogramChannels());
 
     bindTimeGate(rootVar);
     mLaser.bindShaderData(rootVar["Laser"]);
-    mOptions.restir.bindShiftMapping(rootVar["ShiftMappingCB"]);
-    if (useSpatialReusePairs())
-    {
-        var["pairs"] = mReSTIR.reusePairs;
-        var["pairCandidateValid"] = mReSTIR.spatialCandidateValid;
-    }
 }
 
 void TransientHistogramReSTIRInline::preparePairs(uint2 frameDim, uint& spatialChunkBins, uint& temporalChunkBins)
@@ -297,17 +320,14 @@ void TransientHistogramReSTIRInline::spatialReuse(RenderContext* pRenderContext,
     }
     bindSpatialReuse(mpSpatialReusePass, renderData);
 
-    auto var = mpSpatialReusePass->getRootVar()["CB"]["gSpatialReuse"];
-    if (useSpatialReusePairs())
-        mReSTIR.runSpatialReuse(pRenderContext, mpSpatialReusePairsPass,
-            mpSpatialReusePairsPass->getRootVar()["CB"]["gSpatialReuse"], candidateCount, mpSpatialReusePass, var,
-            mOptions.restir.spatialReuseIteration, mRandomSeed, frameDim, binCount, chunkBins);
-    else
-        mReSTIR.runSpatialReuse(pRenderContext, mpSpatialReusePass, var, mOptions.restir.spatialReuseIteration, mRandomSeed, frameDim);
+    mReSTIR.runSpatialReuse(pRenderContext, useSpatialReusePairs() ? mpSpatialReusePairsPass : ref<ComputePass>(),
+        candidateCount, mpSpatialReusePass, mOptions.restir.spatialReuseIteration, mRandomSeed, frameDim, binCount,
+        chunkBins);
 }
 
 void TransientHistogramReSTIRInline::execute(RenderContext* pRenderContext, const RenderData& renderData)
 {
+    mLaserInput.update(renderData, "TransientHistogramReSTIRInline");
     if (mOptionsChanged)
     {
         mReSTIR.temporalHistoryValid = false;
@@ -330,7 +350,7 @@ void TransientHistogramReSTIRInline::execute(RenderContext* pRenderContext, cons
     }
 
     // Temporal reuse assumes static geometry and light; only the camera may move.
-    mLaser = LaserState::resolve(renderData);
+    mLaser = mLaserInput.get();
     mReSTIR.invalidateHistory(*mpScene, mLaser != mPreviousLaser, false);
 
     if (!mpComputePass)
@@ -361,8 +381,12 @@ void TransientHistogramReSTIRInline::execute(RenderContext* pRenderContext, cons
     uint spatialChunkBins, temporalChunkBins;
     preparePairs(frameDim, spatialChunkBins, temporalChunkBins);
     if (useTemporalReusePairs() && (!mpTemporalRandomState || mpTemporalRandomState->getElementCount() != frameDim.x * frameDim.y))
-        mpTemporalRandomState = mpDevice->createStructuredBuffer(sizeof(uint), frameDim.x * frameDim.y,
-            ResourceBindFlags::ShaderResource | ResourceBindFlags::UnorderedAccess, MemoryType::DeviceLocal, nullptr, false);
+    {
+        for (ref<Buffer>* pBuffer : {&mpTemporalRandomState, &mpTemporalHistoryPixel})
+            *pBuffer = mpDevice->createStructuredBuffer(sizeof(uint), frameDim.x * frameDim.y,
+                ResourceBindFlags::ShaderResource | ResourceBindFlags::UnorderedAccess, MemoryType::DeviceLocal, nullptr,
+                false);
+    }
 
     InlinePass::checkScene(*mpScene, renderData);
     if (mpScene->getRenderSettings().useEmissiveLights)
@@ -370,6 +394,13 @@ void TransientHistogramReSTIRInline::execute(RenderContext* pRenderContext, cons
 
     InlinePass::updateScenePassDefines(pRenderContext, mpComputePass, mpScene, mpSampleGenerator, getShaderDefines(renderData));
     bindShaderData(mpComputePass->getRootVar(), renderData);
+    // One bit per pixel and bin from 64 on (InitialSampleGeneration.cs.slang, TouchedBins).
+    const uint touchedWords = mOptions.histogram.timeBin > 64 ? (mOptions.histogram.timeBin - 64 + 31) / 32 : 0;
+    const uint32_t touchedCount = std::max(frameDim.x * frameDim.y * touchedWords, 1u);
+    if (!mpTouchedBins || mpTouchedBins->getElementCount() != touchedCount)
+        mpTouchedBins = mpDevice->createStructuredBuffer(sizeof(uint), touchedCount,
+            ResourceBindFlags::ShaderResource | ResourceBindFlags::UnorderedAccess, MemoryType::DeviceLocal, nullptr, false);
+    mpComputePass->getRootVar()["gTouchedBins"] = mpTouchedBins;
     mpComputePass->execute(pRenderContext, uint3(frameDim, 1));
 
     if (useTemporalReusePairs() && mReSTIR.temporalHistoryValid)
@@ -378,6 +409,10 @@ void TransientHistogramReSTIRInline::execute(RenderContext* pRenderContext, cons
     mFrameCount++;
 
     mOptions.histogram.publishRange(renderData);
+    // One frame's estimate (not a sum), so that a viewer in the same graph as an accumulating tracer reads it right.
+    auto& dict = renderData.getDictionary();
+    dict[TransientHistogramConfig::kSummedFramesKey] = 1u;
+    dict[TransientHistogramConfig::kAveragedFramesKey] = 0u;
 
     // The final reservoirs become next frame's temporal history.
     mReSTIR.endFrame(pRenderContext, mOptions.restir.useTemporalReuse, *mpScene, renderData.getTexture("vbuffer"));
@@ -387,8 +422,8 @@ void TransientHistogramReSTIRInline::execute(RenderContext* pRenderContext, cons
 void TransientHistogramReSTIRInline::renderUI(Gui::Widgets& widget)
 {
     bool dirty = false;
-    const uint previousBins = mOptions.histogram.timeBin;
-    const bool previousSingleChannel = mOptions.pathTracing.useSingleChannel;
+    // An edit that fails validation is undone.
+    const Options previous = mOptions;
 
     if (auto group = widget.group("Histogram", true))
         dirty |= mOptions.histogram.renderUI(group, false);
@@ -427,11 +462,20 @@ void TransientHistogramReSTIRInline::renderUI(Gui::Widgets& widget)
     // In execute() we will pass the flag to other passes for reset of temporal data etc.
     if (dirty)
     {
-        mOptionsChanged = true;
-        // The histogram texture depends on the bin count and channel count.
-        if (mOptions.histogram.timeBin != previousBins || mOptions.pathTracing.useSingleChannel != previousSingleChannel)
-            requestRecompile();
+        try
+        {
+            validateOptions(mOptions);
+            mUIWarning.clear();
+            onOptionsChanged(previous);
+        }
+        catch (const std::exception& e)
+        {
+            mUIWarning = e.what();
+            mOptions = previous;
+        }
     }
+    if (!mUIWarning.empty())
+        widget.text(mUIWarning);
 }
 
 void TransientHistogramReSTIRInline::setScene(RenderContext* pRenderContext, const ref<Scene>& pScene)

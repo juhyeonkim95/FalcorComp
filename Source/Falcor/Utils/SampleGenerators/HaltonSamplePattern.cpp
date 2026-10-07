@@ -55,8 +55,8 @@ float halton(uint32_t index, uint32_t base)
 HaltonSamplePattern::HaltonSamplePattern(uint32_t sampleCount, uint32_t sampleOffset)
 {
     mSampleCount = sampleCount;
-    mCurSample = sampleOffset;
-    // mCurSample = 0;
+    mSampleOffset = sampleCount != 0 ? sampleOffset % sampleCount : sampleOffset;
+    mCurSample = mSampleOffset;
 }
 
 float2 HaltonSamplePattern::next()

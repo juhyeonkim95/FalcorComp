@@ -24,20 +24,19 @@ Histogram:
   - Description
 * - `timeMin`, `timeMax`
   - float
-  - Path-length range of the histogram. Paths outside `[timeMin, timeMax)` are not recorded.
+  - Path-length range of the histogram. Paths outside `[timeMin, timeMax)` are not recorded, except
+    that the `tent` filter's first and last bins reach half a bin beyond it.
     (Default: `9`, `12`)
 * - `timeBin`
   - integer
   - Number of bins. Every bin has its own reservoir, so the pass's memory and most of its work grow
-    with this; see [Memory](#th-restir-memory). (Default: `512`)
+    with this; see [Memory](#th-restir-memory). (Default: `64`)
 * - `histogramFilter`
   - string
   - The bin filter: `box` (a path counts for the bin that contains its length) or `tent` (a path is
-    split between the two bins whose centers are nearest to its length). (Default: `box`)
+    split between the two bins whose centers are nearest to its length, as in
+    [TransientHistogramPathTracerInline](TransientHistogramPathTracerInline.md)). (Default: `box`)
 ```
-
-Kernel density estimation is not supported: `useKernelDensityEstimation` and `initialWindowRatio`
-are accepted but have no effect.
 
 Initial sampling, the candidate paths each pixel starts from in every frame:
 
@@ -55,7 +54,7 @@ Initial sampling, the candidate paths each pixel starts from in every frame:
   - integer
   - Maximum number of surface vertices on a camera path, counting the primary hit. Each vertex
     after the primary hit is connected to the laser spot, and the connection is a candidate for the
-    bin its total length falls in. (Default: `3`)
+    bin its total length falls in. `0` renders no light. (Default: `3`)
 * - `useImportanceSampling`
   - boolean
   - Importance-sample the BSDF when extending a camera path. (Default: `true`)
@@ -89,9 +88,9 @@ Reuse:
     input is connected. (Default: `false`)
 * - `temporalHistoryLength`
   - float
-  - Cap on the history's sample count, in frames of `samplesPerPixel`. 0 ignores the history; a
-    negative value leaves it uncapped. (Default: `20`)
-* - `randomSeed`
+  - Cap on the history's sample count, in frames of `samplesPerPixel`; 0 ignores the history.
+    Must not be negative. (Default: `20`)
+* - `seed`
   - integer
   - Seed of the random numbers in spatial reuse; it advances with every round. (Default: `0`)
 ```
@@ -105,7 +104,7 @@ Shift mapping, as for [time-gated ReSTIR](#restir-shift-mapping):
 * - Parameter
   - Type
   - Description
-* - `shiftmapMethod`
+* - `shiftMappingMethod`
   - string
   - The chart on which the reconnection vertex is moved: `no` (naive reuse: the vertex stays
     fixed), `local_tangent`, `barycentric`, `ray_trace`, `area_adaptive`, `ray_trace_chart` or
@@ -122,23 +121,41 @@ Shift mapping, as for [time-gated ReSTIR](#restir-shift-mapping):
   - string
   - Fixes the direction the path-length constraint leaves free. `constant`: the vertex moves
     orthogonally to `gaugeAxis`; `grad`: along the path-length gradient at the start; `avg_grad`:
-    along the average of the gradients at both ends. `radial` ignores it. (Default: `constant`)
+    along the average of the gradients at both ends, where the length changes fastest, so the move
+    is as short as possible. `grad` is not symmetric (the reverse shift follows the gradient at the
+    other end), so it biases reuse. `radial` ignores it. (Default: `constant`)
 * - `gaugeAxis`
   - float pair
   - Chart-space axis for `constant`. `[0, 0]` picks a random axis for every shift.
     (Default: `[1, 0]`)
 * - `NewtonMaxIteration`
   - integer
-  - Maximum Newton iterations per shift. (Default: `5`)
+  - Maximum Newton iterations per shift. Fewer are faster but leave more shifts one-way, which
+    biases reuse (the Cornell box with temporal reuse, `local_tangent` with `avg_grad`: -0.66 %
+    at `5`, -0.52 % at `10` without `shiftReachCheck`). (Default: `10`)
 * - `NewtonRelativeTolerance`
   - float
   - Tolerance of the shift solve on the path length, relative to the path-length change of the
-    shift. Looser solves bias reuse. (Default: `0.0002`)
+    shift, and at least the float32 resolution of the path lengths involved. Looser solves bias
+    reuse. (Default: `1e-6`)
 * - `rayChartMaxDisplacement`
   - float
   - `ray_trace`, `ray_trace_chart`, and `area_adaptive` on faces it shifts with the ray chart, only:
     rejects shifts that move the vertex farther than this in chart coordinates, where the reverse
     shift may not return to the original vertex. `0` disables. (Default: `0`)
+* - `shiftRoundTripCheck`
+  - boolean
+  - Keep a shift only if the reverse shift maps it back to its start, at the cost of a second
+    shift. Newton's method is local, so a rare shift reaches another solution than its reverse,
+    mostly with a ray chart; see the [TG ReSTIR shift mapping](#restir-shift-mapping).
+    (Default: `false`)
+* - `shiftReachCheck`
+  - boolean
+  - `avg_grad` only: keep a shift only if the first Newton step from each end lands within half
+    the move of the other end. Near the onset of a bounce, where the path length is near its
+    minimum, `avg_grad` shifts are otherwise not always one-to-one (the Cornell box with temporal
+    reuse: -0.5 % without the check, -0.08 % with it). No extra cost, but it also rejects valid
+    shifts, which raises the variance. (Default: `false`)
 ```
 
 Performance. These options change how the work is split on the GPU, not the result:
@@ -223,9 +240,14 @@ consecutive frames share paths.
 The temporal history is discarded, and the next frame starts from its own samples only, when:
 
 - an option changes in the UI,
-- the scene or the laser changes in any way other than camera motion,
+- the scene or the laser changes in any way other than camera motion, including a camera animated by
+  the scene,
 - the frame size changes, or
 - the camera uses depth of field.
+
+Per pixel, the history is reused only if it saw the same surface: the same material, an orientation
+within about 45 degrees and a distance within 10 % (otherwise, e.g. where the camera's motion uncovers
+a surface, the pixel starts from its own samples).
 
 (th-restir-memory)=
 ## Memory
@@ -233,7 +255,15 @@ The temporal history is discarded, and the next frame starts from its own sample
 The pass keeps two sets of reservoirs, this frame's and the previous one's, each with `timeBin`
 reservoirs of about 100 bytes per pixel: at 480 x 270 with 64 bins that is about 1.8 GB. The
 two-pass reuse adds up to 512 MB of intermediate results, processing the bins in chunks when they
-do not fit at once.
+do not fit at once. These sizes are not checked against the GPU's limits: keep each set of reservoirs,
+a single buffer, below 4 GB, the largest buffer Vulkan binds (with 64 bins, up to about 0.6 megapixels,
+e.g. 960 x 540).
+
+## Limitations
+
+- Static scene geometry: the camera may move, but objects may not move or deform (the history is discarded when
+  geometry changes, as above), and the laser is assumed static.
+- Layered materials (for example pbrt's `coateddiffuse` and `coatedconductor`) are not supported.
 
 ## Laser
 
@@ -262,24 +292,31 @@ The laser is set on the `LaserLight` pass, as for the
 ```
 
 The pass publishes the histogram's range to the render graph, so a `TransientHistogramViewer`
-downstream labels the path lengths. From a script, `reset_histogram()` clears the histogram before
+downstream labels the path lengths. From a script, `reset()` clears the histogram before
 the next frame.
 
 ## Example
 
 ```python
+testbed.load_scene("cornell-box/scene-v4-nolight.pbrt", falcor.SceneBuilderFlags.DontMergeMaterials)
+graph = testbed.create_render_graph("TransientReSTIR")
+graph.create_pass("VBuffer", "VBufferRT", {"samplePattern": "Center", "sampleCount": 1})
+graph.create_pass("Laser", "LaserLight", {
+    "laserPosition": [0.0, 1.7, 6.8], "laserDirection": [0.0, 0.0, -1.0], "laserPower": [170.0, 120.0, 40.0],
+})
 graph.create_pass("Tracer", "TransientHistogramReSTIRInline", {
     "samplesPerPixel": 16, "maxBounces": 4,
     "timeMin": 16.75, "timeMax": 18.03, "timeBin": 64,
     "spatialReuseIteration": 1, "spatialReuseNeighborCount": 5,
     "useTemporalReuse": True,
-    "shiftmapMethod": "local_tangent", "gaugeMode": "avg_grad",
+    "shiftMappingMethod": "local_tangent", "gaugeMode": "avg_grad",
 })
 graph.add_edge("VBuffer.vbuffer", "Tracer.vbuffer")
 graph.add_edge("VBuffer.viewW", "Tracer.viewW")
 graph.add_edge("VBuffer.mvec", "Tracer.mvec")
 graph.add_edge("Laser", "Tracer")  # run the laser pass first
 graph.mark_output("Tracer.histogram")
+testbed.render_graph = graph
 ```
 
 See the [offline](../../tutorials/transient_restir_offline.md) and

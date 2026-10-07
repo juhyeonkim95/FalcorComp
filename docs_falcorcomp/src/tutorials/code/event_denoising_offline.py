@@ -110,10 +110,13 @@ def render(method, spp):
 results = {
     "Path tracer (4 spp)": render("path", 4),                     # new random numbers every frame
     "Correlated path tracer\n(2 + 2 spp)": render("correlated", 2),  # the previous frame's seed reused
-    "OptiX denoiser (2 spp)": render("optix", 2),
-    "SVGF (2 spp)": render("svgf", 2),
-    "EventSVGF (1 + 1 spp)": render("eventsvgf", 1),              # the difference denoised
 }
+try:
+    results["OptiX denoiser (2 spp)"] = render("optix", 2)
+except Exception:  # the falcorcomp package leaves out OptixDenoiser (OptiX SDK license)
+    print("OptixDenoiser is not available: skipping it.")
+results["SVGF (2 spp)"] = render("svgf", 2)
+results["EventSVGF (1 + 1 spp)"] = render("eventsvgf", 1)        # the difference denoised
 
 
 # 4. Reference: the correlated difference of the last two frames, 4096 + 4096 spp

@@ -33,16 +33,15 @@
 *.bak
 *.swp
 
-# experiment files
+# experiment files (all kept local)
 /experiments*
 /Source/trash*
 
-# Keep release examples in version control while other experiments stay local.
+# Keep the falcorcomp release examples in version control while other experiments (tof_restir_release included)
+# stay local.
 !/experiments/
 /experiments/*
-!/experiments/tof_restir_release/
 !/experiments/falcorcomp/
-
 # Legacy render passes kept locally and left out of the build until they are checked
 /Source/RenderPasses/TempPasses/
 
@@ -52,3 +51,14 @@
 # Reference code (ReSTIR PT, Reservoir Splatting), kept locally only
 /ReSTIR_PT-master/
 /reference_code/
+
+# CMake output when it is run in the source folder (builds go in build/).
+/CMakeFiles/
+/cmake_install.cmake
+/git_version/
+/git_version_state
+
+# Falcor files this fork does not use; kept locally, not in the repository.
+/environment.yml
+/docs/
+/tests/

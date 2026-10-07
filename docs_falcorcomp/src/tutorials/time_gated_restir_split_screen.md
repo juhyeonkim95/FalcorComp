@@ -1,3 +1,7 @@
+---
+orphan: true
+---
+
 # Time-gated ReSTIR side by side (online)
 
 This tutorial shows the moving-gate comparison from
@@ -8,11 +12,6 @@ shows one input left of a divider and another right of it, and the divider can b
 the image.
 
 It uses the same scene file as the other tutorials (see [ToF rendering](index.md)).
-
-```{note}
-`SplitScreenPass` is in Falcor's `DebugPasses` plugin, which the falcorcomp wheel (0.1.3) does not
-include yet. Run this tutorial with a Falcor build from source.
-```
 
 ```{image} images/time_gated_restir_split_screen.png
 :alt: The split-screen window, with the path tracer on the left and ReSTIR on the right

@@ -76,7 +76,8 @@ jobs:
         with:
           submodules: recursive
       - name: Setup system dependencies
-        run: sudo apt install -y xorg-dev libgtk-3-dev
+        # Refresh the package index first: a stale one makes apt fail (exit code 100) on the hosted runners.
+        run: sudo apt-get update && sudo apt-get install -y xorg-dev libgtk-3-dev
         shell: bash
       - name: Configure
         run: ./setup.sh
@@ -85,4 +86,17 @@ jobs:
         run: |
           ${CMAKE_EXE} --preset ${CMAKE_BUILD_PRESET}
           ${CMAKE_EXE} --build build/${CMAKE_BUILD_PRESET} --config ${{ matrix.config }}
+        shell: bash
+  python-tests:
+    name: Python tests (CPU)
+    runs-on: ubuntu-22.04
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v3
+      - name: Install NumPy
+        run: python3 -m pip install numpy
+        shell: bash
+      - name: Run
+        # The other tests in Source/RenderPasses/*/tests render with Falcor on a GPU, which the runners lack.
+        run: python3 -m unittest Source/RenderPasses/TimeGatedReSTIRInline/tests/test_paired_shift_math.py
         shell: bash

@@ -68,10 +68,12 @@ export struct TinyUniformSampleGenerator : ISampleGenerator
     [mutating]
     uint next() { return nextRandom(rng); }
 
-    uint getCurrentSeed()
-    {
-        return rng.state;
-    }
+    /**
+     * Returns the generator's state: TinyUniformSampleGenerator(getCurrentSeed()) continues the sequence from here.
+     * FalcorComp: the ReSTIR passes record it to replay a path's random numbers. Not part of ISampleGenerator, so
+     * other generators need not provide it.
+     */
+    uint getCurrentSeed() { return rng.state; }
 
     LCG rng; ///< Simple LCG 32-bit pseudorandom number generator.
 };

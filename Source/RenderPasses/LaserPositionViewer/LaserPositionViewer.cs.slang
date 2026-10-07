@@ -6,15 +6,12 @@ import Scene.RaytracingInline;
 import Utils.Sampling.SampleGenerator;
 import RenderPasses.Shared.Shaders.Utils.LoadShadingData;
 import RenderPasses.Shared.Shaders.Utils.RayUtils;
+import RenderPasses.Shared.Shaders.Lights.Laser;
 
 cbuffer CB
 {
     uint2 gFrameDim;
     uint gFrameCount;
-    float3 laserOrigin;
-    float3 laserDirection;
-    float3 laserPower;
-    float laserCosAngle;
     float3 gSpotColor;
     float gSpotScale;
     float3 gConeColor;
@@ -41,11 +38,11 @@ float3 laserSpot(uint2 pixel)
     ShadingData sd = loadShadingData(hit, gScene.camera.getPosition(), getPrimaryRayDir(pixel, gFrameDim, gViewW));
     let material = gScene.materials.getMaterialInstance(sd, ExplicitLodTextureSampler(0.f));
     SampleGenerator sg = SampleGenerator(pixel, gFrameCount);
-    float3 toLaser = laserOrigin - sd.posW;
+    float3 toLaser = gLaserOrigin - sd.posW;
     float distanceSq = dot(toLaser, toLaser);
     float3 wi = toLaser / sqrt(distanceSq);
-    bool inCone = dot(-wi, laserDirection) > min(laserCosAngle, 1.f - 1e-5f);
-    return inCone ? material.eval(sd, wi, sg) * laserPower / distanceSq : float3(0.f);
+    bool inCone = dot(-wi, gLaserDirection) > min(gLaserCosAngle, 1.f - 1e-5f);
+    return inCone ? material.eval(sd, wi, sg) * gLaserPower / distanceSq : float3(0.f);
 }
 
 // Length of the part of [lo, hi] where the quadratic a t^2 + b t + c is <= 0.
@@ -91,17 +88,17 @@ float lengthInCone(uint2 pixel)
 
     SceneRayQuery<0> query;
     float beamLength;
-    if (!query.traceRay(Ray(laserOrigin, laserDirection, 0.f, FLT_MAX), beamLength).isValid())
+    if (!query.traceRay(Ray(gLaserOrigin, gLaserDirection, 0.f, FLT_MAX), beamLength).isValid())
         return 0.f;
 
     // Points p with |p - apex - z d|^2 <= (r0 + k z)^2 and 0 <= z <= beamLength, z = dot(p - apex, d).
-    float cosAngle = clamp(laserCosAngle, 0.f, 1.f);
+    float cosAngle = clamp(gLaserCosAngle, 0.f, 1.f);
     float k = sqrt(max(1.f - cosAngle * cosAngle, 0.f)) / max(cosAngle, 1e-6f); // tan of the half-angle
-    float3 w = origin - laserOrigin;
-    float z0 = dot(w, laserDirection);
-    float dz = dot(dir, laserDirection);
-    float3 wPerp = w - z0 * laserDirection;
-    float3 dirPerp = dir - dz * laserDirection;
+    float3 w = origin - gLaserOrigin;
+    float z0 = dot(w, gLaserDirection);
+    float dz = dot(dir, gLaserDirection);
+    float3 wPerp = w - z0 * gLaserDirection;
+    float3 dirPerp = dir - dz * gLaserDirection;
     float c0 = gBeamRadius + k * z0;
     float c1 = k * dz;
     float a = dot(dirPerp, dirPerp) - c1 * c1;

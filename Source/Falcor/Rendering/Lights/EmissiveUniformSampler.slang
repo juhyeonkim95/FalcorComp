@@ -31,7 +31,6 @@ import Scene.Scene;
 import Utils.Sampling.SampleGeneratorInterface;
 import Rendering.Lights.EmissiveLightSamplerHelpers;
 import Rendering.Lights.EmissiveLightSamplerInterface;
-import Utils.Geometry.Ellipsoid;
 
 /** Emissive light sampler using uniform sampling of the emissive triangles.
 
@@ -75,13 +74,6 @@ struct EmissiveUniformSampler : IEmissiveLightSampler
         return true;
     }
 
-    void skipRandomNumber<S : ISampleGenerator>(inout S sg)
-    {
-        if (gScene.lightCollection.getActiveTriangleCount() == 0) return ;
-        sampleNext1D(sg);
-        sampleNext2D(sg);
-    }
-
     /** Evaluate the PDF associated with selecting an emissive triangle.
         \param[in] posW Shading point in world space.
         \param[in] normalW Normal at the shading point in world space.
@@ -115,43 +107,5 @@ struct EmissiveUniformSampler : IEmissiveLightSampler
 
         // The final probability density is the product of the sampling probabilities.
         return triangleSelectionPdf * trianglePdf;
-    }
-
-    void findAllTrianglesEllipsoid(const Ellipsoid E, 
-        out uint triangleCount, out uint indices[kMaxCandidates]){
-        return;
-    }
-
-    float evalPdfEllipsoid(Ellipsoid E, const TriangleLightHit hit)
-    {
-        uint count = gScene.triCollection.getActiveTriangleCount();
-        if (count == 0 || hit.triangleIndex >= gScene.triCollection.getTriangleCount()) return 0.f;
-        if (gScene.triCollection.getActiveTriangleIndex(hit.triangleIndex) == LightCollection::kInvalidIndex) return 0.f;
-        return 1.f / float(count);
-    }
-    
-    bool sampleTriangleEllipsoid<S : ISampleGenerator>(
-        const Ellipsoid E, inout S sg, out uint triangleIndex, out float pdf)
-    {
-        triangleIndex = LightCollection::kInvalidIndex;
-        pdf = 0.f;
-        float uLight = sampleNext1D(sg);
-        uint triangleCount = gScene.triCollection.getActiveTriangleCount();
-        if (triangleCount == 0) return false;
-        uint idx = min((uint)(uLight * triangleCount), triangleCount - 1);
-        triangleIndex = gScene.triCollection.activeTriangles[idx];
-        pdf = 1.f / (float)triangleCount;
-        return true;
-    }
-
-    bool sampleTriangleEllipsoidConditional<S : ISampleGenerator>(
-        const Ellipsoid E, const Sphere sph, inout S sg, out uint triangleIndex, out float pdf)
-    {
-        float uLight = sampleNext1D(sg);
-        uint triangleCount = gScene.triCollection.getActiveTriangleCount();
-        uint idx = min((uint)(uLight * triangleCount), triangleCount - 1);
-        triangleIndex = gScene.triCollection.activeTriangles[idx];
-        pdf = 1.f / (float)triangleCount;
-        return true;
     }
 };

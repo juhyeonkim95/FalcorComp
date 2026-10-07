@@ -33,6 +33,7 @@
 #include "../Shared/Host/Configs/PathTracingConfig.h"
 #include "../Shared/Host/LaserState.h"
 #include "../Shared/Host/InlinePassUtils.h"
+#include "../Shared/Host/ObjectMotion.h"
 #include <map>
 
 using namespace Falcor;
@@ -55,8 +56,11 @@ public:
     }
     DopplerHistogramPathTracerInline(ref<Device> pDevice, const Properties& props);
     Properties getProperties() const override;
+    void setProperties(const Properties& props) override;
     RenderPassReflection reflect(const CompileData& compileData) override;
     void execute(RenderContext* pRenderContext, const RenderData& renderData) override;
+    /// A recompile (e.g. a new output or a resize) allocates new textures: restart the in-place sum.
+    void compile(RenderContext* pRenderContext, const CompileData& compileData) override { resetSpectrum(); }
     void renderUI(Gui::Widgets& widget) override;
     void setScene(RenderContext* pRenderContext, const ref<Scene>& pScene) override;
 
@@ -65,16 +69,8 @@ public:
     /// Sets the velocity of the scene objects whose mesh or material is named `name` (or of instance "#<index>").
     void setVelocity(const std::string& name, float3 linear, float3 angular, float3 center);
     void clearVelocities();
-    /// (instance index, mesh name, material name) of every geometry instance of the scene.
-    std::vector<std::tuple<uint32_t, std::string, std::string>> getObjectNames() const;
-
-    /// Instantaneous rigid motion of an object: v(x) = linear + angular x (x - center). m/s, rad/s, scene units.
-    struct Motion
-    {
-        float3 linear = float3(0.f);
-        float3 angular = float3(0.f);
-        float3 center = float3(0.f);
-    };
+    /// (instance index, mesh name, material name, movable) of every geometry instance of the scene.
+    std::vector<std::tuple<uint32_t, std::string, std::string, bool>> getObjectNames() const;
 
 private:
     /// User settings, composed of shared configs (Shared/Host/Configs) plus this pass's own.
@@ -82,23 +78,31 @@ private:
     {
         PathTracingConfig pathTracing;
         float wavelength = 1550.f;      ///< Laser wavelength, nm.
-        float frequencyMin = -50.f;     ///< Range of Doppler frequency shifts, MHz.
+        /// Linear chirp (FMCW): the laser frequency sweeps by chirpBandwidth over chirpDuration, up and then down
+        /// (a triangular chirp). 0: a single-frequency laser.
+        float chirpBandwidth = 0.f;     ///< GHz.
+        float chirpDuration = 10.f;     ///< Microseconds.
+        float frequencyMin = -50.f;     ///< Range of (beat) frequencies, MHz.
         float frequencyMax = 50.f;
         uint frequencyBin = 256;        ///< Number of bins over [frequencyMin, frequencyMax).
         float3 sensorVelocity = float3(0.f); ///< Velocity of the camera, m/s.
         float3 lightVelocity = float3(0.f);  ///< Velocity of the laser (or point light) origin, m/s.
-        std::map<std::string, Motion> velocities; ///< Object name -> motion.
+        ObjectMotions velocities;            ///< Object name -> motion.
         bool accumulate = false; ///< Sum frames in the spectrum instead of writing one frame per spectrum.
         RenderPassHelpers::IOSize outputSize = RenderPassHelpers::IOSize::Default;
         uint2 fixedOutputSize = {512, 512}; ///< Output size when outputSize is Fixed.
 
         float binWidth() const { return (frequencyMax - frequencyMin) / float(frequencyBin); }
+        bool chirped() const { return chirpBandwidth > 0.f; }
+        /// Range term of the beat frequency per unit optical path length, B / (T c): MHz per meter.
+        float rangeFrequencyPerLength() const { return chirpBandwidth * 1000.f / (chirpDuration * 299.792458f); }
     };
     static void validateOptions(const Options& options);
+    /// Rebuilds what the new options need (after a UI edit or setProperties) and flags the change.
+    void onOptionsChanged(const Options& previous);
     void parseProperties(const Properties& props);
     const ChannelList& spectrumChannels() const;
     bool needsReset(const RenderData& renderData) const;
-    void updateVelocityBuffer();
     void bindShaderData(const ShaderVar& var, const RenderData& renderData);
     DefineList getShaderDefines(const RenderData& renderData) const;
 
@@ -110,6 +114,7 @@ private:
     bool mVelocitiesDirty = true;
     std::string mUIWarning; ///< Why the last UI edit was rejected.
     ref<Scene> mpScene;
+    LaserInput mLaserInput; ///< The laser of this frame, from the LaserLight pass.
     ref<SampleGenerator> mpSampleGenerator;
     ref<ComputePass> mpComputePass;
     ref<Buffer> mpInstanceVelocities; ///< Per geometry instance: linear, angular, center (float4 each).

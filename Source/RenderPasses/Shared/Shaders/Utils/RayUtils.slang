@@ -4,6 +4,7 @@
 #include "Utils/Math/MathConstants.slangh"
 import Scene.RaytracingInline;
 import Utils.Sampling.SampleGenerator;
+import Utils.Math.HashUtils;
 
 #ifndef USE_ALPHA_TEST
 #define USE_ALPHA_TEST 0
@@ -19,6 +20,9 @@ HitInfo traceRay(const float3 origin, const float3 dir, out float hitT)
 
 /// Direction of the camera's primary ray through `pixel`: from the optional viewW input (`viewW`) when it is
 /// connected, otherwise a pinhole ray. The pinhole ray does not follow depth of field; the passes warn about it.
+#ifndef is_valid_gViewW
+#define is_valid_gViewW 0 // Set by passes that bind the optional viewW input (getValidResourceDefines).
+#endif
 float3 getPrimaryRayDir(uint2 pixel, uint2 frameDim, Texture2D<float4> viewW)
 {
 #if is_valid_gViewW
@@ -34,15 +38,18 @@ float3 rayOriginToward(ShadingData surface, float3 direction)
     return surface.computeRayOrigin(dot(surface.getOrientedFaceNormal(), direction) >= 0.f);
 }
 
-// Random streams: offsets added to the frame count, so that the sample generators a pass creates for the same
-// pixel and frame do not repeat each other.
+// Random streams, so that the sample generators a pass creates for the same pixel and frame do not repeat each other.
+// The stream is hashed with the frame count (not added to it): a sum made stream s of frame f equal stream 0 of frame
+// f + s, and the spatial reuse seed (a counter) equal the initial pass's reservoir stream.
 static const uint kReservoirSampleStream = 0;  ///< ReSTIR: reservoir updates.
 static const uint kPathSampleStream = 151;     ///< Camera paths (BSDF sampling, light samples of the path tracers).
 static const uint kLightSampleStream = 5713;   ///< ReSTIR: light samples.
 static const uint kDirectSampleStream = 7919;  ///< TG ReSTIR: the primary-hit direct term.
+static const uint kSpatialReuseStream = 104729; ///< ReSTIR: spatial reuse (seeded with its own counter).
+static const uint kTemporalReuseStream = 130363; ///< TH ReSTIR: two-pass temporal reuse.
 
 /// Sample generator for `pixel` in the frame `frameCount`, on random stream `stream`.
 SampleGenerator createPixelSampleGenerator(uint2 pixel, uint frameCount, uint stream)
 {
-    return SampleGenerator(pixel, frameCount + stream);
+    return SampleGenerator(pixel, blockCipherTEA(frameCount, stream).x);
 }

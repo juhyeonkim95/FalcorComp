@@ -84,6 +84,7 @@ void TimeGatedPathTracerInline::validateOptions(const Options& options)
 {
     options.timeGate.validate();
     options.pathTracing.validate();
+    options.ellipsoidalSampling.validate();
 }
 
 void TimeGatedPathTracerInline::parseProperties(const Properties& props)
@@ -95,6 +96,20 @@ void TimeGatedPathTracerInline::parseProperties(const Properties& props)
         logWarning("Unknown property '{}' in TimeGatedPathTracerInline properties.", key);
     }
     mOptions.timeGate.applyTimeCenter(props);
+}
+
+void TimeGatedPathTracerInline::onOptionsChanged(const Options& previous)
+{
+    // The triangle sampler follows the options in prepare(), and its defines are part of getShaderDefines().
+    mOptionsChanged = true;
+}
+
+void TimeGatedPathTracerInline::setProperties(const Properties& props)
+{
+    const Options previous = mOptions;
+    // Invalid properties throw and leave the options unchanged.
+    InlinePass::applyProperties(mOptions, [&] { parseProperties(props); }, validateOptions);
+    onOptionsChanged(previous);
 }
 
 Properties TimeGatedPathTracerInline::getProperties() const
@@ -120,13 +135,14 @@ RenderPassReflection TimeGatedPathTracerInline::reflect(const CompileData& compi
 DefineList TimeGatedPathTracerInline::getShaderDefines(const RenderData& renderData) const
 {
     DefineList defines = mOptions.pathTracing.getDefines();
-    defines.add(LaserState::resolve(renderData).getDefines());
+    defines.add(mLaserInput.get().getDefines());
     defines.add(InlinePass::getSceneLightDefines(*mpScene));
 
     defines.add("LIGHT_SAMPLING_METHOD", std::to_string((uint32_t)mOptions.ellipsoidalSampling.samplingMethod));
     defines.add("DIRECT_CONNECTION", std::to_string((uint32_t)EllipsoidalSamplingMethod::Direct));
     defines.add("ELLIPSOIDAL_CONNECTION", std::to_string((uint32_t)EllipsoidalSamplingMethod::Ellipsoidal));
     defines.add("ELLIPSOIDAL_DIRECT_MIS", std::to_string((uint32_t)EllipsoidalSamplingMethod::EllipsoidalDirectMIS));
+    defines.add(mTriangleSampler.getDefines());
 
     // For optional I/O resources, set 'is_valid_<name>' defines to inform the program of which ones it can access.
     defines.add(getValidResourceDefines(InlinePass::kPrimaryHitInputChannels, renderData));
@@ -136,13 +152,13 @@ DefineList TimeGatedPathTracerInline::getShaderDefines(const RenderData& renderD
 
 void TimeGatedPathTracerInline::bindShaderData(const ShaderVar& var, const RenderData& renderData)
 {
-    mTriangleSampler.bindShaderData(var["emissiveSampler"]);
+    mTriangleSampler.bindShaderData(var);
 
     var["CB"]["gFrameCount"] = mFrameCount;
     var["CB"]["gFrameDim"] = renderData.getDefaultTextureDims();
     var["CB"]["gEllipsoidRoughnessThreshold"] = mOptions.ellipsoidalSampling.ellipsoidRoughnessThreshold;
     var["CB"]["gSamplesPerPixel"] = mOptions.pathTracing.samplesPerPixel;
-    LaserState::resolve(renderData).bindShaderData(var["Laser"]);
+    mLaserInput.get().bindShaderData(var["Laser"]);
     mOptions.timeGate.bindShaderData(var["TimeGate"], mGate);
 
     InlinePass::bindChannels(var, renderData, InlinePass::kPrimaryHitInputChannels);
@@ -151,6 +167,7 @@ void TimeGatedPathTracerInline::bindShaderData(const ShaderVar& var, const Rende
 
 void TimeGatedPathTracerInline::execute(RenderContext* pRenderContext, const RenderData& renderData)
 {
+    mLaserInput.update(renderData, "TimeGatedPathTracerInline");
     if (mOptionsChanged)
     {
         InlinePass::flagOptionsChanged(renderData);
@@ -166,11 +183,8 @@ void TimeGatedPathTracerInline::execute(RenderContext* pRenderContext, const Ren
     mOptions.timeGate.beginFrame(mGate);
     mTriangleSampler.prepare(pRenderContext, mpScene, mOptions.ellipsoidalSampling);
     if (!mpComputePass)
-    {
-        DefineList defines = getShaderDefines(renderData);
-        defines.add(mTriangleSampler.getDefines());
-        mpComputePass = InlinePass::createScenePass(mpDevice, pRenderContext, mpScene, mpSampleGenerator, kShaderFile, defines);
-    }
+        mpComputePass = InlinePass::createScenePass(mpDevice, pRenderContext, mpScene, mpSampleGenerator, kShaderFile,
+            getShaderDefines(renderData));
     InlinePass::checkScene(*mpScene, renderData);
     if (mpScene->getRenderSettings().useEmissiveLights)
         mpScene->getLightCollection(pRenderContext);
@@ -196,7 +210,7 @@ void TimeGatedPathTracerInline::renderUI(Gui::Widgets& widget)
     if (auto group = widget.group("Sampling", true))
     {
         dirty |= options.pathTracing.renderSamplingUI(group, " Each vertex is connected to the laser spot.");
-        dirty |= options.ellipsoidalSampling.renderUI(group, true);
+        dirty |= options.ellipsoidalSampling.renderUI(group);
     }
 
     if (auto group = widget.group("Output", true))
@@ -206,15 +220,22 @@ void TimeGatedPathTracerInline::renderUI(Gui::Widgets& widget)
     // In execute() we will pass the flag to other passes for reset of temporal data etc.
     if (dirty)
     {
-        validateOptions(options);
-        // Rebuild the sampler and program: the emissive sampler's defines are only added when the program is created.
-        if (options.ellipsoidalSampling.triSampler != mOptions.ellipsoidalSampling.triSampler)
-            mTriangleSampler.reset();
-        if (options.ellipsoidalSampling.samplingMethod != mOptions.ellipsoidalSampling.samplingMethod || options.ellipsoidalSampling.triSampler != mOptions.ellipsoidalSampling.triSampler)
-            mpComputePass = nullptr;
+        try
+        {
+            validateOptions(options);
+        }
+        catch (const std::exception& e)
+        {
+            mUIWarning = e.what();
+            return;
+        }
+        mUIWarning.clear();
+        const Options previous = mOptions;
         mOptions = options;
-        mOptionsChanged = true;
+        onOptionsChanged(previous);
     }
+    if (!mUIWarning.empty())
+        widget.text(mUIWarning);
 }
 
 void TimeGatedPathTracerInline::setScene(RenderContext* pRenderContext, const ref<Scene>& pScene)

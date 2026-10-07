@@ -21,10 +21,9 @@ def main():
     device.wait()
     rows = output.to_numpy().view(np.float32).reshape(16, 4)
     assert np.isfinite(rows).all(), rows
-    # The restored solver only checks the length residual: report the gauge
-    # residual separately rather than claiming the paired-solver guarantees.
+    # Both the length and the gauge residual converge (the gauge residual is normalized by the gauge vector).
     print("length residual, normalized gauge residual, status, iterations:", rows[0])
-    assert rows[0, 2] == 0 and rows[0, 0] <= .003374713, rows[0]
+    assert rows[0, 2] == 0 and rows[0, 0] <= .003374713 and rows[0, 1] <= .003374713, rows[0]
     assert rows[1, 0] != 0 and rows[1, 1] == 0, rows[1]
     assert rows[2, 0] != 0, rows[2]  # A failed solve may retain its raw determinant.
     assert rows[3, 0] == 0, rows[3]
@@ -46,7 +45,7 @@ def main():
         assert status == 0, rows[12 + k]
         assert abs(area / areaFD - 1) < 2e-3, rows[12 + k]
         assert back < 1e-4, rows[12 + k]
-    print("Active Newton solver checks passed; gauge residual is diagnostic only.")
+    print("Active Newton solver checks passed.")
 
 
 if __name__ == "__main__":

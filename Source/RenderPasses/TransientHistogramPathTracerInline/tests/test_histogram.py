@@ -36,7 +36,7 @@ def create_graph(testbed, method, single_channel, kde, laser, filter_mode="box",
 def main():
     falcor.Logger.verbosity = falcor.Logger.Level.Error
     testbed = falcor.Testbed(create_window=False)
-    testbed.load_scene(str(ROOT / "experiments/scene/cornell-box/scene-v4-nolight.pbrt"))
+    testbed.load_scene(str(ROOT / "docs_falcorcomp/src/tutorials/scenes/cornell-box/scene-v4-nolight.pbrt"))
     testbed.resize_frame_buffer(17, 13)  # Exercise partial thread groups.
     testbed.scene.camera.aspectRatio = 17 / 13
     variants = [
@@ -62,13 +62,13 @@ def main():
             testbed.frame()
             np.testing.assert_allclose(graph.get_output("P.histogram").to_numpy(), histogram,
                                        rtol=1e-4, atol=1e-6)
-            # With accumulate, frames add up in place until reset_histogram().
+            # With accumulate, frames add up in place until reset().
             graph = create_graph(testbed, method, mono, kde, laser, filter_mode, accumulate=True)
             testbed.frame()
             testbed.frame()
             np.testing.assert_allclose(graph.get_output("P.histogram").to_numpy(), 2 * histogram,
                                        rtol=1e-4, atol=1e-6)
-            graph.get_pass("P").reset_histogram()
+            graph.get_pass("P").reset()
             testbed.frame()
             np.testing.assert_allclose(graph.get_output("P.histogram").to_numpy(), histogram,
                                        rtol=1e-4, atol=1e-6)

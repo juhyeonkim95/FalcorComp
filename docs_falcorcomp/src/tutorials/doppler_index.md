@@ -1,21 +1,28 @@
 # Doppler rendering
 
 Some sensors measure how fast the scene moves. A coherent lidar with **optical heterodyne detection** (OHD) mixes the
-returning light with its own laser, and the beat frequency reveals each path's Doppler shift. A **Doppler
-time-of-flight** (D-ToF) camera is a continuous-wave ToF camera whose light and sensor are modulated at slightly
-different frequencies, so that light from static objects cancels over the exposure and moving objects remain.
+returning light with its own laser, and the beat frequency reveals each path's Doppler shift; an **FMCW lidar**
+chirps its laser, so that the beat frequency also reveals the path length. A **Doppler time-of-flight** (D-ToF)
+camera is a continuous-wave ToF camera whose light and sensor are modulated at slightly different frequencies, so that
+light from static objects cancels over the exposure and moving objects remain.
 
 | Measurement | Output | Render pass |
 |---|---|---|
 | **Doppler spectrum (OHD)** | `H × W × B`: for every pixel, the light at each Doppler shift | `DopplerHistogramPathTracerInline` |
+| **Doppler-gated image (OHD)** | `H × W`: the light whose Doppler shift falls inside a gate | `DopplerGatedPathTracerInline` |
+| **FMCW spectra (OHD)** | `H × W × B`, twice: the light at each beat frequency on the up- and the down-chirp, which depends on the path length and the Doppler shift | `DopplerHistogramPathTracerInline` with a chirp |
 | **Doppler ToF** | `H × W`: the heterodyne (or homodyne) measurement over the exposure | `DopplerToFPathTracerInline` |
 
-Both take the objects' velocities as a property (see
-[Velocities](#doppler-velocities)). The OHD pass never moves the scene: a path's Doppler shift follows from the
+All of them take the objects' velocities as a property (see
+[Velocities](#doppler-velocities)). The OHD passes never move the scene: a path's Doppler shift follows from the
 velocities of its vertices. The D-ToF pass moves the objects during the exposure, so they must be built as animated.
 `VelocityGroundTruthInline` renders the reference velocity maps.
 
-- **Scenes:** the OHD tutorial uses the Cornell box of the other tutorials,
+For an introduction to the two sensing principles side by side, see the
+[Doppler rendering tutorial](https://juhyeonkim95.github.io/project-pages/doppler_tutorial/), which compares OHD and
+Doppler ToF.
+
+- **Scenes:** the OHD tutorials use the Cornell box of the other tutorials,
   {download}`scene-v4-nolight.pbrt <scenes/cornell-box/scene-v4-nolight.pbrt>`, saved as
   `cornell-box/scene-v4-nolight.pbrt`. The D-ToF tutorial uses the same box with movable boxes,
   {download}`scene.pyscene <scenes/cornell-box-moving/scene.pyscene>` with its meshes
@@ -41,8 +48,19 @@ velocities of its vertices. The D-ToF pass moves the objects during the exposure
 :link: doppler_spectrum_offline
 :link-type: doc
 
-Render the Doppler spectrum of the Cornell box with `DopplerHistogramPathTracerInline` while its boxes move, and
-look at the spectra of single pixels.
+Render the Doppler spectrum of the Cornell box with `DopplerHistogramPathTracerInline`, with velocities given to its
+boxes (the scene itself stays still), look at the spectra of single pixels, and render a single Doppler-gated image
+with `DopplerGatedPathTracerInline`.
+```
+
+```{grid-item-card} FMCW lidar (offline)
+:img-top: images/thumbnails/fmcw_lidar_thumb.jpg
+:img-alt: Distance and velocity of the Cornell box recovered from FMCW up- and down-chirp spectra
+:link: fmcw_lidar_offline
+:link-type: doc
+
+Render the up- and down-chirp spectra of an FMCW lidar with `DopplerHistogramPathTracerInline`, and recover every
+pixel's distance and velocity from them, from the mean spectra and from a single measurement with speckle.
 ```
 
 ```{grid-item-card} Doppler ToF velocity (offline)
@@ -60,5 +78,6 @@ a homodyne measurement, and compare it with the ground truth.
 :hidden:
 
 doppler_spectrum_offline
+fmcw_lidar_offline
 doppler_tof_offline
 ```

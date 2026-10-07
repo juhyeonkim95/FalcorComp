@@ -1,10 +1,9 @@
 """GPU regression checks for initial proposals and their spatial reuse.
 
-Run from the repository root after building TimeGatedReSTIRInline:
-    source build/GCC_11.3.0x86_64-linux-gnu/bin/setpath.sh
+Run from the repository root after building TimeGatedReSTIRInline and sourcing the build's bin/setpath.sh:
     python Source/RenderPasses/TimeGatedReSTIRInline/tests/test_initial_sampling.py
 
-Requires the experiment's Cornell scene. This checks finite output, proposal
+Uses the tutorial Cornell box (docs_falcorcomp/src/tutorials/scenes). This checks finite output, proposal
 agreement, identity/local-only preservation, and actual neighbor reuse. The
 brightness comparison is a Monte Carlo regression check, not a proof of unbiasedness.
 """
@@ -14,7 +13,8 @@ import falcor
 import numpy as np
 
 ROOT = Path(__file__).resolve().parents[4]
-SCENE = ROOT / "experiments/scene/cornell-box/scene-v4-nolight.pbrt"
+SCENES = ROOT / "docs_falcorcomp/src/tutorials/scenes"
+SCENE = SCENES / "cornell-box/scene-v4-nolight.pbrt"
 MODES = ("direct", "ellipsoidal", "ellipsoidal_direct_mis")
 
 
@@ -25,19 +25,19 @@ def render(testbed, mode, sampler="LightBVH", iterations=0, radius=8., threshold
     graph.create_pass("L", "LaserLight", {
         "laserPosition": [0., 1.7, 6.8], "laserDirection": [0., 0., -1.],
         "laserPower": [170., 120., 40.], "laserAngle": 0.,
+        "laserCollocated": False, "isLightSourceLaser": laser,
     })
     graph.create_pass("P", "TimeGatedReSTIRInline", {
-        "samplingMethod": mode, "emissiveSampler": sampler,
+        "samplingMethod": mode, "ellipsoidTriangleSampler": sampler,
         "samplesPerPixel": 32, "maxBounces": 6,
         "timeGateMode": "box", "timeGateWindow": .5,
         "timeMin": 17.337, "timeMax": 17.337, "timeBin": 1,
-        "laserCollocated": False, "isLightSourceLaser": laser,
         "isSceneDynamic": False, "useTemporalReuse": False,
         "spatialReuseIteration": iterations, "spatialReuseNeighborCount": 5,
         "spatialReuseGatherRadius": radius,
         "reconnectionRoughnessThreshold": threshold,
         "specularRoughnessThresholdEllipsoid": ellipse_threshold,
-        "shiftmapMethod": shift_method, "gaugeMode": gauge_mode,
+        "shiftMappingMethod": shift_method, "gaugeMode": gauge_mode,
     })
     for source, target in [("V.vbuffer", "P.vbuffer"), ("V.viewW", "P.viewW"),
                            ("L", "P")]:
@@ -68,7 +68,8 @@ def main():
     for sampler in ("Uniform", "LightBVH"):
         for mode in MODES:
             base = render(testbed, mode, sampler)
-            identity = render(testbed, mode, sampler, iterations=3, radius=0.)
+            # A gather radius below one pixel makes every neighbor the pixel itself (offsets truncate to 0).
+            identity = render(testbed, mode, sampler, iterations=3, radius=.5)
             np.testing.assert_allclose(identity, base, rtol=2e-4, atol=1e-6)
             reused = render(testbed, mode, sampler, iterations=3)
             assert not np.allclose(reused, base), (mode, sampler, "no neighbor reuse")

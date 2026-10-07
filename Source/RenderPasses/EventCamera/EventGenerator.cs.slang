@@ -28,7 +28,10 @@ void main(uint3 dispatchThreadId: SV_DispatchThreadID)
     if (any(pixel >= gFrameDim))
         return;
 
-    const float deltaL = gDeltaL[pixel];
+    // A non-finite change makes no events (and does not latch into the residual).
+    float deltaL = gDeltaL[pixel];
+    if (!isfinite(deltaL))
+        deltaL = 0.f;
     float events = 0.f;
     if (gMode == 0)
     {
@@ -38,7 +41,10 @@ void main(uint3 dispatchThreadId: SV_DispatchThreadID)
     }
     else
     {
-        float residual = (gClearResidual ? 0.f : gResidual[pixel]) + deltaL;
+        float residual = gClearResidual != 0 ? 0.f : gResidual[pixel];
+        if (!isfinite(residual))
+            residual = 0.f;
+        residual += deltaL;
         events = trunc(residual / gThreshold);
         residual -= events * gThreshold;
         gResidual[pixel] = residual;

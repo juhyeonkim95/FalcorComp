@@ -35,7 +35,7 @@ static void regDopplerHistogramPathTracerInline(pybind11::module& m)
     using namespace pybind11::literals;
     pybind11::class_<DopplerHistogramPathTracerInline, RenderPass, ref<DopplerHistogramPathTracerInline>> pass(
         m, "DopplerHistogramPathTracerInline");
-    pass.def("reset_spectrum", &DopplerHistogramPathTracerInline::resetSpectrum);
+    pass.def("reset", &DopplerHistogramPathTracerInline::resetSpectrum);
     pass.def("set_velocity", &DopplerHistogramPathTracerInline::setVelocity, "name"_a, "linear"_a,
         "angular"_a = float3(0.f), "center"_a = float3(0.f));
     pass.def("clear_velocities", &DopplerHistogramPathTracerInline::clearVelocities);
@@ -51,6 +51,7 @@ extern "C" FALCOR_API_EXPORT void registerPlugin(Falcor::PluginRegistry& registr
 namespace
 {
 const char kShaderFile[] = "RenderPasses/DopplerHistogramPathTracerInline/DopplerHistogramPathTracerInline.cs.slang";
+const char kPassName[] = "DopplerHistogramPathTracerInline";
 
 const ChannelList kSpectrumOutputChannelSingle = {
     { "spectrum",           "gSpectrum", "Radiance per unit Doppler frequency shift (MHz) per bin", false, ResourceFormat::R32Float },
@@ -60,16 +61,26 @@ const ChannelList kSpectrumOutputChannelsRGB = {
     { "spectrum",           "gSpectrum", "Radiance per unit Doppler frequency shift (MHz) per bin", false, ResourceFormat::RGBA32Float },
 };
 
+// With a chirp (FMCW): the up-chirp spectrum and the down-chirp spectrum.
+const ChannelList kChirpSpectrumOutputChannelsSingle = {
+    { "spectrum",           "gSpectrum",     "Up-chirp: radiance per unit beat frequency (MHz) per bin", false, ResourceFormat::R32Float },
+    { "spectrumDown",       "gSpectrumDown", "Down-chirp: radiance per unit beat frequency (MHz) per bin", false, ResourceFormat::R32Float },
+};
+
+const ChannelList kChirpSpectrumOutputChannelsRGB = {
+    { "spectrum",           "gSpectrum",     "Up-chirp: radiance per unit beat frequency (MHz) per bin", false, ResourceFormat::RGBA32Float },
+    { "spectrumDown",       "gSpectrumDown", "Down-chirp: radiance per unit beat frequency (MHz) per bin", false, ResourceFormat::RGBA32Float },
+};
+
 const char kWavelength[] = "wavelength";
+const char kChirpBandwidth[] = "chirpBandwidth";
+const char kChirpDuration[] = "chirpDuration";
 const char kFrequencyMin[] = "frequencyMin";
 const char kFrequencyMax[] = "frequencyMax";
 const char kFrequencyBin[] = "frequencyBin";
 const char kSensorVelocity[] = "sensorVelocity";
 const char kLightVelocity[] = "lightVelocity";
 const char kVelocities[] = "velocities";
-const char kLinear[] = "linear";
-const char kAngular[] = "angular";
-const char kCenter[] = "center";
 const char kAccumulate[] = "accumulate";
 const char kOutputSize[] = "outputSize";
 const char kFixedOutputSize[] = "fixedOutputSize";
@@ -92,6 +103,10 @@ void DopplerHistogramPathTracerInline::parseProperties(const Properties& props)
             continue;
         if (key == kWavelength)
             mOptions.wavelength = value;
+        else if (key == kChirpBandwidth)
+            mOptions.chirpBandwidth = value;
+        else if (key == kChirpDuration)
+            mOptions.chirpDuration = value;
         else if (key == kFrequencyMin)
             mOptions.frequencyMin = value;
         else if (key == kFrequencyMax)
@@ -103,20 +118,7 @@ void DopplerHistogramPathTracerInline::parseProperties(const Properties& props)
         else if (key == kLightVelocity)
             mOptions.lightVelocity = value;
         else if (key == kVelocities)
-        {
-            // {"object name": {"linear": [..], "angular": [..], "center": [..]}}; missing entries are zero.
-            const Properties objects = value;
-            mOptions.velocities.clear();
-            for (const auto& [name, motionValue] : objects)
-            {
-                const Properties motionProps = motionValue;
-                Motion motion;
-                motion.linear = motionProps.get<float3>(kLinear, float3(0.f));
-                motion.angular = motionProps.get<float3>(kAngular, float3(0.f));
-                motion.center = motionProps.get<float3>(kCenter, float3(0.f));
-                mOptions.velocities[name] = motion;
-            }
-        }
+            mOptions.velocities = parseObjectMotions(value);
         else if (key == kAccumulate)
             mOptions.accumulate = value;
         else if (key == kOutputSize)
@@ -133,6 +135,10 @@ void DopplerHistogramPathTracerInline::validateOptions(const Options& options)
     options.pathTracing.validate();
     if (!(options.wavelength > 0.f) || !std::isfinite(options.wavelength))
         FALCOR_THROW("wavelength must be positive and finite.");
+    if (!(options.chirpBandwidth >= 0.f) || !std::isfinite(options.chirpBandwidth))
+        FALCOR_THROW("chirpBandwidth must be zero (a single-frequency laser) or positive, and finite.");
+    if (!(options.chirpDuration > 0.f) || !std::isfinite(options.chirpDuration))
+        FALCOR_THROW("chirpDuration must be positive and finite.");
     if (options.frequencyBin == 0)
         FALCOR_THROW("frequencyBin must be positive.");
     if (!std::isfinite(options.frequencyMin) || !std::isfinite(options.frequencyMax) ||
@@ -140,26 +146,41 @@ void DopplerHistogramPathTracerInline::validateOptions(const Options& options)
         FALCOR_THROW("The frequency range must be finite with frequencyMin < frequencyMax.");
 }
 
+void DopplerHistogramPathTracerInline::onOptionsChanged(const Options& previous)
+{
+    mOptionsChanged = true;
+    resetSpectrum();
+    // The outputs depend on the bin count, the channel count, the chirp (a second spectrum) and the output size.
+    if (mOptions.frequencyBin != previous.frequencyBin ||
+        mOptions.pathTracing.useSingleChannel != previous.pathTracing.useSingleChannel ||
+        mOptions.chirped() != previous.chirped() || mOptions.outputSize != previous.outputSize ||
+        any(mOptions.fixedOutputSize != previous.fixedOutputSize))
+        requestRecompile();
+}
+
+void DopplerHistogramPathTracerInline::setProperties(const Properties& props)
+{
+    const Options previous = mOptions;
+    // Invalid properties throw and leave the options unchanged.
+    InlinePass::applyProperties(mOptions, [&] { parseProperties(props); }, validateOptions);
+    if (props.has(kVelocities))
+        mVelocitiesDirty = true;
+    onOptionsChanged(previous);
+}
+
 Properties DopplerHistogramPathTracerInline::getProperties() const
 {
     Properties props;
     mOptions.pathTracing.serialize(props);
     props[kWavelength] = mOptions.wavelength;
+    props[kChirpBandwidth] = mOptions.chirpBandwidth;
+    props[kChirpDuration] = mOptions.chirpDuration;
     props[kFrequencyMin] = mOptions.frequencyMin;
     props[kFrequencyMax] = mOptions.frequencyMax;
     props[kFrequencyBin] = mOptions.frequencyBin;
     props[kSensorVelocity] = mOptions.sensorVelocity;
     props[kLightVelocity] = mOptions.lightVelocity;
-    Properties velocities;
-    for (const auto& [name, motion] : mOptions.velocities)
-    {
-        Properties motionProps;
-        motionProps[kLinear] = motion.linear;
-        motionProps[kAngular] = motion.angular;
-        motionProps[kCenter] = motion.center;
-        velocities[name] = motionProps;
-    }
-    props[kVelocities] = velocities;
+    props[kVelocities] = serializeObjectMotions(mOptions.velocities);
     props[kAccumulate] = mOptions.accumulate;
     props[kOutputSize] = mOptions.outputSize;
     if (mOptions.outputSize == RenderPassHelpers::IOSize::Fixed)
@@ -185,22 +206,25 @@ RenderPassReflection DopplerHistogramPathTracerInline::reflect(const CompileData
 
 const ChannelList& DopplerHistogramPathTracerInline::spectrumChannels() const
 {
+    if (mOptions.chirped())
+        return mOptions.pathTracing.useSingleChannel ? kChirpSpectrumOutputChannelsSingle : kChirpSpectrumOutputChannelsRGB;
     return mOptions.pathTracing.useSingleChannel ? kSpectrumOutputChannelSingle : kSpectrumOutputChannelsRGB;
 }
 
 DefineList DopplerHistogramPathTracerInline::getShaderDefines(const RenderData& renderData) const
 {
     DefineList defines = mOptions.pathTracing.getDefines();
-    defines.add(LaserState::resolve(renderData).getDefines());
+    defines.add(mLaserInput.get().getDefines());
     defines.add(getValidResourceDefines(InlinePass::kPrimaryHitInputChannels, renderData));
     defines.add(getValidResourceDefines(InlinePass::kColorOutputChannels, renderData));
     defines.add(getValidResourceDefines(spectrumChannels(), renderData));
+    defines.add("CHIRPED", mOptions.chirped() ? "1" : "0");
     return defines;
 }
 
 void DopplerHistogramPathTracerInline::setVelocity(const std::string& name, float3 linear, float3 angular, float3 center)
 {
-    mOptions.velocities[name] = Motion{linear, angular, center};
+    mOptions.velocities[name] = ObjectMotion{linear, angular, center};
     mVelocitiesDirty = true;
     mOptionsChanged = true;
     resetSpectrum();
@@ -214,47 +238,13 @@ void DopplerHistogramPathTracerInline::clearVelocities()
     resetSpectrum();
 }
 
-std::vector<std::tuple<uint32_t, std::string, std::string>> DopplerHistogramPathTracerInline::getObjectNames() const
+std::vector<std::tuple<uint32_t, std::string, std::string, bool>> DopplerHistogramPathTracerInline::getObjectNames() const
 {
-    std::vector<std::tuple<uint32_t, std::string, std::string>> names;
-    if (!mpScene)
-        return names;
-    for (uint32_t i = 0; i < mpScene->getGeometryInstanceCount(); ++i)
-    {
-        const GeometryInstanceData& instance = mpScene->getGeometryInstance(i);
-        const std::string mesh =
-            instance.getType() == GeometryType::TriangleMesh ? mpScene->getMeshName(instance.geometryID) : "";
-        names.emplace_back(i, mesh, mpScene->getMaterial(MaterialID(instance.materialID))->getName());
-    }
+    std::vector<std::tuple<uint32_t, std::string, std::string, bool>> names;
+    if (mpScene)
+        for (const auto& object : listSceneObjects(*mpScene))
+            names.emplace_back(object.instance, object.mesh, object.material, object.movable);
     return names;
-}
-
-void DopplerHistogramPathTracerInline::updateVelocityBuffer()
-{
-    // One motion per geometry instance, matched by its mesh name, its material name or "#<instance index>".
-    const auto objects = getObjectNames();
-    std::vector<float4> data(3 * std::max<size_t>(objects.size(), 1), float4(0.f));
-    std::map<std::string, bool> used;
-    for (const auto& [name, motion] : mOptions.velocities)
-        used[name] = false;
-    for (const auto& [index, mesh, material] : objects)
-    {
-        for (const auto& [name, motion] : mOptions.velocities)
-        {
-            if (name != mesh && name != material && name != "#" + std::to_string(index))
-                continue;
-            data[3 * index + 0] = float4(motion.linear, 0.f);
-            data[3 * index + 1] = float4(motion.angular, 0.f);
-            data[3 * index + 2] = float4(motion.center, 0.f);
-            used[name] = true;
-        }
-    }
-    for (const auto& [name, found] : used)
-        if (!found)
-            logWarning("DopplerHistogramPathTracerInline: no scene object is named '{}' (mesh or material name).", name);
-    mpInstanceVelocities = mpDevice->createStructuredBuffer(3 * sizeof(float4), (uint32_t)data.size() / 3,
-        ResourceBindFlags::ShaderResource, MemoryType::DeviceLocal, data.data(), false);
-    mVelocitiesDirty = false;
 }
 
 void DopplerHistogramPathTracerInline::bindShaderData(const ShaderVar& var, const RenderData& renderData)
@@ -269,10 +259,12 @@ void DopplerHistogramPathTracerInline::bindShaderData(const ShaderVar& var, cons
     var["CB"]["gFrequencyBin"] = mOptions.frequencyBin;
     // Doppler shift per unit path velocity: f0 / c = 1 / wavelength, in MHz per m/s (wavelength in nm).
     var["CB"]["gShiftPerVelocity"] = 1000.f / mOptions.wavelength;
+    // Range term of the beat frequency per unit optical path length, B / (T c), in MHz per meter.
+    var["CB"]["gRangeFrequencyPerLength"] = mOptions.rangeFrequencyPerLength();
     var["CB"]["gSensorVelocity"] = mOptions.sensorVelocity;
     var["CB"]["gLightVelocity"] = mOptions.lightVelocity;
     var["gInstanceVelocities"] = mpInstanceVelocities;
-    LaserState::resolve(renderData).bindShaderData(var["Laser"]);
+    mLaserInput.get().bindShaderData(var["Laser"]);
 
     InlinePass::bindChannels(var, renderData, InlinePass::kPrimaryHitInputChannels);
     InlinePass::bindChannels(var, renderData, InlinePass::kColorOutputChannels);
@@ -281,6 +273,7 @@ void DopplerHistogramPathTracerInline::bindShaderData(const ShaderVar& var, cons
 
 void DopplerHistogramPathTracerInline::execute(RenderContext* pRenderContext, const RenderData& renderData)
 {
+    mLaserInput.update(renderData, "DopplerHistogramPathTracerInline");
     if (mOptionsChanged)
     {
         InlinePass::flagOptionsChanged(renderData);
@@ -305,7 +298,10 @@ void DopplerHistogramPathTracerInline::execute(RenderContext* pRenderContext, co
     }
 
     if (mVelocitiesDirty || !mpInstanceVelocities)
-        updateVelocityBuffer();
+    {
+        mpInstanceVelocities = createInstanceVelocityBuffer(mpDevice, *mpScene, mOptions.velocities, kPassName);
+        mVelocitiesDirty = false;
+    }
     if (!mpComputePass)
         mpComputePass = InlinePass::createScenePass(mpDevice, pRenderContext, mpScene, mpSampleGenerator, kShaderFile,
             getShaderDefines(renderData));
@@ -348,9 +344,19 @@ void DopplerHistogramPathTracerInline::renderUI(Gui::Widgets& widget)
     {
         dirty |= group.var("Wavelength (nm)", options.wavelength, 1.f, 100000.f);
         group.tooltip("Laser wavelength. The Doppler shift of a path is its path velocity / wavelength.", true);
+        dirty |= group.var("Chirp bandwidth (GHz)", options.chirpBandwidth, 0.f, 1000.f);
+        group.tooltip("FMCW: the laser frequency sweeps by this much over the chirp duration, up and then down. A "
+                      "path's beat frequency is f_R - f_D on the up-chirp and f_R + f_D on the down-chirp, with the "
+                      "range term f_R = B / T * path length / c. 0: a single-frequency laser.", true);
+        if (options.chirped())
+        {
+            dirty |= group.var("Chirp duration (us)", options.chirpDuration, 1e-3f, 1e6f);
+            group.text(fmt::format("Range term: {:.4f} MHz per meter of path length", options.rangeFrequencyPerLength()));
+        }
         dirty |= group.var("Frequency min (MHz)", options.frequencyMin, -1e6f, 1e6f);
         dirty |= group.var("Frequency max (MHz)", options.frequencyMax, -1e6f, 1e6f);
-        group.tooltip("Range of Doppler frequency shifts. Positive: approaching (the path shortens).", true);
+        group.tooltip("Range of Doppler frequency shifts (or, with a chirp, beat frequencies). Doppler shifts are "
+                      "positive when approaching (the path shortens).", true);
         dirty |= group.var("Bins", options.frequencyBin, 1u, 4096u);
         group.text(fmt::format("Bin width: {:.4f} MHz", options.binWidth()));
         dirty |= group.var("Sensor velocity (m/s)", options.sensorVelocity, -1e4f, 1e4f);
@@ -385,14 +391,9 @@ void DopplerHistogramPathTracerInline::renderUI(Gui::Widgets& widget)
             return;
         }
         mUIWarning.clear();
-        // The spectrum texture depends on the bin count and channel count.
-        const bool resize = options.frequencyBin != mOptions.frequencyBin ||
-                            options.pathTracing.useSingleChannel != mOptions.pathTracing.useSingleChannel;
+        const Options previous = mOptions;
         mOptions = options;
-        mOptionsChanged = true;
-        resetSpectrum();
-        if (resize)
-            requestRecompile();
+        onOptionsChanged(previous);
     }
     if (!mUIWarning.empty())
         widget.text(mUIWarning);

@@ -57,42 +57,63 @@ const char kProfileRadius[] = "profileRadius";
 
 TransientHistogramViewer::TransientHistogramViewer(ref<Device> pDevice, const Properties& props) : RenderPass(pDevice)
 {
+    parseProperties(props);
+    validateOptions(mOptions);
+}
+
+void TransientHistogramViewer::validateOptions(const Options& options)
+{
+    if (!std::isfinite(options.binExposure))
+        FALCOR_THROW("binExposure must be finite.");
+    // The UI's range; it also catches negative values, which wrap around.
+    if (options.profileRadius > 16)
+        FALCOR_THROW("profileRadius must be in [0, 16].");
+}
+
+void TransientHistogramViewer::parseProperties(const Properties& props)
+{
     for (const auto& [key, value] : props)
     {
         if (key == kFirstBin)
-            mFirstBin = value;
+            mOptions.firstBin = value;
         else if (key == kLastBin)
-            mLastBin = value;
+            mOptions.lastBin = value;
         else if (key == kBinExposure)
-            mBinExposure = value;
+            mOptions.binExposure = value;
         else if (key == kLeftView)
         {
             const std::string view = value;
             if (view != "sum" && view != "bin")
                 FALCOR_THROW("leftView must be sum or bin.");
-            mLeftShowsBin = view == "bin";
+            mOptions.leftShowsBin = view == "bin";
         }
         else if (key == kLeftBin)
-            mLeftBin = value;
+            mOptions.leftBin = value;
         else if (key == kSelectedPixel)
-            mSelectedPixel = value;
+            mOptions.selectedPixel = value;
         else if (key == kProfileRadius)
-            mProfileRadius = value;
+            mOptions.profileRadius = value;
         else
             logWarning("Unknown property '{}' in TransientHistogramViewer properties.", key);
     }
 }
 
+void TransientHistogramViewer::setProperties(const Properties& props)
+{
+    // Invalid properties throw and leave the options unchanged.
+    InlinePass::applyProperties(mOptions, [&] { parseProperties(props); }, validateOptions);
+}
+
 Properties TransientHistogramViewer::getProperties() const
 {
     Properties props;
-    props[kFirstBin] = mFirstBin;
-    props[kLastBin] = mLastBin;
-    props[kBinExposure] = mBinExposure;
-    props[kLeftView] = mLeftShowsBin ? "bin" : "sum";
-    props[kLeftBin] = mLeftBin;
-    props[kSelectedPixel] = mSelectedPixel;
-    props[kProfileRadius] = mProfileRadius;
+    props[kFirstBin] = mOptions.firstBin;
+    props[kLastBin] = mOptions.lastBin;
+    props[kBinExposure] = mOptions.binExposure;
+    props[kLeftView] = mOptions.leftShowsBin ? "bin" : "sum";
+    props[kLeftBin] = mOptions.leftBin;
+    props[kSelectedPixel] = mOptions.selectedPixel;
+    props[kProfileRadius] = mOptions.profileRadius;
     return props;
 }
 
@@ -110,8 +131,8 @@ RenderPassReflection TransientHistogramViewer::reflect(const CompileData& compil
 
 uint TransientHistogramViewer::tileBin(uint tile, uint binCount) const
 {
-    const int last = mLastBin < 0 ? int(binCount) + mLastBin : mLastBin;
-    const int first = std::min(int(mFirstBin), int(binCount) - 1);
+    const int last = mOptions.lastBin < 0 ? int(binCount) + mOptions.lastBin : mOptions.lastBin;
+    const int first = std::min(int(mOptions.firstBin), int(binCount) - 1);
     const int end = std::clamp(last, first, int(binCount) - 1);
     return uint(first + std::lround(float(tile) * float(end - first) / float(kTileCount - 1)));
 }
@@ -124,8 +145,8 @@ void TransientHistogramViewer::execute(RenderContext* pRenderContext, const Rend
     const uint2 outputDim = {pOutput->getWidth(), pOutput->getHeight()};
     mOutputDim = outputDim;
     mHistogramDim = histogramDim.xy();
-    if (any(mSelectedPixel >= int2(mHistogramDim)))
-        mSelectedPixel = {-1, -1};
+    if (any(mOptions.selectedPixel >= int2(mHistogramDim)))
+        mOptions.selectedPixel = {-1, -1};
 
     // The histogram range comes from the tracer (unit bins without it).
     auto& dict = renderData.getDictionary();
@@ -141,7 +162,7 @@ void TransientHistogramViewer::execute(RenderContext* pRenderContext, const Rend
     const ref<Texture> pOverlay = renderData.getTexture(kOverlay);
     const bool hasOverlay = pOverlay && pOverlay->getWidth() == histogramDim.x && pOverlay->getHeight() == histogramDim.y;
     if (pOverlay && !hasOverlay)
-        logWarning("TransientHistogramViewer: the overlay must be {}x{}; it is ignored.", histogramDim.x, histogramDim.y);
+        logWarningOnce("TransientHistogramViewer: the overlay must be {}x{}; it is ignored.", histogramDim.x, histogramDim.y);
 
     DefineList defines;
     defines.add("SINGLE_CHANNEL", getFormatChannelCount(pHistogram->getFormat()) == 1 ? "1" : "0");
@@ -160,21 +181,21 @@ void TransientHistogramViewer::execute(RenderContext* pRenderContext, const Rend
     var["CB"]["gHistogramDim"] = histogramDim;
     var["CB"]["gSumScale"] = range / float(mBinCount) / float(summedFrames);
     // A bin shown at the sum's brightness when all radiance arrives within it spread over the range.
-    var["CB"]["gTileScale"] = range / float(summedFrames) * std::exp2(mBinExposure);
-    var["CB"]["gLeftBin"] = mLeftShowsBin ? std::min(mLeftBin, mBinCount - 1) : ~0u;
+    var["CB"]["gTileScale"] = range / float(summedFrames) * std::exp2(mOptions.binExposure);
+    var["CB"]["gLeftBin"] = mOptions.leftShowsBin ? std::min(mOptions.leftBin, mBinCount - 1) : ~0u;
     for (uint row = 0; row < 4; ++row)
     {
         var["CB"]["gTileBins"][row] = uint4(tileBin(4 * row, mBinCount), tileBin(4 * row + 1, mBinCount),
                                             tileBin(4 * row + 2, mBinCount), tileBin(4 * row + 3, mBinCount));
     }
-    var["CB"]["gSelectedPixel"] = mSelectedPixel;
+    var["CB"]["gSelectedPixel"] = mOptions.selectedPixel;
     var["gHistogram"] = pHistogram;
     if (hasOverlay)
         var["gOverlay"] = pOverlay;
     var["gOutput"] = pOutput;
     mpViewPass->execute(pRenderContext, uint3(outputDim, 1));
 
-    if (all(mSelectedPixel >= 0))
+    if (all(mOptions.selectedPixel >= 0))
         readProfile(pRenderContext, pHistogram, 1.f / float(summedFrames));
     else
         mProfile.clear();
@@ -206,8 +227,8 @@ void TransientHistogramViewer::readProfile(RenderContext* pRenderContext, const 
     }
     auto var = mpProfilePass->getRootVar();
     var["CB"]["gHistogramDim"] = uint3(mHistogramDim, mBinCount);
-    var["CB"]["gSelectedPixel"] = mSelectedPixel;
-    var["CB"]["gProfileRadius"] = mProfileRadius;
+    var["CB"]["gSelectedPixel"] = mOptions.selectedPixel;
+    var["CB"]["gProfileRadius"] = mOptions.profileRadius;
     var["CB"]["gProfileScale"] = frameScale;
     var["gHistogram"] = pHistogram;
     var["gProfile"] = mpProfileBuffer;
@@ -250,14 +271,14 @@ bool TransientHistogramViewer::onMouseEvent(const MouseEvent& mouseEvent)
         if (mouseEvent.button == Input::MouseButton::Left && is_set(mouseEvent.mods, Input::ModifierFlags::Shift))
         {
             mPicking = true;
-            outputToHistogram(position, mSelectedPixel);
+            outputToHistogram(position, mOptions.selectedPixel);
             return true;
         }
         return false;
     case MouseEvent::Type::Move:
         if (mPicking)
         {
-            outputToHistogram(position, mSelectedPixel);
+            outputToHistogram(position, mOptions.selectedPixel);
             return true;
         }
         return false;
@@ -277,32 +298,32 @@ void TransientHistogramViewer::renderUI(Gui::Widgets& widget)
 {
     const uint lastIndex = mBinCount > 0 ? mBinCount - 1 : 0;
     static const Gui::DropdownList kLeftViewList = {{0, "Sum over bins"}, {1, "One bin"}};
-    uint32_t leftView = mLeftShowsBin ? 1 : 0;
+    uint32_t leftView = mOptions.leftShowsBin ? 1 : 0;
     if (widget.dropdown("Left half", kLeftViewList, leftView))
-        mLeftShowsBin = leftView == 1;
+        mOptions.leftShowsBin = leftView == 1;
     widget.tooltip("Sum over bins: the light arriving within the histogram range. One bin: the chosen bin, as bright "
                    "as a tile.", true);
-    if (mLeftShowsBin)
+    if (mOptions.leftShowsBin)
     {
-        widget.var("Left bin", mLeftBin, 0u, lastIndex);
+        widget.var("Left bin", mOptions.leftBin, 0u, lastIndex);
         if (mBinCount > 0)
         {
             const float binWidth = (mTimeMax - mTimeMin) / float(mBinCount);
-            const float start = mTimeMin + float(std::min(mLeftBin, lastIndex)) * binWidth;
+            const float start = mTimeMin + float(std::min(mOptions.leftBin, lastIndex)) * binWidth;
             widget.text(fmt::format("Path length [{:.3f}, {:.3f})", start, start + binWidth));
         }
     }
 
-    widget.var("First bin", mFirstBin, 0u, lastIndex);
+    widget.var("First bin", mOptions.firstBin, 0u, lastIndex);
     widget.tooltip("Bin shown in the top-left tile.", true);
 
     uint lastBin = mBinCount > 0 ? tileBin(kTileCount - 1, mBinCount) : 0;
     if (widget.var("Last bin", lastBin, 0u, lastIndex))
-        mLastBin = lastBin == lastIndex ? -1 : int(lastBin);
+        mOptions.lastBin = lastBin == lastIndex ? -1 : int(lastBin);
     widget.tooltip("Bin shown in the bottom-right tile. The 16 tiles are spread evenly from First bin to Last "
                    "bin, in reading order.", true);
 
-    widget.var("Bin exposure (stops)", mBinExposure, -20.f, 20.f, 0.5f);
+    widget.var("Bin exposure (stops)", mOptions.binExposure, -20.f, 20.f, 0.5f);
     widget.tooltip("Brightens the grid tiles relative to the sum image. At 0, a tile is as bright as the sum "
                    "when the pixel's light is spread evenly over the histogram range.", true);
 
@@ -329,14 +350,14 @@ void TransientHistogramViewer::renderProfileUI(Gui::Widgets& widget)
     auto group = widget.group("Transient profile", true);
     if (!group)
         return;
-    if (all(mSelectedPixel < 0) || mProfile.size() != mBinCount)
+    if (all(mOptions.selectedPixel < 0) || mProfile.size() != mBinCount)
     {
         group.text("Shift+click (or drag) on the image to pick a pixel.");
         return;
     }
 
-    group.text(fmt::format("Pixel ({}, {})", mSelectedPixel.x, mSelectedPixel.y));
-    group.var("Patch radius", mProfileRadius, 0u, 16u);
+    group.text(fmt::format("Pixel ({}, {})", mOptions.selectedPixel.x, mOptions.selectedPixel.y));
+    group.var("Patch radius", mOptions.profileRadius, 0u, 16u);
     group.tooltip("Average the profile over a (2r + 1) x (2r + 1) patch around the pixel to reduce noise.", true);
 
     static const Gui::DropdownList kChannelList = {
@@ -377,7 +398,7 @@ void TransientHistogramViewer::renderProfileUI(Gui::Widgets& widget)
     group.text(fmt::format("Integrated over the range: {:.4g}", total));
     if (group.button("Clear selection"))
     {
-        mSelectedPixel = {-1, -1};
+        mOptions.selectedPixel = {-1, -1};
         mProfile.clear();
     }
 }

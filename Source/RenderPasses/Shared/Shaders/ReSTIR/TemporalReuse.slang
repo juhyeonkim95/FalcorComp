@@ -24,7 +24,15 @@ TemporalHistory findTemporalHistory(uint2 pixel, uint2 frameDim, Texture2D<float
 #endif
     if (!all(isfinite(previousPosition)) || any(previousPosition < 0.f) ||
         any(previousPosition >= float2(frameDim))) return history;
-    uint2 previousPixel = uint2(floor(previousPosition));
+    return loadTemporalHistory(uint2(floor(previousPosition)), frameDim, previousVBuffer, previousCameraPosition);
+}
+
+// The history at previousPixel of last frame's V-buffer (as findTemporalHistory finds it), e.g. to reload a history
+// whose pixel was found earlier.
+TemporalHistory loadTemporalHistory(uint2 previousPixel, uint2 frameDim, Texture2D<PackedHitInfo> previousVBuffer,
+    float3 previousCameraPosition)
+{
+    TemporalHistory history = {};
     HitInfo previousHit = HitInfo(previousVBuffer[previousPixel]);
     if (!previousHit.isValid()) return history;
     float3 previousPoint = gScene.getVertexData(previousHit.getTriangleHit()).posW;
@@ -38,8 +46,18 @@ TemporalHistory findTemporalHistory(uint2 pixel, uint2 frameDim, Texture2D<float
     return history;
 }
 
+// Whether the previous frame's primary hit lies on the same surface as this frame's (same material, orientation within
+// ~45 degrees, distance within 10 %): a history from another surface, e.g. one the camera's motion uncovered, is not
+// reused. orientedFaceNormal faces the current camera, as history.primary's faces the previous one.
+bool isSameSurface(uint materialID, float3 orientedFaceNormal, float primaryLength, TemporalHistory history)
+{
+    return materialID == history.primary.materialID &&
+           dot(orientedFaceNormal, history.primary.getOrientedFaceNormal()) > 0.7f &&
+           abs(primaryLength - history.primaryLength) < 0.1f * primaryLength;
+}
+
 // Mass of a history reservoir, capped at historyLength frames of samplesPerPixel paths
-// (uncapped if historyLength < 0; a length of zero disables temporal reuse altogether).
+// (a length of zero disables temporal reuse altogether; negative lengths are rejected on the host).
 float temporalHistoryMass(float mass, float historyLength, uint samplesPerPixel)
 {
     return historyLength > 0.f ? min(mass, historyLength * float(samplesPerPixel)) : mass;

@@ -1,7 +1,7 @@
 # Slang modules shared by the render passes. They are imported as RenderPasses.Shared.Shaders.<Folder>.<Module>,
 # so they are copied to the shader output directory with their folders kept.
 set(shared_shaders
-    Utils/InstanceVelocity.slang
+    Utils/PathVelocity.slang
     Utils/LoadShadingData.slang
     Utils/RayUtils.slang
     Utils/SingleChannel.slang
@@ -9,12 +9,19 @@ set(shared_shaders
     Utils/TransientHistogram.slang
     Utils/Waveform.slang
     Utils/ContinuousWave.slang
+    Utils/Frames.slang
     Lights/Laser.slang
     Lights/LaserLightSampler.slang
     Lights/LightConnection.slang
+    Lights/GatedLightConnection.slang
     Lights/EllipsoidalSampling.slang
+    Lights/EllipsoidTriangleSampler.slang
+    Lights/SceneTriangles.slang
+    Geometry/Ellipsoid.slang
+    Geometry/EllipsoidIntersection.slang
     ShiftMapping/ShiftMapping.slang
     ShiftMapping/NewtonSolver.slang
+    ShiftMapping/ShiftMappingMethods.slangh
     ShiftMapping/Charts/ShiftChart.slang
     ShiftMapping/Charts/LocalPlaneChart.slang
     ShiftMapping/Charts/BarycentricChart.slang

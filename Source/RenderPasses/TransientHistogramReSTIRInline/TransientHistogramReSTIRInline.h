@@ -54,6 +54,7 @@ public:
     TransientHistogramReSTIRInline(ref<Device> pDevice, const Properties& props);
 
     virtual Properties getProperties() const override;
+    void setProperties(const Properties& props) override;
     virtual RenderPassReflection reflect(const CompileData& compileData) override;
     virtual void execute(RenderContext* pRenderContext, const RenderData& renderData) override;
     virtual void renderUI(Gui::Widgets& widget) override;
@@ -83,14 +84,14 @@ private:
     bool useSpatialReusePairs() const
     {
         return mOptions.restir.spatialReuseTwoPass &&
-               mOptions.restir.shiftMapping.shiftmapMethod != ShiftMappingMethod::Identity;
+               mOptions.restir.shiftMapping.shiftMappingMethod != ShiftMappingMethod::Identity;
     }
     /// Temporal reuse runs as two passes after initial generation per chunk of bins (the merge shifts of each bin, then
     /// the merges) when temporalReuseTwoPass is set, unless the shift is `no` (as for spatial reuse).
     bool useTemporalReusePairs() const
     {
         return mOptions.restir.useTemporalReuse && mOptions.temporalReuseTwoPass &&
-               mOptions.restir.shiftMapping.shiftmapMethod != ShiftMappingMethod::Identity;
+               mOptions.restir.shiftMapping.shiftMappingMethod != ShiftMappingMethod::Identity;
     }
 
     /// User settings, composed of shared configs (Shared/Host/Configs) plus this pass's own.
@@ -106,8 +107,13 @@ private:
         bool temporalReuseTwoPass = true;
     };
     Options mOptions;
+    /// Throws if `options` are invalid: checked on creation and UI edits.
+    static void validateOptions(const Options& options);
+    /// Rebuilds what the new options need (after a UI edit or setProperties) and flags the change.
+    void onOptionsChanged(const Options& previous);
 
     ref<Scene> mpScene;
+    LaserInput mLaserInput; ///< The laser of this frame, from the LaserLight pass.
     ref<SampleGenerator> mpSampleGenerator;
 
     // Runtime state of the composed configs.
@@ -119,6 +125,7 @@ private:
     uint mRandomSeed = 0;
     bool mOptionsChanged = false;
     bool mNeedToClearHistogram = false;
+    std::string mUIWarning; ///< Why the last UI edit was rejected.
 
     ref<ComputePass> mpComputePass;      ///< Initial candidates (and temporal reuse), written to the histogram.
     /// With TEMPORAL_REUSE_PAIRS, the temporal reuse after initial generation: the merge shifts of one pixel and bin per
@@ -126,6 +133,8 @@ private:
     ref<ComputePass> mpTemporalPairsPass;
     ref<ComputePass> mpTemporalResamplePass;
     ref<Buffer> mpTemporalRandomState; ///< Each pixel's reservoir random state after initial generation.
+    ref<Buffer> mpTemporalHistoryPixel; ///< Each pixel's history pixel, found by initial generation (two-pass temporal).
+    ref<Buffer> mpTouchedBins; ///< Initial generation's bits of the bins from 64 on that received a candidate.
     ref<ComputePass> mpSpatialReusePass;
     /// With SPATIAL_REUSE_PAIRS, the first pass of each spatial reuse iteration: one candidate's shifts per thread.
     ref<ComputePass> mpSpatialReusePairsPass;

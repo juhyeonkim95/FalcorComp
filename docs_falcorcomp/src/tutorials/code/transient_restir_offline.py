@@ -28,7 +28,7 @@ graph.create_pass("Tracer", "TransientHistogramReSTIRInline", {
     "spatialReuseIteration": 3, "spatialReuseNeighborCount": 5,
     "spatialReuseGatherRadius": 10.0, "useTemporalReuse": False,
     # Path-length-aware shift mapping between pixels.
-    "shiftmapMethod": "local_tangent", "gaugeMode": "avg_grad",
+    "shiftMappingMethod": "local_tangent", "gaugeMode": "avg_grad",
     "reconnectionRoughnessThreshold": 0.05,
 })
 

@@ -11,7 +11,8 @@ times.
   of all paths and $f(\bar{\mathbf{x}})$ the measurement contribution of a path, so that a standard path tracer estimates
   $\int_\mathcal{P} f(\bar{\mathbf{x}})\, \mathrm{d}\bar{\mathbf{x}}$.
 - $\ell(\bar{\mathbf{x}}) = \sum_i \eta_i \lVert x_{i+1} - x_i \rVert$ is the optical path length ($\eta_i$: refractive index
-  of segment $i$); the arrival time is $\ell / c$.
+  of segment $i$); the arrival time is $\ell / c$. Refractive indices are not implemented yet: every pass uses
+  $\eta_i = 1$, so path lengths and path velocities are geometric, also inside glass or water.
 - $u(\bar{\mathbf{x}}) = \sum_i \eta_i\, (v_i - v_{i+1}) \cdot \hat{d}_i$ is the path velocity: the rate at which the path
   shortens, from the velocities $v_i$ of its vertices along each segment direction $\hat{d}_i$. A path with path
   velocity $u$ has the Doppler shift $f_D(\bar{\mathbf{x}}) = u(\bar{\mathbf{x}}) / \lambda$ at laser wavelength $\lambda$.
@@ -80,13 +81,15 @@ times.
     [`DopplerHistogramPathTracerInline`](../plugin_reference/doppler/DopplerHistogramPathTracerInline.md)
   - $$S(\nu_b) = \int_\mathcal{P} f(\bar{\mathbf{x}})\, w_{\nu_b}\!\left(f_D(\bar{\mathbf{x}})\right) \mathrm{d}\bar{\mathbf{x}}, \quad b = 1, \dots, B$$
 
-    Doppler-gated spectra at $B$ frequencies at once. Shown: 4 of the bins.
+    Doppler-gated spectra at $B$ frequencies at once. Shown: 4 of the bins. With a chirped laser (FMCW), the weight
+    is on the beat frequency $f_R(\ell) \mp f_D$ instead, with a range term $f_R$ proportional to the path length, in
+    an up- and a down-chirp spectrum.
 * - **Doppler ToF**
 
     ![Doppler ToF](images/measurements/doppler_tof.jpg)
 
     [`DopplerToFPathTracerInline`](../plugin_reference/doppler/DopplerToFPathTracerInline.md)
-  - $$I = \frac{1}{T} \int_0^T \int_{\mathcal{P}} f(\bar{\mathbf{x}}, t)\, m\!\left(t, \ell(\bar{\mathbf{x}}, t)\right) \mathrm{d}\bar{\mathbf{x}}\, \mathrm{d}t$$
+  - $$I = \frac{1}{T} \int_0^T \int_{\mathcal{P(t)}} f(\bar{\mathbf{x}}, t)\, m\!\left(t, \ell(\bar{\mathbf{x}}, t)\right) \mathrm{d}\bar{\mathbf{x}}\, \mathrm{d}t$$
     $$m(t, \ell) = \cos\!\left(2\pi\left(\Delta f\, t - \frac{f_g\, \ell}{c} - \phi\right)\right)$$
 
     A double integral over paths and the exposure $[0, T)$: the scene moves, and the light, modulated at $f_g$, is
@@ -115,7 +118,8 @@ Time of flight and Doppler measurements have the same form, with the Doppler shi
 | Doppler shift $f_D(\bar{\mathbf{x}})$ | Doppler-gated PSD $S(\nu)$ | Doppler spectrum $S(\nu_b)$ |
 
 The gated passes use the same gate kernels, and a box gate one bin wide at the center of a bin gives that bin of the
-histogram. The other measurements weight the path by a modulation instead of a gate: CW-ToF by a periodic function of
+histogram. An FMCW lidar's spectra weight both at once: their beat frequency $f_R(\ell) \mp f_D$ grows with the path
+length and shifts with the Doppler shift. The other measurements weight the path by a modulation instead of a gate: CW-ToF by a periodic function of
 its length, Doppler ToF by one that also changes over the exposure, structured light by the projected pattern.
 
 The images are the Cornell box, with the settings of the [overview](overview.md).

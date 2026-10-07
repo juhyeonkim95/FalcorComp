@@ -103,12 +103,14 @@ void Testbed::frame()
         mpRenderGraph->getPassesDictionary()[kRenderPassRefreshFlags] = RenderPassRefreshFlags::None;
         mpRenderGraph->execute(pRenderContext);
 
-        // Blit main graph output to frame buffer.
+        // Blit main graph output to frame buffer. blit() reads a 2D texture: a 3D output (a transient histogram or a
+        // Doppler spectrum) bound in its place is invalid and can crash the driver, so it is not shown.
         if (mpRenderGraph->getOutputCount() > 0)
         {
             ref<Texture> pOutTex = mpRenderGraph->getOutput(0)->asTexture();
             FALCOR_ASSERT(pOutTex);
-            pRenderContext->blit(pOutTex->getSRV(), mpTargetFBO->getRenderTargetView(0));
+            if (pOutTex->getType() == Resource::Type::Texture2D || pOutTex->getType() == Resource::Type::Texture2DMultisample)
+                pRenderContext->blit(pOutTex->getSRV(), mpTargetFBO->getRenderTargetView(0));
         }
     }
 

@@ -108,23 +108,23 @@ inline void bindChannels(const ShaderVar& var, const RenderData& renderData, con
             var[channel.texname] = renderData.getTexture(channel.name);
 }
 
-/// Clears the channels' textures that are connected.
+/// Clears the channels' textures that are connected to zero, alpha included (a histogram's alpha sums sample weights).
 inline void clearChannels(RenderContext* pRenderContext, const RenderData& renderData, const ChannelList& channels)
 {
     for (const auto& channel : channels)
         if (auto pTexture = renderData.getTexture(channel.name))
-            pRenderContext->clearTexture(pTexture.get());
+            pRenderContext->clearTexture(pTexture.get(), float4(0.f));
 }
 
-/// setProperties() of a pass with validated options: `parse` reads the properties into `options`; when `validate`
-/// throws, the previous options are restored.
+/// setProperties() of a pass with validated options: `parse` reads the properties into `options`; when it or `validate`
+/// throws (an unknown enum name, an invalid value), the previous options are restored.
 template<typename Options, typename Parse, typename Validate>
 void applyProperties(Options& options, Parse&& parse, Validate&& validate)
 {
     const Options previous = options;
-    parse();
     try
     {
+        parse();
         validate(options);
     }
     catch (...)
@@ -149,7 +149,13 @@ inline void checkScene(const Scene& scene, const RenderData& renderData)
     if (is_set(scene.getUpdates(), IScene::UpdateFlags::RecompileNeeded) ||
         is_set(scene.getUpdates(), IScene::UpdateFlags::GeometryChanged))
         FALCOR_THROW("This render pass does not support scene changes that require shader recompilation.");
+    // The passes dispatch over their output and read the V-buffer at the same pixel.
+    const auto pVBuffer = renderData.getTexture("vbuffer");
+    const auto pColor = renderData.getTexture("color");
+    if (pVBuffer && pColor && (pVBuffer->getWidth() != pColor->getWidth() || pVBuffer->getHeight() != pColor->getHeight()))
+        FALCOR_THROW("The vbuffer input ({}x{}) must have the output's size ({}x{}): set the same outputSize on VBufferRT.",
+            pVBuffer->getWidth(), pVBuffer->getHeight(), pColor->getWidth(), pColor->getHeight());
     if (scene.getCamera()->getApertureRadius() > 0.f && renderData[kViewDirChannel] == nullptr)
-        logWarning("Depth-of-field requires the '{}' input. Expect incorrect shading.", kViewDirChannel);
+        logWarningOnce("Depth-of-field requires the '{}' input. Expect incorrect shading.", kViewDirChannel);
 }
 } // namespace InlinePass

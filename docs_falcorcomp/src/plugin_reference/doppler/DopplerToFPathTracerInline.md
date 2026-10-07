@@ -24,9 +24,9 @@ there.
 ## Antithetic time pairs
 
 The heterodyne term changes sign over half a period: $w(t + 1/(2\Delta f), \ell) = -w(t, \ell)$. With
-`antithetic = half_period`, every frame renders the time $t$ and its partner $t + 1/(2\Delta f)$ (modulo $T$) and
-outputs their mean, so light from static objects cancels within each pair. With `randomReplay`, the partner uses the
-same random numbers (random replay), so the two paths are the same up to the motion in between. On the Cornell box
+`antithetic = half_period`, every frame renders the time $t$ and its antithetic time $t + 1/(2\Delta f)$ (modulo $T$) and
+outputs their mean, so light from static objects cancels within each pair. With `randomReplay`, the antithetic time uses
+the same random numbers (random replay), so the two paths are the same up to the motion in between. On the Cornell box
 with moving boxes (200 MHz, 50 ms exposure), pairing lowered the error of the heterodyne image 17 to 50 times at
 equal render count, and random replay a further 1.1 to 1.3 times.
 
@@ -74,12 +74,13 @@ Time sampling:
     which covers the exposure more evenly). Every pixel of a frame shares its time. (Default: `stratified`)
 * - `antithetic`
   - string
-  - `none` (one time per frame), `half_period` (also $t + 1/(2\Delta f)$; needs a nonzero `heterodyneFrequency`) or
+  - `none` (one time per frame), `half_period` (also $t + 1/(2\Delta f)$, modulo $T$, for either sign of $\Delta f$;
+    needs a nonzero `heterodyneFrequency`) or
     `mirror` (also $T - t$, which does not change the sign of the heterodyne term and so does not cancel static
     light). See [Antithetic time pairs](#doppler-tof-antithetic). (Default: `half_period`)
 * - `randomReplay`
   - boolean
-  - The partner time uses the same random numbers as the first. (Default: `true`)
+  - The antithetic time uses the same random numbers as the first. (Default: `true`)
 * - `seed`
   - integer
   - Offsets the time sequence and the random numbers of the paths. (Default: `0`)
@@ -87,8 +88,9 @@ Time sampling:
 
 Sampling and output, as for the [time-gated path tracer](../time_gated/TimeGatedPathTracerInline.md):
 `samplesPerPixel` (default `128`), `maxBounces` (default `3`), `computeDirect` (default `false`),
-`useImportanceSampling` and `useAlphaTest`. The output is RGB (`useSingleChannel` has no effect). Each frame traces
-the pixel-center camera ray itself, in the scene at time $t$, so the pass takes no V-buffer.
+`useImportanceSampling`, `useAlphaTest`, and `useSingleChannel` with `singleChannel`, which write the chosen channel
+to all three channels of the output. Each frame traces the pixel-center camera ray itself, in the scene at time $t$,
+so the pass takes no V-buffer.
 
 (doppler-tof-moving-objects)=
 ## Moving objects
@@ -102,15 +104,21 @@ acceleration structure, and puts the objects back at their pose at $t = 0$ after
 2. **One node per moving object.** Load the scene with
    `SceneBuilderFlags.DontMergeMaterials | SceneBuilderFlags.DontOptimizeGraph`; otherwise the graph optimizer can
    merge objects into one node, which then move together.
-3. **Rotations about a world-space center**, applied to the node's transform: give each moving object its own
-   top-level node.
 
-The pass warns when a named object is static or shares its node with another moving object;
-`get_object_names()` returns `(instance, mesh name, material name, movable)` for every object. The camera and the
-light do not move.
+Motions are in world space for every node, also one with a parent. A moving object below another moving object in
+the scene graph keeps its own motion: list both with the same motion to move them together. An object that is not
+listed but hangs below a moving object (or shares its node) moves with it here, while the Doppler passes, which only
+read the listed velocities, see it at rest.
+
+The pass warns when a named object is static, when two objects on one node are given different motions, and when an
+unlisted object moves with a listed one; `get_object_names()` returns `(instance, mesh name, material name, movable)`
+for every object. The camera and the light do not move.
 
 The scene changes every frame, so an `AccumulatePass` after this pass restarts every frame unless it is created with
 `"autoReset": False`.
+
+From Python: `set_velocity(...)`, `clear_velocities()`, `get_object_names()` and `reset()`, which restarts the time
+sequence (the next frame is pair 0).
 
 ## Velocity from heterodyne and homodyne
 
@@ -147,6 +155,7 @@ The light is set on the `LaserLight` pass, as for the [time-gated path tracer](#
 ```python
 testbed.load_scene("cornell-box-moving/scene.pyscene",
                    falcor.SceneBuilderFlags.DontMergeMaterials | falcor.SceneBuilderFlags.DontOptimizeGraph)
+graph = testbed.create_render_graph("DopplerToF")
 graph.create_pass("Light", "LaserLight", {"isLightSourceLaser": False, "laserCollocated": True})
 graph.create_pass("Tracer", "DopplerToFPathTracerInline", {
     "samplesPerPixel": 16, "maxBounces": 3, "computeDirect": True,
@@ -157,6 +166,8 @@ graph.create_pass("Tracer", "DopplerToFPathTracerInline", {
 graph.create_pass("Accumulate", "AccumulatePass", {"autoReset": False})
 graph.add_edge("Light", "Tracer")
 graph.add_edge("Tracer.color", "Accumulate.input")
+graph.mark_output("Accumulate.output")
+testbed.render_graph = graph
 ```
 
 See the [Doppler ToF tutorial](../../tutorials/doppler_tof_offline.md) for a complete script.

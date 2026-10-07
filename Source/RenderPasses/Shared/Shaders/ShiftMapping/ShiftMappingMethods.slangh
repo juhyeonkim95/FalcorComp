@@ -1,0 +1,12 @@
+/** The values of SHIFT_MAPPING_METHOD, which the host sets (ShiftMappingConfig.h). A header, so that the shift code
+    and the charts it imports can both test the method at compile time.
+*/
+#pragma once
+
+#define SHIFT_MAPPING_NO 0
+#define SHIFT_MAPPING_LOCAL_TANGENT 1
+#define SHIFT_MAPPING_BARYCENTRIC 2
+#define SHIFT_MAPPING_RAY_TRACE 3
+#define SHIFT_MAPPING_AREA_ADAPTIVE 4
+#define SHIFT_MAPPING_RAY_TRACE_CHART 5
+#define SHIFT_MAPPING_RADIAL 6

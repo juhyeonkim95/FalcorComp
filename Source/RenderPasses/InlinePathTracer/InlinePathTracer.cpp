@@ -65,6 +65,13 @@ void InlinePathTracer::parseProperties(const Properties& props)
     }
 }
 
+void InlinePathTracer::setProperties(const Properties& props)
+{
+    // Invalid properties throw and leave the options unchanged.
+    InlinePass::applyProperties(mOptions, [&] { parseProperties(props); }, validateOptions);
+    mOptionsChanged = true;
+}
+
 Properties InlinePathTracer::getProperties() const
 {
     Properties props;
@@ -86,7 +93,7 @@ RenderPassReflection InlinePathTracer::reflect(const CompileData& compileData)
 DefineList InlinePathTracer::getShaderDefines(const RenderData& renderData) const
 {
     DefineList defines = mOptions.pathTracing.getDefines();
-    defines.add(LaserState::resolve(renderData).getDefines());
+    defines.add(mLaserInput.get().getDefines());
     defines.add(InlinePass::getSceneLightDefines(*mpScene));
 
     // For optional I/O resources, set 'is_valid_<name>' defines to inform the program of which ones it can access.
@@ -100,7 +107,7 @@ void InlinePathTracer::bindShaderData(const ShaderVar& var, const RenderData& re
     var["CB"]["gFrameCount"] = mFrameCount;
     var["CB"]["gFrameDim"] = renderData.getDefaultTextureDims();
     var["CB"]["gSamplesPerPixel"] = mOptions.pathTracing.samplesPerPixel;
-    LaserState::resolve(renderData).bindShaderData(var["Laser"]);
+    mLaserInput.get().bindShaderData(var["Laser"]);
 
     InlinePass::bindChannels(var, renderData, InlinePass::kPrimaryHitInputChannels);
     InlinePass::bindChannels(var, renderData, InlinePass::kColorOutputChannels);
@@ -108,6 +115,7 @@ void InlinePathTracer::bindShaderData(const ShaderVar& var, const RenderData& re
 
 void InlinePathTracer::execute(RenderContext* pRenderContext, const RenderData& renderData)
 {
+    mLaserInput.update(renderData, "InlinePathTracer");
     if (mOptionsChanged)
     {
         InlinePass::flagOptionsChanged(renderData);
@@ -146,10 +154,21 @@ void InlinePathTracer::renderUI(Gui::Widgets& widget)
     // In execute() we will pass the flag to other passes for reset of temporal data etc.
     if (dirty)
     {
-        validateOptions(options);
+        try
+        {
+            validateOptions(options);
+        }
+        catch (const std::exception& e)
+        {
+            mUIWarning = e.what();
+            return;
+        }
+        mUIWarning.clear();
         mOptions = options;
         mOptionsChanged = true;
     }
+    if (!mUIWarning.empty())
+        widget.text(mUIWarning);
 }
 
 void InlinePathTracer::setScene(RenderContext* pRenderContext, const ref<Scene>& pScene)

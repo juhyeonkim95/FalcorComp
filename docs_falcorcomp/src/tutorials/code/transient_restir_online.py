@@ -53,7 +53,7 @@ PT = {"samplesPerPixel": 32, "maxBounces": 6, "computeDirect": False, "useAlphaT
 RESTIR = {**PT,
           "spatialReuseIteration": 1, "spatialReuseNeighborCount": 5,
           "useTemporalReuse": True, "temporalHistoryLength": 20.0,
-          "shiftmapMethod": "local_tangent", "gaugeMode": "avg_grad",
+          "shiftMappingMethod": "local_tangent", "gaugeMode": "avg_grad",
           "reconnectionRoughnessThreshold": 0.05}
 SKIP_FRAMES = 10          # frames left out of the timing: shader compilation, history warm-up
 TOLERANCE = 0.05          # accepted frame-time difference between the two tracers

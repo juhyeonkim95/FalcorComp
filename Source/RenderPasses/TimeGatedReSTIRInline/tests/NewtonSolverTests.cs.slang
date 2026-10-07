@@ -8,7 +8,8 @@ RWStructuredBuffer<float4> results;
 void main(uint3 tid : SV_DispatchThreadID)
 {
     float2 u;
-    // Previously accepted after two iterations despite a large gauge residual.
+    // A solve that stopped on the length residual alone was once accepted 6 cm from the root, with a large gauge
+    // residual; both residuals must converge.
     LocalPlaneChart ops = LocalPlaneChart(float3(-.58626106f, .27115905f, .87781121f),
         float3(1.76098715f, -.28433909f, 1.32808099f), float3(0.f),
         float3(1.f, 0.f, 0.f), float3(0.f, 1.f, 0.f));

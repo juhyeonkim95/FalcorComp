@@ -12,7 +12,7 @@
 
 | Documentation | PyPI | Build |
 |:---:|:---:|:---:|
-| [![docs](https://readthedocs.org/projects/falcorcomp/badge/?version=latest)](https://falcorcomp.readthedocs.io/en/latest/) | [![TestPyPI](https://img.shields.io/badge/TestPyPI-0.1.3-blue)](https://test.pypi.org/project/falcorcomp/) | [![build](https://github.com/juhyeonkim95/FalcorComp/actions/workflows/build.yml/badge.svg?branch=master)](https://github.com/juhyeonkim95/FalcorComp/actions/workflows/build.yml) |
+| [![docs](https://readthedocs.org/projects/falcorcomp/badge/?version=latest)](https://falcorcomp.readthedocs.io/en/latest/) | [![TestPyPI](https://img.shields.io/badge/TestPyPI-0.1.4-blue)](https://test.pypi.org/project/falcorcomp/) | [![build](https://github.com/juhyeonkim95/FalcorComp/actions/workflows/build.yml/badge.svg?branch=master)](https://github.com/juhyeonkim95/FalcorComp/actions/workflows/build.yml) |
 
 </div>
 
@@ -54,13 +54,16 @@ The light varies in time or in space, and the measurement weights each path by t
 
 ### Doppler
 
-The measurement depends on how fast each path's length changes as the scene moves.
+The measurement depends on how fast each path's length changes as the scene moves (with FMCW, also on the length itself).
 
 | Measurement | Output | Render pass |
 |---|---|---|
 | **Doppler-gated image (OHD)** | `H × W`: the light whose Doppler shift falls inside a gate | [`DopplerGatedPathTracerInline`](https://falcorcomp.readthedocs.io/en/latest/src/plugin_reference/doppler/DopplerGatedPathTracerInline.html) |
 | **Doppler spectrum (OHD)** | `H × W × B`: for every pixel, the light at each Doppler shift, in `B` bins | [`DopplerHistogramPathTracerInline`](https://falcorcomp.readthedocs.io/en/latest/src/plugin_reference/doppler/DopplerHistogramPathTracerInline.html) |
+| **FMCW spectra (OHD)** | `H × W × B`, for the up- and the down-chirp: the light at each beat frequency, which depends on the path length and the Doppler shift | [`DopplerHistogramPathTracerInline`](https://falcorcomp.readthedocs.io/en/latest/src/plugin_reference/doppler/DopplerHistogramPathTracerInline.html) with a chirp |
 | **Doppler ToF** | `H × W`: a CW-ToF measurement with slightly different light and sensor frequencies, over an exposure in which the objects move | [`DopplerToFPathTracerInline`](https://falcorcomp.readthedocs.io/en/latest/src/plugin_reference/doppler/DopplerToFPathTracerInline.html) |
+
+The [Doppler rendering tutorial](https://juhyeonkim95.github.io/project-pages/doppler_tutorial/) compares OHD and Doppler ToF side by side.
 
 ### Event Camera
 
@@ -89,7 +92,7 @@ FalcorComp includes implementations of the following papers:
 
 - **"Geometric Antithetic Sampling for Spatiotemporally Modulated Light"**  
   **SIGGRAPH Asia 2026 (Conference)**  
-  Project Page (TBD)
+  [[Project Page]](https://juhyeonkim95.github.io/project-pages/antithetic_modulation/)
 
   Variance reduction for rendering spatiotemporally modulated light (CW-ToF, structured light) using geometric antithetic sampling.
 
@@ -109,7 +112,7 @@ For details, please refer to the corresponding project page for each paper.
 
 ## Installation
 
-FalcorComp is installed as the Python package `falcorcomp`, which contains Falcor and the render passes, so no separate Falcor build is needed. It requires 64-bit Linux or Windows, an NVIDIA GPU with hardware ray tracing (RTX), and Python 3.9 to 3.13.
+FalcorComp is installed as the Python package `falcorcomp`, which contains Falcor and the render passes, so no separate Falcor build is needed. It requires 64-bit Linux (Windows wheels are not available yet), an NVIDIA GPU with hardware ray tracing (RTX), and Python 3.9 to 3.13.
 
 The package is currently published on TestPyPI:
 

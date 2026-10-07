@@ -70,11 +70,6 @@ export struct UniformSampleGenerator : ISampleGenerator
         this.rng = createXoshiro128StarStar(seed);
     }
 
-    uint getCurrentSeed()
-    {
-        return 0; // not usable
-    }
-
     /**
      * Returns the next sample value. This function updates the state.
      */

@@ -36,6 +36,8 @@ inline bool renderTimeGateModeUI(Gui::Widgets& widget, TimeGateMode& mode)
         {(uint32_t)TimeGateMode::Gaussian, "Gaussian"},
         {(uint32_t)TimeGateMode::Exp, "Exponential (one-sided)"},
         {(uint32_t)TimeGateMode::ExpTwoSide, "Exponential (two-sided)"},
+        {(uint32_t)TimeGateMode::Epanechnikov, "Epanechnikov"},
+        {(uint32_t)TimeGateMode::Perlin, "Perlin"},
         {(uint32_t)TimeGateMode::Cos, "Cos"},
         {(uint32_t)TimeGateMode::All, "All (no gating)"},
     };

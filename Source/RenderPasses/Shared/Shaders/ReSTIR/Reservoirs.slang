@@ -96,9 +96,13 @@ struct Reservoir
 
     [mutating]
     bool update(float3 newf, float weight, float M, inout SampleGenerator sg){
-        this.wSum += weight;
+        // Same random number either way, so skipping a candidate does not shift later draws.
+        float u = sampleNext1D(sg);
         this.M += M;
-        if(sampleNext1D(sg) * this.wSum < weight){
+        // A NaN, infinite or negative weight (e.g. an overflowing contribution) would spread through reuse: skip it.
+        if (!(weight >= 0.f) || isinf(weight)) return false;
+        this.wSum += weight;
+        if(u * this.wSum < weight){
 #if RESERVOIR_SCALAR_TARGET
             this.f = getReservoirWeight(newf);
 #else
@@ -115,6 +119,13 @@ struct Reservoir
     {
         float target = getReservoirWeight(f);
         W = target > 0.f ? wSum / target : 0.f;
+        // Never store a non-finite sample, which reuse would spread to the neighbors and the history; keep M.
+        if (!isfinite(W) || !isfinite(wSum) || !isfinite(target))
+        {
+            W = 0.f;
+            wSum = 0.f;
+            f = 0.f;
+        }
     }
 
     __init()
@@ -127,6 +138,7 @@ struct Reservoir
         this.rcNextVertexIrradiance = float3(0.0);
         this.rcNextVertexPathLength = 0.0;
         this.rcVertexBounce = 0;
+        this.initRandomSeed = 0;
         this.rcPrevVertexPosition = float3(0.f);
         this.totalPathLength = 0;
         this.rcNextVertexBounce = 0;
@@ -137,28 +149,46 @@ struct Reservoir
 // Reservoir summaries (RESERVOIR_SUMMARIES, the histogram pass): each reservoir's W and M in a compact buffer beside
 // the reservoirs. The full reservoir is stored only when W != 0, since most histogram bins are empty; readers check the
 // summary first. An empty reservoir reads as Reservoir() with its M: nothing reads more of a reservoir with W == 0.
-Reservoir loadSummarizedReservoir(StructuredBuffer<Reservoir> reservoirs, StructuredBuffer<float2> summaries, uint index)
+/// Where the reservoir of a pixel and bin lives. Reservoirs are pixel-major (a pixel's bins are adjacent); summaries
+/// are bin-major, so that the threads of a warp, which work on neighboring pixels at one bin, read adjacent 8-byte
+/// summaries (four per 32-byte sector instead of one).
+struct ReservoirIndex
 {
-    float2 summary = summaries[index];
-    if (summary.x != 0.f) return reservoirs[index];
+    uint reservoir; ///< linearPixel * binCount + bin.
+    uint summary;   ///< bin * pixelCount + linearPixel.
+};
+
+ReservoirIndex makeReservoirIndex(uint linearPixel, uint bin, uint binCount, uint pixelCount)
+{
+    ReservoirIndex index;
+    index.reservoir = linearPixel * binCount + bin;
+    index.summary = bin * pixelCount + linearPixel;
+    return index;
+}
+
+Reservoir loadSummarizedReservoir(StructuredBuffer<Reservoir> reservoirs, StructuredBuffer<float2> summaries,
+    ReservoirIndex index)
+{
+    float2 summary = summaries[index.summary];
+    if (summary.x != 0.f) return reservoirs[index.reservoir];
     Reservoir empty = Reservoir();
     empty.M = summary.y;
     return empty;
 }
 
 Reservoir loadSummarizedReservoir(RWStructuredBuffer<Reservoir> reservoirs, RWStructuredBuffer<float2> summaries,
-    uint index)
+    ReservoirIndex index)
 {
-    float2 summary = summaries[index];
-    if (summary.x != 0.f) return reservoirs[index];
+    float2 summary = summaries[index.summary];
+    if (summary.x != 0.f) return reservoirs[index.reservoir];
     Reservoir empty = Reservoir();
     empty.M = summary.y;
     return empty;
 }
 
-void storeSummarizedReservoir(RWStructuredBuffer<Reservoir> reservoirs, RWStructuredBuffer<float2> summaries, uint index,
-    Reservoir reservoir)
+void storeSummarizedReservoir(RWStructuredBuffer<Reservoir> reservoirs, RWStructuredBuffer<float2> summaries,
+    ReservoirIndex index, Reservoir reservoir)
 {
-    summaries[index] = float2(reservoir.W, reservoir.M);
-    if (reservoir.W != 0.f) reservoirs[index] = reservoir;
+    summaries[index.summary] = float2(reservoir.W, reservoir.M);
+    if (reservoir.W != 0.f) reservoirs[index.reservoir] = reservoir;
 }

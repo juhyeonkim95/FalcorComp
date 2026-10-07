@@ -25,7 +25,8 @@ The window is twice as wide as the render: one half for the sum, one for the gri
 the window size. With `accumulate`, the tracer adds every frame to its histogram and restarts when
 the camera moves or a setting changes; the viewer divides by the number of frames, so the picture
 stays equally bright while it converges. (`TransientHistogramAccumulatePass` can average the
-frames instead, as in the offline tutorial, at the cost of one more histogram in memory.)
+frames instead, as in the offline tutorial, at the cost of two more histograms in memory, its mean and its
+output; see [its memory use](#th-accumulate-memory).)
 
 ```{literalinclude} code/transient_online.py
 :language: python

@@ -27,6 +27,7 @@
  **************************************************************************/
 #pragma once
 #include "Falcor.h"
+#include "../Shared/Host/InlinePassUtils.h"
 #include "RenderGraph/RenderPass.h"
 
 using namespace Falcor;
@@ -50,6 +51,7 @@ public:
     TransientHistogramAccumulatePass(ref<Device> pDevice, const Properties& props);
 
     Properties getProperties() const override;
+    void setProperties(const Properties& props) override;
     RenderPassReflection reflect(const CompileData& compileData) override;
     void compile(RenderContext* pRenderContext, const CompileData& compileData) override;
     void execute(RenderContext* pRenderContext, const RenderData& renderData) override;
@@ -71,10 +73,16 @@ private:
     bool needsAutoReset(const RenderData& renderData) const;
     void prepareState(const ref<Texture>& pInput);
 
-    bool mEnabled = true;       ///< Off: the output is the input.
-    bool mAutoReset = true;
-    Precision mPrecision = Precision::Single;
-    uint mMaxFrameCount = 0;    ///< Stop averaging after this many frames; 0 = no limit.
+    struct Options
+    {
+        bool enabled = true;       ///< Off: the output is the input.
+        bool autoReset = true;
+        Precision precision = Precision::Single;
+        uint maxFrameCount = 0;    ///< Stop averaging after this many frames; 0 = no limit.
+    };
+    void parseProperties(const Properties& props);
+
+    Options mOptions;
 
     uint mFrameCount = 0;       ///< Frames in the current average.
     std::pair<uint3, ResourceFormat> mDeclaredShape; ///< Output shape declared by the last reflect().

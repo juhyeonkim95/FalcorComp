@@ -2,6 +2,7 @@
 #include "ConfigUtils.h"
 #include "Waveform.h"
 #include "RenderGraph/RenderPass.h"
+#include "Scene/Camera/Camera.h"
 #include <cmath>
 #include <vector>
 
@@ -41,6 +42,9 @@ inline const std::unordered_map<std::string, PatternAxis> kPatternAxes = {
 /// along its up, both over [0, 1] across the field of view.
 struct ProjectorConfig
 {
+    /// At the camera: the position, direction and up are the camera's, every frame (as LaserLight's laserCollocated).
+    /// Giving projectorPosition, projectorDirection or projectorUp turns it off, unless projectorCollocated is given.
+    bool collocated = true;
     float3 position = float3(0.f);
     float3 direction = float3(0.f, 0.f, -1.f);
     float3 up = float3(0.f, 1.f, 0.f); ///< Up hint; the projector's up is made orthogonal to the direction.
@@ -74,16 +78,38 @@ struct ProjectorConfig
             FALCOR_THROW("checkerCells must be greater than zero.");
         if (checkerShift >= 25)
             FALCOR_THROW("checkerShift must be in [0, 24].");
+        // Out-of-range bits would map every column to the last one (a collapsed, biased antithetic map).
+        if ((pattern == ProjectorPatternType::Gray || pattern == ProjectorPatternType::XOR) && patternBit >= patternBits)
+            FALCOR_THROW("patternBit must be less than patternBits.");
+        if (pattern == ProjectorPatternType::XOR && patternBaseBit >= patternBits)
+            FALCOR_THROW("patternBaseBit must be less than patternBits.");
+        if (!std::isfinite(patternPhase))
+            FALCOR_THROW("patternPhase must be finite.");
+        for (int i = 0; i < 3; i++)
+            if (!std::isfinite(position[i]) || !std::isfinite(intensity[i]) || intensity[i] < 0.f)
+                FALCOR_THROW("projectorPosition must be finite and projectorIntensity finite and non-negative.");
     }
 
     bool parse(const std::string& key, const Properties::ConstValue& value)
     {
+        // A pose given explicitly places the projector there rather than at the camera.
         if (key == "projectorPosition")
+        {
             position = value;
+            collocated = false;
+        }
         else if (key == "projectorDirection")
+        {
             direction = value;
+            collocated = false;
+        }
         else if (key == "projectorUp")
+        {
             up = value;
+            collocated = false;
+        }
+        else if (key == "projectorCollocated")
+            ; // Applied after all properties (applyCollocated), so that it wins over a given pose in any order.
         else if (key == "projectorFov")
             fov = value;
         else if (key == "projectorIntensity")
@@ -117,8 +143,29 @@ struct ProjectorConfig
         return true;
     }
 
+    /// Call after parse() of all properties: an explicit projectorCollocated wins over the pose's implicit one.
+    void applyCollocated(const Properties& props)
+    {
+        if (props.has("projectorCollocated"))
+            collocated = props.get<bool>("projectorCollocated");
+    }
+
+    /// This projector, at the camera's pose if collocated.
+    ProjectorConfig atCamera(const Camera& camera) const
+    {
+        ProjectorConfig projector = *this;
+        if (collocated)
+        {
+            projector.position = camera.getPosition();
+            projector.direction = camera.getTarget() - camera.getPosition();
+            projector.up = camera.getUpVector();
+        }
+        return projector;
+    }
+
     void serialize(Properties& props) const
     {
+        props["projectorCollocated"] = collocated;
         props["projectorPosition"] = position;
         props["projectorDirection"] = direction;
         props["projectorUp"] = up;
@@ -163,10 +210,10 @@ struct ProjectorConfig
         auto patternVar = var["ProjectorPatternCB"];
         patternVar["gPatternAxis"] = uint(patternAxis);
         patternVar["gPatternSign"] = invertPattern ? -1.f : 1.f;
-        patternVar["gUnsignedModulation"] = uint(unsignedModulation);
-        patternVar["gWaveform"] = uint(waveform);
-        patternVar["gWavelength"] = patternWavelength;
-        patternVar["gPhase"] = patternPhase;
+        patternVar["gPatternUnsigned"] = uint(unsignedModulation);
+        patternVar["gPatternWaveform"] = uint(waveform);
+        patternVar["gPatternWavelength"] = patternWavelength;
+        patternVar["gPatternPhase"] = patternPhase;
         patternVar["gPatternBits"] = patternBits;
         patternVar["gPatternBit"] = patternBit;
         patternVar["gPatternBaseBit"] = patternBaseBit;
@@ -178,12 +225,17 @@ struct ProjectorConfig
     bool renderProjectorUI(Gui::Widgets& widget)
     {
         bool dirty = false;
-        dirty |= widget.var("Position", position);
-        widget.tooltip("Projector center, in world space.", true);
-        dirty |= widget.var("Direction", direction, -1.f, 1.f);
-        widget.tooltip("Viewing direction of the projector (normalized when used).", true);
-        dirty |= widget.var("Up", up, -1.f, 1.f);
-        widget.tooltip("Up hint: v runs along it, made orthogonal to the direction.", true);
+        dirty |= widget.checkbox("At the camera", collocated);
+        widget.tooltip("Place the projector at the camera, looking along its view direction with its up.", true);
+        if (!collocated)
+        {
+            dirty |= widget.var("Position", position);
+            widget.tooltip("Projector center, in world space.", true);
+            dirty |= widget.var("Direction", direction, -1.f, 1.f);
+            widget.tooltip("Viewing direction of the projector (normalized when used).", true);
+            dirty |= widget.var("Up", up, -1.f, 1.f);
+            widget.tooltip("Up hint: v runs along it, made orthogonal to the direction.", true);
+        }
         dirty |= widget.var("Field of view (deg)", fov, 1.f, 179.f);
         widget.tooltip("Full field of view along u and v, in degrees.", true);
         dirty |= widget.var("Intensity", intensity, 0.f, 1e6f);
@@ -278,7 +330,12 @@ public:
             FALCOR_THROW("Give either antithetic_index or interval_ids and intervals, not both.");
         if (!antitheticIndex.empty() && antitheticIndex.size() != width)
             FALCOR_THROW("antithetic_index must have one entry per column.");
-        if (!intervalIds.empty() && (intervalIds.size() != width || intervals.empty() || intervals.size() % 4 != 0))
+        if (intervalIds.empty() != intervals.empty())
+            FALCOR_THROW("Give interval_ids and intervals together.");
+        for (size_t column = 0; column < width; column++)
+            if (values[column] > 1)
+                FALCOR_THROW("values[{}] = {}: the pattern values must be 0 or 1.", column, values[column]);
+        if (!intervalIds.empty() && (intervalIds.size() != width || intervals.size() % 4 != 0))
             FALCOR_THROW("interval_ids must have one entry per column and intervals four entries per interval.");
 
         for (size_t column = 0; column < antitheticIndex.size(); column++)
@@ -293,9 +350,26 @@ public:
             }
         }
         const size_t intervalCount = intervals.size() / 4;
+        for (size_t interval = 0; interval < intervalCount; interval++)
+        {
+            const uint32_t* entry = &intervals[4 * interval];
+            if (!(entry[0] < entry[1] && entry[1] <= width && entry[2] < entry[3] && entry[3] <= width))
+                FALCOR_THROW("intervals[{}] must have start < end <= {} for its source and destination.", interval, width);
+        }
         for (size_t column = 0; column < intervalIds.size(); column++)
+        {
             if (intervalIds[column] >= intervalCount)
                 FALCOR_THROW("interval_ids[{}] = {} is out of range.", column, intervalIds[column]);
+            const uint32_t* entry = &intervals[4 * intervalIds[column]];
+            if (column < entry[0] || column >= entry[1])
+                FALCOR_THROW("Column {} lies outside its source interval {}.", column, intervalIds[column]);
+        }
+        // Conversely, every column of an interval's source belongs to it: the sources partition the columns.
+        for (size_t interval = 0; interval < intervalCount; interval++)
+            for (uint32_t column = intervals[4 * interval]; column < intervals[4 * interval + 1]; column++)
+                if (intervalIds[column] != interval)
+                    FALCOR_THROW("Column {} lies in the source of interval {} but interval_ids gives {}.", column,
+                        interval, intervalIds[column]);
         for (size_t interval = 0; interval < intervalCount; interval++)
         {
             const uint32_t* entry = &intervals[4 * interval];

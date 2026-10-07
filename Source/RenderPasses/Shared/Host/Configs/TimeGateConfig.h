@@ -40,7 +40,8 @@ struct TimeGateConfig
         timeGateVar["gPreviousTimeCenter"] = state.previous;
     }
 
-    void validate() const
+    /// `resampling`: the gate is part of a ReSTIR target function, which must not be negative.
+    void validate(bool resampling = false) const
     {
         if (timeBin == 0)
             FALCOR_THROW("timeBin must be greater than zero.");
@@ -48,6 +49,8 @@ struct TimeGateConfig
             FALCOR_THROW("timeGateWindow must be finite and greater than zero.");
         if (!std::isfinite(timeMin) || !std::isfinite(timeMax) || timeMin > timeMax)
             FALCOR_THROW("The gate range must be finite with timeMin <= timeMax.");
+        if (resampling && timeGateMode == TimeGateMode::Cos)
+            FALCOR_THROW("The 'cos' gate takes negative values, which ReSTIR cannot resample.");
     }
 
     /// Returns false if `key` is not a time gate property. "timeCenter" is applied by applyTimeCenter().

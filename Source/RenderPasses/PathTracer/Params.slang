@@ -83,8 +83,6 @@ struct PathTracerParams
     uint    fixedSeed = 1;              ///< The seed to use when 'useFixedSeed' is enabled.
     float   lodBias = 0.f;              ///< LOD bias applied to secondary hits.
     float   specularRoughnessThreshold = 0.25f; ///< Specular reflection events are only classified as specular if the material's roughness value is equal or smaller than this threshold. Otherwise they are classified diffuse.
-    int     useReprojSeed = 0;      ///< Use same seed as prev
-
 
     // Runtime values
     uint2   frameDim = { 0, 0 };        ///< Frame dimension in pixels.
@@ -92,7 +90,10 @@ struct PathTracerParams
 
     uint    frameCount = 0;             ///< Frames rendered. This is used as random seed.
     uint    seed = 0;                   ///< Random seed. This will get updated from the host depending on settings.
-    uint2   _pad0;
+    // Kept in the last 16-byte row (in place of padding): a field inserted above would shift the members after it
+    // differently in C++ and in the D3D12 constant buffer, where vectors may not straddle 16-byte rows.
+    int     useReprojSeed = 0;          ///< Seed each pixel's sample generator at its reprojected previous-frame pixel (motion vectors).
+    uint    _pad0;
 
 #ifndef HOST_CODE
     /** Computes the offset into the tiled sample buffer for a given tile.

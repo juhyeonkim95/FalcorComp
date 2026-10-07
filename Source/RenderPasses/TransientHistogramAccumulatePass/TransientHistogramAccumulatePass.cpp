@@ -56,36 +56,51 @@ const char kMaxFrameCount[] = "maxFrameCount";
 
 TransientHistogramAccumulatePass::TransientHistogramAccumulatePass(ref<Device> pDevice, const Properties& props) : RenderPass(pDevice)
 {
+    parseProperties(props);
+}
+
+void TransientHistogramAccumulatePass::parseProperties(const Properties& props)
+{
     for (const auto& [key, value] : props)
     {
         if (key == kEnabled)
-            mEnabled = value;
+            mOptions.enabled = value;
         else if (key == kAutoReset)
-            mAutoReset = value;
+            mOptions.autoReset = value;
         else if (key == kPrecisionMode)
         {
             const std::string mode = value;
             if (mode == "Single")
-                mPrecision = Precision::Single;
+                mOptions.precision = Precision::Single;
             else if (mode == "SingleCompensated")
-                mPrecision = Precision::SingleCompensated;
+                mOptions.precision = Precision::SingleCompensated;
             else
                 FALCOR_THROW("precisionMode must be Single or SingleCompensated.");
         }
         else if (key == kMaxFrameCount)
-            mMaxFrameCount = value;
+            mOptions.maxFrameCount = value;
         else
             logWarning("Unknown property '{}' in TransientHistogramAccumulatePass properties.", key);
     }
 }
 
+void TransientHistogramAccumulatePass::setProperties(const Properties& props)
+{
+    const Options previous = mOptions;
+    // Invalid properties throw and leave the options unchanged.
+    InlinePass::applyProperties(mOptions, [&] { parseProperties(props); }, [](const Options&) {});
+    // As in the UI: switching the average on or off, or changing its precision, restarts it.
+    if (mOptions.enabled != previous.enabled || mOptions.precision != previous.precision)
+        reset();
+}
+
 Properties TransientHistogramAccumulatePass::getProperties() const
 {
     Properties props;
-    props[kEnabled] = mEnabled;
-    props[kAutoReset] = mAutoReset;
-    props[kPrecisionMode] = mPrecision == Precision::Single ? "Single" : "SingleCompensated";
-    props[kMaxFrameCount] = mMaxFrameCount;
+    props[kEnabled] = mOptions.enabled;
+    props[kAutoReset] = mOptions.autoReset;
+    props[kPrecisionMode] = mOptions.precision == Precision::Single ? "Single" : "SingleCompensated";
+    props[kMaxFrameCount] = mOptions.maxFrameCount;
     return props;
 }
 
@@ -172,12 +187,12 @@ void TransientHistogramAccumulatePass::prepareState(const ref<Texture>& pInput)
         mpCompensation = nullptr;
         mFrameCount = 0;
     }
-    if (mPrecision == Precision::SingleCompensated && !matches(mpCompensation))
+    if (mOptions.precision == Precision::SingleCompensated && !matches(mpCompensation))
     {
         mpCompensation = create();
         mFrameCount = 0;
     }
-    if (mPrecision == Precision::Single)
+    if (mOptions.precision == Precision::Single)
         mpCompensation = nullptr;
 }
 
@@ -187,7 +202,7 @@ void TransientHistogramAccumulatePass::execute(RenderContext* pRenderContext, co
     const ref<Texture> pOutput = renderData.getTexture(kOutput);
     auto& dict = renderData.getDictionary();
 
-    if (!mEnabled)
+    if (!mOptions.enabled)
     {
         pRenderContext->copyResource(pOutput.get(), pInput.get());
         mFrameCount = 0;
@@ -196,12 +211,12 @@ void TransientHistogramAccumulatePass::execute(RenderContext* pRenderContext, co
         return;
     }
 
-    if (mAutoReset && needsAutoReset(renderData))
+    if (mOptions.autoReset && needsAutoReset(renderData))
         reset();
     prepareState(pInput);
 
     // Past the frame limit, keep showing the last average.
-    if (mMaxFrameCount > 0 && mFrameCount >= mMaxFrameCount)
+    if (mOptions.maxFrameCount > 0 && mFrameCount >= mOptions.maxFrameCount)
     {
         pRenderContext->copyResource(pOutput.get(), mpMean.get());
         dict[TransientHistogramConfig::kSummedFramesKey] = 1u; // the output is a mean
@@ -212,7 +227,7 @@ void TransientHistogramAccumulatePass::execute(RenderContext* pRenderContext, co
 
     DefineList defines;
     defines.add("SINGLE_CHANNEL", getFormatChannelCount(pInput->getFormat()) == 1 ? "1" : "0");
-    defines.add("COMPENSATED", mPrecision == Precision::SingleCompensated ? "1" : "0");
+    defines.add("COMPENSATED", mOptions.precision == Precision::SingleCompensated ? "1" : "0");
     if (!mpPass)
         mpPass = ComputePass::create(mpDevice, kShaderFile, "main", defines);
     if (mpPass->getProgram()->addDefines(defines))
@@ -235,11 +250,11 @@ void TransientHistogramAccumulatePass::execute(RenderContext* pRenderContext, co
 
 void TransientHistogramAccumulatePass::renderUI(Gui::Widgets& widget)
 {
-    if (widget.checkbox("Enabled", mEnabled))
+    if (widget.checkbox("Enabled", mOptions.enabled))
         reset();
     widget.tooltip("Average the histogram over frames. Off: the output is this frame's histogram.", true);
 
-    widget.checkbox("Auto reset", mAutoReset);
+    widget.checkbox("Auto reset", mOptions.autoReset);
     widget.tooltip("Restart the average when the camera moves, the scene changes or an upstream pass changes its "
                    "options.", true);
 
@@ -247,16 +262,16 @@ void TransientHistogramAccumulatePass::renderUI(Gui::Widgets& widget)
         {(uint32_t)Precision::Single, "Single"},
         {(uint32_t)Precision::SingleCompensated, "Single (compensated)"},
     };
-    uint32_t precision = (uint32_t)mPrecision;
+    uint32_t precision = (uint32_t)mOptions.precision;
     if (widget.dropdown("Precision", kPrecisionList, precision))
     {
-        mPrecision = (Precision)precision;
+        mOptions.precision = (Precision)precision;
         reset();
     }
     widget.tooltip("Single: running mean in float. Compensated: adds Kahan summation for long runs, at the cost of "
                    "one more histogram-sized buffer.", true);
 
-    widget.var("Max frames", mMaxFrameCount, 0u, 1u << 30);
+    widget.var("Max frames", mOptions.maxFrameCount, 0u, 1u << 30);
     widget.tooltip("Stop averaging after this many frames and keep the result. 0 = no limit.", true);
 
     if (widget.button("Reset"))

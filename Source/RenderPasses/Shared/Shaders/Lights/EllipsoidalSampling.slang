@@ -8,14 +8,14 @@
 //
 // Both take the camera path length ending at x (prefixLength) and the full-path gate
 // center; the ellipse length is centered at gateCenter - prefixLength - light.laserT.
+// y lies on a triangle of gSceneTriangles, picked by EllipsoidTriangleSampler (the host binds both).
 #include "Utils/Math/MathConstants.slangh"
 import Utils.Math.MathHelpers;
 import Utils.Sampling.SampleGenerator;
 import RenderPasses.Shared.Shaders.Utils.TimeGate;
-import Utils.Geometry.Ellipsoid;
-import Utils.Geometry.EllipsoidIntersection;
-import Rendering.Lights.EmissiveLightSampler;
-import Rendering.Lights.EmissiveLightSamplerHelpers;
+import RenderPasses.Shared.Shaders.Geometry.Ellipsoid;
+import RenderPasses.Shared.Shaders.Geometry.EllipsoidIntersection;
+import RenderPasses.Shared.Shaders.Lights.EllipsoidTriangleSampler;
 import Scene.RaytracingInline;
 import RenderPasses.Shared.Shaders.Utils.LoadShadingData;
 import RenderPasses.Shared.Shaders.Lights.LaserLightSampler;
@@ -42,6 +42,11 @@ struct ScatterRecord
     float bsdfPdf;           // Solid-angle density of the BSDF sample x -> y.
     bool isDelta;            // The BSDF sample was a delta lobe.
 };
+
+// Ellipsoid samples whose solid-angle density at x is at most this are left to the BSDF technique: sampleEllipsoid()
+// rejects them and evalEllipsoidPdf() reports zero for them, so the two techniques still split every path between
+// them (no bias), while the near-degenerate configurations where f / pdf explodes never come from the ellipsoid.
+static const float kMinEllipsePdf = 1e-7f;
 
 float finitePositivePdf(float pdf)
 {
@@ -80,13 +85,6 @@ float areaPdfToSolidAngle(float areaPdf, float3 from, float3 to, float3 normalAt
     return finitePositivePdf(areaPdf / areaJacobian);
 }
 
-uint getCollectionTriangleIndex(HitInfo hit)
-{
-    if (hit.getType() != HitType::Triangle) return LightCollection::kInvalidIndex;
-    TriangleHit triangleHit = hit.getTriangleHit();
-    return gScene.triCollection.getTriangleIndex(triangleHit.instanceID, triangleHit.primitiveIndex);
-}
-
 bool supportsEllipsoidTriangle(Ellipsoid ellipse, EmissiveTriangle triangle)
 {
     // Share the focus-on-plane rejection between sampling and PDF reconstruction.
@@ -99,9 +97,9 @@ bool supportsEllipsoidTriangle(Ellipsoid ellipse, EmissiveTriangle triangle)
 
 // Sample the x -> y segment. The closest hit must be the sampled triangle; any
 // intervening surface (or a miss) rejects the sample. y -> light is not traced.
-// Consumes the length, triangle, and two point dimensions of rng, in that order.
+// Consumes rng for the length, the triangle (one number per BVH level) and the point, in that order.
 bool sampleEllipsoid(ShadingData x, float prefixLength, LightSample light, float gateCenter,
-    EmissiveLightSampler sampler, inout SampleGenerator rng, out EllipsoidalSample sample)
+    inout SampleGenerator rng, out EllipsoidalSample sample)
 {
     sample = {};
     float sampledLength, lengthPdf;
@@ -112,9 +110,9 @@ bool sampleEllipsoid(ShadingData x, float prefixLength, LightSample light, float
         x.getOrientedFaceNormal(), light.getOrientedFaceNormal(), ellipse)) return false;
     uint triangleIndex;
     float trianglePdf;
-    if (!sampler.sampleTriangleEllipsoid(ellipse, rng, triangleIndex, trianglePdf)) return false;
-    if (triangleIndex >= gScene.triCollection.getTriangleCount()) return false;
-    EmissiveTriangle triangle = gScene.triCollection.getTriangle(triangleIndex);
+    if (!sampleEllipsoidTriangle(ellipse, rng, triangleIndex, trianglePdf)) return false;
+    if (triangleIndex >= gSceneTriangles.getTriangleCount()) return false;
+    EmissiveTriangle triangle = gSceneTriangles.getTriangle(triangleIndex);
     if (!supportsEllipsoidTriangle(ellipse, triangle)) return false;
     SampleResultArea ellipseSample = sampleOnTriangleEllipsoid(ellipse,
         triangle.posW[0], triangle.posW[1], triangle.posW[2], sampleNext1D(rng), sampleNext1D(rng));
@@ -131,40 +129,36 @@ bool sampleEllipsoid(ShadingData x, float prefixLength, LightSample light, float
     SceneRayQuery<USE_ALPHA_TEST> query;
     float hitDistance;
     sample.hit = query.traceRay(Ray(rayOrigin, normalize(visibilitySegment), 0.f, FLT_MAX), hitDistance);
-    if (getCollectionTriangleIndex(sample.hit) != triangleIndex) return false;
+    if (getSceneTriangleIndex(sample.hit) != triangleIndex) return false;
     sample.surface = loadShadingData(sample.hit, rayOrigin, sample.direction);
     sample.distance = length(sample.surface.posW - x.posW);
     sample.pdf = areaPdfToSolidAngle(areaPdf, x.posW, sample.surface.posW,
         sample.surface.getOrientedFaceNormal());
-    return sample.pdf > 0.f;
+    return sample.pdf > kMinEllipsePdf;
 }
 
 // Solid-angle density with which sampleEllipsoid() at x would have produced y.
-float evalEllipsoidPdf(ScatterRecord x, ShadingData y, HitInfo yHit, LightSample light,
-    float gateCenter, EmissiveLightSampler sampler)
+float evalEllipsoidPdf(ScatterRecord x, ShadingData y, HitInfo yHit, LightSample light, float gateCenter)
 {
     float connectionLength = length(y.posW - x.posW) + length(y.posW - light.posW());
     Ellipsoid ellipse;
     if (!buildEllipsoidFromFoci(x.posW, light.posW(), connectionLength,
         x.normalW, light.getOrientedFaceNormal(), ellipse)) return 0.f;
 
-    uint triangleIndex = getCollectionTriangleIndex(yHit);
-    if (triangleIndex >= gScene.triCollection.getTriangleCount()) return 0.f;
-    EmissiveTriangle triangle = gScene.triCollection.getTriangle(triangleIndex);
+    uint triangleIndex = getSceneTriangleIndex(yHit);
+    if (triangleIndex >= gSceneTriangles.getTriangleCount()) return 0.f;
+    EmissiveTriangle triangle = gSceneTriangles.getTriangle(triangleIndex);
     if (!supportsEllipsoidTriangle(ellipse, triangle)) return 0.f;
 
-    TriangleLightHit triangleHit;
-    triangleHit.triangleIndex = triangleIndex;
-    triangleHit.posW = y.posW;
-    triangleHit.normalW = y.getOrientedFaceNormal();
-    float trianglePdf = sampler.evalPdfEllipsoid(ellipse, triangleHit);
+    float trianglePdf = evalEllipsoidTrianglePdf(ellipse, triangleIndex);
     if (!(trianglePdf > 0.f)) return 0.f;
     float lengthPdf = evalPdfPathLength(ellipse.t, gateCenter - (x.pathLength + light.laserT));
     if (!(lengthPdf > 0.f)) return 0.f;
     float areaFactor = evalTriangleEllipsoidPdf(
         ellipse, triangle.posW[0], triangle.posW[1], triangle.posW[2], y.posW);
     float ellipseAreaPdf = finitePositivePdf(lengthPdf * trianglePdf * areaFactor);
-    return areaPdfToSolidAngle(ellipseAreaPdf, ellipse.p1, y.posW, y.getOrientedFaceNormal());
+    float pdf = areaPdfToSolidAngle(ellipseAreaPdf, ellipse.p1, y.posW, y.getOrientedFaceNormal());
+    return pdf > kMinEllipsePdf ? pdf : 0.f; // Mirrors sampleEllipsoid()'s cutoff.
 }
 
 // Weight of a BSDF-technique path x -> y -> light, evaluated at y.
@@ -172,11 +166,11 @@ float evalEllipsoidPdf(ScatterRecord x, ShadingData y, HitInfo yHit, LightSample
 // ellipsoidal technique owns every path it can generate, so the BSDF technique
 // keeps only paths outside ellipse support (e.g. excluded large triangles).
 float evalBsdfTechniqueWeight(ScatterRecord x, ShadingData y, HitInfo yHit, LightSample light,
-    float gateCenter, EmissiveLightSampler sampler, bool useMIS)
+    float gateCenter, bool useMIS)
 {
     // Delta arrivals cannot be generated by continuous ellipsoid sampling.
     if (!light.valid || x.isDelta || !x.ellipsoidEligible) return 1.f;
-    float ellipsePdf = evalEllipsoidPdf(x, y, yHit, light, gateCenter, sampler);
+    float ellipsePdf = evalEllipsoidPdf(x, y, yHit, light, gateCenter);
     if (useMIS) return balanceWeight(x.bsdfPdf, ellipsePdf);
     return ellipsePdf > 0.f ? 0.f : 1.f;
 }

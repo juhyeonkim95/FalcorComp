@@ -49,6 +49,7 @@ public:
     InlinePathTracer(ref<Device> pDevice, const Properties& props);
 
     Properties getProperties() const override;
+    void setProperties(const Properties& props) override;
     RenderPassReflection reflect(const CompileData& compileData) override;
     void execute(RenderContext* pRenderContext, const RenderData& renderData) override;
     void renderUI(Gui::Widgets& widget) override;
@@ -72,8 +73,10 @@ private:
     Options mOptions;
     uint mFrameCount = 0;
     bool mOptionsChanged = false;
+    std::string mUIWarning; ///< Why the last UI edit was rejected.
 
     ref<Scene> mpScene;
+    LaserInput mLaserInput; ///< The laser of this frame, from the LaserLight pass.
     ref<SampleGenerator> mpSampleGenerator;
     ref<ComputePass> mpComputePass;
 };

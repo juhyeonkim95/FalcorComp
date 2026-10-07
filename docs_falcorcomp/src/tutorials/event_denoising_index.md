@@ -12,7 +12,8 @@ EGSR 2026).
 | **EventSVGF**: denoise the correlated difference | `PathTracer` × 2, `EventSVGF` |
 
 The tutorials use the scene and the packages of [Event camera rendering](event_index.md). `OptixDenoiser` needs a
-build with OptiX (CUDA).
+build from source with OptiX (CUDA): the `falcorcomp` package leaves it out for license reasons, and the tutorial
+skips it.
 
 ## Tutorials
 
