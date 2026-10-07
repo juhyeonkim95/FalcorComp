@@ -213,8 +213,7 @@ camera is usually modeled with a point light at the camera: `isLightSourceLaser 
   - Primary ray directions, from `VBufferRT`.
 * - `color` (output)
   - CW-ToF measurement $I$, RGBA32Float. With the signed weight it can be negative. Pixels with no
-    primary hit are black, or show the unmodulated environment map when the scene uses it as
-    background.
+    primary hit are black: the environment map is not part of the measurement.
 ```
 
 ## Example

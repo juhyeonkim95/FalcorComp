@@ -34,10 +34,8 @@ RWTexture2D<float4> gOutputColor;
 static const uint kMaxBounces = MAX_BOUNCES;
 static const bool kComputeDirect = COMPUTE_DIRECT;
 static const bool kUseImportanceSampling = USE_IMPORTANCE_SAMPLING;
-static const bool kUseEnvBackground = USE_ENV_BACKGROUND;
 static const bool kUseAlphaTest = USE_ALPHA_TEST;
 
-static const float3 kDefaultBackgroundColor = float3(0, 0, 0);
 static const float kEpsilon = 1e-6f;
 
 
@@ -262,8 +260,8 @@ float3 tracePath(const uint2 pixel, const uint2 frameDim)
     }
     else
     {
-        // Background pixel.
-        outColor = kUseEnvBackground ? gScene.envMap.eval(primaryRayDir) : kDefaultBackgroundColor;
+        // A background pixel sees no laser light: the environment is not part of the measurement.
+        outColor = 0.f;
     }
 
     return outColor;

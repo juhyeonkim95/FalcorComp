@@ -76,7 +76,6 @@ RWTexture2D<float4> gDirectColor;
 
 
 static const bool kUseImportanceSampling = USE_IMPORTANCE_SAMPLING;
-static const bool kUseEnvBackground = USE_ENV_BACKGROUND;
 
 
 #if LIGHT_SAMPLING_METHOD != DIRECT_CONNECTION
@@ -219,7 +218,7 @@ float3 tracePath(uint2 pixel, uint2 frameDim)
         gDirectColor[pixel] = float4(0.f);
 #endif
         gCurrReservoirs[index] = reservoir;
-        return kUseEnvBackground ? gScene.envMap.eval(primaryDirection) : float3(0.f);
+        return float3(0.f); // No laser light: the environment is not part of the measurement.
     }
 
     float3 cameraPosition = gScene.camera.getPosition();

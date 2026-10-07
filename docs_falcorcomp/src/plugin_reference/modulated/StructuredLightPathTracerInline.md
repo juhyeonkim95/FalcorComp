@@ -251,7 +251,7 @@ or for neither; otherwise the primal sample is used alone, which keeps the estim
   - Primary ray directions, from `VBufferRT`.
 * - `color` (output)
   - Structured-light measurement $I$, RGBA32Float. With the signed pattern it can be negative.
-    Pixels without a primary hit show the environment map if the scene has one, black otherwise.
+    Pixels without a primary hit are black: the environment map is not part of the measurement.
 ```
 
 The output options `computeDirect` (default `true` here), `useSingleChannel`, `singleChannel` and

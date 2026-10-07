@@ -218,8 +218,8 @@ accumulation, so an accumulated image never mixes two laser positions.
 * - `viewW` (input, optional)
   - Primary ray directions, from `VBufferRT`. Needed for depth of field.
 * - `color` (output)
-  - Time-gated image $I(t)$, RGBA32Float. Pixels without a primary hit show the scene's
-    environment map background (also divided by $\Delta$) if it has one, otherwise black.
+  - Time-gated image $I(t)$, RGBA32Float. Pixels without a primary hit are black: the environment
+    map is not part of the measurement.
 ```
 
 ## Example
