@@ -38,7 +38,6 @@ namespace
 {
 const char kShaderFile[] = "RenderPasses/CWToFPathTracerInline/CWToFPathTracerInline.cs.slang";
 const char kUseAntitheticSampling[] = "useAntitheticSampling";
-const char kAntitheticRoundTripCheck[] = "antitheticRoundTripCheck";
 
 } // namespace
 
@@ -74,8 +73,6 @@ void CWToFPathTracerInline::parseProperties(const Properties& props)
             continue;
         if (key == kUseAntitheticSampling)
             mOptions.useAntitheticSampling = value;
-        else if (key == kAntitheticRoundTripCheck)
-            mOptions.antitheticRoundTripCheck = value;
         else
             logWarning("Unknown property '{}' in CWToFPathTracerInline properties.", key);
     }
@@ -88,7 +85,6 @@ Properties CWToFPathTracerInline::getProperties() const
     mOptions.pathTracing.serialize(props);
     mOptions.shiftMapping.serialize(props);
     props[kUseAntitheticSampling] = mOptions.useAntitheticSampling;
-    props[kAntitheticRoundTripCheck] = mOptions.antitheticRoundTripCheck;
     return props;
 }
 
@@ -116,7 +112,6 @@ DefineList CWToFPathTracerInline::getShaderDefines(const RenderData& renderData)
     defines.add(InlinePass::getSceneLightDefines(*mpScene));
     defines.add(mOptions.shiftMapping.getDefines());
     defines.add("USE_ANTITHETIC_SAMPLING", mOptions.useAntitheticSampling ? "1" : "0");
-    defines.add("ANTITHETIC_ROUND_TRIP_CHECK", mOptions.antitheticRoundTripCheck ? "1" : "0");
 
     // For optional I/O resources, set 'is_valid_<name>' defines to inform the program of which ones it can access.
     defines.add(getValidResourceDefines(InlinePass::kPrimaryHitInputChannels, renderData));
@@ -186,9 +181,6 @@ void CWToFPathTracerInline::renderUI(Gui::Widgets& widget)
     {
         if (auto group = widget.group("Antithetic shift mapping", true))
         {
-            dirty |= group.checkbox("Round-trip check", options.antitheticRoundTripCheck);
-            group.tooltip("Keep a shift only if shifting the antithetic vertex back returns to the start, so the forward and "
-                          "backward shifts are exact inverses. Costs a second Newton solve.", true);
             dirty |= options.shiftMapping.renderUI(group,
                 "How the antithetic vertex is found: it is moved on its surface so the path length changes by the "
                 "antithetic offset.\nRadial (the default): along the ray from the path length's minimum on the "

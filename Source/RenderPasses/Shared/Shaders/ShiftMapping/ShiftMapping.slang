@@ -190,6 +190,37 @@ HitInfo pathLengthAwareShiftMapping(ShadingData x1, HitInfo x2, VertexData v2, S
         sg);
 }
 
+/// Whether a reverse shift returned to the start point: within 10 % of the shift distance plus 1e-4 of the coordinates.
+/// The other roots of a length condition lie about a shift distance away, while converged solves near the length's
+/// minimum (small gradients) return only to tens of um: a tight threshold would split such pairs at random between
+/// the two pixels of a pair, which biases reuse.
+bool shiftReturned(float3 returned, float3 start, float3 shifted)
+{
+    float scale = max(1.f, max(abs(start.x), max(abs(start.y), abs(start.z))));
+    return length(returned - start) <= 0.1f * length(shifted - start) + 1e-4f * scale;
+}
+
+/// Whether the reverse of a shift maps x' back to x: the shift moved x on the source path sourcePrev -> x -> sourceNext
+/// to x' (hit shiftedHit, vertex data shifted) on the target path targetPrev -> x' -> targetNext under `condition`. The
+/// reverse swaps the paths and inverts the condition. Keeping only shifts that return makes the accepted shifts
+/// one-to-one, as the reuse weights assume, wherever the solver could reach another root. It costs a second shift.
+bool shiftRoundTrips(float3 sourcePrev, VertexData x, ShadingData sourceNext, float3 targetPrev, HitInfo shiftedHit,
+    VertexData shifted, ShadingData targetNext, ShiftLengthCondition condition, inout SampleGenerator sg)
+{
+    ShadingData reverseTargetPrev = {};
+    reverseTargetPrev.posW = sourcePrev;
+    ShiftSource reverseSource = makeShiftSource(targetPrev, targetNext, reverseTargetPrev, sourceNext);
+    ShiftLengthCondition reverse = { 1.f / condition.K, condition.targetGate, condition.sourceGate,
+        condition.targetRest, condition.sourceRest };
+    float reverseJacobian = 0.f;
+    VertexData returned;
+    ShiftMappingDebugInfo debugInfo = {};
+    pathLengthAwareShiftMapping(reverseTargetPrev, shiftedHit, shifted, sourceNext, reverseSource, reverse,
+        reverseJacobian, returned, debugInfo, sg);
+    if (!(reverseJacobian > 0.f) || !isfinite(reverseJacobian)) return false;
+    return shiftReturned(returned.posW, x.posW, shifted.posW);
+}
+
 float3 shiftRayOrigin(ShadingData endpoint, bool isSurface, float3 destination)
 {
     if (!isSurface) return endpoint.posW;

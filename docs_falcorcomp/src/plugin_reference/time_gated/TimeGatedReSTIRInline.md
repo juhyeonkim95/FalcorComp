@@ -183,6 +183,12 @@ Shift mapping:
     chart coordinates. Large moves can make the reverse shift converge to a different vertex, which biases reuse.
     Small caps (`0.01` for `ray_trace`, `0.02`-`0.05` for `ray_trace_chart`) remove that bias but reject many shifts,
     which raises the variance. `0` disables. (Default: `0`)
+* - `shiftRoundTripCheck`
+  - boolean
+  - Keep a shift only if the reverse shift maps it back to its start, at the cost of a second shift. Without it,
+    `radial` and the plane charts (`local_tangent`, `barycentric`) with the `constant` gauge are already one-to-one;
+    with `avg_grad` or a ray chart, a rare shift can still reach another solution, a small bias that the check
+    removes. See [Shift mapping](#restir-shift-mapping). (Default: `false`)
 ```
 
 Other:
@@ -262,7 +268,7 @@ the move keeps the orientation, and with a ray chart the vertex stays on its obj
 the same tests, so they accept the same shifts. This makes `radial` and the plane charts with the `constant` gauge
 one-to-one. With `avg_grad`, whose equations always have a second solution (on the far side of the target length's
 level curve), or a ray chart on a curved surface, where the path length along the chart can have several minima, a
-rare shift still reaches another solution, which leaves a small bias.
+rare shift still reaches another solution; `shiftRoundTripCheck` removes the small bias this leaves.
 
 `local_tangent` with the `constant` gauge is a good starting point; the tutorials use `avg_grad`.
 

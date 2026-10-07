@@ -130,11 +130,12 @@ Antithetic shift mapping (used with `useAntitheticSampling`):
     shifts with the ray chart) only: rejects shifts that move the vertex farther than this in chart
     coordinates, where the reverse shift may not return to the original vertex. `0` disables.
     (Default: `0`)
-* - `antitheticRoundTripCheck`
+* - `shiftRoundTripCheck`
   - boolean
-  - Keep an antithetic vertex only if shifting it back returns to the starting vertex (within 1% of the shift
-    distance). This makes the Newton-based methods unbiased, at the cost of a second shift;
-    `radial` does not need it. (Default: `false`)
+  - Keep an antithetic vertex only if shifting it back returns to the starting vertex, at the cost
+    of a second shift. `radial` and the plane charts with the `constant` gauge do not need it; with
+    `avg_grad` or a ray chart it removes the small bias of a shift that reaches another solution.
+    (Default: `false`)
 ```
 
 Output:
@@ -187,7 +188,7 @@ it: it moves the vertex along the ray from $m$, the point of the vertex's plane 
 path length (found in closed form with the mirror construction), and the path length increases along
 every such ray, so each target length has one solution on the ray, and the backward shift lands back
 on the start. The Newton-based methods follow the average gradient, which can pick a different
-solution near $m$ and leave a small bias; `antitheticRoundTripCheck` removes it. `radial` works on
+solution near $m$ and leave a small bias; `shiftRoundTripCheck` removes it. `radial` works on
 planar faces: on finely tessellated curved surfaces, fewer vertices find an antithetic vertex on their
 own plane, which reduces the variance reduction but not the correctness.
 

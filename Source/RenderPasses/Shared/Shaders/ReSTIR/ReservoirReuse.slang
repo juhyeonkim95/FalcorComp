@@ -159,6 +159,16 @@ bool shiftToPrefix(Reservoir source, VertexData x, ReconnectionSuffix suffix, Sh
     VertexData shiftedData;
     shifted.hit = pathLengthAwareShiftMapping(a, source.rcVertexHit, x, suffix.vertex, shiftSource, condition,
         jacobian, shiftedData, debugInfo, sg);
+#if SHIFT_ROUND_TRIP_CHECK
+    // Keep the shift only if the reverse shift maps x' back to x. Both pixels of a pair then agree on the shifts they
+    // accept (the canonical side solves the same two shifts), wherever the solver could reach another root.
+    if (jacobian > 0.f && !kShiftMappingIsIdentity)
+    {
+        if (!shiftRoundTrips(source.rcPrevVertexPosition, x, sourceNext, a.posW, shifted.hit, shiftedData, suffix.vertex,
+                condition, sg))
+            jacobian = 0.f;
+    }
+#endif
     shifted.prefixEnd = a.posW;
     shifted.mappingJacobian = jacobian;
     // A length-aware shift scales the path length's distance from the gate by K (shrink mapping; K = 1 otherwise),

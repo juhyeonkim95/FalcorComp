@@ -144,6 +144,11 @@ Shift mapping, as for [time-gated ReSTIR](#restir-shift-mapping):
   - `ray_trace`, `ray_trace_chart`, and `area_adaptive` on faces it shifts with the ray chart, only:
     rejects shifts that move the vertex farther than this in chart coordinates, where the reverse
     shift may not return to the original vertex. `0` disables. (Default: `0`)
+* - `shiftRoundTripCheck`
+  - boolean
+  - Keep a shift only if the reverse shift maps it back to its start, at the cost of a second
+    shift. `radial` and the plane charts with the `constant` gauge are one-to-one without it; see
+    the [TG ReSTIR shift mapping](#restir-shift-mapping). (Default: `false`)
 ```
 
 Performance. These options change how the work is split on the GPU, not the result:

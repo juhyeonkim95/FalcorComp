@@ -52,6 +52,9 @@ struct ShiftMappingConfig
     /// Ray charts only: rejects shifts that move the vertex farther than this in chart coordinates (0 disables).
     /// The gauge system can have several roots for large moves, so the reverse solve may not return; see ShiftMapping.slang.
     float rayChartMaxDisplacement = 0.f;
+    /// Keep a shift only if the reverse shift maps it back to its start (a second shift each): the accepted shifts are
+    /// then one-to-one wherever the solver could reach another root.
+    bool roundTripCheck = false;
 
     void validate() const
     {
@@ -79,6 +82,8 @@ struct ShiftMappingConfig
             newtonRelativeTolerance = value;
         else if (key == "rayChartMaxDisplacement")
             rayChartMaxDisplacement = value;
+        else if (key == "shiftRoundTripCheck")
+            roundTripCheck = value;
         else
             return false;
         return true;
@@ -92,14 +97,16 @@ struct ShiftMappingConfig
         props["NewtonMaxIteration"] = newtonMaxIteration;
         props["NewtonRelativeTolerance"] = newtonRelativeTolerance;
         props["rayChartMaxDisplacement"] = rayChartMaxDisplacement;
+        props["shiftRoundTripCheck"] = roundTripCheck;
     }
 
-    /// SHIFT_MAPPING_METHOD and SHIFT_MAPPING_GAUGE_MODE.
+    /// SHIFT_MAPPING_METHOD, SHIFT_MAPPING_GAUGE_MODE and SHIFT_ROUND_TRIP_CHECK.
     DefineList getDefines() const
     {
         DefineList defines;
         defines.add("SHIFT_MAPPING_METHOD", std::to_string((uint32_t)shiftMappingMethod));
         defines.add("SHIFT_MAPPING_GAUGE_MODE", std::to_string((uint32_t)gaugeMode));
+        defines.add("SHIFT_ROUND_TRIP_CHECK", roundTripCheck ? "1" : "0");
         return defines;
     }
 
@@ -133,6 +140,13 @@ struct ShiftMappingConfig
             dirty = true;
         }
         widget.tooltip(methodTooltip, true);
+
+        if (shiftMappingMethod != ShiftMappingMethod::Identity)
+        {
+            dirty |= widget.checkbox("Round-trip check", roundTripCheck);
+            widget.tooltip("Keep a shift only if shifting back returns to its start, so that the shifts used are "
+                           "one-to-one even where the solve could reach another solution. Costs a second shift.", true);
+        }
 
         dirty |= extraUI(widget);
 

@@ -74,7 +74,6 @@ private:
         PathTracingConfig pathTracing;
         ShiftMappingConfig shiftMapping;
         bool useAntitheticSampling = true;
-        bool antitheticRoundTripCheck = false; ///< Keep a shift only if shifting back returns to the start.
     };
 
     static void validateOptions(const Options& options);
