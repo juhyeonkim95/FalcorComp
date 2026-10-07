@@ -138,6 +138,7 @@ RenderPassReflection LaserPositionViewer::reflect(const CompileData& compileData
 
 void LaserPositionViewer::execute(RenderContext* pRenderContext, const RenderData& renderData)
 {
+    mLaserInput.update(renderData, "LaserPositionViewer");
     if (!mpScene)
     {
         InlinePass::clearChannels(pRenderContext, renderData, kOutputChannels);
@@ -157,7 +158,7 @@ void LaserPositionViewer::execute(RenderContext* pRenderContext, const RenderDat
     var["CB"]["gFrameCount"] = mFrameCount;
     var["CB"]["gSpotScale"] = mOptions.spotScale;
     var["CB"]["gSpotColor"] = mOptions.spotColor;
-    const LaserState laser = LaserState::resolve(renderData);
+    const LaserState laser = mLaserInput.get();
     // A collocated laser starts at the camera, so its cone would cover the whole image.
     var["CB"]["gShowCone"] = uint(mOptions.showCone && !laser.collocated);
     var["CB"]["gConeColor"] = mOptions.coneColor;

@@ -84,6 +84,7 @@ private:
     Options mOptions;
     uint mFrameCount = 0;
     ref<Scene> mpScene;
+    LaserInput mLaserInput; ///< The laser of this frame, from the LaserLight pass.
     ref<SampleGenerator> mpSampleGenerator;
     ref<ComputePass> mpPass;
 };

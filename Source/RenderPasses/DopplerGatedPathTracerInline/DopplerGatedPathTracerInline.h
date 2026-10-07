@@ -103,6 +103,7 @@ private:
     std::string mUIWarning; ///< Why the last UI edit was rejected.
     bool mVelocitiesDirty = true;
     ref<Scene> mpScene;
+    LaserInput mLaserInput; ///< The laser of this frame, from the LaserLight pass.
     ref<SampleGenerator> mpSampleGenerator;
     ref<ComputePass> mpComputePass;
     ref<Buffer> mpInstanceVelocities;

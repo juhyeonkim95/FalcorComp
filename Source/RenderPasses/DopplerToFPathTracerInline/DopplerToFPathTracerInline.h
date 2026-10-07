@@ -103,6 +103,7 @@ private:
     std::string mUIWarning; ///< Why the last UI edit was rejected.
     bool mNodesDirty = true;
     ref<Scene> mpScene;
+    LaserInput mLaserInput; ///< The laser of this frame, from the LaserLight pass.
     ref<SampleGenerator> mpSampleGenerator;
     ref<ComputePass> mpComputePass;
     /// Moves the named objects to each sampled time and back to their base pose at the end of the frame (applied by

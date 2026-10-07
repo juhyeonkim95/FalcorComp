@@ -166,7 +166,7 @@ RenderPassReflection TransientHistogramPathTracerInline::reflect(const CompileDa
 DefineList TransientHistogramPathTracerInline::getShaderDefines(const RenderData& renderData) const
 {
     DefineList defines = mOptions.pathTracing.getDefines();
-    defines.add(LaserState::resolve(renderData).getDefines());
+    defines.add(mLaserInput.get().getDefines());
     defines.add("USE_KERNEL_DENSITY_ESTIMATION", mOptions.histogram.useKernelDensityEstimation ? "1" : "0");
 
     defines.add("LIGHT_SAMPLING_METHOD", std::to_string((uint32_t)mOptions.samplingMethod));
@@ -197,7 +197,7 @@ void TransientHistogramPathTracerInline::bindShaderData(const ShaderVar& var, co
     var["CB"]["gFrameDim"] = uint2(pColor->getWidth(), pColor->getHeight());
     var["CB"]["gSamplesPerPixel"] = mOptions.pathTracing.samplesPerPixel;
     var["CB"]["gInitialWindowRatio"] = mOptions.histogram.initialWindowRatio;
-    LaserState::resolve(renderData).bindShaderData(var["Laser"]);
+    mLaserInput.get().bindShaderData(var["Laser"]);
     mOptions.histogram.bindShaderData(var);
     mTriangles.bindShaderData(var);
 
@@ -208,6 +208,7 @@ void TransientHistogramPathTracerInline::bindShaderData(const ShaderVar& var, co
 
 void TransientHistogramPathTracerInline::execute(RenderContext* pRenderContext, const RenderData& renderData)
 {
+    mLaserInput.update(renderData, "TransientHistogramPathTracerInline");
     if (mOptionsChanged)
     {
         InlinePass::flagOptionsChanged(renderData);

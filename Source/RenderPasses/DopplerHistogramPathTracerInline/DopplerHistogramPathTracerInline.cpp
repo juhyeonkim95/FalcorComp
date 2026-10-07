@@ -214,7 +214,7 @@ const ChannelList& DopplerHistogramPathTracerInline::spectrumChannels() const
 DefineList DopplerHistogramPathTracerInline::getShaderDefines(const RenderData& renderData) const
 {
     DefineList defines = mOptions.pathTracing.getDefines();
-    defines.add(LaserState::resolve(renderData).getDefines());
+    defines.add(mLaserInput.get().getDefines());
     defines.add(getValidResourceDefines(InlinePass::kPrimaryHitInputChannels, renderData));
     defines.add(getValidResourceDefines(InlinePass::kColorOutputChannels, renderData));
     defines.add(getValidResourceDefines(spectrumChannels(), renderData));
@@ -264,7 +264,7 @@ void DopplerHistogramPathTracerInline::bindShaderData(const ShaderVar& var, cons
     var["CB"]["gSensorVelocity"] = mOptions.sensorVelocity;
     var["CB"]["gLightVelocity"] = mOptions.lightVelocity;
     var["gInstanceVelocities"] = mpInstanceVelocities;
-    LaserState::resolve(renderData).bindShaderData(var["Laser"]);
+    mLaserInput.get().bindShaderData(var["Laser"]);
 
     InlinePass::bindChannels(var, renderData, InlinePass::kPrimaryHitInputChannels);
     InlinePass::bindChannels(var, renderData, InlinePass::kColorOutputChannels);
@@ -273,6 +273,7 @@ void DopplerHistogramPathTracerInline::bindShaderData(const ShaderVar& var, cons
 
 void DopplerHistogramPathTracerInline::execute(RenderContext* pRenderContext, const RenderData& renderData)
 {
+    mLaserInput.update(renderData, "DopplerHistogramPathTracerInline");
     if (mOptionsChanged)
     {
         InlinePass::flagOptionsChanged(renderData);

@@ -164,8 +164,8 @@ them no ellipsoidal connections are made and both ellipsoidal methods behave lik
 
 The laser is set on a separate `LaserLight` pass, which has no inputs or outputs: every frame it
 publishes the laser, which the ToF passes read. Connect it to them with an execution edge,
-`graph.add_edge("Laser", "Tracer")` (pass names only), so that it runs first; without it, the pass
-warns and uses a default laser.
+`graph.add_edge("Laser", "Tracer")` (pass names only), so that it runs first. A pass that finds no laser published
+in a frame (no `LaserLight`, one removed from the graph, or no execution edge) warns and uses the default laser.
 
 ```{list-table}
 :header-rows: 1
@@ -185,11 +185,13 @@ warns and uses a default laser.
   - Laser power, or point-light intensity, per color channel. (Default: `(1, 1, 1)`)
 * - `laserAngle`
   - float
-  - Half-angle of the beam's cone, in degrees; `0` for a collimated beam. (Default: `90`)
+  - Half-angle of the beam's cone, in degrees; `0` for a collimated beam. Not used by the point light.
+    (Default: `0`)
 * - `isLightSourceLaser`
   - boolean
   - On: the light is the spot the beam hits, and the beam length adds to the path length. Off:
-    a point light at the laser position. (Default: `true`)
+    a point light at the laser position, which lights the half-space in front of `laserDirection` (nothing
+    behind it). (Default: `true`)
 * - `laserCollocated`
   - boolean
   - Place the laser at the camera, aimed at its target, instead of at `laserPosition` and
@@ -199,8 +201,9 @@ warns and uses a default laser.
   - Added to the position after every frame. (Default: `(0, 0, 0)`)
 ```
 
-`update_laser_info(position, direction)` moves the laser from a script without restarting
-downstream accumulation, for example to move it every frame.
+`update_laser_info(position, direction)` moves the laser from a script, for example every frame. Any change of the
+light (this, `laserVelocity`, new properties, a collocated laser following the camera) restarts downstream
+accumulation, so an accumulated image never mixes two laser positions.
 
 ## Inputs and outputs
 

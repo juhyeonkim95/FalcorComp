@@ -86,6 +86,7 @@ private:
     std::string mUIWarning; ///< Why the last UI edit was rejected.
 
     ref<Scene> mpScene;
+    LaserInput mLaserInput; ///< The laser of this frame, from the LaserLight pass.
     ref<SampleGenerator> mpSampleGenerator;
     EllipsoidalTriangleSampler mTriangleSampler;
     ref<ComputePass> mpComputePass;

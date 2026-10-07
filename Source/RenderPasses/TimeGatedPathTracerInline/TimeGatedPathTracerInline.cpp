@@ -135,7 +135,7 @@ RenderPassReflection TimeGatedPathTracerInline::reflect(const CompileData& compi
 DefineList TimeGatedPathTracerInline::getShaderDefines(const RenderData& renderData) const
 {
     DefineList defines = mOptions.pathTracing.getDefines();
-    defines.add(LaserState::resolve(renderData).getDefines());
+    defines.add(mLaserInput.get().getDefines());
     defines.add(InlinePass::getSceneLightDefines(*mpScene));
 
     defines.add("LIGHT_SAMPLING_METHOD", std::to_string((uint32_t)mOptions.ellipsoidalSampling.samplingMethod));
@@ -158,7 +158,7 @@ void TimeGatedPathTracerInline::bindShaderData(const ShaderVar& var, const Rende
     var["CB"]["gFrameDim"] = renderData.getDefaultTextureDims();
     var["CB"]["gEllipsoidRoughnessThreshold"] = mOptions.ellipsoidalSampling.ellipsoidRoughnessThreshold;
     var["CB"]["gSamplesPerPixel"] = mOptions.pathTracing.samplesPerPixel;
-    LaserState::resolve(renderData).bindShaderData(var["Laser"]);
+    mLaserInput.get().bindShaderData(var["Laser"]);
     mOptions.timeGate.bindShaderData(var["TimeGate"], mGate);
 
     InlinePass::bindChannels(var, renderData, InlinePass::kPrimaryHitInputChannels);
@@ -167,6 +167,7 @@ void TimeGatedPathTracerInline::bindShaderData(const ShaderVar& var, const Rende
 
 void TimeGatedPathTracerInline::execute(RenderContext* pRenderContext, const RenderData& renderData)
 {
+    mLaserInput.update(renderData, "TimeGatedPathTracerInline");
     if (mOptionsChanged)
     {
         InlinePass::flagOptionsChanged(renderData);

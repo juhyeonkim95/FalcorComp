@@ -153,7 +153,7 @@ RenderPassReflection DopplerGatedPathTracerInline::reflect(const CompileData& co
 DefineList DopplerGatedPathTracerInline::getShaderDefines(const RenderData& renderData) const
 {
     DefineList defines = mOptions.pathTracing.getDefines();
-    defines.add(LaserState::resolve(renderData).getDefines());
+    defines.add(mLaserInput.get().getDefines());
     defines.add(getValidResourceDefines(InlinePass::kPrimaryHitInputChannels, renderData));
     defines.add(getValidResourceDefines(InlinePass::kColorOutputChannels, renderData));
     return defines;
@@ -212,7 +212,7 @@ void DopplerGatedPathTracerInline::bindShaderData(const ShaderVar& var, const Re
     var["CB"]["gSensorVelocity"] = mOptions.sensorVelocity;
     var["CB"]["gLightVelocity"] = mOptions.lightVelocity;
     var["gInstanceVelocities"] = mpInstanceVelocities;
-    LaserState::resolve(renderData).bindShaderData(var["Laser"]);
+    mLaserInput.get().bindShaderData(var["Laser"]);
     mOptions.gate.bindShaderData(var["TimeGate"], mGate);
 
     InlinePass::bindChannels(var, renderData, InlinePass::kPrimaryHitInputChannels);
@@ -221,6 +221,7 @@ void DopplerGatedPathTracerInline::bindShaderData(const ShaderVar& var, const Re
 
 void DopplerGatedPathTracerInline::execute(RenderContext* pRenderContext, const RenderData& renderData)
 {
+    mLaserInput.update(renderData, "DopplerGatedPathTracerInline");
     if (mOptionsChanged)
     {
         InlinePass::flagOptionsChanged(renderData);

@@ -190,7 +190,7 @@ RenderPassReflection TimeGatedReSTIRInline::reflect(const CompileData& compileDa
 DefineList TimeGatedReSTIRInline::getShaderDefines(const RenderData& renderData) const
 {
     DefineList defines = mOptions.pathTracing.getDefines();
-    defines.add(LaserState::resolve(renderData).getDefines());
+    defines.add(mLaserInput.get().getDefines());
     defines.add(InlinePass::getSceneLightDefines(*mpScene));
     defines.add(mOptions.restir.getDefines());
 
@@ -319,6 +319,7 @@ void TimeGatedReSTIRInline::addDirect(RenderContext* pRenderContext, const Rende
 
 void TimeGatedReSTIRInline::execute(RenderContext* pRenderContext, const RenderData& renderData)
 {
+    mLaserInput.update(renderData, "TimeGatedReSTIRInline");
     if (mOptionsChanged)
     {
         mReSTIR.temporalHistoryValid = false;
@@ -341,7 +342,7 @@ void TimeGatedReSTIRInline::execute(RenderContext* pRenderContext, const RenderD
     }
 
     // Dynamic mode supports moving cameras/lights, but not geometry or material changes.
-    mLaser = LaserState::resolve(renderData);
+    mLaser = mLaserInput.get();
     mReSTIR.invalidateHistory(*mpScene, mLaser != mPreviousLaser, mOptions.isSceneDynamic);
 
     mTriangleSampler.prepare(pRenderContext, mpScene, mOptions.ellipsoidalSampling);

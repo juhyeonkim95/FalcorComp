@@ -113,6 +113,7 @@ private:
     void onOptionsChanged(const Options& previous);
 
     ref<Scene> mpScene;
+    LaserInput mLaserInput; ///< The laser of this frame, from the LaserLight pass.
     ref<SampleGenerator> mpSampleGenerator;
 
     // Runtime state of the composed configs.

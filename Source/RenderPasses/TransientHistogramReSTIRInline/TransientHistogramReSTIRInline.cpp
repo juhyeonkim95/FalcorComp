@@ -175,7 +175,7 @@ RenderPassReflection TransientHistogramReSTIRInline::reflect(const CompileData& 
 DefineList TransientHistogramReSTIRInline::getShaderDefines(const RenderData& renderData) const
 {
     DefineList defines = mOptions.pathTracing.getDefines();
-    defines.add(LaserState::resolve(renderData).getDefines());
+    defines.add(mLaserInput.get().getDefines());
     defines.add(InlinePass::getSceneLightDefines(*mpScene));
     defines.add(mOptions.restir.getDefines());
     defines.add(PathLengthAwareReSTIRResources::getReservoirDefines(mOptions.pathTracing, false));
@@ -327,6 +327,7 @@ void TransientHistogramReSTIRInline::spatialReuse(RenderContext* pRenderContext,
 
 void TransientHistogramReSTIRInline::execute(RenderContext* pRenderContext, const RenderData& renderData)
 {
+    mLaserInput.update(renderData, "TransientHistogramReSTIRInline");
     if (mOptionsChanged)
     {
         mReSTIR.temporalHistoryValid = false;
@@ -349,7 +350,7 @@ void TransientHistogramReSTIRInline::execute(RenderContext* pRenderContext, cons
     }
 
     // Temporal reuse assumes static geometry and light; only the camera may move.
-    mLaser = LaserState::resolve(renderData);
+    mLaser = mLaserInput.get();
     mReSTIR.invalidateHistory(*mpScene, mLaser != mPreviousLaser, false);
 
     if (!mpComputePass)

@@ -27,7 +27,7 @@ public:
     void setScene(RenderContext* pRenderContext, const ref<Scene>& pScene) override { mpScene = pScene; }
 
     // Scripting functions
-    /// Moves the laser. Downstream accumulation is not restarted, so scripts can move the laser every frame.
+    /// Moves the laser. Downstream accumulation restarts, as for any change of the light.
     void updateLaserInfo(const float3& position, const float3& direction);
 
 private:
@@ -35,6 +35,7 @@ private:
 
     ref<Scene> mpScene;
     LaserState mLaser;              ///< Position and direction are replaced by the camera's when collocated.
+    LaserState mPublished;          ///< The laser published last frame, to restart accumulation when it changes.
     float3 mVelocity = float3(0.f); ///< Added to the position after every frame.
     bool mOptionsChanged = false;
 };

@@ -182,7 +182,7 @@ RenderPassReflection DopplerToFPathTracerInline::reflect(const CompileData& comp
 DefineList DopplerToFPathTracerInline::getShaderDefines(const RenderData& renderData) const
 {
     DefineList defines = mOptions.pathTracing.getDefines();
-    defines.add(LaserState::resolve(renderData).getDefines());
+    defines.add(mLaserInput.get().getDefines());
     return defines;
 }
 
@@ -217,6 +217,7 @@ float DopplerToFPathTracerInline::sampleTime(uint pair) const
 
 void DopplerToFPathTracerInline::execute(RenderContext* pRenderContext, const RenderData& renderData)
 {
+    mLaserInput.update(renderData, "DopplerToFPathTracerInline");
     if (mOptionsChanged)
     {
         InlinePass::flagOptionsChanged(renderData);
@@ -257,7 +258,7 @@ void DopplerToFPathTracerInline::execute(RenderContext* pRenderContext, const Re
 
     auto var = mpComputePass->getRootVar();
     const uint2 frameDim = uint2(pColor->getWidth(), pColor->getHeight());
-    LaserState::resolve(renderData).bindShaderData(var["Laser"]);
+    mLaserInput.get().bindShaderData(var["Laser"]);
     var["gOutputColor"] = pColor;
     var["CB"]["gFrameDim"] = frameDim;
     var["CB"]["gSamplesPerPixel"] = mOptions.pathTracing.samplesPerPixel;

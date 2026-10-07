@@ -93,6 +93,7 @@ private:
     bool mOptionsChanged = false;
     std::string mUIWarning; ///< Why the last UI edit was rejected.
     ref<Scene> mpScene;
+    LaserInput mLaserInput; ///< The laser of this frame, from the LaserLight pass.
     ref<SampleGenerator> mpSampleGenerator;
     ref<ComputePass> mpComputePass;
     SceneTriangles mTriangles; ///< tri_approx: every scene triangle.

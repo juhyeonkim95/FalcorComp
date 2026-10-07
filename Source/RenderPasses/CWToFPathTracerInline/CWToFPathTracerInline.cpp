@@ -113,7 +113,7 @@ RenderPassReflection CWToFPathTracerInline::reflect(const CompileData& compileDa
 DefineList CWToFPathTracerInline::getShaderDefines(const RenderData& renderData) const
 {
     DefineList defines = mOptions.pathTracing.getDefines();
-    defines.add(LaserState::resolve(renderData).getDefines());
+    defines.add(mLaserInput.get().getDefines());
     defines.add(InlinePass::getSceneLightDefines(*mpScene));
     defines.add(mOptions.shiftMapping.getDefines());
     defines.add("USE_ANTITHETIC_SAMPLING", mOptions.useAntitheticSampling ? "1" : "0");
@@ -130,7 +130,7 @@ void CWToFPathTracerInline::bindShaderData(const ShaderVar& var, const RenderDat
     var["CB"]["gFrameCount"] = mFrameCount;
     var["CB"]["gFrameDim"] = renderData.getDefaultTextureDims();
     var["CB"]["gSamplesPerPixel"] = mOptions.pathTracing.samplesPerPixel;
-    LaserState::resolve(renderData).bindShaderData(var["Laser"]);
+    mLaserInput.get().bindShaderData(var["Laser"]);
     mOptions.continuousWave.bindShaderData(var["ContinuousWave"]);
     mOptions.shiftMapping.bindShaderData(var["ShiftMappingCB"]);
 
@@ -140,6 +140,7 @@ void CWToFPathTracerInline::bindShaderData(const ShaderVar& var, const RenderDat
 
 void CWToFPathTracerInline::execute(RenderContext* pRenderContext, const RenderData& renderData)
 {
+    mLaserInput.update(renderData, "CWToFPathTracerInline");
     if (mOptionsChanged)
     {
         InlinePass::flagOptionsChanged(renderData);

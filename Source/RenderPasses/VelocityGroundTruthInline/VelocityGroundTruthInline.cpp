@@ -146,6 +146,7 @@ std::vector<std::tuple<uint32_t, std::string, std::string, bool>> VelocityGround
 
 void VelocityGroundTruthInline::execute(RenderContext* pRenderContext, const RenderData& renderData)
 {
+    mLaserInput.update(renderData, "VelocityGroundTruthInline");
     const ref<Texture> pVelocity = renderData.getTexture("velocity");
     if (!mpScene)
     {
@@ -159,7 +160,7 @@ void VelocityGroundTruthInline::execute(RenderContext* pRenderContext, const Ren
             mMover.prepare(mpScene, mOptions.velocities, kPassName);
         mVelocitiesDirty = false;
     }
-    DefineList defines = LaserState::resolve(renderData).getDefines();
+    DefineList defines = mLaserInput.get().getDefines();
     if (!mpComputePass)
         mpComputePass = InlinePass::createScenePass(mpDevice, pRenderContext, mpScene, mpSampleGenerator, kShaderFile, defines);
     InlinePass::updateScenePassDefines(pRenderContext, mpComputePass, mpScene, mpSampleGenerator, defines);
@@ -170,7 +171,7 @@ void VelocityGroundTruthInline::execute(RenderContext* pRenderContext, const Ren
             ResourceBindFlags::UnorderedAccess | ResourceBindFlags::ShaderResource);
 
     auto var = mpComputePass->getRootVar();
-    LaserState::resolve(renderData).bindShaderData(var["Laser"]);
+    mLaserInput.get().bindShaderData(var["Laser"]);
     var["gVelocity"] = pVelocity;
     var["gFirstLength"] = mpFirstLength;
     var["gInstanceVelocities"] = mpInstanceVelocities;

@@ -93,7 +93,7 @@ RenderPassReflection InlinePathTracer::reflect(const CompileData& compileData)
 DefineList InlinePathTracer::getShaderDefines(const RenderData& renderData) const
 {
     DefineList defines = mOptions.pathTracing.getDefines();
-    defines.add(LaserState::resolve(renderData).getDefines());
+    defines.add(mLaserInput.get().getDefines());
     defines.add(InlinePass::getSceneLightDefines(*mpScene));
 
     // For optional I/O resources, set 'is_valid_<name>' defines to inform the program of which ones it can access.
@@ -107,7 +107,7 @@ void InlinePathTracer::bindShaderData(const ShaderVar& var, const RenderData& re
     var["CB"]["gFrameCount"] = mFrameCount;
     var["CB"]["gFrameDim"] = renderData.getDefaultTextureDims();
     var["CB"]["gSamplesPerPixel"] = mOptions.pathTracing.samplesPerPixel;
-    LaserState::resolve(renderData).bindShaderData(var["Laser"]);
+    mLaserInput.get().bindShaderData(var["Laser"]);
 
     InlinePass::bindChannels(var, renderData, InlinePass::kPrimaryHitInputChannels);
     InlinePass::bindChannels(var, renderData, InlinePass::kColorOutputChannels);
@@ -115,6 +115,7 @@ void InlinePathTracer::bindShaderData(const ShaderVar& var, const RenderData& re
 
 void InlinePathTracer::execute(RenderContext* pRenderContext, const RenderData& renderData)
 {
+    mLaserInput.update(renderData, "InlinePathTracer");
     if (mOptionsChanged)
     {
         InlinePass::flagOptionsChanged(renderData);
