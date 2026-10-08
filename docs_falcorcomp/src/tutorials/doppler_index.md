@@ -22,6 +22,10 @@ For an introduction to the two sensing principles side by side, see the
 [Doppler rendering tutorial](https://juhyeonkim95.github.io/project-pages/doppler_tutorial/), which compares OHD and
 Doppler ToF.
 
+Without a local oscillator, the same Doppler spectrum gives the intensity fluctuations of homodyne detection, and
+with them the speckle contrast of laser speckle contrast imaging: see
+[Doppler rendering with homodyne detection](doppler_homodyne_index.md).
+
 - **Scenes:** the OHD tutorials use the Cornell box of the other tutorials,
   {download}`scene-v4-nolight.pbrt <scenes/cornell-box/scene-v4-nolight.pbrt>`, saved as
   `cornell-box/scene-v4-nolight.pbrt`. The D-ToF tutorial uses the same box with movable boxes,
