@@ -2,7 +2,7 @@
 
 FalcorComp is a GPU renderer for computational imaging, built on NVIDIA's [Falcor](https://github.com/NVIDIAGameWorks/Falcor) rendering framework. It adds render passes that simulate imaging systems beyond conventional cameras — time-of-flight, modulated light, Doppler sensing and event cameras — and it is installed and used as the Python package `falcorcomp`. All renderers run on the GPU with hardware ray tracing, for interactive as well as offline simulation.
 
-The package is a binary wheel for Linux. It contains Falcor, the render passes and their shaders, so no separate Falcor build is needed.
+The package is a binary wheel for Linux and Windows. It contains Falcor, the render passes and their shaders, so no separate Falcor build is needed.
 
 ![The Cornell box rendered as a standard image, a time-gated image, a transient histogram, CW-ToF and structured-light measurements, a Doppler spectrum, a Doppler-gated image, a Doppler ToF velocity map and camera events](https://raw.githubusercontent.com/juhyeonkim95/FalcorComp/master/docs_falcorcomp/src/getting_started/images/overview_outputs.jpg)
 
@@ -44,9 +44,9 @@ The BibTeX entries are in the [README on GitHub](https://github.com/juhyeonkim95
 
 ## Requirements
 
-- **Operating system:** Linux x86_64 with glibc 2.35 or newer (for example, Ubuntu 22.04 or later). Windows and macOS are not supported.
-- **GPU:** an NVIDIA GPU with hardware ray tracing (RTX), and a recent NVIDIA driver with Vulkan support.
-- **Python:** 3.9 to 3.13, including its shared library (for example, `libpython3.10.so.1.0` for Python 3.10). Conda environments and most system Pythons include it; on Debian or Ubuntu, install it with `sudo apt install libpython3.X` for your version `3.X`.
+- **Operating system:** Linux x86_64 with glibc 2.35 or newer (for example, Ubuntu 22.04 or later), or 64-bit Windows 11 (Windows 10 is untested). macOS is not supported.
+- **GPU:** an NVIDIA GPU with hardware ray tracing (RTX), and a recent NVIDIA driver. falcorcomp renders with Vulkan on Linux, and with Direct3D 12 on Windows, where Vulkan also works: `falcor.Testbed(device_type=falcor.DeviceType.Vulkan)`.
+- **Python:** 64-bit Python 3.9 to 3.13. On Linux, also its shared library (for example, `libpython3.10.so.1.0` for Python 3.10). Conda environments and most system Pythons include it; on Debian or Ubuntu, install it with `sudo apt install libpython3.X` for your version `3.X`.
 
 ## Installation
 
@@ -60,7 +60,7 @@ Creating a `Testbed` initializes the GPU device, so this checks the driver as we
 python -c "import falcorcomp as falcor; falcor.Testbed(create_window=False); print('falcorcomp works')"
 ```
 
-Compiled shaders are cached in `~/.cache/falcorcomp/`. Set `FALCOR_SHADER_CACHE_PATH` to use another directory, or to an empty string to disable the cache.
+Compiled shaders are cached in `~/.cache/falcorcomp/` on Linux and in `%LOCALAPPDATA%\falcorcomp\` on Windows. Set `FALCOR_SHADER_CACHE_PATH` to use another directory, or to an empty string to disable the cache.
 
 ## License
 
