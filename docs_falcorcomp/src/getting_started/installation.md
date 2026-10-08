@@ -1,18 +1,18 @@
 # Installation
 
-falcorcomp is distributed as binary wheels for 64-bit Linux, for Python 3.9 to 3.13. A wheel
-contains Falcor, its render passes and their shaders, so no separate Falcor build is needed.
-Windows wheels are not available yet.
+falcorcomp is distributed as binary wheels for 64-bit Linux and Windows, for Python 3.9 to 3.13.
+A wheel contains Falcor, its render passes and their shaders, so no separate Falcor build is needed.
 
 ## Requirements
 
 - **Operating system:** 64-bit Linux: x86_64 with glibc 2.35 or newer (for example, Ubuntu 22.04 or
-  later). Windows is not supported yet, and macOS is not supported.
+  later); or 64-bit Windows 11 (Windows 10 is untested). macOS is not supported.
 - **GPU:** an NVIDIA GPU with hardware ray tracing (RTX), and a recent NVIDIA driver. falcorcomp
-  renders with Vulkan.
-- **Python:** 64-bit Python 3.9, 3.10, 3.11, 3.12 or 3.13, with its shared library, for example
-  `libpython3.12.so.1.0` for Python 3.12. Conda environments and most system Pythons include it; on
-  Debian or Ubuntu, install it with `sudo apt install libpython3.X` for your version `3.X`.
+  renders with Vulkan on Linux, and with Direct3D 12 on Windows, where Vulkan also works:
+  `falcor.Testbed(device_type=falcor.DeviceType.Vulkan)`.
+- **Python:** 64-bit Python 3.9, 3.10, 3.11, 3.12 or 3.13. On Linux, also its shared library, for
+  example `libpython3.12.so.1.0` for Python 3.12. Conda environments and most system Pythons include
+  it; on Debian or Ubuntu, install it with `sudo apt install libpython3.X` for your version `3.X`.
 
 ## Installing with pip
 
@@ -27,7 +27,7 @@ or with a virtual environment:
 
 ```bash
 python3 -m venv falcorcomp-env
-source falcorcomp-env/bin/activate
+source falcorcomp-env/bin/activate  # On Windows: falcorcomp-env\Scripts\activate
 ```
 
 Install falcorcomp from PyPI; pip also installs its only dependency, NumPy:
@@ -36,11 +36,12 @@ Install falcorcomp from PyPI; pip also installs its only dependency, NumPy:
 pip install falcorcomp
 ```
 
-pip picks the wheel for your Python version. To install a wheel file you downloaded instead,
-choose the one whose name matches your Python version (`cp312` is Python 3.12):
+pip picks the wheel for your Python version and operating system. To install a wheel file you
+downloaded instead, choose the one whose name matches both (`cp312` is Python 3.12; `manylinux` is
+Linux, `win_amd64` is Windows):
 
 ```bash
-pip install falcorcomp-0.2.0-cp312-cp312-manylinux_2_35_x86_64.whl
+pip install falcorcomp-0.2.1-cp312-cp312-manylinux_2_35_x86_64.whl
 ```
 
 ## Verifying the installation
@@ -53,8 +54,9 @@ python -c "import falcorcomp as falcor; falcor.Testbed(create_window=False); pri
 
 ## Shader cache
 
-Compiled shaders are cached per user, in `~/.cache/falcorcomp/<version>/shadercache` (under
-`$XDG_CACHE_HOME` when it is set), so the first run of a render pass is slower than later ones.
+Compiled shaders are cached per user, so the first run of a render pass is slower than later ones:
+in `~/.cache/falcorcomp/<version>/shadercache` on Linux (under `$XDG_CACHE_HOME` when it is set),
+and in `%LOCALAPPDATA%\falcorcomp\<version>\shadercache` on Windows.
 
 Set the environment variable `FALCOR_SHADER_CACHE_PATH` to use another directory, or to an empty
 string to disable the cache.
@@ -84,7 +86,9 @@ python3 packaging/falcorcomp/build_wheel.py --build-dir build/GCC_11.3.0x86_64-l
 pip install build/GCC_11.3.0x86_64-linux-gnu-nogtk/falcorcomp/dist/falcorcomp-*.whl
 ```
 
-The wheel can be built only on Linux so far: `build_wheel.py` does not support Windows yet.
+On Windows, `packaging/falcorcomp/build_windows_wheels.py` builds, packages and tests the wheel for
+each Python version: it needs Visual Studio 2022 with the C++ tools, git and conda, and runs from the
+Anaconda Prompt (see the script's header).
 
 The default build uses Falcor's bundled Python 3.10. To build for another Python version, add
 `-DFALCOR_USE_SYSTEM_PYTHON=ON -DPython_EXECUTABLE=/path/to/python3.X` to the `cmake -S` command,
@@ -110,15 +114,16 @@ mesh (`meshes/dragon.ply` next to its `.pbrt` file, not in the repository).
 ## Troubleshooting
 
 `ERROR: No matching distribution found for falcorcomp`
-: There are wheels for Python 3.9 to 3.13 on 64-bit Linux (x86_64) only. Check `python --version`,
-  and that the Python is 64-bit.
+: There are wheels for Python 3.9 to 3.13 on 64-bit Linux (x86_64) and Windows only. Check
+  `python --version`, and that the Python is 64-bit.
 
 `ImportError: falcorcomp needs libpython3.X.so.1.0`
 : The shared Python library is missing. Install it (`sudo apt install libpython3.X`) or use a
   conda environment.
 
 The `Testbed` fails to create a device
-: Update the NVIDIA driver, and check that Vulkan works (for example, with `vulkaninfo`).
+: Update the NVIDIA driver. On Linux, check that Vulkan works (for example, with `vulkaninfo`); on
+  Windows, try Vulkan instead of Direct3D 12: `falcor.Testbed(device_type=falcor.DeviceType.Vulkan)`.
 
 ## License
 

@@ -257,7 +257,7 @@ reservoirs of about 100 bytes per pixel: at 480 x 270 with 64 bins that is about
 two-pass reuse adds up to 512 MB of intermediate results, processing the bins in chunks when they
 do not fit at once. These sizes are not checked against the GPU's limits: keep each set of reservoirs,
 a single buffer, below 4 GB, the largest buffer Vulkan binds (with 64 bins, up to about 0.6 megapixels,
-e.g. 960 x 540).
+e.g. 960 x 540). The limit of Direct3D 12, the default on Windows, was not tested.
 
 ## Limitations
 
