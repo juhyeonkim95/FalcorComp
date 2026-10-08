@@ -55,9 +55,10 @@ inline void edgeCircleIntersections(float2 A, float2 B, float r, inout float ang
         float2 Pk = A + t * S;
         float ang = atan2(Pk.y, Pk.x);
         bool unique = true;
+        // A constant bound (the size of angles): DXC cannot unroll a loop up to ac.
         [unroll]
-        for (int i=0; i<ac; ++i)
-            if (abs(ang - angles[i]) <= 1e-5) { unique=false; break; }
+        for (int i=0; i<6; ++i)
+            if (i < ac && abs(ang - angles[i]) <= 1e-5) { unique=false; break; }
         if (unique && ac < 6) angles[ac++] = ang;
     }
 }
