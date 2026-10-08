@@ -5,7 +5,9 @@
 __exported import Scene.Lights.LightCollection;
 import Scene.HitInfo;
 
-uniform LightCollection gSceneTriangles;
+// A ConstantBuffer, not a plain global: gfx's D3D12 root signature has no constant buffer for plain values at global
+// scope (LightCollection holds its counts), so D3D12 would reject the pipeline (E_INVALIDARG) while Vulkan works.
+ConstantBuffer<LightCollection> gSceneTriangles;
 
 /// Index in gSceneTriangles of the triangle that `hit` landed on; LightCollection::kInvalidIndex for other geometry.
 uint getSceneTriangleIndex(HitInfo hit)
