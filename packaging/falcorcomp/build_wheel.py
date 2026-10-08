@@ -105,9 +105,7 @@ WINDOWS_DLOPEN_LIBRARIES = ["dxcompiler.dll", "dxil.dll", "slang-glslang.dll"]
 # The Microsoft C++ runtime, bundled next to Falcor.dll ("app-local"): Python itself ships only vcruntime140*.dll, and
 # DLLs built with a recent MSVC need a msvcp140.dll at least as new as the compiler.
 MSVC_RUNTIME = re.compile(r"(msvcp140.*|vcruntime140.*|concrt140)\.dll$", re.I)
-# Windows-only components, with the packman folder whose license files are copied into third_party_licenses.
-WINDOWS_LICENSE_FOLDERS = {"DirectXShaderCompiler": "dxcompiler", "WinPixEventRuntime": "pix",
-                           "D3D12AgilitySDK": "agility-sdk"}
+
 # Python versions that falcorcomp wheels are built for (pybind11 v2.13.6 supports up to 3.13).
 PYTHON_REQUIRES = ">=3.9,<3.14"
 # System libraries that auditwheel must not bundle: the NVIDIA driver, and the user's libpython.
@@ -214,19 +212,6 @@ def copy_tree(source, destination, ignore=None):
     shutil.copytree(source, destination, ignore=ignore, dirs_exist_ok=True)
 
 
-def copy_windows_licenses(package):
-    """License files of the Windows-only components, from their packman folders."""
-    for component, folder in WINDOWS_LICENSE_FOLDERS.items():
-        source = REPO / "external" / "packman" / folder
-        files = [p for pattern in ["*", "*/*"] for p in source.glob(pattern)
-                 if p.is_file() and re.search(r"licen[cs]e|notice|eula", p.name, re.I)]
-        if not files:
-            print(f"WARNING: no license file found in {source}")
-        for path in files:
-            (package / "third_party_licenses" / component).mkdir(parents=True, exist_ok=True)
-            shutil.copy2(path, package / "third_party_licenses" / component / path.name)
-
-
 def check_notices(names):
     """Warn about bundled DLLs that THIRD_PARTY_NOTICES.md does not name: their licenses must be added before a
     release."""
@@ -265,15 +250,9 @@ def stage(bin_dir, stage_dir, strip):
     (package / "plugins" / "plugins.json").write_text(json.dumps(PLUGINS, indent=2) + "\n")
 
     if WINDOWS:
+        # The D3D12 Agility SDK runtime (D3D12/) is left out: a Python module can enable it only in Windows Developer
+        # Mode, so the package uses the D3D12 runtime of Windows, and Falcor skips the Agility SDK without it.
         closure = {path.name: path for path in dll_closure([extension] + plugin_files, bin_dir).values()}
-        # The D3D12 Agility SDK runtime: Falcor points D3D12 at <runtime directory>/D3D12/ when it creates a device.
-        # The debug layer (d3d12SDKLayers.dll) is a development tool and is not shipped.
-        agility = bin_dir / "D3D12" / "D3D12Core.dll"
-        if agility.exists():
-            (package / "D3D12").mkdir()
-            shutil.copy2(agility, package / "D3D12" / agility.name)
-        else:
-            print(f"WARNING: {agility} not found; the package uses the D3D12 runtime of Windows.")
     else:
         # Shared libraries under their sonames (wheels cannot contain symlinks).
         closure = library_closure([bin_dir / "libFalcor.so", extension] + plugin_files, bin_dir)
@@ -305,8 +284,8 @@ def stage(bin_dir, stage_dir, strip):
     shutil.copy2(HERE / "THIRD_PARTY_NOTICES.md", package / "THIRD_PARTY_NOTICES.md")
     copy_tree(HERE / "third_party_licenses", package / "third_party_licenses")
     if WINDOWS:
-        copy_windows_licenses(package)
-        check_notices(sorted(closure) + (["D3D12Core.dll"] if (package / "D3D12").exists() else []))
+        copy_tree(HERE / "third_party_licenses_windows", package / "third_party_licenses")
+        check_notices(sorted(closure))
         if (package / "shaders" / "nvapi").exists():
             print("WARNING: the build has NVAPI (shaders/nvapi); add its license to THIRD_PARTY_NOTICES.md.")
 

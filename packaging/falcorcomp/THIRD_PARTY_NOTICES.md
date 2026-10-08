@@ -80,14 +80,12 @@ This software contains source code provided by NVIDIA Corporation.
 
 ## Windows wheels
 
-The Windows wheels contain the components above as DLLs, for example `slang.dll`, `gfx.dll`, `slang-glslang.dll`, `tbb.dll`, `assimp-vc143-mt.dll`, `FreeImage.dll`, `openvdb.dll`, `nvtt30106.dll` (NVTT) and `cudart64_110.dll` (CUDA runtime). They also contain these Microsoft components; the license files come from the packages that the Falcor build downloads.
+The Windows wheels contain the components above as DLLs: `slang.dll`, `gfx.dll` and `slang-glslang.dll` (Slang), `tbb.dll`, `assimp-vc143-mt.dll`, `FreeImage.dll`, `OpenEXR-3_1.dll`, `Iex-3_1.dll` and `IlmThread-3_1.dll` (OpenEXR), `blosc.dll`, `openvdb.dll`, `nvtt30106.dll` (NVTT) and `cudart64_110.dll` (the CUDA runtime shipped with NVTT). They also contain these Microsoft components:
 
-| Component | Files | License | Folder |
-|---|---|---|---|
-| DirectX Shader Compiler | `dxcompiler.dll`, `dxil.dll` | University of Illinois/NCSA (LLVM) and Microsoft license terms (see folder) | `DirectXShaderCompiler/` |
-| WinPixEventRuntime | `WinPixEventRuntime.dll` | Microsoft license terms (see folder) | `WinPixEventRuntime/` |
-| DirectX 12 Agility SDK | `D3D12/D3D12Core.dll` | Microsoft license terms (see folder) | `D3D12AgilitySDK/` |
-| Microsoft Visual C++ runtime | `msvcp140*.dll`, `vcruntime140*.dll` | Visual Studio redistributable code | |
+| Component | Version | Files | License | File |
+|---|---|---|---|---|
+| DirectX Shader Compiler | 1.7.2207 | `dxcompiler.dll`, and `dxil.dll`, the signing binary of the same release | University of Illinois/NCSA Open Source License, with third-party notices | `DirectXShaderCompiler.txt`, `DirectXShaderCompiler-ThirdPartyNotices.txt` |
+| Microsoft Visual C++ runtime | 14.x | `msvcp140*.dll`, `vcruntime140*.dll`, `concrt140.dll` | Visual Studio redistributable code | |
 
 ## Fonts
 
