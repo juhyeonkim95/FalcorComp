@@ -1080,6 +1080,10 @@ bool Device::enableAgilitySDK()
     std::filesystem::path exeDir = getExecutableDirectory();
     std::filesystem::path sdkDir = getRuntimeDirectory() / FALCOR_D3D12_AGILITY_SDK_PATH;
 
+    // Nothing to enable without the runtime, e.g. in a distribution that leaves it out because it needs Developer Mode.
+    if (!std::filesystem::exists(sdkDir / "D3D12Core.dll"))
+        return false;
+
     // Agility SDK can only be loaded from a relative path to the executable. Make sure both paths use the same driver letter.
     if (std::tolower(exeDir.string()[0]) != std::tolower(sdkDir.string()[0]))
     {
