@@ -25,6 +25,7 @@ LASER = {"laserPosition": [0.0, 1.7, 6.8], "laserDirection": [0.0, 0.0, -1.0], "
 GATE = {"timeCenter": 17.337, "timeGateWindow": 0.1, "computeDirect": False}
 CASES = [
     ("TimeGatedPathTracerInline", {**GATE, "samplesPerPixel": 4}, "color"),
+    ("TimeGatedPathTracerInline", {**GATE, "samplesPerPixel": 4, "samplingMethod": "ellipsoidal"}, "color"),
     ("TimeGatedReSTIRInline", {**GATE, "samplesPerPixel": 4, "shiftMappingMethod": "local_tangent",
                                "gaugeMode": "avg_grad", "useTemporalReuse": True}, "color"),
     ("TransientHistogramPathTracerInline", {"timeMin": 16.75, "timeMax": 18.03, "timeBin": 16, "samplesPerPixel": 4},
