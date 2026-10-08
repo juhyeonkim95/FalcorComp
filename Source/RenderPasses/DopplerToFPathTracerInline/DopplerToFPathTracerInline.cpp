@@ -77,9 +77,12 @@ const std::map<std::string, DopplerToFPathTracerInline::Antithetic> kAntithetics
     {"mirror", DopplerToFPathTracerInline::Antithetic::Mirror},
 };
 
+/// Takes the property value itself: std::string(property) is ambiguous on MSVC (ConstValue converts to any type),
+/// copy-initialization is not.
 template<typename T>
-T parseName(const std::map<std::string, T>& table, const std::string& value, const char* key)
+T parseName(const std::map<std::string, T>& table, const Properties::ConstValue& property, const char* key)
 {
+    const std::string value = property;
     auto it = table.find(value);
     if (it == table.end())
         FALCOR_THROW("Unknown value '{}' for {}.", value, key);
@@ -118,9 +121,9 @@ void DopplerToFPathTracerInline::parseProperties(const Properties& props)
         else if (key == kPhase)
             mOptions.phase = value;
         else if (key == kTimeSampling)
-            mOptions.timeSampling = parseName(kTimeSamplings, std::string(value), kTimeSampling);
+            mOptions.timeSampling = parseName(kTimeSamplings, value, kTimeSampling);
         else if (key == kAntithetic)
-            mOptions.antithetic = parseName(kAntithetics, std::string(value), kAntithetic);
+            mOptions.antithetic = parseName(kAntithetics, value, kAntithetic);
         else if (key == kSeed)
             mOptions.seed = value;
         else if (key == kRandomReplay)

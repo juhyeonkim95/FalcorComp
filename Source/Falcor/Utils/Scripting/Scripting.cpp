@@ -53,7 +53,14 @@ void Scripting::start()
 #else
         static std::filesystem::path pythonHome{getRuntimeDirectory() / "pythondist"};
 #endif
+#if FALCOR_MSVC
+#pragma warning(push)
+#pragma warning(disable : 4996) // Py_SetPythonHome is deprecated since Python 3.11 (FALCOR_USE_SYSTEM_PYTHON).
+#endif
         Py_SetPythonHome(pythonHome.wstring().c_str());
+#if FALCOR_MSVC
+#pragma warning(pop)
+#endif
 
         try
         {

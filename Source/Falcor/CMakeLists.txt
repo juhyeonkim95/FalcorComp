@@ -967,9 +967,11 @@ target_compile_definitions(Falcor
 )
 
 if(FALCOR_USE_SYSTEM_PYTHON)
+    # Forward slashes: the backslashes of a Windows path would be escape sequences in the C++ string literal.
+    file(TO_CMAKE_PATH "${Python_EXECUTABLE}" falcor_python_executable)
     target_compile_definitions(Falcor
         PRIVATE
-            FALCOR_PYTHON_EXECUTABLE="${Python_EXECUTABLE}"
+            FALCOR_PYTHON_EXECUTABLE="${falcor_python_executable}"
     )
 endif()
 
