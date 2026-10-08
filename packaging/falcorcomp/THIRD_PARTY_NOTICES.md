@@ -78,6 +78,17 @@ This software contains source code provided by NVIDIA Corporation.
 | zlib | Zlib | `zlib.txt` |
 | Zstandard | BSD-3-Clause (chosen from BSD or GPL-2.0) | `zstd.txt` |
 
+## Windows wheels
+
+The Windows wheels contain the components above as DLLs, for example `slang.dll`, `gfx.dll`, `slang-glslang.dll`, `tbb.dll`, `assimp-vc143-mt.dll`, `FreeImage.dll`, `openvdb.dll`, `nvtt30106.dll` (NVTT) and `cudart64_110.dll` (CUDA runtime). They also contain these Microsoft components; the license files come from the packages that the Falcor build downloads.
+
+| Component | Files | License | Folder |
+|---|---|---|---|
+| DirectX Shader Compiler | `dxcompiler.dll`, `dxil.dll` | University of Illinois/NCSA (LLVM) and Microsoft license terms (see folder) | `DirectXShaderCompiler/` |
+| WinPixEventRuntime | `WinPixEventRuntime.dll` | Microsoft license terms (see folder) | `WinPixEventRuntime/` |
+| DirectX 12 Agility SDK | `D3D12/D3D12Core.dll` | Microsoft license terms (see folder) | `D3D12AgilitySDK/` |
+| Microsoft Visual C++ runtime | `msvcp140*.dll`, `vcruntime140*.dll` | Visual Studio redistributable code | |
+
 ## Fonts
 
 DejaVu Sans Bold and DejaVu Sans Mono (`data/framework/fonts/`) use the Bitstream Vera license. DejaVu's changes are in the public domain. See `data/framework/fonts/DejaVu-LICENSE.txt`.

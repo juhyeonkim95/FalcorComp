@@ -5,8 +5,8 @@ Usage mirrors the ``falcor`` module of a Falcor build:
     import falcorcomp as falcor
     testbed = falcor.Testbed(create_window=False)
 
-The package directory is Falcor's runtime directory: libFalcor.so, its libraries,
-``plugins/``, ``shaders/`` and ``data/`` all live next to this file.
+The package directory is Falcor's runtime directory: libFalcor.so (Falcor.dll), its
+libraries, ``plugins/``, ``shaders/`` and ``data/`` all live next to this file.
 """
 import ctypes as _ctypes
 import os as _os
@@ -42,9 +42,24 @@ def _preload_libpython():
     )
 
 
+def _add_dll_directory():
+    """Windows: Falcor.dll and its DLLs live next to this file.
+
+    add_dll_directory covers the extension's imports. Falcor loads its plugins, and
+    Slang and DXC load further DLLs, with plain LoadLibrary, which searches PATH
+    instead (Falcor's own setpath.bat puts its bin directory on PATH for this).
+    """
+    here = _os.path.dirname(_os.path.abspath(__file__))
+    _os.environ["PATH"] = here + _os.pathsep + _os.environ.get("PATH", "")
+    return _os.add_dll_directory(here)
+
+
 def _default_shader_cache_path():
     """Per-user cache: Falcor's default, next to libFalcor.so, may not be writable after pip install."""
-    cache_home = _os.environ.get("XDG_CACHE_HOME") or _os.path.join(_os.path.expanduser("~"), ".cache")
+    if _os.name == "nt":
+        cache_home = _os.environ.get("LOCALAPPDATA") or _os.path.join(_os.path.expanduser("~"), "AppData", "Local")
+    else:
+        cache_home = _os.environ.get("XDG_CACHE_HOME") or _os.path.join(_os.path.expanduser("~"), ".cache")
     return _os.path.join(cache_home, "falcorcomp", __version__, "shadercache")
 
 
@@ -55,7 +70,10 @@ if _os.environ.get("FALCOR_DEVMODE") == "1":
 # Read by Falcor when a device is created; set it yourself to move the cache, or to "" to disable it.
 _os.environ.setdefault("FALCOR_SHADER_CACHE_PATH", _default_shader_cache_path())
 
-_preload_libpython()
+if _os.name == "nt":
+    _dll_directory = _add_dll_directory()
+else:
+    _preload_libpython()
 
 from .falcor_ext import *  # noqa: E402,F401,F403
 from . import falcor_ext as _falcor_ext  # noqa: E402
