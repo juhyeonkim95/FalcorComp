@@ -45,12 +45,12 @@ contrast.
 
 ```{grid-item-card} Structured illumination
 :img-top: images/thumbnails/lsci_structured_thumb.jpg
-:img-alt: Speckle contrast of superficial vessels and a deep vessel under uniform light, at a 5 ms exposure
+:img-alt: Flow colored by depth: a shallow vessel in orange crossing a deep one in blue
 :link: lsci_structured
 :link-type: doc
 
-Fringes of rising spatial frequency, demodulated as in SFDI, keep the superficial flow in the speckle contrast and
-drop the deep flow.
+Fringes of rising spatial frequency, demodulated as in SFDI, keep a shallow vessel in the speckle contrast and drop a
+deep one: an image of flow and depth.
 ```
 ````
 
