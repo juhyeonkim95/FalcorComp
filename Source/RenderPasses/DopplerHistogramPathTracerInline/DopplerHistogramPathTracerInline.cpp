@@ -166,6 +166,11 @@ void DopplerHistogramPathTracerInline::setProperties(const Properties& props)
     InlinePass::applyProperties(mOptions, [&] { parseProperties(props); }, validateOptions);
     if (props.has(kVelocities))
         mVelocitiesDirty = true;
+    if (props.has("media"))
+    {
+        mMediaDirty = true;
+        mSceneHasMedia = mOptions.volumes.hasMedia(mpScene);
+    }
     onOptionsChanged(previous);
 }
 
@@ -267,6 +272,8 @@ void DopplerHistogramPathTracerInline::bindShaderData(const ShaderVar& var, cons
     var["CB"]["gSensorVelocity"] = mOptions.sensorVelocity;
     var["CB"]["gLightVelocity"] = mOptions.lightVelocity;
     var["gInstanceVelocities"] = mpInstanceVelocities;
+    if (mOptions.volumes.useVolumes)
+        var["gMediumProperties"] = mpMediumProperties;
     mLaserInput.get().bindShaderData(var["Laser"]);
 
     InlinePass::bindChannels(var, renderData, InlinePass::kPrimaryHitInputChannels);
@@ -304,6 +311,11 @@ void DopplerHistogramPathTracerInline::execute(RenderContext* pRenderContext, co
     {
         mpInstanceVelocities = createInstanceVelocityBuffer(mpDevice, *mpScene, mOptions.velocities, kPassName);
         mVelocitiesDirty = false;
+    }
+    if (mMediaDirty || !mpMediumProperties)
+    {
+        mpMediumProperties = mOptions.volumes.createMediumBuffer(mpDevice, *mpScene, kPassName);
+        mMediaDirty = false;
     }
     if (!mpComputePass)
         mpComputePass = InlinePass::createScenePass(mpDevice, pRenderContext, mpScene, mpSampleGenerator, kShaderFile,
@@ -422,7 +434,8 @@ void DopplerHistogramPathTracerInline::setScene(RenderContext* pRenderContext, c
     mpComputePass = nullptr;
     mFrameCount = 0;
     mVelocitiesDirty = true;
+    mMediaDirty = true;
     resetSpectrum();
     mpScene = pScene;
-    mSceneHasMedia = VolumeConfig::hasMedia(mpScene);
+    mSceneHasMedia = mOptions.volumes.hasMedia(mpScene);
 }

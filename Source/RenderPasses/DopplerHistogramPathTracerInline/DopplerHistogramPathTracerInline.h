@@ -114,6 +114,7 @@ private:
     bool mNeedToClearSpectrum = true;
     bool mOptionsChanged = false;
     bool mVelocitiesDirty = true;
+    bool mMediaDirty = true;
     bool mSceneHasMedia = false;
     bool mWarnedLaserInMedia = false; ///< The laser beam is not traced through media: warned once.
     std::string mUIWarning; ///< Why the last UI edit was rejected.
@@ -123,5 +124,6 @@ private:
     ref<ComputePass> mpComputePass;
     /// Clears the 3D outputs in every depth slice (clearTexture leaves slices from 1024 on, on Vulkan).
     InlinePass::Texture3DClearer mTexture3DClearer;
-    ref<Buffer> mpInstanceVelocities; ///< Per geometry instance: linear, angular, center (float4 each).
+    ref<Buffer> mpInstanceVelocities; ///< Per geometry instance: its motion (createInstanceVelocityBuffer).
+    ref<Buffer> mpMediumProperties;   ///< Per material: full-precision medium properties (VolumeConfig::media).
 };

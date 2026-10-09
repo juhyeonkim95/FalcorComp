@@ -151,6 +151,11 @@ Participating media (see [Participating media](#doppler-media)):
   - integer
   - Maximum number of scattering events in media on a camera path; Russian roulette ends most paths earlier.
     (Default: `1024`)
+* - `media`
+  - dictionary
+  - Medium properties in full precision, by material name, replacing the material's own:
+    `{"Blood": {"scattering": [r, g, b], "absorption": [r, g, b], "anisotropy": g}}`, per meter. Missing entries are
+    zero; a listed material holds a medium if a coefficient is positive. (Default: none)
 ```
 
 (doppler-media)=
@@ -165,6 +170,10 @@ tissue with blood flowing in a vessel.
   function. In a Mitsuba scene, give the shape a homogeneous `interior` medium with `sigma_s` and `sigma_a`; the
   importer reads no phase function, so the medium scatters isotropically. The mesh must be closed, with its normals
   facing out. Media may be nested, up to 4 deep (a vessel inside tissue), but must not overlap or touch.
+- **Precision.** Falcor stores a material's volume coefficients and $g$ as 16-bit floats: at most 65504 per meter,
+  which the scattering of whole blood in the near infrared (several $10^4$ per meter) can exceed, and about 3
+  significant digits ($g = 0.99$ becomes 0.9902, so $1 - g$ is 2% off). Give such media in `media`, which holds them
+  in full precision.
 - **Boundaries.** A medium's surface is a smooth interface between its material's `indexOfRefraction` and that of
   what surrounds it (the enclosing medium, or 1). A path reflects or refracts there, chosen by the Fresnel
   reflectance, and the interface point is a path vertex that moves with the medium's object. Where the two indices

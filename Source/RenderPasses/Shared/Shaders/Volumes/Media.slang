@@ -2,8 +2,8 @@
     VolumeConfig).
 
     A geometry instance is a medium when its material has volume absorption or scattering (BasicMaterial
-    volumeAbsorption, volumeScattering, per scene unit, and volumeAnisotropy, a Henyey-Greenstein phase function). Its
-    refractive index is the material's IoR. Its surface is a smooth interface between the medium and what surrounds
+    volumeAbsorption, volumeScattering, per scene unit, and volumeAnisotropy, a Henyey-Greenstein phase function; 16-bit
+    floats, which gMediumProperties replaces in full precision). Its refractive index is the material's IoR. Its surface is a smooth interface between the medium and what surrounds
     it (the enclosing medium, or vacuum with index 1): where the two indices are equal, rays cross it unchanged and
     paths have no vertex there; otherwise it reflects and refracts (Fresnel, Snell), and the crossing is a path vertex.
     Media may be nested (a vessel inside tissue), up to kMaxNestedMedia deep, but must not overlap; their meshes must
@@ -16,6 +16,7 @@
 #include "Utils/Math/MathConstants.slangh"
 import Scene.RaytracingInline;
 import Rendering.Volumes.HomogeneousVolumeSampler;
+import Rendering.Volumes.PhaseFunction;
 import Utils.Sampling.SampleGenerator;
 import RenderPasses.Shared.Shaders.Utils.RayUtils;
 import RenderPasses.Shared.Shaders.Utils.PathVelocity;
@@ -33,9 +34,22 @@ static const uint kMaxRefractionTriangles = 4;
 /// the offset to the point is not seen.
 static const float kBoundaryOffset = 1.f / 65536.f;
 
+/// Full-precision medium properties of a material (host: VolumeConfig::media): scattering and the Henyey-Greenstein
+/// g, absorption and w = 1 where they replace the material's own.
+struct MediumOverride
+{
+    float4 scattering;
+    float4 absorption;
+};
+
+StructuredBuffer<MediumOverride> gMediumProperties; ///< Per material.
+
 /// Absorption, scattering and phase function of the medium inside the instances made of material `materialID`.
 VolumeProperties getMediumProperties(uint materialID)
 {
+    MediumOverride medium = gMediumProperties[materialID];
+    if (medium.absorption.w > 0.f)
+        return { medium.absorption.xyz, medium.scattering.xyz, HenyeyGreensteinPhaseFunction(medium.scattering.w) };
     let material = gScene.materials.getMaterial(materialID);
     return material.getHomogeneousVolumeProperties(gScene.materials, materialID);
 }
