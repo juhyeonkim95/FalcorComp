@@ -7,8 +7,8 @@ contrast follows from the Doppler spectrum that `DopplerHistogramPathTracerInlin
 [Doppler rendering](../tutorials/doppler_index.md)), with no other render pass.
 
 The first page explains the method on the Cornell box of the Doppler tutorials; the others render tissue with blood
-vessels as participating media. Their scripts plot with matplotlib (`pip install matplotlib`), and the vascular
-network also uses SciPy.
+vessels as participating media, the last one under structured illumination. Their scripts plot with matplotlib
+(`pip install matplotlib`), and the last two also use SciPy.
 
 ````{grid} 1 2 2 3
 :gutter: 3
@@ -42,6 +42,16 @@ speckle contrast.
 Vessels given as grids built from their centerlines, so that they branch and curve freely, imaged by their speckle
 contrast.
 ```
+
+```{grid-item-card} Structured illumination
+:img-top: images/thumbnails/lsci_structured_thumb.jpg
+:img-alt: Speckle contrast of superficial vessels and a deep vessel under uniform light, at a 5 ms exposure
+:link: lsci_structured
+:link-type: doc
+
+Fringes of rising spatial frequency, demodulated as in SFDI, keep the superficial flow in the speckle contrast and
+drop the deep flow.
+```
 ````
 
 ```{toctree}
@@ -50,4 +60,5 @@ contrast.
 lsci_basics
 lsci_tissue
 lsci_network
+lsci_structured
 ```
