@@ -162,7 +162,7 @@ contrast = np.sqrt(np.clip(BETA * k2 / np.where(lit, intensity2, 1.0), 0.0, None
 contrast[:, ~lit] = np.nan
 contrast = contrast.reshape(len(EXPOSURES), 256, 256)
 intensity = 0.5 * (light_a.sum(0) + light_b.sum(0)).reshape(256, 256)
-np.savez("speckle_contrast_network.npz", exposures=EXPOSURES, contrast=contrast, intensity=intensity)
+np.savez("lsci_network.npz", exposures=EXPOSURES, contrast=contrast, intensity=intensity)
 
 # 6. Show the contrast
 # The pixels of each kind of vessel (near its axis) and of the tissue far from them (pixel centers in the field).
@@ -204,4 +204,4 @@ for axis in axes[:4]:
     axis.set_xticks([])
     axis.set_yticks([])
 figure.tight_layout()
-figure.savefig("speckle_contrast_network.png", dpi=75)
+figure.savefig("lsci_network.png", dpi=75)

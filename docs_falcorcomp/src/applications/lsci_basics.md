@@ -1,17 +1,17 @@
-# Speckle contrast imaging (LSCI, offline)
+# Speckle contrast from the Doppler spectrum
 
 Laser speckle contrast imaging (LSCI) images blood flow. Coherent light scattered by tissue forms a speckle pattern;
 moving scatterers make it fluctuate, which blurs it over the camera's exposure and lowers its contrast
 $K = \sigma_I / \langle I \rangle$. Slow flow keeps the speckle sharp, fast flow washes it out.
 
 The LSCI camera records intensity, without a local oscillator: it is homodyne (self-beating) detection, integrated
-over the exposure. This tutorial computes the speckle contrast from the Doppler spectrum that
+over the exposure. This page computes the speckle contrast from the Doppler spectrum that
 `DopplerHistogramPathTracerInline` renders, the same spectrum as in the
-[Doppler spectrum tutorial](doppler_spectrum_offline.md), with no other render pass.
+[Doppler spectrum tutorial](../tutorials/doppler_spectrum_offline.md), with no other render pass.
 
-It uses the scene described in [Doppler rendering](doppler_index.md).
+It uses the scene described in [Doppler rendering](../tutorials/doppler_index.md).
 
-```{image} images/speckle_contrast.jpg
+```{image} images/lsci_basics.jpg
 :alt: Static light fraction, speckle contrast at three exposures and contrast against exposure for four pixels
 :align: center
 ```
@@ -56,7 +56,7 @@ autocorrelation contains it with nothing added.
 
 ## 1. Load the scene
 
-```{literalinclude} code/speckle_contrast_offline.py
+```{literalinclude} code/lsci_basics.py
 :language: python
 :start-after: "# 1. Load the scene"
 :end-before: "# 2. Build the render graph"
@@ -64,17 +64,17 @@ autocorrelation contains it with nothing added.
 
 ## 2. Build the render graph
 
-As in the [Doppler spectrum tutorial](doppler_spectrum_offline.md), with a point light at the camera, which lights
-the whole scene as LSCI does. The motion is slow, as blood flow is: at 785 nm, the tall box coming towards the camera
-at 1 mm/s shifts light that it reflects once by $2v/\lambda \approx 2.5$ kHz. The spectrum covers -8 to 8 kHz in 1024
-bins of 15.6 Hz, fine enough for exposures up to 10 ms ($1 / \Delta f = 64$ ms).
+As in the [Doppler spectrum tutorial](../tutorials/doppler_spectrum_offline.md), with a point light at the camera,
+which lights the whole scene as LSCI does. The motion is slow, as blood flow is: at 785 nm, the tall box coming
+towards the camera at 1 mm/s shifts light that it reflects once by $2v/\lambda \approx 2.5$ kHz. The spectrum covers
+-8 to 8 kHz in 1024 bins of 15.6 Hz, fine enough for exposures up to 10 ms ($1 / \Delta f = 64$ ms).
 
 `computeDirect` is off. LSCI looks into tissue, where light scatters many times, and the speckle decorrelates
 because those paths have different shifts. A single reflection off a rigidly moving surface has a single shift and
 alone would not decorrelate (see [Limitations](#lsci-limitations)). One wavelength needs one channel:
 `useSingleChannel`.
 
-```{literalinclude} code/speckle_contrast_offline.py
+```{literalinclude} code/lsci_basics.py
 :language: python
 :start-after: "# 2. Build the render graph"
 :end-before: "# 3. Render the spectrum twice"
@@ -86,7 +86,7 @@ $A[m]$ multiplies the spectrum by itself, and a spectrum multiplied by itself al
 which would raise the contrast. Two spectra with independent samples, one for each factor, avoid that bias. `reset()`
 starts a new accumulation, and the new frames draw new samples.
 
-```{literalinclude} code/speckle_contrast_offline.py
+```{literalinclude} code/lsci_basics.py
 :language: python
 :start-after: "# 3. Render the spectrum twice"
 :end-before: "# 4. Compute the speckle contrast"
@@ -98,7 +98,7 @@ $A[m]$ is computed with FFTs, a block of pixels at a time, and the sum over $m$ 
 $\operatorname{sinc}^2(m\, \Delta f\, T)$ for 41 exposures from 1 µs to 10 ms. The static fraction is the light in
 the bin of zero shift.
 
-```{literalinclude} code/speckle_contrast_offline.py
+```{literalinclude} code/lsci_basics.py
 :language: python
 :start-after: "# 4. Compute the speckle contrast"
 :end-before: "# 5. Show the contrast"
@@ -111,12 +111,12 @@ the kHz spread of the shifts. All the light of the boxes is shifted, and their c
 The walls level off at their static fraction: 0.80 on the back wall and 0.64 on the right wall, whose light partly
 came by way of the boxes.
 
-```{literalinclude} code/speckle_contrast_offline.py
+```{literalinclude} code/lsci_basics.py
 :language: python
 :start-after: "# 5. Show the contrast"
 ```
 
-The full script: {download}`speckle_contrast_offline.py <code/speckle_contrast_offline.py>`. It takes about 10 seconds
+The full script: {download}`lsci_basics.py <code/lsci_basics.py>`. It takes about 10 seconds
 and 1.5 GB of memory.
 
 (lsci-limitations)=
@@ -127,7 +127,7 @@ and 1.5 GB of memory.
 - Fully developed (Gaussian) speckle is assumed, as in the usual LSCI model.
 - Motion is rigid and deterministic: each path has one Doppler shift, and the contrast falls only through the spread
   of shifts between paths. Brownian (unordered) motion applies to the scatterers of media (see
-  [blood flow in tissue](speckle_contrast_tissue.md)), not to surfaces.
+  [blood flow in tissue](lsci_tissue.md)), not to surfaces.
 
 ## References
 

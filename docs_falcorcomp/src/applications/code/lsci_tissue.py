@@ -132,7 +132,7 @@ contrast = np.sqrt(np.clip(BETA * k2 / np.where(lit, intensity2, 1.0), 0.0, None
 contrast[:, ~lit] = np.nan
 contrast = contrast.reshape(len(EXPOSURES), 128, 128)
 intensity = 0.5 * (light_a.sum(0) + light_b.sum(0)).reshape(128, 128)
-np.savez("speckle_contrast_tissue.npz", exposures=EXPOSURES, contrast=contrast, intensity=intensity)
+np.savez("lsci_tissue.npz", exposures=EXPOSURES, contrast=contrast, intensity=intensity)
 
 # 5. Show the contrast
 # The image rows across the vessel (32 um each; the vessel axis is between rows 63 and 64). The scene is the same
@@ -160,4 +160,4 @@ for axis in axes[:4]:
     axis.set_xticks([])
     axis.set_yticks([])
 figure.tight_layout()
-figure.savefig("speckle_contrast_tissue.png", dpi=75)
+figure.savefig("lsci_tissue.png", dpi=75)

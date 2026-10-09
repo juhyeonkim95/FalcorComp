@@ -37,7 +37,6 @@ src/tutorials/restir_index
 src/tutorials/ellipsoidal_index
 src/tutorials/event_denoising_index
 src/tutorials/modulated_antithetic_index
-src/tutorials/doppler_homodyne_index
 src/tutorials/optimization_index
 ```
 
@@ -47,6 +46,7 @@ src/tutorials/optimization_index
 :caption: Applications
 
 src/applications/modulated_index
+src/applications/lsci_index
 ```
 
 ```{toctree}

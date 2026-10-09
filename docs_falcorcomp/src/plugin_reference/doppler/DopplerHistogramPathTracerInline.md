@@ -201,7 +201,8 @@ tissue with blood flowing in a vessel.
   mixes its coefficients with the blood's by the fraction: its free flights are delta tracked and its transmittances
   ratio tracked, against the larger of the two extinctions, and a scattering event is the blood's or the medium's in
   proportion to their scattering. The vessels may branch and curve freely. One medium holds vessels at a time;
-  `clear_vessels()` removes them. See [the vascular network tutorial](../../tutorials/speckle_contrast_network.md).
+  `clear_vessels()` removes them. See the [vascular network](../../applications/lsci_network.md) of the LSCI
+  application.
 - **Light.** Media take the point light (`isLightSourceLaser = false` on the `LaserLight` pass). With the laser,
   `useVolumes` is ignored and media meshes render as ordinary surfaces.
 - **Counts.** `maxBounces` counts surface vertices only, and `computeDirect` decides only for the path camera ->

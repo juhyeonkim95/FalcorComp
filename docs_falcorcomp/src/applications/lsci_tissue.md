@@ -1,12 +1,12 @@
-# Speckle contrast imaging of blood flow in tissue
+# Blood flow in tissue
 
-The [first speckle contrast tutorial](speckle_contrast_offline.md) computes the speckle contrast of moving surfaces.
+The [first page](lsci_basics.md) computes the speckle contrast of moving surfaces.
 In biomedical laser speckle contrast imaging (LSCI), the camera looks at tissue instead. Light scatters many times
-under the surface, and what moves are red blood cells flowing in the vessels. This tutorial renders that case with
-participating media: a slab of tissue with a blood vessel. It computes the contrast from the Doppler spectrum as in
-the first tutorial, which explains the method.
+under the surface, and what moves are red blood cells flowing in the vessels. This page renders that case with
+participating media: a slab of tissue with a blood vessel. It computes the contrast from the Doppler spectrum as on
+the first page, which explains the method.
 
-```{image} images/speckle_contrast_tissue.jpg
+```{image} images/lsci_tissue.jpg
 :alt: Intensity, speckle contrast at three exposures, and contrast against exposure across a blood vessel in tissue
 :align: center
 ```
@@ -40,7 +40,7 @@ next to it. Typical optical properties at 785 nm (Jacques 2013):
 
 The blood flows along the vessel: a Poiseuille flow, 2 mm/s on the axis and zero at the wall.
 
-Blood scatters strongly forward ($g \approx 0.98$, $\mu_s \approx 50$ /mm). This tutorial keeps its reduced scattering
+Blood scatters strongly forward ($g \approx 0.98$, $\mu_s \approx 50$ /mm). This page keeps its reduced scattering
 coefficient $\mu_s (1 - g)$, 1.5 /mm, with $g = 0.9$: each scattering event connects to the light through the phase
 function, which is far more peaked at $g = 0.98$, and so far noisier. The vessel has the index of the tissue, as blood
 nearly has; a vessel of another index would block the light connections that refract twice (see
@@ -54,7 +54,7 @@ refractive index; the render pass gives the optical properties (step 2). Identic
 loads, and these two differ only in their names, hence `DontMergeMaterials`. The camera's near plane is 1 mm: rays
 start there, and the default, 0.1 scene units (0.1 m), would start them past the tissue.
 
-```{literalinclude} code/speckle_contrast_tissue.py
+```{literalinclude} code/lsci_tissue.py
 :language: python
 :start-after: "# 1. Build the scene"
 :end-before: "# 2. Build the render graph"
@@ -67,7 +67,7 @@ flow of the blood (`flowOrigin`, `flowAxis`, `flowRadius`, `flowMaxSpeed`, in me
 by blood moving at 2 mm/s is shifted by up to $2 n v / \lambda \approx 7$ kHz. The spectrum covers -16 to 16 kHz in
 1024 bins of 31.25 Hz, for exposures up to 10 ms ($1 / \Delta f = 32$ ms).
 
-```{literalinclude} code/speckle_contrast_tissue.py
+```{literalinclude} code/lsci_tissue.py
 :language: python
 :start-after: "# 2. Build the render graph"
 :end-before: "# 3. Render the spectrum twice"
@@ -76,9 +76,9 @@ by blood moving at 2 mm/s is shifted by up to $2 n v / \lambda \approx 7$ kHz. T
 ## 3. Render the spectrum twice
 
 Two spectra with independent samples, so that the Monte Carlo noise of the spectrum does not raise the contrast (see
-the [first tutorial](speckle_contrast_offline.md)).
+the [first page](lsci_basics.md)).
 
-```{literalinclude} code/speckle_contrast_tissue.py
+```{literalinclude} code/lsci_tissue.py
 :language: python
 :start-after: "# 3. Render the spectrum twice"
 :end-before: "# 4. Compute the speckle contrast"
@@ -86,9 +86,9 @@ the [first tutorial](speckle_contrast_offline.md)).
 
 ## 4. Compute the speckle contrast
 
-As in the first tutorial: the autocorrelation of the spectrum, filtered by the exposure.
+As on the first page: the autocorrelation of the spectrum, filtered by the exposure.
 
-```{literalinclude} code/speckle_contrast_tissue.py
+```{literalinclude} code/lsci_tissue.py
 :language: python
 :start-after: "# 4. Compute the speckle contrast"
 :end-before: "# 5. Show the contrast"
@@ -103,17 +103,17 @@ tissue. The tissue keeps a high contrast, which falls near the vessel, where som
 blood: 0.78 at 0.5 mm from the vessel's axis and 0.91 at 1.5 mm, at 10 ms. In the intensity, the vessel is only a band
 11% darker, where the blood absorbs.
 
-```{literalinclude} code/speckle_contrast_tissue.py
+```{literalinclude} code/lsci_tissue.py
 :language: python
 :start-after: "# 5. Show the contrast"
 ```
 
-The full script: {download}`speckle_contrast_tissue.py <code/speckle_contrast_tissue.py>`. It takes about a minute and
+The full script: {download}`lsci_tissue.py <code/lsci_tissue.py>`. It takes about a minute and
 1.5 GB of memory.
 
 ## Limitations
 
-- As in the [first tutorial](#lsci-limitations): the expected contrast, without a speckle pattern, for fully developed
+- As on the [first page](#lsci-limitations): the expected contrast, without a speckle pattern, for fully developed
   speckle, with the coherence factor $\beta$ as an input.
 - Media take the point light, not the laser beam.
 - The blood moves in an ordered flow. For unordered (Brownian) motion of scatterers, give their object a `diffusion`

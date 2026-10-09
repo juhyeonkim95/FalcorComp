@@ -82,7 +82,7 @@ contrast = contrast.reshape(len(EXPOSURES), 128, 128)
 # Static light: the bin of zero shift (0 is the lower edge of bin BINS / 2).
 static = np.sqrt(np.clip(light_a[BINS // 2] * light_b[BINS // 2] / np.where(lit, intensity2, 1.0), 0.0, None))
 static = np.where(lit, static, np.nan).reshape(128, 128)
-np.savez("speckle_contrast.npz", exposures=EXPOSURES, contrast=contrast, static_fraction=static)
+np.savez("lsci_basics.npz", exposures=EXPOSURES, contrast=contrast, static_fraction=static)
 
 # 5. Show the contrast
 pixels = {"tall box": (70, 45), "short box": (100, 85), "back wall": (30, 64), "right wall": (60, 120)}
@@ -109,4 +109,4 @@ for axis in axes[:4]:
     axis.set_xticks([])
     axis.set_yticks([])
 figure.tight_layout()
-figure.savefig("speckle_contrast.png", dpi=75)
+figure.savefig("lsci_basics.png", dpi=75)
