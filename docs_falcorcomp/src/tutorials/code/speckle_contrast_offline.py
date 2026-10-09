@@ -14,7 +14,7 @@ testbed.scene.camera.aspectRatio = 1.0
 testbed.clock.pause()
 
 # 2. Build the render graph
-F_MAX, BINS = 0.008, 4096  # Doppler shifts from -8 to 8 kHz (given in MHz), in bins of 3.9 Hz
+F_MAX, BINS = 0.008, 1024  # Doppler shifts from -8 to 8 kHz (given in MHz), in bins of 15.6 Hz
 
 graph = testbed.create_render_graph("SpeckleContrast")
 graph.create_pass("VBuffer", "VBufferRT", {"samplePattern": "Center", "sampleCount": 1})
