@@ -134,6 +134,47 @@ Sampling and output, as for the [transient histogram path tracer](../transient/T
     (Default: `Default`, `[512, 512]`)
 ```
 
+Participating media (see [Participating media](#doppler-media)):
+
+```{list-table}
+:header-rows: 1
+:widths: 25 10 65
+
+* - Parameter
+  - Type
+  - Description
+* - `useVolumes`
+  - boolean
+  - Render the homogeneous media inside closed meshes. Off, a medium's mesh is an ordinary surface. (Default:
+    `false`)
+* - `maxScatterEvents`
+  - integer
+  - Maximum number of scattering events in media on a camera path; Russian roulette ends most paths earlier.
+    (Default: `1024`)
+```
+
+(doppler-media)=
+## Participating media
+
+With `useVolumes`, paths also scatter inside media, and every scattering event is a path vertex: its scatterer adds
+its velocity to the path velocity, as a surface vertex does. This simulates, for example, coherent light scattered by
+tissue with blood flowing in a vessel.
+
+- **Media.** A mesh is a medium when its material has volume absorption or scattering: `volumeAbsorption` and
+  `volumeScattering` (per scene unit, so per meter) and `volumeAnisotropy`, the $g$ of a Henyey-Greenstein phase
+  function. In a Mitsuba scene, give the shape a homogeneous `interior` medium with `sigma_s` and `sigma_a`; the
+  importer reads no phase function, so the medium scatters isotropically. The mesh must be closed, with its normals
+  facing out. Media may be nested, up to 4 deep (a vessel inside tissue), but must not overlap.
+- **Boundaries.** A medium's surface is index-matched: rays cross it unchanged, without reflection or refraction, and
+  paths have no vertex there. Inside, light travels as in vacuum. Refraction at medium boundaries is not implemented
+  yet: the pass warns about media whose material has an index of refraction other than 1, and renders them with 1.
+- **Motion.** The scatterers move with their mesh's motion in `velocities` (for example, a translating vessel, or a
+  rotating medium, whose scatterers each have their own velocity).
+- **Light.** Use the point light. The laser beam is not traced through media yet: it stops at the first surface,
+  medium boundaries included.
+- **Counts.** `maxBounces` counts surface vertices only, and `computeDirect` decides only for the path camera ->
+  primary hit -> light: light scattered once in a medium is always included.
+
 ## Light
 
 The light is set on the `LaserLight` pass, as for the [time-gated path tracer](#laser). A lidar has its light next to

@@ -19,6 +19,7 @@ set(shared_shaders
     Lights/SceneTriangles.slang
     Geometry/Ellipsoid.slang
     Geometry/EllipsoidIntersection.slang
+    Volumes/Media.slang
     ShiftMapping/ShiftMapping.slang
     ShiftMapping/NewtonSolver.slang
     ShiftMapping/ShiftMappingMethods.slangh

@@ -31,6 +31,7 @@
 #include "RenderGraph/RenderPassHelpers.h"
 #include "Utils/Sampling/SampleGenerator.h"
 #include "../Shared/Host/Configs/PathTracingConfig.h"
+#include "../Shared/Host/Configs/VolumeConfig.h"
 #include "../Shared/Host/LaserState.h"
 #include "../Shared/Host/InlinePassUtils.h"
 #include "../Shared/Host/ObjectMotion.h"
@@ -77,6 +78,7 @@ private:
     struct Options
     {
         PathTracingConfig pathTracing;
+        VolumeConfig volumes;
         float wavelength = 1550.f;      ///< Laser wavelength, nm.
         /// Linear chirp (FMCW): the laser frequency sweeps by chirpBandwidth over chirpDuration, up and then down
         /// (a triangular chirp). 0: a single-frequency laser.
@@ -112,6 +114,8 @@ private:
     bool mNeedToClearSpectrum = true;
     bool mOptionsChanged = false;
     bool mVelocitiesDirty = true;
+    bool mSceneHasMedia = false;
+    bool mWarnedLaserInMedia = false; ///< The laser beam is not traced through media: warned once.
     std::string mUIWarning; ///< Why the last UI edit was rejected.
     ref<Scene> mpScene;
     LaserInput mLaserInput; ///< The laser of this frame, from the LaserLight pass.

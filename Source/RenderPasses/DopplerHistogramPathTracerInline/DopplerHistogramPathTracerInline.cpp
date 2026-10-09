@@ -99,7 +99,7 @@ void DopplerHistogramPathTracerInline::parseProperties(const Properties& props)
 {
     for (const auto& [key, value] : props)
     {
-        if (mOptions.pathTracing.parse(key, value))
+        if (mOptions.pathTracing.parse(key, value) || mOptions.volumes.parse(key, value))
             continue;
         if (key == kWavelength)
             mOptions.wavelength = value;
@@ -133,6 +133,7 @@ void DopplerHistogramPathTracerInline::parseProperties(const Properties& props)
 void DopplerHistogramPathTracerInline::validateOptions(const Options& options)
 {
     options.pathTracing.validate();
+    options.volumes.validate();
     if (!(options.wavelength > 0.f) || !std::isfinite(options.wavelength))
         FALCOR_THROW("wavelength must be positive and finite.");
     if (!(options.chirpBandwidth >= 0.f) || !std::isfinite(options.chirpBandwidth))
@@ -150,6 +151,8 @@ void DopplerHistogramPathTracerInline::onOptionsChanged(const Options& previous)
 {
     mOptionsChanged = true;
     resetSpectrum();
+    if (mOptions.volumes.useVolumes && !previous.volumes.useVolumes)
+        VolumeConfig::warnRefractiveBoundaries(mpScene);
     // The outputs depend on the bin count, the channel count, the chirp (a second spectrum) and the output size.
     if (mOptions.frequencyBin != previous.frequencyBin ||
         mOptions.pathTracing.useSingleChannel != previous.pathTracing.useSingleChannel ||
@@ -172,6 +175,7 @@ Properties DopplerHistogramPathTracerInline::getProperties() const
 {
     Properties props;
     mOptions.pathTracing.serialize(props);
+    mOptions.volumes.serialize(props);
     props[kWavelength] = mOptions.wavelength;
     props[kChirpBandwidth] = mOptions.chirpBandwidth;
     props[kChirpDuration] = mOptions.chirpDuration;
@@ -219,6 +223,7 @@ DefineList DopplerHistogramPathTracerInline::getShaderDefines(const RenderData& 
     defines.add(getValidResourceDefines(InlinePass::kColorOutputChannels, renderData));
     defines.add(getValidResourceDefines(spectrumChannels(), renderData));
     defines.add("CHIRPED", mOptions.chirped() ? "1" : "0");
+    defines.add(mOptions.volumes.getDefines());
     return defines;
 }
 
@@ -306,6 +311,12 @@ void DopplerHistogramPathTracerInline::execute(RenderContext* pRenderContext, co
         mpComputePass = InlinePass::createScenePass(mpDevice, pRenderContext, mpScene, mpSampleGenerator, kShaderFile,
             getShaderDefines(renderData));
     InlinePass::checkScene(*mpScene, renderData);
+    if (mOptions.volumes.useVolumes && mSceneHasMedia && mLaserInput.get().isLaser && !mWarnedLaserInMedia)
+    {
+        logWarning("DopplerHistogramPathTracerInline: the laser beam is not traced through participating media (it "
+                   "stops at the first surface, medium boundaries included). Use the point light with media.");
+        mWarnedLaserInMedia = true;
+    }
 
     InlinePass::updateScenePassDefines(pRenderContext, mpComputePass, mpScene, mpSampleGenerator,
         getShaderDefines(renderData));
@@ -369,6 +380,9 @@ void DopplerHistogramPathTracerInline::renderUI(Gui::Widgets& widget)
     if (auto group = widget.group("Sampling", true))
         dirty |= options.pathTracing.renderSamplingUI(group, " Each vertex is connected to the light.");
 
+    if (auto group = widget.group("Participating media", false))
+        dirty |= options.volumes.renderUI(group);
+
     if (auto group = widget.group("Output", true))
     {
         dirty |= options.pathTracing.renderOutputUI(group, true, true);
@@ -406,4 +420,7 @@ void DopplerHistogramPathTracerInline::setScene(RenderContext* pRenderContext, c
     mVelocitiesDirty = true;
     resetSpectrum();
     mpScene = pScene;
+    mSceneHasMedia = VolumeConfig::hasMedia(mpScene);
+    if (mOptions.volumes.useVolumes)
+        VolumeConfig::warnRefractiveBoundaries(mpScene);
 }
