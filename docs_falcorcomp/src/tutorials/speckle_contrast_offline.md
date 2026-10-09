@@ -66,8 +66,8 @@ autocorrelation contains it with nothing added.
 
 As in the [Doppler spectrum tutorial](doppler_spectrum_offline.md), with a point light at the camera, which lights
 the whole scene as LSCI does. The motion is slow, as blood flow is: at 785 nm, the tall box coming towards the camera
-at 1 mm/s shifts light that it reflects once by $2v/\lambda \approx 2.5$ kHz. The spectrum covers -8 to 8 kHz in 4096
-bins of 3.9 Hz, fine enough for exposures up to 10 ms ($1 / \Delta f = 256$ ms).
+at 1 mm/s shifts light that it reflects once by $2v/\lambda \approx 2.5$ kHz. The spectrum covers -8 to 8 kHz in 1024
+bins of 15.6 Hz, fine enough for exposures up to 10 ms ($1 / \Delta f = 64$ ms).
 
 `computeDirect` is off. LSCI looks into tissue, where light scatters many times, and the speckle decorrelates
 because those paths have different shifts. A single reflection off a rigidly moving surface has a single shift and
@@ -108,7 +108,7 @@ the bin of zero shift.
 
 For short exposures $K = 1$: the speckle is fully developed. It starts to decorrelate around 0.1 ms, the inverse of
 the kHz spread of the shifts. All the light of the boxes is shifted, and their contrast keeps falling (0.2 at 10 ms).
-The walls level off at their static fraction: 0.73 on the back wall and 0.55 on the right wall, whose light partly
+The walls level off at their static fraction: 0.80 on the back wall and 0.64 on the right wall, whose light partly
 came by way of the boxes.
 
 ```{literalinclude} code/speckle_contrast_offline.py
@@ -116,8 +116,8 @@ came by way of the boxes.
 :start-after: "# 5. Show the contrast"
 ```
 
-The full script: {download}`speckle_contrast_offline.py <code/speckle_contrast_offline.py>`. It takes about 30 seconds
-and 2.5 GB of memory.
+The full script: {download}`speckle_contrast_offline.py <code/speckle_contrast_offline.py>`. It takes about 10 seconds
+and 1.5 GB of memory.
 
 (lsci-limitations)=
 ## Limitations

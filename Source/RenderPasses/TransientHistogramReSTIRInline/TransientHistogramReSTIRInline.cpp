@@ -339,13 +339,13 @@ void TransientHistogramReSTIRInline::execute(RenderContext* pRenderContext, cons
     {
         mReSTIR.temporalHistoryValid = false;
         InlinePass::clearChannels(pRenderContext, renderData, InlinePass::kColorOutputChannels);
-        InlinePass::clearChannels(pRenderContext, renderData, histogramChannels());
+        InlinePass::clearChannels(pRenderContext, renderData, histogramChannels(), mTexture3DClearer);
         return;
     }
 
     if (mNeedToClearHistogram)
     {
-        InlinePass::clearChannels(pRenderContext, renderData, histogramChannels());
+        InlinePass::clearChannels(pRenderContext, renderData, histogramChannels(), mTexture3DClearer);
         mNeedToClearHistogram = false;
     }
 

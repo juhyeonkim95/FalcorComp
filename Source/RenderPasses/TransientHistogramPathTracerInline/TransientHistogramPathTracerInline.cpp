@@ -218,7 +218,7 @@ void TransientHistogramPathTracerInline::execute(RenderContext* pRenderContext, 
     if (!mpScene)
     {
         InlinePass::clearChannels(pRenderContext, renderData, InlinePass::kColorOutputChannels);
-        InlinePass::clearChannels(pRenderContext, renderData, histogramChannels());
+        InlinePass::clearChannels(pRenderContext, renderData, histogramChannels(), mTexture3DClearer);
         return;
     }
 
@@ -227,7 +227,7 @@ void TransientHistogramPathTracerInline::execute(RenderContext* pRenderContext, 
         resetHistogram();
     if (!mOptions.accumulate || mNeedToClearHistogram)
     {
-        InlinePass::clearChannels(pRenderContext, renderData, histogramChannels());
+        InlinePass::clearChannels(pRenderContext, renderData, histogramChannels(), mTexture3DClearer);
         mNeedToClearHistogram = false;
         mSummedFrames = 0;
     }

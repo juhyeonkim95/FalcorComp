@@ -128,6 +128,8 @@ private:
     std::string mUIWarning; ///< Why the last UI edit was rejected.
 
     ref<ComputePass> mpComputePass;      ///< Initial candidates (and temporal reuse), written to the histogram.
+    /// Clears the 3D outputs in every depth slice (clearTexture leaves slices from 1024 on, on Vulkan).
+    InlinePass::Texture3DClearer mTexture3DClearer;
     /// With TEMPORAL_REUSE_PAIRS, the temporal reuse after initial generation: the merge shifts of one pixel and bin per
     /// thread (TemporalReusePairs.cs.slang), then the merges (TemporalReuse.cs.slang).
     ref<ComputePass> mpTemporalPairsPass;
