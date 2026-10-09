@@ -5,7 +5,7 @@
 #include "Scene/Material/BasicMaterial.h"
 
 /// Participating media (Shared/Shaders/Volumes/Media.slang): homogeneous media inside closed meshes whose material has
-/// volume absorption or scattering. Their surfaces are index-matched: rays cross them unchanged.
+/// volume absorption or scattering, with the material's index of refraction. Their surfaces are smooth interfaces.
 struct VolumeConfig
 {
     bool useVolumes = false;
@@ -47,7 +47,7 @@ struct VolumeConfig
     {
         bool dirty = widget.checkbox("Participating media", useVolumes);
         widget.tooltip("Render the homogeneous media inside closed meshes whose material has volume absorption or "
-                       "scattering. Their surfaces are index-matched: rays cross them unchanged.", true);
+                       "scattering. Their surfaces are smooth interfaces with the material's index of refraction.", true);
         if (useVolumes)
         {
             dirty |= widget.var("Max scatter events", maxScatterEvents, 1u, 1u << 20);
@@ -70,22 +70,5 @@ struct VolumeConfig
                 if (isMedium(pMaterial))
                     return true;
         return false;
-    }
-
-    /// Logs the media whose material asks for refraction, which the index-matched boundaries ignore.
-    static void warnRefractiveBoundaries(const ref<Scene>& pScene)
-    {
-        if (!pScene)
-            return;
-        for (const auto& pMaterial : pScene->getMaterials())
-        {
-            if (!isMedium(pMaterial))
-                continue;
-            auto pBasic = static_ref_cast<BasicMaterial>(pMaterial);
-            if (pBasic->getIndexOfRefraction() != 1.f)
-                logWarning("Material '{}' holds a medium with index of refraction {}: medium boundaries are "
-                           "index-matched (refraction is not implemented), so it is rendered with index 1.",
-                           pBasic->getName(), pBasic->getIndexOfRefraction());
-        }
     }
 };

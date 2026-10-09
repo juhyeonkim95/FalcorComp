@@ -181,21 +181,24 @@ float3 tracePath(const uint2 pixel, const uint2 frameDim)
 #if USE_VOLUMES
 static const uint kMaxScatterEvents = MAX_SCATTER_EVENTS;
 static const uint kRussianRouletteStart = 8; // Scattering events before Russian roulette.
+static const uint kMaxInterfaceEvents = 64;  // Reflections and refractions at medium boundaries on a path.
 
-// Endpoint of a light connection from `from`: the point light, or the laser spot offset towards `from`.
-float3 lightConnectionEndpoint(LightSample light, float3 from)
+// Adds the light connection `c` of a vertex to the radiance and the spectra: `scatter` is the vertex's BSDF times
+// cosine, or phase function, for the connection's direction.
+void addLightConnection(uint2 pixel, MediumLightConnection c, float3 throughput, float3 scatter, float3 irradiance,
+    float pathLength, float pathVelocity, float laserT, inout float3 radiance)
 {
-#if IS_LIGHT_SOURCE_LASER
-    return rayOriginToward(light.sd, from - light.posW());
-#else
-    return light.posW();
-#endif
+    float3 contribution = throughput * scatter * irradiance;
+    radiance += contribution;
+    accumulateToSpectrum(pixel, pathLength + c.length + laserT, pathVelocity + c.pathVelocity, contribution);
 }
 
 // tracePath through participating media: between vertices, a camera ray may cross medium boundaries and scatter in a
 // medium (traceThroughMedia). A scattering event is a vertex: it connects to the light through the medium's phase
-// function and continues in a direction sampled from it. Every light connection takes the transmittance of the media
-// it crosses. Without media in the scene, this renders what tracePath renders, with the same random numbers.
+// function and continues in a direction sampled from it. A refracting medium boundary is a vertex too: the path
+// reflects or refracts there, chosen by the Fresnel reflectance, and a refraction from index n1 into n2 weighs
+// (n1 / n2)^2 (radiance). Light connections go through media (connectToLightInMedia), refracted once at most.
+// Without media in the scene, this renders what tracePath renders, with the same random numbers.
 float3 tracePathInMedia(const uint2 pixel, const uint2 frameDim)
 {
     HitInfo primaryHit = HitInfo(gVBuffer[pixel]);
@@ -210,31 +213,65 @@ float3 tracePathInMedia(const uint2 pixel, const uint2 frameDim)
         MediumStack media = createEmptyMediumStack(); // The camera is outside every medium.
         float3 throughput = 1.f;
         float3 vertex = cameraOrigin; // The last vertex of the camera path, its velocity, and the refractive index
-        float3 vertexVelocity = gSensorVelocity; // of the segment that leaves it.
+        float3 vertexVelocity = gSensorVelocity; // of the medium that the segment leaving it crosses.
         float vertexIoR = 1.f;
         float pathVelocity = 0.f; // Of the camera path so far, m/s.
         float pathLength = 0.f;   // Optical length of the camera path so far, m.
         float3 dir = primaryDir;
         uint surfaceDepth = 0;    // As in tracePath: the primary hit is depth zero.
         uint scatterEvents = 0;
+        uint interfaceEvents = 0;
 
-        // The first event: the primary hit, or, when it is a medium boundary, what the ray meets past it.
+        // The first event: the primary hit, a refracting boundary there, or what lies past an index-matched one.
         MediumEvent event = {};
         event.type = MediumEventType::Surface;
         event.hit = primaryHit;
         event.origin = cameraOrigin;
-        uint instance;
-        bool entering;
-        float3 faceNormal;
-        if (getMediumCrossing(primaryHit, dir, instance, entering, faceNormal))
+        MediumBoundary boundary;
+        if (getMediumBoundary(primaryHit, dir, media, boundary))
         {
-            ShadingData boundary = loadShadingData(primaryHit, cameraOrigin, dir);
-            media.cross(instance, entering);
-            event = traceThroughMedia(rayOriginPastBoundary(boundary.posW, faceNormal, dir), dir, media, throughput, sg);
+            float3 position = loadShadingData(primaryHit, cameraOrigin, dir).posW;
+            if (boundary.isIndexMatched())
+            {
+                media.cross(boundary.instance, boundary.entering);
+                event = traceThroughMedia(position, boundary.rayOrigin(position, dir), dir, media, throughput, sg);
+            }
+            else
+            {
+                event.type = MediumEventType::Interface;
+                event.position = position;
+                event.boundary = boundary;
+            }
         }
 
         while (any(throughput > 0.f) && event.type != MediumEventType::Escape)
         {
+            if (event.type == MediumEventType::Interface)
+            {
+                // Reflection or refraction at a medium boundary: a vertex, which moves with its instance.
+                if (++interfaceEvents > kMaxInterfaceEvents) break;
+                MediumBoundary b = event.boundary;
+                float3 position = event.position;
+                float3 velocity = gInstanceVelocities[b.instance].at(position);
+                pathVelocity += segmentVelocity(vertex, vertexVelocity, position, velocity, vertexIoR);
+                pathLength += length(position - vertex) * vertexIoR;
+                float3 normal = dot(b.faceNormal, dir) < 0.f ? b.faceNormal : -b.faceNormal; // Facing the ray.
+                float cosI = -dot(dir, normal);
+                bool refracted = sampleNext1D(sg) >= fresnelDielectric(cosI, b.n2 / b.n1);
+                float3 wo = refracted ? refract(dir, normal, b.n1 / b.n2) : reflect(dir, normal);
+                if (refracted)
+                {
+                    media.cross(b.instance, b.entering);
+                    throughput *= (b.n1 / b.n2) * (b.n1 / b.n2);
+                }
+                vertex = position;
+                vertexVelocity = velocity;
+                vertexIoR = media.ior();
+                dir = wo;
+                event = traceThroughMedia(position, b.rayOrigin(position, dir), dir, media, throughput, sg);
+                continue;
+            }
+
             if (event.type == MediumEventType::Scatter)
             {
                 float3 position = event.position;
@@ -245,20 +282,13 @@ float3 tracePathInMedia(const uint2 pixel, const uint2 frameDim)
 
                 LightSample light = {};
                 lightSampler.generateLightSample(sg, light);
-                if (light.valid)
+                MediumLightConnection c = connectToLightInMedia(position, position, velocity, media, light,
+                    lightSampler.laserOrigin, gLightVelocity);
+                if (c.connected)
                 {
-                    float3 toLight = light.posW() - position;
-                    float distance = length(toLight);
-                    if (distance > 0.f && isfinite(distance))
-                    {
-                        float3 contribution = throughput * vp.phaseFunction.eval(-dir, toLight / distance) *
-                            light.evalLi(position, sg) *
-                            evalConnectionTransmittance(position, media, lightConnectionEndpoint(light, position));
-                        radiance += contribution;
-                        float totalVelocity = pathVelocity +
-                            connectionVelocity(position, velocity, light, lightSampler.laserOrigin, gLightVelocity);
-                        accumulateToSpectrum(pixel, pathLength + distance + light.laserT, totalVelocity, contribution);
-                    }
+                    float3 phase = vp.phaseFunction.eval(-dir, c.direction);
+                    addLightConnection(pixel, c, throughput, phase, c.evalIrradiance(light, position, sg), pathLength,
+                        pathVelocity, light.laserT, radiance);
                 }
 
                 if (++scatterEvents >= kMaxScatterEvents) break;
@@ -275,9 +305,9 @@ float3 tracePathInMedia(const uint2 pixel, const uint2 frameDim)
                 throughput *= weight;
                 vertex = position;
                 vertexVelocity = velocity;
-                vertexIoR = 1.f;
+                vertexIoR = media.ior();
                 dir = wo;
-                event = traceThroughMedia(position, dir, media, throughput, sg);
+                event = traceThroughMedia(position, position, dir, media, throughput, sg);
                 continue;
             }
 
@@ -289,29 +319,22 @@ float3 tracePathInMedia(const uint2 pixel, const uint2 frameDim)
             pathLength += length(surface.posW - vertex) * vertexIoR;
             IMaterialInstance material = gScene.materials.getMaterialInstance(surface, ExplicitLodTextureSampler(0.f));
             // computeDirect decides only for the path's first vertex: camera -> primary hit -> light.
-            bool firstVertex = surfaceDepth == 0 && scatterEvents == 0;
+            bool firstVertex = surfaceDepth == 0 && scatterEvents == 0 && interfaceEvents == 0;
             if ((!firstVertex || kComputeDirect) && hasNonDeltaLobe(surface, material))
             {
                 LightSample light = {};
                 lightSampler.generateLightSample(sg, light);
-                bool connected;
-                LightConnection connection = connectToLight(surface, light, connected);
-                if (connected)
+                MediumLightConnection c = connectToLightInMedia(rayOriginToward(surface, light.posW() - surface.posW),
+                    surface.posW, velocity, media, light, lightSampler.laserOrigin, gLightVelocity);
+                float3 bsdfCosine = 0.f;
+                float3 irradiance = 0.f;
+                if (c.connected)
                 {
-                    // The offsets of checkLightVisibility: a connection that they reverse is blocked.
-                    float3 segment = light.posW() - surface.posW;
-                    float3 origin = rayOriginToward(surface, segment);
-                    float3 endpoint = lightConnectionEndpoint(light, surface.posW);
-                    float3 transmittance = dot(endpoint - origin, segment) > 0.f ?
-                        evalConnectionTransmittance(origin, media, endpoint) : float3(0.f);
-                    connection.bsdfCosine = material.eval(surface, connection.direction, sg);
-                    connection.incidentRadiance = light.evalLi(surface.posW, sg) * transmittance;
+                    bsdfCosine = material.eval(surface, c.direction, sg);
+                    irradiance = c.evalIrradiance(light, surface.posW, sg);
                 }
-                float3 contribution = throughput * connection.bsdfCosine * connection.incidentRadiance;
-                radiance += contribution;
-                float totalVelocity =
-                    pathVelocity + connectionVelocity(surface.posW, velocity, light, lightSampler.laserOrigin, gLightVelocity);
-                accumulateToSpectrum(pixel, pathLength + connection.distance + light.laserT, totalVelocity, contribution);
+                addLightConnection(pixel, c, throughput, bsdfCosine, irradiance, pathLength, pathVelocity, light.laserT,
+                    radiance);
             }
             if (++surfaceDepth >= kMaxBounces) break;
             BSDFSample bsdfSample = {};
@@ -319,10 +342,10 @@ float3 tracePathInMedia(const uint2 pixel, const uint2 frameDim)
             throughput *= bsdfSample.weight;
             vertex = surface.posW;
             vertexVelocity = velocity;
-            vertexIoR = surface.IoR;
+            vertexIoR = media.ior();
             dir = bsdfSample.wo;
-            event = traceThroughMedia(surface.computeRayOrigin(!bsdfSample.isLobe(LobeType::Transmission)), dir, media,
-                throughput, sg);
+            event = traceThroughMedia(surface.posW, surface.computeRayOrigin(!bsdfSample.isLobe(LobeType::Transmission)),
+                dir, media, throughput, sg);
         }
     }
     return radiance / gSamplesPerPixel;

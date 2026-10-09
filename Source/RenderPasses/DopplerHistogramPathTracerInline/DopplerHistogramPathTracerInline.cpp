@@ -151,8 +151,6 @@ void DopplerHistogramPathTracerInline::onOptionsChanged(const Options& previous)
 {
     mOptionsChanged = true;
     resetSpectrum();
-    if (mOptions.volumes.useVolumes && !previous.volumes.useVolumes)
-        VolumeConfig::warnRefractiveBoundaries(mpScene);
     // The outputs depend on the bin count, the channel count, the chirp (a second spectrum) and the output size.
     if (mOptions.frequencyBin != previous.frequencyBin ||
         mOptions.pathTracing.useSingleChannel != previous.pathTracing.useSingleChannel ||
@@ -421,6 +419,4 @@ void DopplerHistogramPathTracerInline::setScene(RenderContext* pRenderContext, c
     resetSpectrum();
     mpScene = pScene;
     mSceneHasMedia = VolumeConfig::hasMedia(mpScene);
-    if (mOptions.volumes.useVolumes)
-        VolumeConfig::warnRefractiveBoundaries(mpScene);
 }

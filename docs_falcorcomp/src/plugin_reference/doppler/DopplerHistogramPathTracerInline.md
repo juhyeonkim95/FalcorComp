@@ -164,16 +164,23 @@ tissue with blood flowing in a vessel.
   `volumeScattering` (per scene unit, so per meter) and `volumeAnisotropy`, the $g$ of a Henyey-Greenstein phase
   function. In a Mitsuba scene, give the shape a homogeneous `interior` medium with `sigma_s` and `sigma_a`; the
   importer reads no phase function, so the medium scatters isotropically. The mesh must be closed, with its normals
-  facing out. Media may be nested, up to 4 deep (a vessel inside tissue), but must not overlap.
-- **Boundaries.** A medium's surface is index-matched: rays cross it unchanged, without reflection or refraction, and
-  paths have no vertex there. Inside, light travels as in vacuum. Refraction at medium boundaries is not implemented
-  yet: the pass warns about media whose material has an index of refraction other than 1, and renders them with 1.
+  facing out. Media may be nested, up to 4 deep (a vessel inside tissue), but must not overlap or touch.
+- **Boundaries.** A medium's surface is a smooth interface between its material's `indexOfRefraction` and that of
+  what surrounds it (the enclosing medium, or 1). A path reflects or refracts there, chosen by the Fresnel
+  reflectance, and the interface point is a path vertex that moves with the medium's object. Where the two indices
+  are equal, rays cross unchanged and paths have no vertex there (a vessel inside tissue of the same index).
+- **Light connections.** From a vertex in a medium, a connection goes straight to the light through index-matched
+  boundaries, or refracts once, where Snell's law holds on the boundary triangle (for example, at the tissue
+  surface). A connection that would refract at two boundaries is not made, so that light is missing (for example, a
+  vessel whose index differs from its tissue's). Where light could arrive through two faces of a medium (near an edge
+  of a box), only one is found.
 - **Motion.** The scatterers move with their mesh's motion in `velocities` (for example, a translating vessel, or a
   rotating medium, whose scatterers each have their own velocity).
 - **Light.** Use the point light. The laser beam is not traced through media yet: it stops at the first surface,
   medium boundaries included.
 - **Counts.** `maxBounces` counts surface vertices only, and `computeDirect` decides only for the path camera ->
-  primary hit -> light: light scattered once in a medium is always included.
+  primary hit -> light: light scattered once in a medium is always included. A path ends after 64 reflections and
+  refractions at medium boundaries.
 
 ## Light
 
