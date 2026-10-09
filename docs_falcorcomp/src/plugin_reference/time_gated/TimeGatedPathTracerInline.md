@@ -218,6 +218,11 @@ in a frame (no `LaserLight`, one removed from the graph, or no execution edge) w
 * - `patternPhase`
   - float
   - Phase $\phi$ of the fringes, in radians. (Default: `0`)
+* - `patternPhaseShift`
+  - float3
+  - Added to `patternPhase` in each color channel. With `(0, 2.094, 4.189)`, the three channels hold three
+    phase-shifted fringes rendered on the same paths, so that demodulating them cancels the uniform light path by
+    path. (Default: `(0, 0, 0)`)
 ```
 
 `update_laser_info(position, direction)` moves the laser from a script, for example every frame; `position` becomes

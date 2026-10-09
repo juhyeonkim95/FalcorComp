@@ -27,6 +27,7 @@ const char kLaserCollocated[] = "laserCollocated";
 const char kIsLightSourceLaser[] = "isLightSourceLaser";
 const char kPatternFrequency[] = "patternFrequency";
 const char kPatternPhase[] = "patternPhase";
+const char kPatternPhaseShift[] = "patternPhaseShift";
 
 float3 normalizeDirection(const float3& direction)
 {
@@ -75,6 +76,8 @@ void LaserLight::parseProperties(const Properties& props)
             mLaser.patternFrequency = value;
         else if (key == kPatternPhase)
             mLaser.patternPhase = value;
+        else if (key == kPatternPhaseShift)
+            mLaser.patternPhaseShift = value;
         else
             logWarning("Unknown property '{}' in LaserLight properties.", key);
     }
@@ -92,6 +95,7 @@ Properties LaserLight::getProperties() const
     props[kIsLightSourceLaser] = mLaser.isLaser;
     props[kPatternFrequency] = mLaser.patternFrequency;
     props[kPatternPhase] = mLaser.patternPhase;
+    props[kPatternPhaseShift] = mLaser.patternPhaseShift;
     return props;
 }
 
@@ -201,6 +205,9 @@ void LaserLight::renderUI(Gui::Widgets& widget)
                        "front of the light, normal to its direction. Zero: none.", true);
         dirty |= widget.var("patternPhase", mLaser.patternPhase, -FLT_MAX, FLT_MAX, 0.01f, false, "%.3f");
         widget.tooltip("Phase of the fringes, radians.", true);
+        dirty |= widget.var("patternPhaseShift", mLaser.patternPhaseShift, -FLT_MAX, FLT_MAX, 0.01f, false, "%.3f");
+        widget.tooltip("Added to the phase in each color channel, e.g. (0, 2.094, 4.189): three phase-shifted fringes "
+                       "rendered on the same paths.", true);
     }
 
     // Downstream passes restart their accumulation when the light changes.

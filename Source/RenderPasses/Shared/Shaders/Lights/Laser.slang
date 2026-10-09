@@ -10,7 +10,7 @@ cbuffer Laser
     float3 gLaserPower;
     float gLaserCosAngle;   // Cosine of the cone half-angle.
     float3 gLaserPatternFrequency; // The point light's fringes (LaserState::patternFrequency); zero: none.
-    float gLaserPatternPhase;
+    float3 gLaserPatternPhase; // Per color channel (LaserState::patternPhase + patternPhaseShift).
 }
 
 /// Light sampler for the laser.

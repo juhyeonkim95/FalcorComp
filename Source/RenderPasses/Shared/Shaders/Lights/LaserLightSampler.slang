@@ -36,10 +36,11 @@ struct LightSample
 #else
     float3 origin;
     float3 patternFrequency; ///< Fringes of the point light as a projector (LaserState::patternFrequency).
-    float patternPhase;
-    /// The fringes' factor in the unit direction `d` from the light: 1 without fringes.
-    float pattern(float3 d){
-        if (all(patternFrequency == 0.f) && patternPhase == 0.f) return 1.f;
+    float3 patternPhase;     ///< Their phase in each color channel.
+    bool hasPattern() { return any(patternFrequency != 0.f) || any(patternPhase != 0.f); }
+    /// The fringes' factor in the unit direction `d` from the light, per color channel: 1 without fringes.
+    float3 pattern(float3 d){
+        if (!hasPattern()) return float3(1.f);
         float along = dot(d, dir);
         return along > 0.f ? 0.5f * (1.f + cos(2.f * M_PI * dot(patternFrequency, d) / along + patternPhase)) : 0.f;
     }
@@ -47,7 +48,7 @@ struct LightSample
         float3 toLight = this.origin - posW;
         float inspot = float(dot(dir, toLight) < 0.0);
         float distSqr = max(dot(toLight, toLight), kMinLightDistSqr);
-        float fringes = all(patternFrequency == 0.f) && patternPhase == 0.f ? 1.f : pattern(-toLight / sqrt(distSqr));
+        float3 fringes = hasPattern() ? pattern(-toLight / sqrt(distSqr)) : float3(1.f);
         return Li / distSqr * inspot * fringes;
     }
     // Radiant intensity leaving the light in direction `d` (from the light): evalLi times the squared distance.
@@ -72,7 +73,7 @@ struct LaserLightSampler
     float3 laserPower;
 
     float3 patternFrequency; ///< Fringes of the point light (LaserState::patternFrequency).
-    float patternPhase;
+    float3 patternPhase;     ///< Per color channel.
 
     // helper axis
     float3 laserTangent;
@@ -87,12 +88,12 @@ struct LaserLightSampler
         this.laserTangent = cross(laserBitangent, laserDirection);
         this.laserPower = laserPower;
         this.patternFrequency = float3(0.f);
-        this.patternPhase = 0.f;
+        this.patternPhase = float3(0.f);
     }
 
     /// With fringes on the point light.
     __init(float3 laserOrigin, float3 laserDirection, float laserCosAngle, float3 laserPower, float3 patternFrequency,
-        float patternPhase){
+        float3 patternPhase){
         this.laserOrigin = laserOrigin;
         this.laserDirection = laserDirection;
         this.laserCosAngle = laserCosAngle;

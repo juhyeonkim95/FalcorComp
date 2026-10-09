@@ -20,6 +20,7 @@ struct LaserState
     static constexpr char kCollocated[] = "laserCollocated";
     static constexpr char kPatternFrequency[] = "patternFrequency";
     static constexpr char kPatternPhase[] = "patternPhase";
+    static constexpr char kPatternPhaseShift[] = "patternPhaseShift";
     static constexpr char kToken[] = "laserToken"; ///< Changes at every publication (LaserInput).
 
     float3 origin = float3(0.f);
@@ -35,12 +36,16 @@ struct LaserState
     /// (cycles per meter) on the plane 1 m in front of the light, normal to `direction`. Zero (and phase 0): no pattern.
     float3 patternFrequency = float3(0.f);
     float patternPhase = 0.f; ///< Radians.
+    /// Added to patternPhase in each color channel: e.g. (0, 2 pi / 3, 4 pi / 3) renders three phase-shifted fringes
+    /// on the same paths, so that their demodulation cancels the uniform light path by path.
+    float3 patternPhaseShift = float3(0.f);
 
     bool operator==(const LaserState& other) const
     {
         return all(origin == other.origin) && all(direction == other.direction) && all(power == other.power) &&
                cosAngle == other.cosAngle && isLaser == other.isLaser && collocated == other.collocated &&
-               all(patternFrequency == other.patternFrequency) && patternPhase == other.patternPhase;
+               all(patternFrequency == other.patternFrequency) && patternPhase == other.patternPhase &&
+               all(patternPhaseShift == other.patternPhaseShift);
     }
     bool operator!=(const LaserState& other) const { return !(*this == other); }
 
@@ -58,6 +63,7 @@ struct LaserState
         dict[kCollocated] = collocated;
         dict[kPatternFrequency] = patternFrequency;
         dict[kPatternPhase] = patternPhase;
+        dict[kPatternPhaseShift] = patternPhaseShift;
     }
 
     /// The laser last published in the dictionary; the defaults where none was. Passes use LaserInput instead.
@@ -73,6 +79,7 @@ struct LaserState
         laser.collocated = dict.getValue(kCollocated, laser.collocated);
         laser.patternFrequency = dict.getValue(kPatternFrequency, laser.patternFrequency);
         laser.patternPhase = dict.getValue(kPatternPhase, laser.patternPhase);
+        laser.patternPhaseShift = dict.getValue(kPatternPhaseShift, laser.patternPhaseShift);
         return laser;
     }
 
@@ -92,7 +99,7 @@ struct LaserState
         var["gLaserPower"] = power;
         var["gLaserCosAngle"] = cosAngle;
         var["gLaserPatternFrequency"] = patternFrequency;
-        var["gLaserPatternPhase"] = patternPhase;
+        var["gLaserPatternPhase"] = patternPhase + patternPhaseShift;
     }
 };
 
