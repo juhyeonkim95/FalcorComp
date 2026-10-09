@@ -6,6 +6,7 @@ from pathlib import Path
 import falcorcomp as falcor
 import numpy as np
 from scipy.interpolate import CubicSpline
+from scipy.ndimage import median_filter
 from scipy.spatial import cKDTree
 import matplotlib
 matplotlib.use("Agg")  # no window
@@ -154,12 +155,10 @@ FREQUENCIES = [0.0, 0.3, 0.6]  # fringes on the tissue, cycles per mm
 PHASES = np.array([0.0, 2 * np.pi / 3, 4 * np.pi / 3])
 
 
-def demodulated(frequency):
-    """The spectrum of the light that keeps fringes of `frequency` (cycles per mm on the tissue, along x): a complex
-    spectrum C, whose modulus in each bin is the fringes' amplitude (AC). The three phase-shifted fringes are in the
-    three color channels of one render (patternPhaseShift), so that they come from the same paths, and
-    C = 4/3 sum_j S_j exp(-i phase_j) cancels the uniform part of the light path by path. Without fringes, C is the
-    spectrum of the uniform light (DC). A new render on every call."""
+def render(frequency):
+    """The light in each bin (bins, pixels, 3) under fringes of `frequency` (cycles per mm on the tissue, along x):
+    the three phase-shifted fringes are in the three color channels (patternPhaseShift), so that they come from the
+    same paths. A new render with new samples on every call."""
     # patternFrequency is per meter on the plane 1 m from the light: the tissue's frequency times its distance.
     light.set_properties({"patternFrequency": [frequency * 1e3 * HEIGHT, 0.0, 0.0],
                           "patternPhaseShift": PHASES.tolist() if frequency else [0.0, 0.0, 0.0]})
@@ -167,22 +166,28 @@ def demodulated(frequency):
     for _ in range(FRAMES):
         testbed.frame()
     spectrum = graph.get_output("Tracer.spectrum").to_numpy()[..., :3]  # (bins, height, width, channels), per MHz
-    light_per_bin = (spectrum / FRAMES * BIN_MHZ).reshape(BINS, -1, 3)
+    return (spectrum / FRAMES * BIN_MHZ).reshape(BINS, -1, 3)
+
+
+def demodulate(light_per_bin, frequency):
+    """The spectrum of the light that keeps the fringes, C = 4/3 sum_j S_j exp(-i phase_j): a complex spectrum whose
+    modulus in each bin is the fringes' amplitude (AC). Summed over the phases of the same paths, the uniform part of
+    the light cancels path by path. Without fringes, the spectrum of the uniform light (DC)."""
     if not frequency:
         return light_per_bin[..., 0].astype(np.complex128)
     return 4 / 3 * (light_per_bin.astype(np.complex128) * np.exp(-1j * PHASES)).sum(-1)
 
 
-# 5. Compute the speckle variance of the demodulated light
+# 5. Compute the speckle variance
 EXPOSURE = 5e-3  # s
 lags = np.concatenate([np.arange(BINS), np.arange(-BINS, 0)])  # m, in the order of a length-2B FFT
 window = np.sinc(lags * BIN_MHZ * 1e6 * EXPOSURE) ** 2  # sinc^2(m df T)
 
 
 def speckle_variance(c_a, c_b):
-    """For the light of the spectra c_a and c_b (two independent renders): its speckle variance over the exposure,
-    sum_m A[m] sinc^2(m df T) with A[m] = Re sum_k conj(c_a[k]) c_b[k + m], and its intensity squared, per pixel.
-    K^2 is their ratio; it is summed over many pixels first, as the demodulated light is noisy."""
+    """For the light of the spectra c_a and c_b (two independent renders, real or complex): its speckle variance over
+    the exposure, sum_m A[m] sinc^2(m df T) with A[m] = Re sum_k conj(c_a[k]) c_b[k + m], and its intensity squared,
+    per pixel. K^2 is their ratio."""
     intensity2 = (np.conj(c_a.sum(0)) * c_b.sum(0)).real
     variance = np.empty(intensity2.size)
     for start in range(0, intensity2.size, 2048):  # 2048 pixels at a time, to bound the memory
@@ -194,13 +199,47 @@ def speckle_variance(c_a, c_b):
     return variance.reshape(128, 128), intensity2.reshape(128, 128)
 
 
-variance, intensity2 = {}, {}
-for frequency in FREQUENCIES:
-    variance[frequency], intensity2[frequency] = speckle_variance(demodulated(frequency), demodulated(frequency))
-np.savez("lsci_structured.npz", frequencies=FREQUENCIES, variance=np.array([variance[f] for f in FREQUENCIES]),
-         intensity2=np.array([intensity2[f] for f in FREQUENCIES]))
+def contrast(variance, intensity2):
+    return np.sqrt(np.clip(variance / intensity2, 0.0, None))
 
-# 6. Show the contrast
+
+images, phase_contrast = {}, {}  # what the camera sees under the three phases: the image and its K (height, width, 3)
+variance, intensity2 = {}, {}  # of the demodulated light
+for frequency in FREQUENCIES:
+    light_a, light_b = render(frequency), render(frequency)  # two independent renders
+    images[frequency] = 0.5 * (light_a.sum(0) + light_b.sum(0)).reshape(128, 128, 3)
+    phase_contrast[frequency] = np.stack([contrast(*speckle_variance(light_a[..., j], light_b[..., j]))
+                                          for j in range(3)], -1)
+    variance[frequency], intensity2[frequency] = speckle_variance(demodulate(light_a, frequency),
+                                                                  demodulate(light_b, frequency))
+    del light_a, light_b
+np.savez("lsci_structured.npz", frequencies=FREQUENCIES, variance=np.array([variance[f] for f in FREQUENCIES]),
+         intensity2=np.array([intensity2[f] for f in FREQUENCIES]), images=np.array([images[f] for f in FREQUENCIES]),
+         phase_contrast=np.array([phase_contrast[f] for f in FREQUENCIES]))
+
+# 6. Show the fringes
+# What the camera sees under the three phases: the image (the spectra summed over their bins), median filtered (3 x 3)
+# for display as it has rare bright samples, and its speckle contrast at 5 ms, pixel by pixel.
+figure, axes = plt.subplots(4, 4, figsize=(12, 12.4))
+for (image_row, contrast_row), frequency in zip([axes[0:2], axes[2:4]], FREQUENCIES[1:]):
+    image = np.stack([median_filter(images[frequency][..., j], size=3) for j in range(3)], -1)
+    top = np.percentile(image, 99.5)
+    for j, phase in enumerate(np.degrees(PHASES)):
+        image_row[j].imshow(image[..., j], cmap="gray", vmin=0, vmax=top)
+        image_row[j].set_title(f"{frequency:g} / mm, phase {phase:.0f}°")
+        contrast_row[j].imshow(phase_contrast[frequency][..., j], cmap="gray", vmin=0, vmax=1)
+        contrast_row[j].set_title(f"K at 5 ms, phase {phase:.0f}°")
+    image_row[3].imshow(image.mean(-1), cmap="gray", vmin=0, vmax=top)
+    image_row[3].set_title("DC: mean of the three")
+    contrast_row[3].imshow(contrast(variance[0.0], intensity2[0.0]), cmap="gray", vmin=0, vmax=1)
+    contrast_row[3].set_title("K at 5 ms, uniform light")
+for axis in axes.ravel():
+    axis.set_xticks([])
+    axis.set_yticks([])
+figure.tight_layout()
+figure.savefig("lsci_structured_fringes.png", dpi=75)
+
+# 7. Show the contrast
 pixel = (np.arange(128) + 0.5) / 128 * 3.0 - 1.5  # mm, columns along x, rows along z
 px, pz = np.meshgrid(pixel, pixel)
 superficial = np.full((128, 128), np.inf)  # distance to the nearest superficial vessel wall, mm
@@ -222,8 +261,7 @@ def pooled(frequency, mask, axis=None, bins=None):
 
 
 figure, axes = plt.subplots(1, 3, figsize=(16, 4.4), gridspec_kw={"width_ratios": [1, 1.4, 1.2]})
-k_uniform = np.sqrt(np.clip(variance[0.0] / intensity2[0.0], 0.0, None))
-axes[0].imshow(k_uniform, cmap="gray", vmin=0, vmax=1, extent=[-1.5, 1.5, 1.5, -1.5])
+axes[0].imshow(contrast(variance[0.0], intensity2[0.0]), cmap="gray", vmin=0, vmax=1, extent=[-1.5, 1.5, 1.5, -1.5])
 axes[0].axvline(0.6, color="C1", ls="--", lw=1)
 axes[0].set_title("K at 5 ms, uniform light\n(dashed: the deep vessel, 1 mm under)")
 axes[0].set_xlabel("x (mm)")

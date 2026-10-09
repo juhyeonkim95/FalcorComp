@@ -18,8 +18,8 @@ The point light at the camera becomes a projector of fringes along x: `patternFr
 `LaserLight` scale its light by $\frac{1}{2}\left(1 + \cos(2\pi f x + \phi)\right)$ on the tissue (see
 [Laser](#laser); `patternFrequency` is $f$ times the light's height, as it is set at 1 m from the light). Three
 phases, $\phi_j = 0, 2\pi/3, 4\pi/3$, demodulate the images as in SFDI: their mean is the image under uniform light
-(DC), and their first harmonic the light that keeps the fringes (AC). The Doppler spectra demodulate the same way, bin
-by bin:
+(DC), and their first harmonic the light that keeps the fringes (AC) ([step 6](#lsci-structured-fringes) shows the
+images). The Doppler spectra demodulate the same way, bin by bin:
 
 $$
 C(f_D) = \frac{4}{3} \sum_j S_j(f_D)\, e^{-i \phi_j},
@@ -87,18 +87,45 @@ factor of the products.
 :end-before: "# 5. Compute the speckle variance"
 ```
 
-## 5. Compute the speckle variance of the demodulated light
+## 5. Compute the speckle variance
 
-The speckle variance and the intensity squared, at an exposure of 5 ms. Their ratio, $K^2$, is taken over many pixels
-together: pixel by pixel, the AC light is too noisy.
+The speckle variance and the intensity squared at an exposure of 5 ms, pixel by pixel: of the image under each phase,
+which is what a camera measures, and of the demodulated light. For the demodulated light, their ratio $K^2$ is taken
+over many pixels together in step 7: pixel by pixel, the AC light is too noisy.
 
 ```{literalinclude} code/lsci_structured.py
 :language: python
-:start-after: "# 5. Compute the speckle variance of the demodulated light"
-:end-before: "# 6. Show the contrast"
+:start-after: "# 5. Compute the speckle variance"
+:end-before: "# 6. Show the fringes"
 ```
 
-## 6. Show the contrast
+(lsci-structured-fringes)=
+## 6. Show the fringes
+
+```{image} images/lsci_structured_fringes.jpg
+:alt: Images under three phases of fringes at 0.3 and 0.6 per mm, their mean, and the speckle contrast of each
+:align: center
+```
+
+What the camera sees under the fringes, and the speckle contrast of each image. The tissue washes the fringes out: as
+projected, their amplitude equals the mean light; in the images, it is 0.46 of it at 0.3 /mm and 0.24 at 0.6 /mm, as
+light that spreads sideways by a fringe's width carries light from the bright fringes into the dark ones. The mean of
+the three phases is the image under uniform light (DC). No image shows the vessels: here, their blood changes how much
+light comes back too little to see, while its motion changes the speckle contrast.
+
+The speckle contrast of each image shows the superficial vessels as under uniform light, and it follows the fringes:
+in the tissue, 0.65 under the bright fringes and 0.54 under the dark ones at 0.3 /mm, against 0.62 under uniform light.
+Under a bright fringe, much of the light came straight back from near the surface; under a dark one, it came sideways
+from the bright fringes beside it, along longer paths through the perfused tissue, which decorrelate faster. The black
+dots are noise of the estimate, more where there is less light. The demodulation separates the depths (step 7).
+
+```{literalinclude} code/lsci_structured.py
+:language: python
+:start-after: "# 6. Show the fringes"
+:end-before: "# 7. Show the contrast"
+```
+
+## 7. Show the contrast
 
 Under uniform light, the deep vessel lowers the contrast over it to 0.91 of the tissue's, in a broad band, and the
 superficial vessels to 0.40. With fringes of 0.3 /mm, the deep vessel lowers it to 0.93; at 0.6 /mm to 0.98, so that
@@ -107,10 +134,10 @@ frequency, 0.60, 0.77 and 0.83, as the shallower light crosses less of its perfu
 
 ```{literalinclude} code/lsci_structured.py
 :language: python
-:start-after: "# 6. Show the contrast"
+:start-after: "# 7. Show the contrast"
 ```
 
-The full script: {download}`lsci_structured.py <code/lsci_structured.py>`. It takes about five minutes and 4 GB of
+The full script: {download}`lsci_structured.py <code/lsci_structured.py>`. It takes about six minutes and 4 GB of
 memory.
 
 ## Limitations
