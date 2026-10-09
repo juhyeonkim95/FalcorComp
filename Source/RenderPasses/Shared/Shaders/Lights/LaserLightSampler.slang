@@ -27,10 +27,6 @@ struct LightSample
         float distSqr = max(dot(toLight, toLight), kMinLightDistSqr);
         return Li * mi.eval(sd, normalize(posW - sd.posW), sg) / distSqr;
     }
-    // Radiant intensity leaving the spot in direction `dir` (from the spot): evalLi times the squared distance.
-    float3 evalIntensity(float3 dir, inout SampleGenerator sg){
-        return Li * mi.eval(sd, dir, sg);
-    }
     float3 getOrientedFaceNormal(){
         return sd.getOrientedFaceNormal();
     }

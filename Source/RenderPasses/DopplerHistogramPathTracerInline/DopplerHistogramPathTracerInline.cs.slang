@@ -197,13 +197,13 @@ float brownianHalfWidth(float brownian)
 // cosine, or phase function, for the connection's direction; `brownian` that of the path (brownianHalfWidth), whose
 // Lorentzian line is sampled.
 void addLightConnection(uint2 pixel, MediumLightConnection c, float3 throughput, float3 scatter, float3 irradiance,
-    float pathLength, float pathVelocity, float laserT, float brownian, inout float3 radiance, inout SampleGenerator sg)
+    float pathLength, float pathVelocity, float brownian, inout float3 radiance, inout SampleGenerator sg)
 {
     float3 contribution = throughput * scatter * irradiance;
     if (all(contribution == 0.f)) return;
     radiance += contribution;
     float offset = brownian > 0.f ? brownianHalfWidth(brownian) * tan(M_PI * (sampleNext1D(sg) - 0.5f)) : 0.f;
-    accumulateToSpectrum(pixel, pathLength + c.length + laserT, pathVelocity + c.pathVelocity, contribution, offset);
+    accumulateToSpectrum(pixel, pathLength + c.length, pathVelocity + c.pathVelocity, contribution, offset);
 }
 
 // tracePath through participating media: between vertices, a camera ray may cross medium boundaries and scatter in a
@@ -301,12 +301,12 @@ float3 tracePathInMedia(const uint2 pixel, const uint2 frameDim)
                 LightSample light = {};
                 lightSampler.generateLightSample(sg, light);
                 MediumLightConnection c = connectToLightInMedia(position, position, velocity, media, light,
-                    lightSampler.laserOrigin, gLightVelocity);
+                    gLightVelocity);
                 if (c.connected)
                 {
                     float3 phase = vp.phaseFunction.eval(-dir, c.direction);
                     addLightConnection(pixel, c, throughput, phase, c.evalIrradiance(light, position, sg), pathLength,
-                        pathVelocity, light.laserT, brownian + diffusion * (1.f - dot(dir, c.direction)), radiance, sg);
+                        pathVelocity, brownian + diffusion * (1.f - dot(dir, c.direction)), radiance, sg);
                 }
 
                 if (++scatterEvents >= kMaxScatterEvents) break;
@@ -344,7 +344,7 @@ float3 tracePathInMedia(const uint2 pixel, const uint2 frameDim)
                 LightSample light = {};
                 lightSampler.generateLightSample(sg, light);
                 MediumLightConnection c = connectToLightInMedia(rayOriginToward(surface, light.posW() - surface.posW),
-                    surface.posW, velocity, media, light, lightSampler.laserOrigin, gLightVelocity);
+                    surface.posW, velocity, media, light, gLightVelocity);
                 float3 bsdfCosine = 0.f;
                 float3 irradiance = 0.f;
                 if (c.connected)
@@ -352,8 +352,8 @@ float3 tracePathInMedia(const uint2 pixel, const uint2 frameDim)
                     bsdfCosine = material.eval(surface, c.direction, sg);
                     irradiance = c.evalIrradiance(light, surface.posW, sg);
                 }
-                addLightConnection(pixel, c, throughput, bsdfCosine, irradiance, pathLength, pathVelocity, light.laserT,
-                    brownian, radiance, sg);
+                addLightConnection(pixel, c, throughput, bsdfCosine, irradiance, pathLength, pathVelocity, brownian,
+                    radiance, sg);
             }
             if (++surfaceDepth >= kMaxBounces) break;
             BSDFSample bsdfSample = {};

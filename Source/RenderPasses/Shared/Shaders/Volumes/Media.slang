@@ -12,6 +12,7 @@
     Light connections from a vertex go straight to the light when every boundary on the way is index-matched, and
     otherwise through one refracting boundary (connectToLightInMedia): the refraction point solves Snell's law on the
     plane of the boundary triangle, and the light arriving there is that of a point source through a planar interface.
+    The light is the point light (IS_LIGHT_SOURCE_LASER 0): the host leaves media out with the laser.
 */
 #include "Utils/Math/MathConstants.slangh"
 import Scene.RaytracingInline;
@@ -394,8 +395,8 @@ struct MediumLightConnection
     float3 lightDirection; ///< Refracted: from the light towards the refraction point.
     float geometry;        ///< Refracted: refractedIrradianceFactor times the Fresnel transmittance.
     float3 transmittance;  ///< Of the media on the way.
-    float length;          ///< Optical length of the connection to the light endpoint (without light.laserT).
-    float pathVelocity;    ///< Path-velocity terms of its segments, the laser's included.
+    float length;          ///< Optical length of the connection to the light.
+    float pathVelocity;    ///< Path-velocity terms of its segments.
 
     /// Light arriving at the vertex along `direction`, as irradiance perpendicular to it (zero if not connected).
     /// Evaluated apart from connectToLightInMedia, so that callers keep the order of their random numbers.
@@ -408,12 +409,12 @@ struct MediumLightConnection
 }
 
 /// Connects the vertex at `position` (velocity `velocity`, inside `media`; `origin` is its ray origin towards the
-/// light) to the light sample: straight when every boundary on the way is index-matched, otherwise through the first
+/// light) to the point light (velocity `lightVelocity`): straight when every boundary on the way is index-matched, otherwise through the first
 /// refracting boundary, at the point y that solves Snell's law on the plane of its triangle (the triangles of the
 /// boundary around y are tried in turn). A connection through more than one refracting boundary is blocked. A blocked
 /// connection stays `connected` (a valid geometry) with zero transmittance, as checkLightVisibility's callers do.
 MediumLightConnection connectToLightInMedia(float3 origin, float3 position, float3 velocity, MediumStack media,
-    LightSample light, float3 lightOrigin, float3 lightVelocity)
+    LightSample light, float3 lightVelocity)
 {
     MediumLightConnection c = {};
     if (!light.valid) return c;
@@ -421,23 +422,15 @@ MediumLightConnection connectToLightInMedia(float3 origin, float3 position, floa
     float3 toLight = lightPos - position;
     float distance = length(toLight);
     if (!(distance > 0.f) || !isfinite(distance)) return c;
-    float3 endpoint = lightPos;
-    float3 endpointVelocity = lightVelocity;
-    float beamVelocity = 0.f;
-#if IS_LIGHT_SOURCE_LASER
-    endpoint = rayOriginToward(light.sd, position - lightPos);
-    endpointVelocity = surfaceVelocity(light.hit, lightPos);
-    beamVelocity = segmentVelocity(lightPos, endpointVelocity, lightOrigin, lightVelocity);
-#endif
     float nx = media.ior();
     c.connected = true;
     c.direction = toLight / distance;
     c.transmittance = float3(0.f);
     c.length = nx * distance;
-    c.pathVelocity = segmentVelocity(position, velocity, lightPos, endpointVelocity, nx) + beamVelocity;
+    c.pathVelocity = segmentVelocity(position, velocity, lightPos, lightVelocity, nx);
     // The ray offsets must not reverse a short connection (as checkLightVisibility).
-    if (!(dot(endpoint - origin, toLight) > 0.f)) return c;
-    MediaSegment straight = marchSegment(position, origin, media, endpoint);
+    if (!(dot(lightPos - origin, toLight) > 0.f)) return c;
+    MediaSegment straight = marchSegment(position, origin, media, lightPos);
     if (straight.blocked) return c;
     if (!straight.refracted)
     {
@@ -476,7 +469,7 @@ MediumLightConnection connectToLightInMedia(float3 origin, float3 position, floa
     if (!(d1 > 0.f) || !(d2 > 0.f)) return c;
     MediumStack outsideMedia = inside.media;
     outsideMedia.cross(inside.boundary.instance, inside.boundary.entering);
-    MediaSegment outside = marchSegment(y, inside.boundary.rayOrigin(y, toLightFromY), outsideMedia, endpoint);
+    MediaSegment outside = marchSegment(y, inside.boundary.rayOrigin(y, toLightFromY), outsideMedia, lightPos);
     if (outside.blocked || outside.refracted) return c;
     float cosL = abs(dot(faceNormal, toLightFromY)) / d1;
     float cosX = abs(dot(faceNormal, toVertex)) / d2;
@@ -489,6 +482,6 @@ MediumLightConnection connectToLightInMedia(float3 origin, float3 position, floa
     c.transmittance = inside.transmittance * outside.transmittance;
     c.length = nx * d2 + nl * d1;
     c.pathVelocity = segmentVelocity(position, velocity, y, velocityY, nx) +
-                     segmentVelocity(y, velocityY, lightPos, endpointVelocity, nl) + beamVelocity;
+                     segmentVelocity(y, velocityY, lightPos, lightVelocity, nl);
     return c;
 }

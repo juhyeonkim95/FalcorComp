@@ -107,6 +107,7 @@ private:
     bool needsReset(const RenderData& renderData) const;
     void bindShaderData(const ShaderVar& var, const RenderData& renderData);
     DefineList getShaderDefines(const RenderData& renderData) const;
+    bool usesMedia() const; ///< useVolumes with the point light.
 
     Options mOptions;
     uint mFrameCount = 0;
@@ -116,7 +117,7 @@ private:
     bool mVelocitiesDirty = true;
     bool mMediaDirty = true;
     bool mSceneHasMedia = false;
-    bool mWarnedLaserInMedia = false; ///< The laser beam is not traced through media: warned once.
+    bool mWarnedLaserInMedia = false; ///< Media with the laser (ignored): warned once.
     std::string mUIWarning; ///< Why the last UI edit was rejected.
     ref<Scene> mpScene;
     LaserInput mLaserInput; ///< The laser of this frame, from the LaserLight pass.

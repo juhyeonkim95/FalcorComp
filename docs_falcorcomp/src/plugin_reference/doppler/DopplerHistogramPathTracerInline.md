@@ -145,8 +145,8 @@ Participating media (see [Participating media](#doppler-media)):
   - Description
 * - `useVolumes`
   - boolean
-  - Render the homogeneous media inside closed meshes. Off, a medium's mesh is an ordinary surface. (Default:
-    `false`)
+  - Render the homogeneous media inside closed meshes, with the point light. Off, or with the laser, a medium's mesh
+    is an ordinary surface. (Default: `false`)
 * - `maxScatterEvents`
   - integer
   - Maximum number of scattering events in media on a camera path; Russian roulette ends most paths earlier.
@@ -193,8 +193,8 @@ tissue with blood flowing in a vessel.
   scattering events. Scatterers diffuse independently (as in diffusing-wave spectroscopy). The pass samples each path's
   Lorentzian, so a broad line needs more samples than a sharp one, and the light of its tails beyond the frequency
   range is not in the spectrum.
-- **Light.** Use the point light. The laser beam is not traced through media yet: it stops at the first surface,
-  medium boundaries included.
+- **Light.** Media take the point light (`isLightSourceLaser = false` on the `LaserLight` pass). With the laser,
+  `useVolumes` is ignored and media meshes render as ordinary surfaces.
 - **Counts.** `maxBounces` counts surface vertices only, and `computeDirect` decides only for the path camera ->
   primary hit -> light: light scattered once in a medium is always included. A path ends after 64 reflections and
   refractions at medium boundaries.

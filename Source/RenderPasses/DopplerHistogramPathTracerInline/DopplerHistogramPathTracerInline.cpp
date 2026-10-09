@@ -227,7 +227,14 @@ DefineList DopplerHistogramPathTracerInline::getShaderDefines(const RenderData& 
     defines.add(getValidResourceDefines(spectrumChannels(), renderData));
     defines.add("CHIRPED", mOptions.chirped() ? "1" : "0");
     defines.add(mOptions.volumes.getDefines());
+    defines.add("USE_VOLUMES", usesMedia() ? "1" : "0");
     return defines;
+}
+
+bool DopplerHistogramPathTracerInline::usesMedia() const
+{
+    // Media take the point light: with the laser, their meshes are ordinary surfaces.
+    return mOptions.volumes.useVolumes && !mLaserInput.get().isLaser;
 }
 
 void DopplerHistogramPathTracerInline::setVelocity(const std::string& name, float3 linear, float3 angular, float3 center)
@@ -272,7 +279,7 @@ void DopplerHistogramPathTracerInline::bindShaderData(const ShaderVar& var, cons
     var["CB"]["gSensorVelocity"] = mOptions.sensorVelocity;
     var["CB"]["gLightVelocity"] = mOptions.lightVelocity;
     var["gInstanceVelocities"] = mpInstanceVelocities;
-    if (mOptions.volumes.useVolumes)
+    if (usesMedia())
         var["gMediumProperties"] = mpMediumProperties;
     mLaserInput.get().bindShaderData(var["Laser"]);
 
@@ -323,8 +330,8 @@ void DopplerHistogramPathTracerInline::execute(RenderContext* pRenderContext, co
     InlinePass::checkScene(*mpScene, renderData);
     if (mOptions.volumes.useVolumes && mSceneHasMedia && mLaserInput.get().isLaser && !mWarnedLaserInMedia)
     {
-        logWarning("DopplerHistogramPathTracerInline: the laser beam is not traced through participating media (it "
-                   "stops at the first surface, medium boundaries included). Use the point light with media.");
+        logWarning("DopplerHistogramPathTracerInline: participating media take the point light (isLightSourceLaser = "
+                   "false); with the laser, their meshes render as ordinary surfaces.");
         mWarnedLaserInMedia = true;
     }
 
