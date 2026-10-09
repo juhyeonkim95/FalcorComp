@@ -193,6 +193,15 @@ tissue with blood flowing in a vessel.
   scattering events. Scatterers diffuse independently (as in diffusing-wave spectroscopy). The pass samples each path's
   Lorentzian, so a broad line needs more samples than a sharp one, and the light of its tails beyond the frequency
   range is not in the spectrum.
+- **Vessels as grids.** `set_vessels(medium, fraction, velocity, origin, size, scattering, absorption,
+  anisotropy=0, diffusion=0)` puts blood vessels into the medium of the material named `medium`, from numpy arrays:
+  the blood fraction, shape (nz, ny, nx), and the blood's velocity in m/s, shape (nz, ny, nx, 3), at the centers of
+  the cells of the box from `origin` to `origin + size` (x along the last axis), interpolated between them.
+  `scattering` and `absorption` (per meter), `anisotropy` and `diffusion` (m²/s) are the blood's. There, the medium
+  mixes its coefficients with the blood's by the fraction: its free flights are delta tracked and its transmittances
+  ratio tracked, against the larger of the two extinctions, and a scattering event is the blood's or the medium's in
+  proportion to their scattering. The vessels may branch and curve freely. One medium holds vessels at a time;
+  `clear_vessels()` removes them. See [the vascular network tutorial](../../tutorials/speckle_contrast_network.md).
 - **Light.** Media take the point light (`isLightSourceLaser = false` on the `LaserLight` pass). With the laser,
   `useVolumes` is ignored and media meshes render as ordinary surfaces.
 - **Counts.** `maxBounces` counts surface vertices only, and `computeDirect` decides only for the path camera ->
