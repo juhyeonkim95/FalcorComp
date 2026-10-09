@@ -371,8 +371,14 @@ void DopplerHistogramPathTracerInline::renderUI(Gui::Widgets& widget)
         dirty |= group.var("Sensor velocity (m/s)", options.sensorVelocity, -1e4f, 1e4f);
         dirty |= group.var("Light velocity (m/s)", options.lightVelocity, -1e4f, 1e4f);
         for (const auto& [name, motion] : options.velocities)
+        {
             group.text(fmt::format("{}: linear ({}, {}, {}) m/s", name, motion.linear.x, motion.linear.y,
                 motion.linear.z));
+            if (motion.hasFlow())
+                group.text(fmt::format("  flow: {} m/s on the axis, radius {} m", motion.flowMaxSpeed, motion.flowRadius));
+            if (motion.diffusion != 0.f)
+                group.text(fmt::format("  diffusion: {} m^2/s", motion.diffusion));
+        }
     }
 
     if (auto group = widget.group("Sampling", true))

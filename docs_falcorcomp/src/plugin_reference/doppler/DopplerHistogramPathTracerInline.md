@@ -174,8 +174,16 @@ tissue with blood flowing in a vessel.
   surface). A connection that would refract at two boundaries is not made, so that light is missing (for example, a
   vessel whose index differs from its tissue's). Where light could arrive through two faces of a medium (near an edge
   of a box), only one is found.
-- **Motion.** The scatterers move with their mesh's motion in `velocities` (for example, a translating vessel, or a
-  rotating medium, whose scatterers each have their own velocity).
+- **Motion.** The scatterers move with their object's motion in `velocities` (see
+  [Velocities](#doppler-velocities)), for example a translating or rotating medium, or blood in a Poiseuille flow
+  (`flowOrigin`, `flowAxis`, `flowRadius`, `flowMaxSpeed`).
+- **Brownian motion.** The scatterers of an object with a `diffusion` coefficient $D$ (m²/s) also diffuse. A
+  scattering event at angle $\theta$ in a medium of index $n$ decorrelates the path's field at the rate $q^2 D$, with
+  $q = 2 k \sin(\theta / 2)$ and $k = 2 \pi n / \lambda$, so a path's line becomes a Lorentzian of half width
+  $\sum q^2 D / (2 \pi) = \sum 4 \pi n^2 D (1 - \cos\theta) / \lambda^2$ around its Doppler shift, summed over its
+  scattering events. Scatterers diffuse independently (as in diffusing-wave spectroscopy). The pass samples each path's
+  Lorentzian, so a broad line needs more samples than a sharp one, and the light of its tails beyond the frequency
+  range is not in the spectrum.
 - **Light.** Use the point light. The laser beam is not traced through media yet: it stops at the first surface,
   medium boundaries included.
 - **Counts.** `maxBounces` counts surface vertices only, and `computeDirect` decides only for the path camera ->

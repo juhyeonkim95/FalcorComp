@@ -25,6 +25,9 @@ to its instantaneous rigid motion, v(x) = linear + angular × (x − center):
 "velocities": {
     "TallBox":  {"linear": [0.0, 0.0, 2.0]},                                 # m/s
     "Wheel":    {"angular": [0.0, 0.0, 30.0], "center": [0.3, 0.2, 0.0]},  # rad/s, about an axis through center
+    "Blood":    {"flowOrigin": [0.0, -5e-4, 0.0], "flowAxis": [1.0, 0.0, 0.0],
+                 "flowRadius": 2.5e-4, "flowMaxSpeed": 5e-3,                 # m, m/s on the axis
+                 "diffusion": 1e-12},                                        # m^2/s
 }
 ```
 
@@ -40,10 +43,17 @@ to its instantaneous rigid motion, v(x) = linear + angular × (x − center):
 - Falcor merges identical materials when it loads a scene, and then they lose their names (in the Cornell box, every
   white surface becomes `Floor`). Load scenes with `SceneBuilderFlags.DontMergeMaterials` to keep them; pbrt triangle
   meshes have no names, so with pbrt scenes you name objects by their material.
-- `set_velocity(name, linear, angular=[0, 0, 0], center=[0, 0, 0])` sets or changes a motion from Python.
+- `flowOrigin`, `flowAxis`, `flowRadius` and `flowMaxSpeed` add a Poiseuille flow to the rigid motion:
+  flowMaxSpeed (1 − r² / flowRadius²) along `flowAxis` at distance r < flowRadius from the axis through
+  `flowOrigin`, zero farther out. It is meant for the scatterers of a medium, such as blood in a vessel of that
+  radius, and so is `diffusion`, their Brownian diffusion coefficient: see the
+  [participating media](#doppler-media) of `DopplerHistogramPathTracerInline`.
+- `set_velocity(name, linear, angular=[0, 0, 0], center=[0, 0, 0])` sets or changes a rigid motion from Python
+  (without flow or diffusion).
 
 `DopplerToFPathTracerInline` and the `path_length` mode of `VelocityGroundTruthInline` move the objects, which needs
-more of the scene; see [Moving objects](#doppler-tof-moving-objects).
+more of the scene; see [Moving objects](#doppler-tof-moving-objects). They move them rigidly, without flow or
+diffusion.
 
 ```{toctree}
 :maxdepth: 1

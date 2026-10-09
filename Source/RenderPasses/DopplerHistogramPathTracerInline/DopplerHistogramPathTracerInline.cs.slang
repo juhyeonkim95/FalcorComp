@@ -100,13 +100,13 @@ bool frequencyBin(float frequency, out uint bin)
     return true;
 }
 
-// Adds a path with optical length `pathLength` (m) and path velocity `pathVelocity` (m/s) to the spectra. Spectrum
-// values are radiance density per unit frequency (MHz), summed across frames.
-void accumulateToSpectrum(uint2 pixel, float pathLength, float pathVelocity, float3 radiance)
+// Adds a path with optical length `pathLength` (m) and path velocity `pathVelocity` (m/s) to the spectra, its Doppler
+// shift offset by `offset` (MHz). Spectrum values are radiance density per unit frequency (MHz), summed across frames.
+void accumulateToSpectrum(uint2 pixel, float pathLength, float pathVelocity, float3 radiance, float offset = 0.f)
 {
     if (all(radiance == 0.f)) return; // E.g. a blocked connection: no texel to update.
     HistogramTexel value = toHistogramTexel(radiance / (gFrequencyBinWidth * gSamplesPerPixel));
-    float doppler = pathVelocity * gShiftPerVelocity; // f_D
+    float doppler = pathVelocity * gShiftPerVelocity + offset; // f_D
     uint bin;
 #if CHIRPED
     float range = pathLength * gRangeFrequencyPerLength; // f_R
@@ -183,21 +183,35 @@ static const uint kMaxScatterEvents = MAX_SCATTER_EVENTS;
 static const uint kRussianRouletteStart = 8; // Scattering events before Russian roulette.
 static const uint kMaxInterfaceEvents = 64;  // Reflections and refractions at medium boundaries on a path.
 
+// Half width at half maximum (MHz) of the Lorentzian line of a path through diffusing (Brownian) scatterers, from
+// brownian = sum over its scattering events of n^2 D (1 - cos theta). Its field correlation decays as exp(-Gamma tau),
+// Gamma = sum q^2 D with q = 2 k sin(theta / 2), k = 2 pi n / lambda (independent scatterers): Gamma / (2 pi) =
+// 4 pi brownian / lambda^2.
+float brownianHalfWidth(float brownian)
+{
+    float perLength = gShiftPerVelocity * 1e6f; // 1 / lambda, per meter
+    return 4.f * M_PI * brownian * perLength * perLength * 1e-6f;
+}
+
 // Adds the light connection `c` of a vertex to the radiance and the spectra: `scatter` is the vertex's BSDF times
-// cosine, or phase function, for the connection's direction.
+// cosine, or phase function, for the connection's direction; `brownian` that of the path (brownianHalfWidth), whose
+// Lorentzian line is sampled.
 void addLightConnection(uint2 pixel, MediumLightConnection c, float3 throughput, float3 scatter, float3 irradiance,
-    float pathLength, float pathVelocity, float laserT, inout float3 radiance)
+    float pathLength, float pathVelocity, float laserT, float brownian, inout float3 radiance, inout SampleGenerator sg)
 {
     float3 contribution = throughput * scatter * irradiance;
+    if (all(contribution == 0.f)) return;
     radiance += contribution;
-    accumulateToSpectrum(pixel, pathLength + c.length + laserT, pathVelocity + c.pathVelocity, contribution);
+    float offset = brownian > 0.f ? brownianHalfWidth(brownian) * tan(M_PI * (sampleNext1D(sg) - 0.5f)) : 0.f;
+    accumulateToSpectrum(pixel, pathLength + c.length + laserT, pathVelocity + c.pathVelocity, contribution, offset);
 }
 
 // tracePath through participating media: between vertices, a camera ray may cross medium boundaries and scatter in a
 // medium (traceThroughMedia). A scattering event is a vertex: it connects to the light through the medium's phase
 // function and continues in a direction sampled from it. A refracting medium boundary is a vertex too: the path
 // reflects or refracts there, chosen by the Fresnel reflectance, and a refraction from index n1 into n2 weighs
-// (n1 / n2)^2 (radiance). Light connections go through media (connectToLightInMedia), refracted once at most.
+// (n1 / n2)^2 (radiance). Light connections go through media (connectToLightInMedia), refracted once at most. Diffusing
+// scatterers (InstanceVelocity.diffusion) broaden a path's line to a Lorentzian (addLightConnection).
 // Without media in the scene, this renders what tracePath renders, with the same random numbers.
 float3 tracePathInMedia(const uint2 pixel, const uint2 frameDim)
 {
@@ -217,6 +231,7 @@ float3 tracePathInMedia(const uint2 pixel, const uint2 frameDim)
         float vertexIoR = 1.f;
         float pathVelocity = 0.f; // Of the camera path so far, m/s.
         float pathLength = 0.f;   // Optical length of the camera path so far, m.
+        float brownian = 0.f;     // Sum of n^2 D (1 - cos theta) over its scattering events so far (brownianHalfWidth).
         float3 dir = primaryDir;
         uint surfaceDepth = 0;    // As in tracePath: the primary hit is depth zero.
         uint scatterEvents = 0;
@@ -275,10 +290,13 @@ float3 tracePathInMedia(const uint2 pixel, const uint2 frameDim)
             if (event.type == MediumEventType::Scatter)
             {
                 float3 position = event.position;
-                float3 velocity = gInstanceVelocities[media.innermost()].at(position);
+                InstanceVelocity motion = gInstanceVelocities[media.innermost()];
+                float3 velocity = motion.at(position);
                 pathVelocity += segmentVelocity(vertex, vertexVelocity, position, velocity, vertexIoR);
                 pathLength += length(position - vertex) * vertexIoR;
                 VolumeProperties vp = media.properties();
+                float n = media.ior();
+                float diffusion = motion.diffusion.x * n * n;
 
                 LightSample light = {};
                 lightSampler.generateLightSample(sg, light);
@@ -288,7 +306,7 @@ float3 tracePathInMedia(const uint2 pixel, const uint2 frameDim)
                 {
                     float3 phase = vp.phaseFunction.eval(-dir, c.direction);
                     addLightConnection(pixel, c, throughput, phase, c.evalIrradiance(light, position, sg), pathLength,
-                        pathVelocity, light.laserT, radiance);
+                        pathVelocity, light.laserT, brownian + diffusion * (1.f - dot(dir, c.direction)), radiance, sg);
                 }
 
                 if (++scatterEvents >= kMaxScatterEvents) break;
@@ -303,6 +321,7 @@ float3 tracePathInMedia(const uint2 pixel, const uint2 frameDim)
                 float3 weight;
                 if (!vp.phaseFunction.sample(-dir, wo, pdf, weight, sg)) break;
                 throughput *= weight;
+                brownian += diffusion * (1.f - dot(dir, wo));
                 vertex = position;
                 vertexVelocity = velocity;
                 vertexIoR = media.ior();
@@ -334,7 +353,7 @@ float3 tracePathInMedia(const uint2 pixel, const uint2 frameDim)
                     irradiance = c.evalIrradiance(light, surface.posW, sg);
                 }
                 addLightConnection(pixel, c, throughput, bsdfCosine, irradiance, pathLength, pathVelocity, light.laserT,
-                    radiance);
+                    brownian, radiance, sg);
             }
             if (++surfaceDepth >= kMaxBounces) break;
             BSDFSample bsdfSample = {};
