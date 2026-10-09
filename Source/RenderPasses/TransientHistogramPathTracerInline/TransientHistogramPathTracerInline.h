@@ -96,5 +96,7 @@ private:
     LaserInput mLaserInput; ///< The laser of this frame, from the LaserLight pass.
     ref<SampleGenerator> mpSampleGenerator;
     ref<ComputePass> mpComputePass;
+    /// Clears the 3D outputs in every depth slice (clearTexture leaves slices from 1024 on, on Vulkan).
+    InlinePass::Texture3DClearer mTexture3DClearer;
     SceneTriangles mTriangles; ///< tri_approx: every scene triangle.
 };

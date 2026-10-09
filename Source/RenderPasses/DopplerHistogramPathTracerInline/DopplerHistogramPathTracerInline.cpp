@@ -283,7 +283,7 @@ void DopplerHistogramPathTracerInline::execute(RenderContext* pRenderContext, co
     if (!mpScene)
     {
         InlinePass::clearChannels(pRenderContext, renderData, InlinePass::kColorOutputChannels);
-        InlinePass::clearChannels(pRenderContext, renderData, spectrumChannels());
+        InlinePass::clearChannels(pRenderContext, renderData, spectrumChannels(), mTexture3DClearer);
         return;
     }
 
@@ -292,7 +292,7 @@ void DopplerHistogramPathTracerInline::execute(RenderContext* pRenderContext, co
         resetSpectrum();
     if (!mOptions.accumulate || mNeedToClearSpectrum)
     {
-        InlinePass::clearChannels(pRenderContext, renderData, spectrumChannels());
+        InlinePass::clearChannels(pRenderContext, renderData, spectrumChannels(), mTexture3DClearer);
         mNeedToClearSpectrum = false;
         mSummedFrames = 0;
     }
