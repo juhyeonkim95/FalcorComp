@@ -126,7 +126,8 @@ and 1.5 GB of memory.
   speckle size against the pixel size, is an input.
 - Fully developed (Gaussian) speckle is assumed, as in the usual LSCI model.
 - Motion is rigid and deterministic: each path has one Doppler shift, and the contrast falls only through the spread
-  of shifts between paths. Brownian (unordered) motion of scatterers is not modeled.
+  of shifts between paths. Brownian (unordered) motion applies to the scatterers of media (see
+  [blood flow in tissue](speckle_contrast_tissue.md)), not to surfaces.
 
 ## References
 

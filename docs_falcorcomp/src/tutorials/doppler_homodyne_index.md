@@ -5,8 +5,8 @@ mixed with a local oscillator, whose beat frequencies are the Doppler shifts. Wi
 measures the intensity alone, and the scattered light beats with itself: homodyne detection. Its spectrum follows
 from the same Doppler spectrum, the output of `DopplerHistogramPathTracerInline`, so it needs no other render pass.
 
-These tutorials use the scene of [Doppler rendering](doppler_index.md), and their scripts plot with matplotlib
-(`pip install matplotlib`).
+The first tutorial uses the scene of [Doppler rendering](doppler_index.md), the second builds a tissue scene with
+participating media. Their scripts plot with matplotlib (`pip install matplotlib`).
 
 ````{grid} 1 2 2 2
 :gutter: 3
@@ -20,10 +20,21 @@ These tutorials use the scene of [Doppler rendering](doppler_index.md), and thei
 Compute the speckle contrast of laser speckle contrast imaging from the Doppler spectrum, for exposures from 1 µs to
 10 ms, and see the static light keep its contrast.
 ```
+
+```{grid-item-card} Speckle contrast imaging of blood flow in tissue
+:img-top: images/thumbnails/speckle_contrast_tissue_thumb.jpg
+:img-alt: Speckle contrast over a blood vessel in tissue, at a 10 ms exposure
+:link: speckle_contrast_tissue
+:link-type: doc
+
+Render a slab of tissue with a blood vessel as participating media, with the blood in a Poiseuille flow, and see the
+vessel lower the speckle contrast.
+```
 ````
 
 ```{toctree}
 :hidden:
 
 speckle_contrast_offline
+speckle_contrast_tissue
 ```
