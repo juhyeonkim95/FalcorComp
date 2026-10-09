@@ -240,6 +240,8 @@ figure.tight_layout()
 figure.savefig("lsci_structured_fringes.png", dpi=75)
 
 # 7. Show the contrast
+# Pixel by pixel, K^2 of the demodulated light is noisy, and a few pixels hold rare bright samples that would dominate a
+# sum: the maps take the median of K^2 over 9 x 9 pixels, and the regions the median over their pixels.
 pixel = (np.arange(128) + 0.5) / 128 * 3.0 - 1.5  # mm, columns along x, rows along z
 px, pz = np.meshgrid(pixel, pixel)
 superficial = np.full((128, 128), np.inf)  # distance to the nearest superficial vessel wall, mm
@@ -249,41 +251,67 @@ for points, radii in curves:
 regions = {"deep vessel": (np.abs(px - 0.6) < 0.2) & (superficial > 0.15),  # over it, away from the others
            "superficial vessels": (superficial < -0.02) & (np.abs(px - 0.6) > 0.6),
            "tissue": (np.abs(px - 0.6) > 1.0) & (superficial > 0.15)}
+contrast2 = {frequency: variance[frequency] / intensity2[frequency] for frequency in FREQUENCIES}  # K^2 per pixel
+ALL_ROWS = np.ones(128, bool)
 
 
-def pooled(frequency, mask, axis=None, bins=None):
-    """K from the speckle variance and the intensity squared summed over the pixels of `mask` (in `bins` bins of the
-    other axis when given): the demodulated light is too noisy for K pixel by pixel."""
-    def total(values):
-        values = np.where(mask, values, 0.0)
-        return values.sum() if axis is None else values.sum(axis).reshape(bins, -1).sum(1)
-    return np.sqrt(np.clip(total(variance[frequency]) / total(intensity2[frequency]), 0.0, None))
+def median_contrast(frequency, mask):
+    return np.sqrt(max(np.median(contrast2[frequency][mask]), 0.0))
 
 
-figure, axes = plt.subplots(1, 3, figsize=(16, 4.4), gridspec_kw={"width_ratios": [1, 1.4, 1.2]})
-axes[0].imshow(contrast(variance[0.0], intensity2[0.0]), cmap="gray", vmin=0, vmax=1, extent=[-1.5, 1.5, 1.5, -1.5])
-axes[0].axvline(0.6, color="C1", ls="--", lw=1)
-axes[0].set_title("K at 5 ms, uniform light\n(dashed: the deep vessel, 1 mm under)")
-axes[0].set_xlabel("x (mm)")
-axes[0].set_ylabel("z (mm)")
+def lowers(name, rows=ALL_ROWS):
+    """How much the vessels of region `name` lower K below the tissue's, at each frequency, in the selected rows."""
+    return np.array([1 - median_contrast(frequency, regions[name] & rows[:, None]) /
+                     median_contrast(frequency, regions["tissue"] & rows[:, None]) for frequency in FREQUENCIES])
+
+
+def standard_error(statistic):
+    """The jackknife over 8 bands of 16 rows: statistic(rows) with each band left out in turn."""
+    values = np.array([statistic(np.arange(128) // 16 != band) for band in range(8)])
+    return np.sqrt(7 / 8 * ((values - values.mean(0)) ** 2).sum(0))
+
+
+figure, axes = plt.subplots(2, 4, figsize=(17, 8.4), gridspec_kw={"width_ratios": [1, 1, 1, 1.3]},
+                            layout="constrained")
 labels = {frequency: f"fringes {frequency:g} / mm (AC)" if frequency else "uniform light" for frequency in FREQUENCIES}
+extent = [-1.5, 1.5, 1.5, -1.5]
+for column, frequency in enumerate(FREQUENCIES):
+    k_map = np.sqrt(np.clip(median_filter(contrast2[frequency], size=9), 0.0, None))
+    top = axes[0, column].imshow(k_map, cmap="gray", vmin=0, vmax=1, extent=extent)
+    axes[0, column].set_title(f"K at 5 ms, {labels[frequency]}")
+    bottom = axes[1, column].imshow(k_map / median_contrast(frequency, regions["tissue"]), cmap="inferno", vmin=0.7,
+                                    vmax=1.05, extent=extent)
+    axes[1, column].set_title(f"K / K of the tissue, {labels[frequency]}")
+    for axis in axes[:, column]:
+        axis.axvline(0.6, color="C0", ls="--", lw=0.8)  # the deep vessel, 1 mm under
+axes[1, 0].set_xlabel("x (mm)")
+axes[1, 0].set_ylabel("z (mm)")
+figure.colorbar(top, ax=axes[0, :3], shrink=0.9)
+figure.colorbar(bottom, ax=axes[1, :3], shrink=0.9)
+# Across the deep vessel: bands of 8 columns, away from the superficial vessels.
+centers = pixel.reshape(16, 8).mean(1)
 for frequency, color in zip(FREQUENCIES, ["k", "C0", "C3"]):
-    # Across the deep vessel: each column, away from the superficial vessels, in bins of 8 columns.
-    axes[1].plot(pixel.reshape(16, 8).mean(1), pooled(frequency, superficial > 0.15, 0, 16), color=color,
-                 label=labels[frequency])
-axes[1].axvline(0.6, color="C1", ls="--", lw=1)
-axes[1].set_xlabel("x (mm)")
-axes[1].set_ylim(0, 1)
-axes[1].set_title("K at 5 ms across the deep vessel")
-axes[1].legend(loc="lower left")
+    profile = [median_contrast(frequency, (np.abs(px - x) < 1.5 * 8 / 128) & (superficial > 0.15)) for x in centers]
+    axes[0, 3].plot(centers, np.array(profile) / median_contrast(frequency, regions["tissue"]), "o-", ms=3,
+                    color=color, label=labels[frequency])
+axes[0, 3].axvline(0.6, color="C0", ls="--", lw=0.8)
+axes[0, 3].axhline(1.0, color="gray", lw=0.8)
+axes[0, 3].set_xlabel("x (mm)")
+axes[0, 3].set_ylim(0.85, 1.07)
+axes[0, 3].set_title("K / K of the tissue, across the deep vessel")
+axes[0, 3].legend(loc="lower left")
+# How much of each vessel's dip in K under uniform light the fringes keep.
 for name, color in [("deep vessel", "C1"), ("superficial vessels", "C2")]:
-    ratio = [pooled(f, regions[name]) / pooled(f, regions["tissue"]) for f in FREQUENCIES]
-    axes[2].plot(FREQUENCIES, ratio, "o-", color=color, label=f"over the {name}")
-axes[2].axhline(1.0, color="gray", lw=0.8)
-axes[2].set_xlabel("fringes (cycles per mm)")
-axes[2].set_ylabel("K / K over the tissue")
-axes[2].set_title("contrast relative to the tissue, at 5 ms")
-axes[2].set_ylim(0, 1.05)
-axes[2].legend(loc="center right")
-figure.tight_layout()
-figure.savefig("lsci_structured.png", dpi=75)
+    def kept(rows, name=name):
+        dips = lowers(name, rows)
+        return 100 * dips / dips[0]
+    axes[1, 3].errorbar(FREQUENCIES, kept(ALL_ROWS), yerr=standard_error(kept), fmt="o-", capsize=4, color=color,
+                        label=f"{name} (uniform light: -{100 * lowers(name)[0]:.0f}%)")
+axes[1, 3].axhline(100, color="gray", lw=0.8)
+axes[1, 3].set_xticks(FREQUENCIES)
+axes[1, 3].set_xlabel("fringes (cycles per mm)")
+axes[1, 3].set_ylabel("% of the dip under uniform light")
+axes[1, 3].set_ylim(-25, 160)
+axes[1, 3].set_title("how much of each vessel's dip in K remains")
+axes[1, 3].legend(loc="upper left")
+figure.savefig("lsci_structured.png", dpi=70)

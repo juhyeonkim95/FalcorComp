@@ -8,7 +8,7 @@ renders the speckle contrast of the light that keeps the fringes, and finds a de
 spatial frequency rises, while the superficial vessels stay.
 
 ```{image} images/lsci_structured.jpg
-:alt: Speckle contrast under uniform light, across a deep vessel at three spatial frequencies, and against frequency
+:alt: Speckle contrast under uniform light and two fringe frequencies, relative to the tissue, and the vessels' dips
 :align: center
 ```
 
@@ -90,8 +90,8 @@ factor of the products.
 ## 5. Compute the speckle variance
 
 The speckle variance and the intensity squared at an exposure of 5 ms, pixel by pixel: of the image under each phase,
-which is what a camera measures, and of the demodulated light. For the demodulated light, their ratio $K^2$ is taken
-over many pixels together in step 7: pixel by pixel, the AC light is too noisy.
+which is what a camera measures, and of the demodulated light. Pixel by pixel, $K^2$ of the demodulated light is noisy,
+and a few pixels hold rare bright samples that would dominate a sum: step 7 takes medians over many pixels.
 
 ```{literalinclude} code/lsci_structured.py
 :language: python
@@ -114,7 +114,7 @@ the three phases is the image under uniform light (DC). No image shows the vesse
 light comes back too little to see, while its motion changes the speckle contrast.
 
 The speckle contrast of each image shows the superficial vessels as under uniform light, and it follows the fringes:
-in the tissue, 0.65 under the bright fringes and 0.54 under the dark ones at 0.3 /mm, against 0.62 under uniform light.
+in the tissue, 0.67 under the bright fringes and 0.55 under the dark ones at 0.3 /mm, against 0.63 under uniform light.
 Under a bright fringe, much of the light came straight back from near the surface; under a dark one, it came sideways
 from the bright fringes beside it, along longer paths through the perfused tissue, which decorrelate faster. The black
 dots are noise of the estimate, more where there is less light. The demodulation separates the depths (step 7).
@@ -127,10 +127,21 @@ dots are noise of the estimate, more where there is less light. The demodulation
 
 ## 7. Show the contrast
 
-Under uniform light, the deep vessel lowers the contrast over it to 0.91 of the tissue's, in a broad band, and the
-superficial vessels to 0.40. With fringes of 0.3 /mm, the deep vessel lowers it to 0.93; at 0.6 /mm to 0.98, so that
-it has nearly gone, while the superficial vessels still lower it to 0.32. The tissue's own contrast rises with the
-frequency, 0.60, 0.77 and 0.83, as the shallower light crosses less of its perfusion.
+The top row shows what each light sees: the speckle contrast at 5 ms under uniform light and of the light that keeps
+the fringes (AC), the median of $K^2$ over 9 × 9 pixels. The tissue's own contrast rises with the frequency, 0.63, 0.76
+and 0.82, as the shallower light crosses less of its perfusion, while the superficial vessels stay dark. The bottom row
+divides each map by the tissue's contrast. Under uniform light, the deep vessel darkens a broad band around its axis
+(dashed); the band fades at 0.3 /mm and is gone at 0.6 /mm.
+
+Over the deep vessel, the contrast is 8.2 ± 1.3% lower than over the tissue under uniform light, 5.1 ± 1.2% at
+0.3 /mm and 1.2 ± 1.4% at 0.6 /mm: the fringes keep 63 ± 7% and 15 ± 15% of its dip. The superficial vessels lower it
+by 66% under uniform light, and the fringes keep all of it (104% and 106%). The errors are jackknife estimates over
+8 bands of 16 rows.
+
+The deep vessel's dip is small even under uniform light: the contrast falls in proportion to the share of the
+detected light that met moving blood, and under a tenth of the light detected over the deep vessel went through it.
+Most detected light stays shallow, and blood absorbs strongly (0.5 /mm at 785 nm, 25 times the tissue), so most of
+the photons that reach the deep vessel are absorbed there.
 
 ```{literalinclude} code/lsci_structured.py
 :language: python
@@ -146,7 +157,8 @@ memory.
   speckle.
 - The contrast of the AC light comes from the demodulated spectra, which a simulation gives directly. A camera
   measures the speckle of each fringe image, from which coherent SFDI estimates such depth-selective contrast.
-- The AC light is noisy: its contrast is taken over regions, and higher frequencies need more samples.
+- The AC light is noisy, with rare bright samples: its contrast is taken as medians over 9 × 9 pixels or over
+  regions, and higher frequencies need more samples.
 
 ## References
 
