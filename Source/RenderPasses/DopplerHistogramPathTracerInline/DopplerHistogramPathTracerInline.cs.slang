@@ -57,6 +57,7 @@ import RenderPasses.Shared.Shaders.Lights.Laser;
 #endif
 #if USE_VOLUMES
 import RenderPasses.Shared.Shaders.Volumes.Media;
+import Rendering.Volumes.PhaseFunction;
 #endif
 
 cbuffer CB
@@ -291,17 +292,19 @@ float3 tracePathInMedia(const uint2 pixel, const uint2 frameDim)
             {
                 float3 position = event.position;
                 InstanceVelocity motion = gInstanceVelocities[media.innermost()];
-                float3 velocity = motion.at(position);
+                // The scatterer: the medium's, or blood in its vessels (Vessels).
+                float3 velocity = event.blood ? vesselVelocity(position) : motion.at(position);
                 pathVelocity += segmentVelocity(vertex, vertexVelocity, position, velocity, vertexIoR);
                 pathLength += length(position - vertex) * vertexIoR;
                 VolumeProperties vp = media.properties();
                 float n = media.ior();
-                float diffusion = motion.diffusion.x * n * n;
+                float diffusion = (event.blood ? gBloodDiffusion : motion.diffusion.x) * n * n;
+                if (event.blood) vp.phaseFunction = HenyeyGreensteinPhaseFunction(gBloodAnisotropy);
 
                 LightSample light = {};
                 lightSampler.generateLightSample(sg, light);
                 MediumLightConnection c = connectToLightInMedia(position, position, velocity, media, light,
-                    gLightVelocity);
+                    gLightVelocity, sg);
                 if (c.connected)
                 {
                     float3 phase = vp.phaseFunction.eval(-dir, c.direction);
@@ -344,7 +347,7 @@ float3 tracePathInMedia(const uint2 pixel, const uint2 frameDim)
                 LightSample light = {};
                 lightSampler.generateLightSample(sg, light);
                 MediumLightConnection c = connectToLightInMedia(rayOriginToward(surface, light.posW() - surface.posW),
-                    surface.posW, velocity, media, light, gLightVelocity);
+                    surface.posW, velocity, media, light, gLightVelocity, sg);
                 float3 bsdfCosine = 0.f;
                 float3 irradiance = 0.f;
                 if (c.connected)

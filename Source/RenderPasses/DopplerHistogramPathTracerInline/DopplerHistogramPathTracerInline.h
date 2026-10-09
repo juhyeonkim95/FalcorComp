@@ -35,6 +35,7 @@
 #include "../Shared/Host/LaserState.h"
 #include "../Shared/Host/InlinePassUtils.h"
 #include "../Shared/Host/ObjectMotion.h"
+#include "../Shared/Host/VesselGrid.h"
 #include <map>
 
 using namespace Falcor;
@@ -70,6 +71,10 @@ public:
     /// Sets the velocity of the scene objects whose mesh or material is named `name` (or of instance "#<index>").
     void setVelocity(const std::string& name, float3 linear, float3 angular, float3 center);
     void clearVelocities();
+    /// Blood vessels in the medium of material `medium` (VesselGrid::set; with useVolumes).
+    void setVessels(const std::string& medium, const VesselGrid::Array& fraction, const VesselGrid::Array& velocity,
+        float3 origin, float3 size, float3 scattering, float3 absorption, float anisotropy, float diffusion);
+    void clearVessels();
     /// (instance index, mesh name, material name, movable) of every geometry instance of the scene.
     std::vector<std::tuple<uint32_t, std::string, std::string, bool>> getObjectNames() const;
 
@@ -127,4 +132,5 @@ private:
     InlinePass::Texture3DClearer mTexture3DClearer;
     ref<Buffer> mpInstanceVelocities; ///< Per geometry instance: its motion (createInstanceVelocityBuffer).
     ref<Buffer> mpMediumProperties;   ///< Per material: full-precision medium properties (VolumeConfig::media).
+    VesselGrid mVessels;
 };

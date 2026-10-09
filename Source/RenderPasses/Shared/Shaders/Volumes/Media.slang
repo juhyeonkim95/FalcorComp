@@ -3,9 +3,10 @@
 
     A geometry instance is a medium when its material has volume absorption or scattering (BasicMaterial
     volumeAbsorption, volumeScattering, per scene unit, and volumeAnisotropy, a Henyey-Greenstein phase function; 16-bit
-    floats, which gMediumProperties replaces in full precision). Its refractive index is the material's IoR. Its surface is a smooth interface between the medium and what surrounds
-    it (the enclosing medium, or vacuum with index 1): where the two indices are equal, rays cross it unchanged and
-    paths have no vertex there; otherwise it reflects and refracts (Fresnel, Snell), and the crossing is a path vertex.
+    floats, which gMediumProperties replaces in full precision). Its refractive index is the material's IoR. Its
+    surface is a smooth interface between the medium and what surrounds it (the enclosing medium, or vacuum with index
+    1): where the two indices are equal, rays cross it unchanged and paths have no vertex there; otherwise it reflects
+    and refracts (Fresnel, Snell), and the crossing is a path vertex.
     Media may be nested (a vessel inside tissue), up to kMaxNestedMedia deep, but must not overlap; their meshes must
     be closed, with outward-facing normals. The camera and the light are outside every medium.
 
@@ -13,6 +14,8 @@
     otherwise through one refracting boundary (connectToLightInMedia): the refraction point solves Snell's law on the
     plane of the boundary triangle, and the light arriving there is that of a point source through a planar interface.
     The light is the point light (IS_LIGHT_SOURCE_LASER 0): the host leaves media out with the laser.
+
+    One medium may hold blood vessels given as grids (Vessels): it is then heterogeneous, and is delta tracked.
 */
 #include "Utils/Math/MathConstants.slangh"
 import Scene.RaytracingInline;
@@ -66,6 +69,127 @@ float getInstanceIoR(uint instance)
     return gScene.materials.evalIoR(gScene.getMaterialID(GeometryInstanceID(instance, 0)));
 }
 
+/// Blood vessels in the medium of one material (host: VesselGrid): over a box, grids of the blood fraction f and of
+/// the blood's velocity, sampled with trilinear filtering. The medium's coefficients there are its own mixed with the
+/// blood's by f, so it is heterogeneous: free flights in it are delta tracked and its transmittances ratio tracked,
+/// against the larger of the two extinctions (trackVessels, vesselTransmittance). A scattering event is the blood's
+/// (the grid's velocity, the blood's phase function and diffusion) or the medium's, in proportion to their scattering.
+cbuffer Vessels
+{
+    uint gVesselMaterial;    ///< kNoVessels: none.
+    float3 gVesselOrigin;    ///< Corner of the box.
+    float3 gVesselSize;
+    float3 gBloodScattering; ///< Per scene unit.
+    float3 gBloodAbsorption;
+    float gBloodAnisotropy;  ///< Henyey-Greenstein g.
+    float gBloodDiffusion;   ///< Brownian diffusion coefficient of the blood's scatterers, m^2/s.
+}
+Texture3D<float> gVesselFraction;
+Texture3D<float4> gVesselVelocity; ///< xyz, m/s.
+SamplerState gVesselSampler;
+static const uint kNoVessels = 0xffffffff;
+/// Steps of delta or ratio tracking before a free flight or a transmittance gives up (zero).
+static const uint kMaxTrackingSteps = 1 << 16;
+
+/// Grid coordinates of x, in [0, 1]^3 inside the box.
+float3 vesselCoordinates(float3 x) { return (x - gVesselOrigin) / gVesselSize; }
+
+float vesselFraction(float3 x)
+{
+    float3 uvw = vesselCoordinates(x);
+    if (any(uvw < 0.f) || any(uvw > 1.f)) return 0.f;
+    return gVesselFraction.SampleLevel(gVesselSampler, uvw, 0.f);
+}
+
+float3 vesselVelocity(float3 x)
+{
+    float3 uvw = vesselCoordinates(x);
+    if (any(uvw < 0.f) || any(uvw > 1.f)) return float3(0.f);
+    return gVesselVelocity.SampleLevel(gVesselSampler, uvw, 0.f).xyz;
+}
+
+/// Whether the segment from `start` along `dir`, of length `length`, passes through the vessels' box.
+bool meetsVessels(float3 start, float3 dir, float length)
+{
+    float3 inverse = 1.f / select(abs(dir) < 1e-20f, 1e-20f, dir);
+    float3 t0 = (gVesselOrigin - start) * inverse;
+    float3 t1 = (gVesselOrigin + gVesselSize - start) * inverse;
+    float3 near = min(t0, t1), far = max(t0, t1);
+    float tNear = max(max(near.x, near.y), max(near.z, 0.f));
+    float tFar = min(min(far.x, far.y), min(far.z, length));
+    return tNear <= tFar;
+}
+
+/// Majorant of the medium's extinction with vessels: the larger of its own and the blood's, over the channels.
+float vesselMajorant(VolumeProperties medium)
+{
+    float3 extinction = max(medium.sigmaA + medium.sigmaS, gBloodAbsorption + gBloodScattering);
+    return max(extinction.x, max(extinction.y, extinction.z));
+}
+
+/// a / b where b > 0, else 0.
+float3 safeRatio(float3 a, float3 b) { return select(b > 0.f, a / max(b, 1e-30f), 0.f); }
+
+/// A free flight from `start` along `dir`, over [0, segment), in the medium `medium` with vessels: delta tracking
+/// against the majorant, with absorption as a weight (spectral tracking of Kutz et al. 2017, without absorption
+/// events). Tentative collisions scatter or are null in proportion to the throughput-weighted coefficients, and
+/// `throughput` takes the weights. True at a scattering event, at distance `t`, whose scatterer is the blood's or the
+/// medium's (`blood`), chosen the same way.
+bool trackVessels<S : ISampleGenerator>(float3 start, float3 dir, float segment, VolumeProperties medium,
+    inout float3 throughput, inout S sg, out float t, out bool blood)
+{
+    t = 0.f;
+    blood = false;
+    float majorant = vesselMajorant(medium);
+    if (!(majorant > 0.f)) return false;
+    for (uint step = 0; step < kMaxTrackingSteps; ++step)
+    {
+        t -= log(1.f - sampleNext1D(sg)) / majorant;
+        if (!(t < segment)) return false;
+        float f = vesselFraction(start + t * dir);
+        float3 bloodScattering = f * gBloodScattering;
+        float3 scattering = (1.f - f) * medium.sigmaS + bloodScattering;
+        float3 nullCollision = max(majorant - scattering - lerp(medium.sigmaA, gBloodAbsorption, f), 0.f);
+        float scatterWeight = dot(scattering, throughput);
+        float nullWeight = dot(nullCollision, throughput);
+        if (!(scatterWeight + nullWeight > 0.f)) break;
+        float pScatter = scatterWeight / (scatterWeight + nullWeight);
+        if (sampleNext1D(sg) < pScatter)
+        {
+            throughput *= scattering / (majorant * pScatter);
+            float pBlood = dot(bloodScattering, throughput) / max(dot(scattering, throughput), 1e-30f);
+            blood = sampleNext1D(sg) < pBlood;
+            throughput *= blood ? safeRatio(bloodScattering, scattering) / pBlood
+                                : safeRatio(scattering - bloodScattering, scattering) / (1.f - pBlood);
+            return true;
+        }
+        throughput *= nullCollision / (majorant * (1.f - pScatter));
+    }
+    throughput = float3(0.f);
+    return false;
+}
+
+/// Transmittance over the segment from `start` along `dir`, of length `length`, in the medium `medium` with vessels:
+/// ratio tracking against the majorant.
+float3 vesselTransmittance<S : ISampleGenerator>(float3 start, float3 dir, float length, VolumeProperties medium,
+    inout S sg)
+{
+    float majorant = vesselMajorant(medium);
+    float3 transmittance = float3(1.f);
+    if (!(majorant > 0.f)) return transmittance;
+    float t = 0.f;
+    for (uint step = 0; step < kMaxTrackingSteps; ++step)
+    {
+        t -= log(1.f - sampleNext1D(sg)) / majorant;
+        if (!(t < length)) return transmittance;
+        float f = vesselFraction(start + t * dir);
+        float3 extinction = lerp(medium.sigmaA + medium.sigmaS, gBloodAbsorption + gBloodScattering, f);
+        transmittance *= max(1.f - extinction / majorant, 0.f);
+        if (all(transmittance == 0.f)) return transmittance;
+    }
+    return float3(0.f);
+}
+
 /// The media around a point: the geometry instances whose medium contains it, innermost last.
 struct MediumStack
 {
@@ -74,8 +198,9 @@ struct MediumStack
 
     bool isEmpty() { return count == 0; }
     uint innermost() { return instances[count - 1]; }
+    uint material() { return gScene.getMaterialID(GeometryInstanceID(innermost(), 0)); }
 
-    VolumeProperties properties() { return getMediumProperties(gScene.getMaterialID(GeometryInstanceID(innermost(), 0))); }
+    VolumeProperties properties() { return getMediumProperties(material()); }
 
     /// Refractive index around the point: the innermost medium's, 1 outside every medium.
     float ior() { return isEmpty() ? 1.f : getInstanceIoR(innermost()); }
@@ -198,6 +323,7 @@ struct MediumEvent
     HitInfo hit;             ///< Surface or interface hit.
     float3 origin;           ///< Origin of the ray that met the event, for loading the hit.
     MediumBoundary boundary; ///< The interface (Interface).
+    bool blood;              ///< The scatterer is blood (Scatter in a medium with vessels).
 }
 
 /// Follows the ray from `start` in direction `dir`, which starts inside `media`, to its next event; `rayOrigin` is
@@ -219,21 +345,34 @@ MediumEvent traceThroughMedia<S : ISampleGenerator>(float3 start, float3 rayOrig
         if (!media.isEmpty())
         {
             VolumeProperties vp = media.properties();
-            HomogeneousVolumeSampler::DistanceSample ds;
-            if (HomogeneousVolumeSampler::sampleDistance(vp, throughput, sg, ds))
+            float t;
+            if (media.material() == gVesselMaterial && meetsVessels(start, dir, segment))
             {
-                if (ds.t < segment)
+                if (trackVessels(start, dir, segment, vp, throughput, sg, t, event.blood))
                 {
-                    throughput *= ds.evalThroughput(true, 0.f);
                     event.type = MediumEventType::Scatter;
-                    event.position = start + ds.t * dir;
+                    event.position = start + t * dir;
                     return event;
                 }
-                throughput *= ds.evalThroughput(false, segment);
             }
             else
             {
-                throughput *= HomogeneousVolumeSampler::evalTransmittance(vp, segment);
+                HomogeneousVolumeSampler::DistanceSample ds;
+                if (HomogeneousVolumeSampler::sampleDistance(vp, throughput, sg, ds))
+                {
+                    if (ds.t < segment)
+                    {
+                        throughput *= ds.evalThroughput(true, 0.f);
+                        event.type = MediumEventType::Scatter;
+                        event.position = start + ds.t * dir;
+                        return event;
+                    }
+                    throughput *= ds.evalThroughput(false, segment);
+                }
+                else
+                {
+                    throughput *= HomogeneousVolumeSampler::evalTransmittance(vp, segment);
+                }
             }
         }
         if (!hit.isValid()) return event;
@@ -276,7 +415,21 @@ struct MediaSegment
     MediumStack media;       ///< The media around the segment's end (or just before the refracting boundary).
 }
 
-MediaSegment marchSegment(float3 start, float3 rayOrigin, MediumStack media, float3 endpoint)
+/// Transmittance of the innermost of `media` from `from` to `to` (ratio tracked through vessels).
+float3 mediumTransmittance<S : ISampleGenerator>(MediumStack media, float3 from, float3 to, inout S sg)
+{
+    VolumeProperties vp = media.properties();
+    float distance = length(to - from);
+    if (media.material() == gVesselMaterial && distance > 0.f)
+    {
+        float3 dir = (to - from) / distance;
+        if (meetsVessels(from, dir, distance)) return vesselTransmittance(from, dir, distance, vp, sg);
+    }
+    return HomogeneousVolumeSampler::evalTransmittance(vp, distance);
+}
+
+MediaSegment marchSegment<S : ISampleGenerator>(float3 start, float3 rayOrigin, MediumStack media, float3 endpoint,
+    inout S sg)
 {
     MediaSegment segment = {};
     segment.blocked = true;
@@ -297,7 +450,7 @@ MediaSegment marchSegment(float3 start, float3 rayOrigin, MediumStack media, flo
         HitInfo hit = query.traceRay(Ray(rayOrigin, dir, 0.f, distance), hitT);
         float3 end = hit.isValid() ? rayOrigin + hitT * dir : endpoint;
         if (!media.isEmpty())
-            segment.transmittance *= HomogeneousVolumeSampler::evalTransmittance(media.properties(), length(end - start));
+            segment.transmittance *= mediumTransmittance(media, start, end, sg);
         if (!hit.isValid())
         {
             segment.blocked = false;
@@ -413,8 +566,8 @@ struct MediumLightConnection
 /// refracting boundary, at the point y that solves Snell's law on the plane of its triangle (the triangles of the
 /// boundary around y are tried in turn). A connection through more than one refracting boundary is blocked. A blocked
 /// connection stays `connected` (a valid geometry) with zero transmittance, as checkLightVisibility's callers do.
-MediumLightConnection connectToLightInMedia(float3 origin, float3 position, float3 velocity, MediumStack media,
-    LightSample light, float3 lightVelocity)
+MediumLightConnection connectToLightInMedia<S : ISampleGenerator>(float3 origin, float3 position, float3 velocity,
+    MediumStack media, LightSample light, float3 lightVelocity, inout S sg)
 {
     MediumLightConnection c = {};
     if (!light.valid) return c;
@@ -430,7 +583,7 @@ MediumLightConnection connectToLightInMedia(float3 origin, float3 position, floa
     c.pathVelocity = segmentVelocity(position, velocity, lightPos, lightVelocity, nx);
     // The ray offsets must not reverse a short connection (as checkLightVisibility).
     if (!(dot(lightPos - origin, toLight) > 0.f)) return c;
-    MediaSegment straight = marchSegment(position, origin, media, lightPos);
+    MediaSegment straight = marchSegment(position, origin, media, lightPos, sg);
     if (straight.blocked) return c;
     if (!straight.refracted)
     {
@@ -453,7 +606,7 @@ MediumLightConnection connectToLightInMedia(float3 origin, float3 position, floa
         if (!solveRefractionPoint(position, lightPos, p[0], faceNormal, nx, nl, y)) return c;
         // y is on the boundary if the segment towards it meets the boundary on y's triangle, or at y (a neighboring
         // triangle in the plane). Otherwise solve again on the triangle that it meets.
-        inside = marchSegment(position, origin, media, 2.f * y - position);
+        inside = marchSegment(position, origin, media, 2.f * y - position, sg);
         if (inside.blocked || !inside.refracted || inside.boundary.instance != straight.boundary.instance) return c;
         TriangleHit next = inside.hit.getTriangleHit();
         found = next.primitiveIndex == triangle.primitiveIndex ||
@@ -469,7 +622,7 @@ MediumLightConnection connectToLightInMedia(float3 origin, float3 position, floa
     if (!(d1 > 0.f) || !(d2 > 0.f)) return c;
     MediumStack outsideMedia = inside.media;
     outsideMedia.cross(inside.boundary.instance, inside.boundary.entering);
-    MediaSegment outside = marchSegment(y, inside.boundary.rayOrigin(y, toLightFromY), outsideMedia, lightPos);
+    MediaSegment outside = marchSegment(y, inside.boundary.rayOrigin(y, toLightFromY), outsideMedia, lightPos, sg);
     if (outside.blocked || outside.refracted) return c;
     float cosL = abs(dot(faceNormal, toLightFromY)) / d1;
     float cosX = abs(dot(faceNormal, toVertex)) / d2;

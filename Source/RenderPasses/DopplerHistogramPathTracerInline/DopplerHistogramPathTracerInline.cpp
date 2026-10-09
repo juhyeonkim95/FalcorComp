@@ -39,6 +39,9 @@ static void regDopplerHistogramPathTracerInline(pybind11::module& m)
     pass.def("set_velocity", &DopplerHistogramPathTracerInline::setVelocity, "name"_a, "linear"_a,
         "angular"_a = float3(0.f), "center"_a = float3(0.f));
     pass.def("clear_velocities", &DopplerHistogramPathTracerInline::clearVelocities);
+    pass.def("set_vessels", &DopplerHistogramPathTracerInline::setVessels, "medium"_a, "fraction"_a, "velocity"_a,
+        "origin"_a, "size"_a, "scattering"_a, "absorption"_a, "anisotropy"_a = 0.f, "diffusion"_a = 0.f);
+    pass.def("clear_vessels", &DopplerHistogramPathTracerInline::clearVessels);
     pass.def("get_object_names", &DopplerHistogramPathTracerInline::getObjectNames);
 }
 
@@ -245,6 +248,22 @@ void DopplerHistogramPathTracerInline::setVelocity(const std::string& name, floa
     resetSpectrum();
 }
 
+void DopplerHistogramPathTracerInline::setVessels(const std::string& medium, const VesselGrid::Array& fraction,
+    const VesselGrid::Array& velocity, float3 origin, float3 size, float3 scattering, float3 absorption, float anisotropy,
+    float diffusion)
+{
+    mVessels.set(mpDevice, medium, fraction, velocity, origin, size, scattering, absorption, anisotropy, diffusion);
+    mOptionsChanged = true;
+    resetSpectrum();
+}
+
+void DopplerHistogramPathTracerInline::clearVessels()
+{
+    mVessels.clear();
+    mOptionsChanged = true;
+    resetSpectrum();
+}
+
 void DopplerHistogramPathTracerInline::clearVelocities()
 {
     mOptions.velocities.clear();
@@ -280,7 +299,10 @@ void DopplerHistogramPathTracerInline::bindShaderData(const ShaderVar& var, cons
     var["CB"]["gLightVelocity"] = mOptions.lightVelocity;
     var["gInstanceVelocities"] = mpInstanceVelocities;
     if (usesMedia())
+    {
         var["gMediumProperties"] = mpMediumProperties;
+        mVessels.bindShaderData(mpDevice, var, *mpScene, kPassName);
+    }
     mLaserInput.get().bindShaderData(var["Laser"]);
 
     InlinePass::bindChannels(var, renderData, InlinePass::kPrimaryHitInputChannels);
