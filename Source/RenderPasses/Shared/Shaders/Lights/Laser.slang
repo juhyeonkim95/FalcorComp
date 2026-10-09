@@ -9,10 +9,13 @@ cbuffer Laser
     float3 gLaserDirection; // Unit beam direction.
     float3 gLaserPower;
     float gLaserCosAngle;   // Cosine of the cone half-angle.
+    float3 gLaserPatternFrequency; // The point light's fringes (LaserState::patternFrequency); zero: none.
+    float gLaserPatternPhase;
 }
 
 /// Light sampler for the laser.
 LaserLightSampler createLaserLightSampler()
 {
-    return LaserLightSampler(gLaserOrigin, gLaserDirection, gLaserCosAngle, gLaserPower);
+    return LaserLightSampler(gLaserOrigin, gLaserDirection, gLaserCosAngle, gLaserPower, gLaserPatternFrequency,
+        gLaserPatternPhase);
 }

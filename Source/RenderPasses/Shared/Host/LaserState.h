@@ -18,6 +18,8 @@ struct LaserState
     static constexpr char kCosAngle[] = "laserCosAngle";
     static constexpr char kIsLaser[] = "isLightSourceLaser";
     static constexpr char kCollocated[] = "laserCollocated";
+    static constexpr char kPatternFrequency[] = "patternFrequency";
+    static constexpr char kPatternPhase[] = "patternPhase";
     static constexpr char kToken[] = "laserToken"; ///< Changes at every publication (LaserInput).
 
     float3 origin = float3(0.f);
@@ -28,11 +30,17 @@ struct LaserState
     /// of `direction` (cosAngle does not apply to it).
     bool isLaser = true;
     bool collocated = false; ///< The laser is at the camera, aimed at its target.
+    /// The point light as a projector of sinusoidal fringes: its intensity in the unit direction d is scaled by
+    /// (1 + cos(2 pi patternFrequency . d / (d . direction) + patternPhase)) / 2, a sinusoid of patternFrequency
+    /// (cycles per meter) on the plane 1 m in front of the light, normal to `direction`. Zero (and phase 0): no pattern.
+    float3 patternFrequency = float3(0.f);
+    float patternPhase = 0.f; ///< Radians.
 
     bool operator==(const LaserState& other) const
     {
         return all(origin == other.origin) && all(direction == other.direction) && all(power == other.power) &&
-               cosAngle == other.cosAngle && isLaser == other.isLaser && collocated == other.collocated;
+               cosAngle == other.cosAngle && isLaser == other.isLaser && collocated == other.collocated &&
+               all(patternFrequency == other.patternFrequency) && patternPhase == other.patternPhase;
     }
     bool operator!=(const LaserState& other) const { return !(*this == other); }
 
@@ -48,6 +56,8 @@ struct LaserState
         dict[kCosAngle] = cosAngle;
         dict[kIsLaser] = isLaser;
         dict[kCollocated] = collocated;
+        dict[kPatternFrequency] = patternFrequency;
+        dict[kPatternPhase] = patternPhase;
     }
 
     /// The laser last published in the dictionary; the defaults where none was. Passes use LaserInput instead.
@@ -61,6 +71,8 @@ struct LaserState
         laser.cosAngle = dict.getValue(kCosAngle, laser.cosAngle);
         laser.isLaser = dict.getValue(kIsLaser, laser.isLaser);
         laser.collocated = dict.getValue(kCollocated, laser.collocated);
+        laser.patternFrequency = dict.getValue(kPatternFrequency, laser.patternFrequency);
+        laser.patternPhase = dict.getValue(kPatternPhase, laser.patternPhase);
         return laser;
     }
 
@@ -79,6 +91,8 @@ struct LaserState
         var["gLaserDirection"] = direction;
         var["gLaserPower"] = power;
         var["gLaserCosAngle"] = cosAngle;
+        var["gLaserPatternFrequency"] = patternFrequency;
+        var["gLaserPatternPhase"] = patternPhase;
     }
 };
 

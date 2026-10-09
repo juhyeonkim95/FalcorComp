@@ -208,6 +208,16 @@ in a frame (no `LaserLight`, one removed from the graph, or no execution edge) w
   - Moves the laser by this much after every frame, starting from `laserPosition`. Setting the
     properties, the position in the UI or `update_laser_info` restarts the motion; the saved
     `laserPosition` stays its start, so a saved graph replays the motion. (Default: `(0, 0, 0)`)
+* - `patternFrequency`
+  - float3
+  - Makes the point light a projector of sinusoidal fringes: its intensity in the unit direction $d$ is scaled by
+    $(1 + \cos(2\pi\, k \cdot d / (d \cdot a) + \phi)) / 2$, with $k$ = `patternFrequency`, $a$ =
+    `laserDirection` and $\phi$ = `patternPhase`: a sinusoid of $k$ cycles per meter on the plane 1 m in front of
+    the light, normal to $a$ ($k / h$ on a plane at distance $h$). Not used by the laser beam nor by the ReSTIR passes.
+    (Default: `(0, 0, 0)`, no fringes)
+* - `patternPhase`
+  - float
+  - Phase $\phi$ of the fringes, in radians. (Default: `0`)
 ```
 
 `update_laser_info(position, direction)` moves the laser from a script, for example every frame; `position` becomes

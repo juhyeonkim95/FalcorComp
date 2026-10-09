@@ -25,6 +25,8 @@ const char kLaserAngle[] = "laserAngle";
 const char kLaserVelocity[] = "laserVelocity";
 const char kLaserCollocated[] = "laserCollocated";
 const char kIsLightSourceLaser[] = "isLightSourceLaser";
+const char kPatternFrequency[] = "patternFrequency";
+const char kPatternPhase[] = "patternPhase";
 
 float3 normalizeDirection(const float3& direction)
 {
@@ -69,6 +71,10 @@ void LaserLight::parseProperties(const Properties& props)
             mLaser.collocated = value;
         else if (key == kIsLightSourceLaser)
             mLaser.isLaser = value;
+        else if (key == kPatternFrequency)
+            mLaser.patternFrequency = value;
+        else if (key == kPatternPhase)
+            mLaser.patternPhase = value;
         else
             logWarning("Unknown property '{}' in LaserLight properties.", key);
     }
@@ -84,6 +90,8 @@ Properties LaserLight::getProperties() const
     props[kLaserVelocity] = mVelocity;
     props[kLaserCollocated] = mLaser.collocated;
     props[kIsLightSourceLaser] = mLaser.isLaser;
+    props[kPatternFrequency] = mLaser.patternFrequency;
+    props[kPatternPhase] = mLaser.patternPhase;
     return props;
 }
 
@@ -185,6 +193,14 @@ void LaserLight::renderUI(Gui::Widgets& widget)
             dirty = true;
         }
         widget.tooltip("Half-angle of the laser cone in degrees. 0 = collimated beam.", true);
+    }
+    else
+    {
+        dirty |= widget.var("patternFrequency", mLaser.patternFrequency, -FLT_MAX, FLT_MAX, 0.01f, false, "%.3f");
+        widget.tooltip("Sinusoidal fringes of the point light, as a projector: cycles per meter on the plane 1 m in "
+                       "front of the light, normal to its direction. Zero: none.", true);
+        dirty |= widget.var("patternPhase", mLaser.patternPhase, -FLT_MAX, FLT_MAX, 0.01f, false, "%.3f");
+        widget.tooltip("Phase of the fringes, radians.", true);
     }
 
     // Downstream passes restart their accumulation when the light changes.

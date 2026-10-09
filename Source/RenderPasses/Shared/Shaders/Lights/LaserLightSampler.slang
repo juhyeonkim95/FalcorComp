@@ -35,15 +35,24 @@ struct LightSample
     }
 #else
     float3 origin;
+    float3 patternFrequency; ///< Fringes of the point light as a projector (LaserState::patternFrequency).
+    float patternPhase;
+    /// The fringes' factor in the unit direction `d` from the light: 1 without fringes.
+    float pattern(float3 d){
+        if (all(patternFrequency == 0.f) && patternPhase == 0.f) return 1.f;
+        float along = dot(d, dir);
+        return along > 0.f ? 0.5f * (1.f + cos(2.f * M_PI * dot(patternFrequency, d) / along + patternPhase)) : 0.f;
+    }
     float3 evalLi(float3 posW, inout SampleGenerator sg){
         float3 toLight = this.origin - posW;
         float inspot = float(dot(dir, toLight) < 0.0);
         float distSqr = max(dot(toLight, toLight), kMinLightDistSqr);
-        return Li / distSqr * inspot;
+        float fringes = all(patternFrequency == 0.f) && patternPhase == 0.f ? 1.f : pattern(-toLight / sqrt(distSqr));
+        return Li / distSqr * inspot * fringes;
     }
     // Radiant intensity leaving the light in direction `d` (from the light): evalLi times the squared distance.
     float3 evalIntensity(float3 d, inout SampleGenerator sg){
-        return Li * float(dot(dir, d) > 0.0);
+        return Li * float(dot(dir, d) > 0.0) * pattern(d);
     }
     float3 getOrientedFaceNormal(){
         return dir;
@@ -62,6 +71,9 @@ struct LaserLightSampler
     float laserCosAngle;
     float3 laserPower;
 
+    float3 patternFrequency; ///< Fringes of the point light (LaserState::patternFrequency).
+    float patternPhase;
+
     // helper axis
     float3 laserTangent;
     float3 laserBitangent;
@@ -74,6 +86,21 @@ struct LaserLightSampler
         this.laserBitangent = perp_stark_onb(laserDirection);
         this.laserTangent = cross(laserBitangent, laserDirection);
         this.laserPower = laserPower;
+        this.patternFrequency = float3(0.f);
+        this.patternPhase = 0.f;
+    }
+
+    /// With fringes on the point light.
+    __init(float3 laserOrigin, float3 laserDirection, float laserCosAngle, float3 laserPower, float3 patternFrequency,
+        float patternPhase){
+        this.laserOrigin = laserOrigin;
+        this.laserDirection = laserDirection;
+        this.laserCosAngle = laserCosAngle;
+        this.laserBitangent = perp_stark_onb(laserDirection);
+        this.laserTangent = cross(laserBitangent, laserDirection);
+        this.laserPower = laserPower;
+        this.patternFrequency = patternFrequency;
+        this.patternPhase = patternPhase;
     }
 
     void generateLightSample(
@@ -102,6 +129,8 @@ struct LaserLightSampler
             ls.laserT = 0.0;
             ls.origin = this.laserOrigin;
             ls.Li = laserPower;
+            ls.patternFrequency = this.patternFrequency;
+            ls.patternPhase = this.patternPhase;
         #endif
         ls.valid = true;
     }
