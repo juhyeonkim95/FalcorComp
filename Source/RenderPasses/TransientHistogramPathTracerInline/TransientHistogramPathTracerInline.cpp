@@ -197,7 +197,7 @@ void TransientHistogramPathTracerInline::bindShaderData(const ShaderVar& var, co
     var["CB"]["gFrameDim"] = uint2(pColor->getWidth(), pColor->getHeight());
     var["CB"]["gSamplesPerPixel"] = mOptions.pathTracing.samplesPerPixel;
     var["CB"]["gInitialWindowRatio"] = mOptions.histogram.initialWindowRatio;
-    mLaserInput.get().bindShaderData(var["Laser"]);
+    mLaserInput.get().bindShaderData(var);
     mOptions.histogram.bindShaderData(var);
     mTriangles.bindShaderData(var);
 
@@ -218,7 +218,7 @@ void TransientHistogramPathTracerInline::execute(RenderContext* pRenderContext, 
     if (!mpScene)
     {
         InlinePass::clearChannels(pRenderContext, renderData, InlinePass::kColorOutputChannels);
-        InlinePass::clearChannels(pRenderContext, renderData, histogramChannels());
+        InlinePass::clearChannels(pRenderContext, renderData, histogramChannels(), mTexture3DClearer);
         return;
     }
 
@@ -227,7 +227,7 @@ void TransientHistogramPathTracerInline::execute(RenderContext* pRenderContext, 
         resetHistogram();
     if (!mOptions.accumulate || mNeedToClearHistogram)
     {
-        InlinePass::clearChannels(pRenderContext, renderData, histogramChannels());
+        InlinePass::clearChannels(pRenderContext, renderData, histogramChannels(), mTexture3DClearer);
         mNeedToClearHistogram = false;
         mSummedFrames = 0;
     }

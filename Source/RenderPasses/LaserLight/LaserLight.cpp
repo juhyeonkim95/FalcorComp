@@ -6,8 +6,10 @@
 
 static void regLaserLight(pybind11::module& m)
 {
+    using namespace pybind11::literals;
     pybind11::class_<LaserLight, RenderPass, ref<LaserLight>> pass(m, "LaserLight");
     pass.def("update_laser_info", &LaserLight::updateLaserInfo);
+    pass.def("set_pattern_data", &LaserLight::setPatternData, "values"_a);
 }
 
 extern "C" FALCOR_API_EXPORT void registerPlugin(Falcor::PluginRegistry& registry)
@@ -25,6 +27,10 @@ const char kLaserAngle[] = "laserAngle";
 const char kLaserVelocity[] = "laserVelocity";
 const char kLaserCollocated[] = "laserCollocated";
 const char kIsLightSourceLaser[] = "isLightSourceLaser";
+const char kPatternFrequency[] = "patternFrequency";
+const char kPatternPhase[] = "patternPhase";
+const char kPatternPhaseShift[] = "patternPhaseShift";
+const char kProjector[] = "projector";
 
 float3 normalizeDirection(const float3& direction)
 {
@@ -69,6 +75,17 @@ void LaserLight::parseProperties(const Properties& props)
             mLaser.collocated = value;
         else if (key == kIsLightSourceLaser)
             mLaser.isLaser = value;
+        else if (key == kPatternFrequency)
+            mLaser.patternFrequency = value;
+        else if (key == kPatternPhase)
+            mLaser.patternPhase = value;
+        else if (key == kPatternPhaseShift)
+            mLaser.patternPhaseShift = value;
+        else if (key == kProjector)
+        {
+            const Properties projector = value;
+            mLaser.projector.parse(projector);
+        }
         else
             logWarning("Unknown property '{}' in LaserLight properties.", key);
     }
@@ -84,6 +101,11 @@ Properties LaserLight::getProperties() const
     props[kLaserVelocity] = mVelocity;
     props[kLaserCollocated] = mLaser.collocated;
     props[kIsLightSourceLaser] = mLaser.isLaser;
+    props[kPatternFrequency] = mLaser.patternFrequency;
+    props[kPatternPhase] = mLaser.patternPhase;
+    props[kPatternPhaseShift] = mLaser.patternPhaseShift;
+    if (mLaser.projector != LaserProjector())
+        props[kProjector] = mLaser.projector.serialize();
     return props;
 }
 
@@ -106,6 +128,15 @@ void LaserLight::setProperties(const Properties& props)
     mOptionsChanged = true;
 }
 
+void LaserLight::setPatternData(std::vector<uint32_t> values)
+{
+    auto pData = std::make_shared<ProjectorPatternData>();
+    pData->set(std::move(values), {}, {}, {});
+    pData->createTextures(mpDevice);
+    mLaser.projector.patternData = std::move(pData);
+    mOptionsChanged = true;
+}
+
 void LaserLight::updateLaserInfo(const float3& position, const float3& direction)
 {
     mLaser.direction = normalizeDirection(direction);
@@ -122,6 +153,22 @@ void LaserLight::execute(RenderContext* pRenderContext, const RenderData& render
         const auto& pCamera = mpScene->getCamera();
         laser.origin = pCamera->getPosition();
         laser.direction = normalize(pCamera->getTarget() - pCamera->getPosition());
+        laser.projector.up = pCamera->getUpVector();
+    }
+    if (laser.isProjector())
+    {
+        // (0, 0): the camera's field of view.
+        if (all(laser.projector.fov == float2(0.f)) && mpScene)
+        {
+            const auto& pCamera = mpScene->getCamera();
+            const float halfHeight = 0.5f * pCamera->getFrameHeight() / pCamera->getFocalLength();
+            laser.projector.fov = 2.f * float2(std::atan(halfHeight * pCamera->getAspectRatio()), std::atan(halfHeight)) *
+                                  float(180.0 / M_PI);
+        }
+        if (!(length(cross(laser.direction, laser.projector.up)) > 0.f))
+            FALCOR_THROW("LaserLight: the projector's up is parallel to the light's direction.");
+        if (laser.projector.pattern.type == ProjectorPatternType::Arbitrary && !laser.projector.patternData)
+            FALCOR_THROW("LaserLight: the projector's arbitrary pattern needs set_pattern_data().");
     }
     // Shared by all LaserLight passes, so that a replacement pass never repeats a token the users have seen.
     static std::atomic<uint32_t> sToken{0};
@@ -185,6 +232,46 @@ void LaserLight::renderUI(Gui::Widgets& widget)
             dirty = true;
         }
         widget.tooltip("Half-angle of the laser cone in degrees. 0 = collimated beam.", true);
+    }
+    else
+    {
+        dirty |= widget.var("patternFrequency", mLaser.patternFrequency, -FLT_MAX, FLT_MAX, 0.01f, false, "%.3f");
+        widget.tooltip("Sinusoidal fringes of the point light, as a projector: cycles per meter on the plane 1 m in "
+                       "front of the light, normal to its direction. Zero: none.", true);
+        dirty |= widget.var("patternPhase", mLaser.patternPhase, -FLT_MAX, FLT_MAX, 0.01f, false, "%.3f");
+        widget.tooltip("Phase of the fringes, radians.", true);
+        dirty |= widget.var("patternPhaseShift", mLaser.patternPhaseShift, -FLT_MAX, FLT_MAX, 0.01f, false, "%.3f");
+        widget.tooltip("Added to the phase in each color channel, e.g. (0, 2.094, 4.189): three phase-shifted fringes "
+                       "rendered on the same paths.", true);
+
+        LaserProjector& projector = mLaser.projector;
+        dirty |= widget.checkbox("Projector", projector.enabled);
+        widget.tooltip("A pinhole projector along laserDirection: the light's intensity toward the image-plane point "
+                       "uv is laserPower * pattern(uv) / cos^3, and zero outside the field of view.", true);
+        if (projector.enabled)
+        {
+            if (auto group = widget.group("Projector", true))
+            {
+                float2 fov = projector.fov;
+                if (group.var("Field of view (deg)", fov, 0.f, 179.f))
+                {
+                    projector.fov = fov;
+                    dirty = true;
+                }
+                group.tooltip("Full field of view along u and v, in degrees; (0, 0): the camera's.", true);
+                if (!mLaser.collocated)
+                {
+                    float3 up = projector.up;
+                    if (group.var("Up", up, -1.f, 1.f) && length(up) > 0.f)
+                    {
+                        projector.up = up;
+                        dirty = true;
+                    }
+                    group.tooltip("Up hint: v runs along it, made orthogonal to laserDirection.", true);
+                }
+                dirty |= projector.pattern.renderUI(group);
+            }
+        }
     }
 
     // Downstream passes restart their accumulation when the light changes.

@@ -39,6 +39,9 @@ static void regDopplerHistogramPathTracerInline(pybind11::module& m)
     pass.def("set_velocity", &DopplerHistogramPathTracerInline::setVelocity, "name"_a, "linear"_a,
         "angular"_a = float3(0.f), "center"_a = float3(0.f));
     pass.def("clear_velocities", &DopplerHistogramPathTracerInline::clearVelocities);
+    pass.def("set_vessels", &DopplerHistogramPathTracerInline::setVessels, "medium"_a, "fraction"_a, "velocity"_a,
+        "origin"_a, "size"_a, "scattering"_a, "absorption"_a, "anisotropy"_a = 0.f, "diffusion"_a = 0.f);
+    pass.def("clear_vessels", &DopplerHistogramPathTracerInline::clearVessels);
     pass.def("get_object_names", &DopplerHistogramPathTracerInline::getObjectNames);
 }
 
@@ -99,7 +102,7 @@ void DopplerHistogramPathTracerInline::parseProperties(const Properties& props)
 {
     for (const auto& [key, value] : props)
     {
-        if (mOptions.pathTracing.parse(key, value))
+        if (mOptions.pathTracing.parse(key, value) || mOptions.volumes.parse(key, value))
             continue;
         if (key == kWavelength)
             mOptions.wavelength = value;
@@ -133,6 +136,7 @@ void DopplerHistogramPathTracerInline::parseProperties(const Properties& props)
 void DopplerHistogramPathTracerInline::validateOptions(const Options& options)
 {
     options.pathTracing.validate();
+    options.volumes.validate();
     if (!(options.wavelength > 0.f) || !std::isfinite(options.wavelength))
         FALCOR_THROW("wavelength must be positive and finite.");
     if (!(options.chirpBandwidth >= 0.f) || !std::isfinite(options.chirpBandwidth))
@@ -165,6 +169,11 @@ void DopplerHistogramPathTracerInline::setProperties(const Properties& props)
     InlinePass::applyProperties(mOptions, [&] { parseProperties(props); }, validateOptions);
     if (props.has(kVelocities))
         mVelocitiesDirty = true;
+    if (props.has("media"))
+    {
+        mMediaDirty = true;
+        mSceneHasMedia = mOptions.volumes.hasMedia(mpScene);
+    }
     onOptionsChanged(previous);
 }
 
@@ -172,6 +181,7 @@ Properties DopplerHistogramPathTracerInline::getProperties() const
 {
     Properties props;
     mOptions.pathTracing.serialize(props);
+    mOptions.volumes.serialize(props);
     props[kWavelength] = mOptions.wavelength;
     props[kChirpBandwidth] = mOptions.chirpBandwidth;
     props[kChirpDuration] = mOptions.chirpDuration;
@@ -219,13 +229,37 @@ DefineList DopplerHistogramPathTracerInline::getShaderDefines(const RenderData& 
     defines.add(getValidResourceDefines(InlinePass::kColorOutputChannels, renderData));
     defines.add(getValidResourceDefines(spectrumChannels(), renderData));
     defines.add("CHIRPED", mOptions.chirped() ? "1" : "0");
+    defines.add(mOptions.volumes.getDefines());
+    defines.add("USE_VOLUMES", usesMedia() ? "1" : "0");
     return defines;
+}
+
+bool DopplerHistogramPathTracerInline::usesMedia() const
+{
+    // Media take the point light: with the laser, their meshes are ordinary surfaces.
+    return mOptions.volumes.useVolumes && !mLaserInput.get().isLaser;
 }
 
 void DopplerHistogramPathTracerInline::setVelocity(const std::string& name, float3 linear, float3 angular, float3 center)
 {
     mOptions.velocities[name] = ObjectMotion{linear, angular, center};
     mVelocitiesDirty = true;
+    mOptionsChanged = true;
+    resetSpectrum();
+}
+
+void DopplerHistogramPathTracerInline::setVessels(const std::string& medium, const VesselGrid::Array& fraction,
+    const VesselGrid::Array& velocity, float3 origin, float3 size, float3 scattering, float3 absorption, float anisotropy,
+    float diffusion)
+{
+    mVessels.set(mpDevice, medium, fraction, velocity, origin, size, scattering, absorption, anisotropy, diffusion);
+    mOptionsChanged = true;
+    resetSpectrum();
+}
+
+void DopplerHistogramPathTracerInline::clearVessels()
+{
+    mVessels.clear();
     mOptionsChanged = true;
     resetSpectrum();
 }
@@ -264,7 +298,12 @@ void DopplerHistogramPathTracerInline::bindShaderData(const ShaderVar& var, cons
     var["CB"]["gSensorVelocity"] = mOptions.sensorVelocity;
     var["CB"]["gLightVelocity"] = mOptions.lightVelocity;
     var["gInstanceVelocities"] = mpInstanceVelocities;
-    mLaserInput.get().bindShaderData(var["Laser"]);
+    if (usesMedia())
+    {
+        var["gMediumProperties"] = mpMediumProperties;
+        mVessels.bindShaderData(mpDevice, var, *mpScene, kPassName);
+    }
+    mLaserInput.get().bindShaderData(var);
 
     InlinePass::bindChannels(var, renderData, InlinePass::kPrimaryHitInputChannels);
     InlinePass::bindChannels(var, renderData, InlinePass::kColorOutputChannels);
@@ -283,7 +322,7 @@ void DopplerHistogramPathTracerInline::execute(RenderContext* pRenderContext, co
     if (!mpScene)
     {
         InlinePass::clearChannels(pRenderContext, renderData, InlinePass::kColorOutputChannels);
-        InlinePass::clearChannels(pRenderContext, renderData, spectrumChannels());
+        InlinePass::clearChannels(pRenderContext, renderData, spectrumChannels(), mTexture3DClearer);
         return;
     }
 
@@ -292,7 +331,7 @@ void DopplerHistogramPathTracerInline::execute(RenderContext* pRenderContext, co
         resetSpectrum();
     if (!mOptions.accumulate || mNeedToClearSpectrum)
     {
-        InlinePass::clearChannels(pRenderContext, renderData, spectrumChannels());
+        InlinePass::clearChannels(pRenderContext, renderData, spectrumChannels(), mTexture3DClearer);
         mNeedToClearSpectrum = false;
         mSummedFrames = 0;
     }
@@ -302,10 +341,21 @@ void DopplerHistogramPathTracerInline::execute(RenderContext* pRenderContext, co
         mpInstanceVelocities = createInstanceVelocityBuffer(mpDevice, *mpScene, mOptions.velocities, kPassName);
         mVelocitiesDirty = false;
     }
+    if (mMediaDirty || !mpMediumProperties)
+    {
+        mpMediumProperties = mOptions.volumes.createMediumBuffer(mpDevice, *mpScene, kPassName);
+        mMediaDirty = false;
+    }
     if (!mpComputePass)
         mpComputePass = InlinePass::createScenePass(mpDevice, pRenderContext, mpScene, mpSampleGenerator, kShaderFile,
             getShaderDefines(renderData));
     InlinePass::checkScene(*mpScene, renderData);
+    if (mOptions.volumes.useVolumes && mSceneHasMedia && mLaserInput.get().isLaser && !mWarnedLaserInMedia)
+    {
+        logWarning("DopplerHistogramPathTracerInline: participating media take the point light (isLightSourceLaser = "
+                   "false); with the laser, their meshes render as ordinary surfaces.");
+        mWarnedLaserInMedia = true;
+    }
 
     InlinePass::updateScenePassDefines(pRenderContext, mpComputePass, mpScene, mpSampleGenerator,
         getShaderDefines(renderData));
@@ -362,12 +412,21 @@ void DopplerHistogramPathTracerInline::renderUI(Gui::Widgets& widget)
         dirty |= group.var("Sensor velocity (m/s)", options.sensorVelocity, -1e4f, 1e4f);
         dirty |= group.var("Light velocity (m/s)", options.lightVelocity, -1e4f, 1e4f);
         for (const auto& [name, motion] : options.velocities)
+        {
             group.text(fmt::format("{}: linear ({}, {}, {}) m/s", name, motion.linear.x, motion.linear.y,
                 motion.linear.z));
+            if (motion.hasFlow())
+                group.text(fmt::format("  flow: {} m/s on the axis, radius {} m", motion.flowMaxSpeed, motion.flowRadius));
+            if (motion.diffusion != 0.f)
+                group.text(fmt::format("  diffusion: {} m^2/s", motion.diffusion));
+        }
     }
 
     if (auto group = widget.group("Sampling", true))
         dirty |= options.pathTracing.renderSamplingUI(group, " Each vertex is connected to the light.");
+
+    if (auto group = widget.group("Participating media", false))
+        dirty |= options.volumes.renderUI(group);
 
     if (auto group = widget.group("Output", true))
     {
@@ -404,6 +463,8 @@ void DopplerHistogramPathTracerInline::setScene(RenderContext* pRenderContext, c
     mpComputePass = nullptr;
     mFrameCount = 0;
     mVelocitiesDirty = true;
+    mMediaDirty = true;
     resetSpectrum();
     mpScene = pScene;
+    mSceneHasMedia = mOptions.volumes.hasMedia(mpScene);
 }

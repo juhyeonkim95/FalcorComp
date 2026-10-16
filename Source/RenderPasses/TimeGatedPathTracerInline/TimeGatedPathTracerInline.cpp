@@ -158,7 +158,7 @@ void TimeGatedPathTracerInline::bindShaderData(const ShaderVar& var, const Rende
     var["CB"]["gFrameDim"] = renderData.getDefaultTextureDims();
     var["CB"]["gEllipsoidRoughnessThreshold"] = mOptions.ellipsoidalSampling.ellipsoidRoughnessThreshold;
     var["CB"]["gSamplesPerPixel"] = mOptions.pathTracing.samplesPerPixel;
-    mLaserInput.get().bindShaderData(var["Laser"]);
+    mLaserInput.get().bindShaderData(var);
     mOptions.timeGate.bindShaderData(var["TimeGate"], mGate);
 
     InlinePass::bindChannels(var, renderData, InlinePass::kPrimaryHitInputChannels);

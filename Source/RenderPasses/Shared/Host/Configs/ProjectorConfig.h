@@ -38,6 +38,190 @@ inline const std::unordered_map<std::string, PatternAxis> kPatternAxes = {
     {"v", PatternAxis::V},
 };
 
+/// The pattern a projector shows (PROJECTOR_PATTERN and ProjectorPatternCB in Shared/Shaders/Projector/ProjectorPatterns.slang):
+/// a function of the projector uv in [0,1]^2, signed in [-1, 1] or unsigned in [0, 1].
+struct ProjectorPatternConfig
+{
+    ProjectorPatternType type = ProjectorPatternType::Periodic;
+    PatternAxis axis = PatternAxis::U;
+    bool invert = false;
+    bool unsignedModulation = false; ///< Show 0.5 p + 0.5 in [0, 1] instead of the zero-mean p in [-1, 1].
+    Waveform waveform = Waveform::Cos;  ///< Periodic.
+    float wavelength = 0.05f;           ///< Periodic: period, in uv units.
+    float phase = 0.f;                  ///< Periodic: offset, in periods.
+    uint bits = 10;                     ///< Gray, XOR: 2^bits columns.
+    uint bit = 0;                       ///< Gray, XOR: bit shown, 0 = finest.
+    uint baseBit = 0;                   ///< XOR: base bit (0 = XOR-02, 1 = XOR-04, ...).
+    uint2 checkerCells = uint2(16);     ///< Checkerboard: cells along u and v.
+    uint checkerShift = 0;              ///< Checkerboard: sub-cell shift index, 0..24.
+
+    bool operator==(const ProjectorPatternConfig& other) const
+    {
+        return type == other.type && axis == other.axis && invert == other.invert &&
+               unsignedModulation == other.unsignedModulation && waveform == other.waveform &&
+               wavelength == other.wavelength && phase == other.phase && bits == other.bits && bit == other.bit &&
+               baseBit == other.baseBit && all(checkerCells == other.checkerCells) && checkerShift == other.checkerShift;
+    }
+    bool operator!=(const ProjectorPatternConfig& other) const { return !(*this == other); }
+
+    void validate() const
+    {
+        if (!std::isfinite(wavelength) || wavelength <= 0.f)
+            FALCOR_THROW("patternWavelength must be finite and greater than zero.");
+        if (bits == 0 || bits > 24)
+            FALCOR_THROW("patternBits must be in [1, 24].");
+        if (checkerCells.x == 0 || checkerCells.y == 0)
+            FALCOR_THROW("checkerCells must be greater than zero.");
+        if (checkerShift >= 25)
+            FALCOR_THROW("checkerShift must be in [0, 24].");
+        // Out-of-range bits would map every column to the last one (a collapsed, biased antithetic map).
+        if ((type == ProjectorPatternType::Gray || type == ProjectorPatternType::XOR) && bit >= bits)
+            FALCOR_THROW("patternBit must be less than patternBits.");
+        if (type == ProjectorPatternType::XOR && baseBit >= bits)
+            FALCOR_THROW("patternBaseBit must be less than patternBits.");
+        if (!std::isfinite(phase))
+            FALCOR_THROW("patternPhase must be finite.");
+    }
+
+    bool parse(const std::string& key, const Properties::ConstValue& value)
+    {
+        if (key == "pattern")
+            type = parseEnumProperty(kProjectorPatternTypes, value, key);
+        else if (key == "patternAxis")
+            axis = parseEnumProperty(kPatternAxes, value, key);
+        else if (key == "invertPattern")
+            invert = value;
+        else if (key == "unsignedModulation")
+            unsignedModulation = value;
+        else if (key == "waveform")
+            waveform = parseEnumProperty(kWaveforms, value, key);
+        else if (key == "patternWavelength")
+            wavelength = value;
+        else if (key == "patternPhase")
+            phase = value;
+        else if (key == "patternBits")
+            bits = value;
+        else if (key == "patternBit")
+            bit = value;
+        else if (key == "patternBaseBit")
+            baseBit = value;
+        else if (key == "checkerCells")
+            checkerCells = value;
+        else if (key == "checkerShift")
+            checkerShift = value;
+        else
+            return false;
+        return true;
+    }
+
+    void serialize(Properties& props) const
+    {
+        props["pattern"] = enumPropertyName(kProjectorPatternTypes, type);
+        props["patternAxis"] = enumPropertyName(kPatternAxes, axis);
+        props["invertPattern"] = invert;
+        props["unsignedModulation"] = unsignedModulation;
+        props["waveform"] = enumPropertyName(kWaveforms, waveform);
+        props["patternWavelength"] = wavelength;
+        props["patternPhase"] = phase;
+        props["patternBits"] = bits;
+        props["patternBit"] = bit;
+        props["patternBaseBit"] = baseBit;
+        props["checkerCells"] = checkerCells;
+        props["checkerShift"] = checkerShift;
+    }
+
+    /// PROJECTOR_PATTERN.
+    DefineList getDefines() const
+    {
+        DefineList defines;
+        defines.add("PROJECTOR_PATTERN", std::to_string((uint32_t)type));
+        return defines;
+    }
+
+    /// Sets the ProjectorPatternCB constants under `patternVar`.
+    void bindShaderData(const ShaderVar& patternVar) const
+    {
+        patternVar["gPatternAxis"] = uint(axis);
+        patternVar["gPatternSign"] = invert ? -1.f : 1.f;
+        patternVar["gPatternUnsigned"] = uint(unsignedModulation);
+        patternVar["gPatternWaveform"] = uint(waveform);
+        patternVar["gPatternWavelength"] = wavelength;
+        patternVar["gPatternPhase"] = phase;
+        patternVar["gPatternBits"] = bits;
+        patternVar["gPatternBit"] = bit;
+        patternVar["gPatternBaseBit"] = baseBit;
+        patternVar["gCheckerCells"] = checkerCells;
+        patternVar["gCheckerShift"] = checkerShift;
+    }
+
+    /// Pattern type and its parameters.
+    bool renderUI(Gui::Widgets& widget)
+    {
+        bool dirty = false;
+        static const Gui::DropdownList kPatternList = {
+            {(uint32_t)ProjectorPatternType::Constant, "Constant"},
+            {(uint32_t)ProjectorPatternType::Periodic, "Periodic"},
+            {(uint32_t)ProjectorPatternType::Gray, "Gray code"},
+            {(uint32_t)ProjectorPatternType::XOR, "XOR code"},
+            {(uint32_t)ProjectorPatternType::Checkerboard, "Checkerboard"},
+            {(uint32_t)ProjectorPatternType::Arbitrary, "Arbitrary (set_pattern_data)"},
+        };
+        uint32_t patternType = (uint32_t)type;
+        if (widget.dropdown("Pattern", kPatternList, patternType))
+        {
+            type = (ProjectorPatternType)patternType;
+            dirty = true;
+        }
+        widget.tooltip("Signed pattern in [-1, 1] shown by the projector. Arbitrary patterns are set from Python "
+                       "with set_pattern_data().", true);
+
+        if (type != ProjectorPatternType::Constant && type != ProjectorPatternType::Checkerboard)
+        {
+            static const Gui::DropdownList kAxisList = {{(uint32_t)PatternAxis::U, "u"}, {(uint32_t)PatternAxis::V, "v"}};
+            uint32_t patternAxis = (uint32_t)axis;
+            if (widget.dropdown("Axis", kAxisList, patternAxis))
+            {
+                axis = (PatternAxis)patternAxis;
+                dirty = true;
+            }
+            widget.tooltip("Projector coordinate the pattern varies along (u: right, v: up).", true);
+        }
+        dirty |= widget.checkbox("Invert", invert);
+        widget.tooltip("Negate the pattern.", true);
+        dirty |= widget.checkbox("Unsigned", unsignedModulation);
+        widget.tooltip("Show 0.5 p + 0.5 in [0, 1] instead of the zero-mean pattern p in [-1, 1].", true);
+
+        if (type == ProjectorPatternType::Periodic)
+        {
+            dirty |= renderWaveformUI(widget, waveform);
+            dirty |= widget.var("Wavelength (uv)", wavelength, 1e-4f, 1.f);
+            widget.tooltip("Period of the pattern, in uv units.", true);
+            dirty |= widget.var("Phase", phase, -1.f, 1.f);
+            widget.tooltip("Pattern offset, in periods.", true);
+        }
+        else if (type == ProjectorPatternType::Gray || type == ProjectorPatternType::XOR)
+        {
+            dirty |= widget.var("Bits", bits, 1u, 24u);
+            widget.tooltip("The pattern has 2^bits columns.", true);
+            dirty |= widget.var("Bit", bit, 0u, 24u);
+            widget.tooltip("Bit of the code shown, 0 = finest stripes.", true);
+            if (type == ProjectorPatternType::XOR)
+            {
+                dirty |= widget.var("Base bit", baseBit, 0u, 24u);
+                widget.tooltip("Bit XORed with the higher bits: 0 = XOR-02, 1 = XOR-04, ...", true);
+            }
+        }
+        else if (type == ProjectorPatternType::Checkerboard)
+        {
+            dirty |= widget.var("Cells", checkerCells, 1u, 4096u);
+            widget.tooltip("Checker cells along u and v.", true);
+            dirty |= widget.var("Shift", checkerShift, 0u, 24u);
+            widget.tooltip("Sub-cell shift: (shift mod 5, shift / 5) fifths of a cell along u and v.", true);
+        }
+        return dirty;
+    }
+};
+
 /// Pinhole projector with a signed pattern (Shared/Shaders/Projector). u runs along the projector's right and v
 /// along its up, both over [0, 1] across the field of view.
 struct ProjectorConfig
@@ -50,19 +234,7 @@ struct ProjectorConfig
     float3 up = float3(0.f, 1.f, 0.f); ///< Up hint; the projector's up is made orthogonal to the direction.
     float2 fov = float2(22.62f);       ///< Full field of view along u and v, in degrees.
     float3 intensity = float3(10.f);
-
-    ProjectorPatternType pattern = ProjectorPatternType::Periodic;
-    PatternAxis patternAxis = PatternAxis::U;
-    bool invertPattern = false;
-    bool unsignedModulation = false; ///< Show 0.5 p + 0.5 in [0, 1] instead of the zero-mean p in [-1, 1].
-    Waveform waveform = Waveform::Cos;                      ///< Periodic.
-    float patternWavelength = 0.05f;                       ///< Periodic: period, in uv units.
-    float patternPhase = 0.f;                              ///< Periodic: offset, in periods.
-    uint patternBits = 10;                                 ///< Gray, XOR: 2^bits columns.
-    uint patternBit = 0;                                   ///< Gray, XOR: bit shown, 0 = finest.
-    uint patternBaseBit = 0;                               ///< XOR: base bit (0 = XOR-02, 1 = XOR-04, ...).
-    uint2 checkerCells = uint2(16);                        ///< Checkerboard: cells along u and v.
-    uint checkerShift = 0;                                 ///< Checkerboard: sub-cell shift index, 0..24.
+    ProjectorPatternConfig pattern;
 
     void validate() const
     {
@@ -70,21 +242,7 @@ struct ProjectorConfig
             FALCOR_THROW("projectorDirection must be nonzero and not parallel to projectorUp.");
         if (!(fov.x > 0.f && fov.x < 180.f && fov.y > 0.f && fov.y < 180.f))
             FALCOR_THROW("projectorFov must be in (0, 180) degrees.");
-        if (!std::isfinite(patternWavelength) || patternWavelength <= 0.f)
-            FALCOR_THROW("patternWavelength must be finite and greater than zero.");
-        if (patternBits == 0 || patternBits > 24)
-            FALCOR_THROW("patternBits must be in [1, 24].");
-        if (checkerCells.x == 0 || checkerCells.y == 0)
-            FALCOR_THROW("checkerCells must be greater than zero.");
-        if (checkerShift >= 25)
-            FALCOR_THROW("checkerShift must be in [0, 24].");
-        // Out-of-range bits would map every column to the last one (a collapsed, biased antithetic map).
-        if ((pattern == ProjectorPatternType::Gray || pattern == ProjectorPatternType::XOR) && patternBit >= patternBits)
-            FALCOR_THROW("patternBit must be less than patternBits.");
-        if (pattern == ProjectorPatternType::XOR && patternBaseBit >= patternBits)
-            FALCOR_THROW("patternBaseBit must be less than patternBits.");
-        if (!std::isfinite(patternPhase))
-            FALCOR_THROW("patternPhase must be finite.");
+        pattern.validate();
         for (int i = 0; i < 3; i++)
             if (!std::isfinite(position[i]) || !std::isfinite(intensity[i]) || intensity[i] < 0.f)
                 FALCOR_THROW("projectorPosition must be finite and projectorIntensity finite and non-negative.");
@@ -114,32 +272,8 @@ struct ProjectorConfig
             fov = value;
         else if (key == "projectorIntensity")
             intensity = value;
-        else if (key == "pattern")
-            pattern = parseEnumProperty(kProjectorPatternTypes, value, key);
-        else if (key == "patternAxis")
-            patternAxis = parseEnumProperty(kPatternAxes, value, key);
-        else if (key == "invertPattern")
-            invertPattern = value;
-        else if (key == "unsignedModulation")
-            unsignedModulation = value;
-        else if (key == "waveform")
-            waveform = parseEnumProperty(kWaveforms, value, key);
-        else if (key == "patternWavelength")
-            patternWavelength = value;
-        else if (key == "patternPhase")
-            patternPhase = value;
-        else if (key == "patternBits")
-            patternBits = value;
-        else if (key == "patternBit")
-            patternBit = value;
-        else if (key == "patternBaseBit")
-            patternBaseBit = value;
-        else if (key == "checkerCells")
-            checkerCells = value;
-        else if (key == "checkerShift")
-            checkerShift = value;
         else
-            return false;
+            return pattern.parse(key, value);
         return true;
     }
 
@@ -171,27 +305,11 @@ struct ProjectorConfig
         props["projectorUp"] = up;
         props["projectorFov"] = fov;
         props["projectorIntensity"] = intensity;
-        props["pattern"] = enumPropertyName(kProjectorPatternTypes, pattern);
-        props["patternAxis"] = enumPropertyName(kPatternAxes, patternAxis);
-        props["invertPattern"] = invertPattern;
-        props["unsignedModulation"] = unsignedModulation;
-        props["waveform"] = enumPropertyName(kWaveforms, waveform);
-        props["patternWavelength"] = patternWavelength;
-        props["patternPhase"] = patternPhase;
-        props["patternBits"] = patternBits;
-        props["patternBit"] = patternBit;
-        props["patternBaseBit"] = patternBaseBit;
-        props["checkerCells"] = checkerCells;
-        props["checkerShift"] = checkerShift;
+        pattern.serialize(props);
     }
 
     /// PROJECTOR_PATTERN.
-    DefineList getDefines() const
-    {
-        DefineList defines;
-        defines.add("PROJECTOR_PATTERN", std::to_string((uint32_t)pattern));
-        return defines;
-    }
+    DefineList getDefines() const { return pattern.getDefines(); }
 
     /// Sets the Projector and ProjectorPatternCB constants under `var` (the root).
     void bindShaderData(const ShaderVar& var) const
@@ -206,19 +324,7 @@ struct ProjectorConfig
         projectorVar["gProjectorUp"] = projectorUp;
         projectorVar["gProjectorTanHalfFov"] = float2(std::tan(math::radians(0.5f * fov.x)), std::tan(math::radians(0.5f * fov.y)));
         projectorVar["gProjectorIntensity"] = intensity;
-
-        auto patternVar = var["ProjectorPatternCB"];
-        patternVar["gPatternAxis"] = uint(patternAxis);
-        patternVar["gPatternSign"] = invertPattern ? -1.f : 1.f;
-        patternVar["gPatternUnsigned"] = uint(unsignedModulation);
-        patternVar["gPatternWaveform"] = uint(waveform);
-        patternVar["gPatternWavelength"] = patternWavelength;
-        patternVar["gPatternPhase"] = patternPhase;
-        patternVar["gPatternBits"] = patternBits;
-        patternVar["gPatternBit"] = patternBit;
-        patternVar["gPatternBaseBit"] = patternBaseBit;
-        patternVar["gCheckerCells"] = checkerCells;
-        patternVar["gCheckerShift"] = checkerShift;
+        pattern.bindShaderData(var["ProjectorPatternCB"]);
     }
 
     /// Position, direction, field of view and intensity.
@@ -244,71 +350,7 @@ struct ProjectorConfig
     }
 
     /// Pattern type and its parameters.
-    bool renderPatternUI(Gui::Widgets& widget)
-    {
-        bool dirty = false;
-        static const Gui::DropdownList kPatternList = {
-            {(uint32_t)ProjectorPatternType::Constant, "Constant"},
-            {(uint32_t)ProjectorPatternType::Periodic, "Periodic"},
-            {(uint32_t)ProjectorPatternType::Gray, "Gray code"},
-            {(uint32_t)ProjectorPatternType::XOR, "XOR code"},
-            {(uint32_t)ProjectorPatternType::Checkerboard, "Checkerboard"},
-            {(uint32_t)ProjectorPatternType::Arbitrary, "Arbitrary (set_pattern_data)"},
-        };
-        uint32_t type = (uint32_t)pattern;
-        if (widget.dropdown("Pattern", kPatternList, type))
-        {
-            pattern = (ProjectorPatternType)type;
-            dirty = true;
-        }
-        widget.tooltip("Signed pattern in [-1, 1] shown by the projector. Arbitrary patterns are set from Python "
-                       "with set_pattern_data().", true);
-
-        if (pattern != ProjectorPatternType::Constant && pattern != ProjectorPatternType::Checkerboard)
-        {
-            static const Gui::DropdownList kAxisList = {{(uint32_t)PatternAxis::U, "u"}, {(uint32_t)PatternAxis::V, "v"}};
-            uint32_t axis = (uint32_t)patternAxis;
-            if (widget.dropdown("Axis", kAxisList, axis))
-            {
-                patternAxis = (PatternAxis)axis;
-                dirty = true;
-            }
-            widget.tooltip("Projector coordinate the pattern varies along (u: right, v: up).", true);
-        }
-        dirty |= widget.checkbox("Invert", invertPattern);
-        widget.tooltip("Negate the pattern.", true);
-        dirty |= widget.checkbox("Unsigned", unsignedModulation);
-        widget.tooltip("Show 0.5 p + 0.5 in [0, 1] instead of the zero-mean pattern p in [-1, 1].", true);
-
-        if (pattern == ProjectorPatternType::Periodic)
-        {
-            dirty |= renderWaveformUI(widget, waveform);
-            dirty |= widget.var("Wavelength (uv)", patternWavelength, 1e-4f, 1.f);
-            widget.tooltip("Period of the pattern, in uv units.", true);
-            dirty |= widget.var("Phase", patternPhase, -1.f, 1.f);
-            widget.tooltip("Pattern offset, in periods.", true);
-        }
-        else if (pattern == ProjectorPatternType::Gray || pattern == ProjectorPatternType::XOR)
-        {
-            dirty |= widget.var("Bits", patternBits, 1u, 24u);
-            widget.tooltip("The pattern has 2^bits columns.", true);
-            dirty |= widget.var("Bit", patternBit, 0u, 24u);
-            widget.tooltip("Bit of the code shown, 0 = finest stripes.", true);
-            if (pattern == ProjectorPatternType::XOR)
-            {
-                dirty |= widget.var("Base bit", patternBaseBit, 0u, 24u);
-                widget.tooltip("Bit XORed with the higher bits: 0 = XOR-02, 1 = XOR-04, ...", true);
-            }
-        }
-        else if (pattern == ProjectorPatternType::Checkerboard)
-        {
-            dirty |= widget.var("Cells", checkerCells, 1u, 4096u);
-            widget.tooltip("Checker cells along u and v.", true);
-            dirty |= widget.var("Shift", checkerShift, 0u, 24u);
-            widget.tooltip("Sub-cell shift: (shift mod 5, shift / 5) fifths of a cell along u and v.", true);
-        }
-        return dirty;
-    }
+    bool renderPatternUI(Gui::Widgets& widget) { return pattern.renderUI(widget); }
 };
 
 /// Data of the arbitrary pattern: one 0 / 1 value per column, and its antithetic map, either a column matching or
@@ -392,8 +434,8 @@ public:
 
     bool empty() const { return mValues.empty(); }
 
-    /// Binds the textures and sets gArbitraryWidth and gArbitraryMapping.
-    void bindShaderData(ref<Device> pDevice, const ShaderVar& var)
+    /// Creates the textures that are missing (after set()).
+    void createTextures(ref<Device> pDevice)
     {
         if (empty())
             FALCOR_THROW("The arbitrary pattern needs set_pattern_data().");
@@ -406,12 +448,26 @@ public:
         create(mpAntitheticIndex, mAntitheticIndex);
         create(mpIntervalIds, mIntervalIds);
         create(mpIntervals, mIntervals);
+    }
+
+    /// Binds the textures (createTextures() first) and sets gArbitraryWidth and gArbitraryMapping under the root `var`.
+    void bindShaderData(const ShaderVar& var) const
+    {
+        if (empty() || !mpValues)
+            FALCOR_THROW("The arbitrary pattern needs set_pattern_data().");
         var["gPatternValues"] = mpValues;
         var["gAntitheticIndex"] = mpAntitheticIndex;
         var["gIntervalIds"] = mpIntervalIds;
         var["gIntervals"] = mpIntervals;
         var["ProjectorPatternCB"]["gArbitraryWidth"] = (uint32_t)mValues.size();
         var["ProjectorPatternCB"]["gArbitraryMapping"] = !mAntitheticIndex.empty() ? 1u : !mIntervalIds.empty() ? 2u : 0u;
+    }
+
+    /// Creates the missing textures and binds them.
+    void bindShaderData(ref<Device> pDevice, const ShaderVar& var)
+    {
+        createTextures(pDevice);
+        bindShaderData(var);
     }
 
 private:

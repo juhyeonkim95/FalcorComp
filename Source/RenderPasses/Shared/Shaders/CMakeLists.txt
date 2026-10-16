@@ -9,6 +9,7 @@ set(shared_shaders
     Utils/TransientHistogram.slang
     Utils/Waveform.slang
     Utils/ContinuousWave.slang
+    Utils/ClearTexture3D.cs.slang
     Utils/Frames.slang
     Lights/Laser.slang
     Lights/LaserLightSampler.slang
@@ -19,6 +20,7 @@ set(shared_shaders
     Lights/SceneTriangles.slang
     Geometry/Ellipsoid.slang
     Geometry/EllipsoidIntersection.slang
+    Volumes/Media.slang
     ShiftMapping/ShiftMapping.slang
     ShiftMapping/NewtonSolver.slang
     ShiftMapping/ShiftMappingMethods.slangh
@@ -37,6 +39,7 @@ set(shared_shaders
     Antithetic/AntitheticMIS.slang
     Projector/ProjectorLight.slang
     Projector/ProjectorPatterns.slang
+    Probing/Probing.slang
 )
 set(shared_shader_outputs)
 foreach(shader IN LISTS shared_shaders)

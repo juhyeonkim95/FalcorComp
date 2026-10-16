@@ -6,12 +6,23 @@
 
 using namespace Falcor;
 
-/// Instantaneous rigid motion of a scene object: v(x) = linear + angular x (x - center). m/s, rad/s, scene units (m).
+/// Motion of a scene object: its instantaneous rigid motion, v(x) = linear + angular x (x - center), and, for the
+/// scatterers of a medium, a Poiseuille flow and Brownian motion. m/s, rad/s, scene units (m).
 struct ObjectMotion
 {
     float3 linear = float3(0.f);
     float3 angular = float3(0.f);
     float3 center = float3(0.f);
+    /// Poiseuille flow, added to the rigid motion: flowMaxSpeed (1 - r^2 / flowRadius^2) along flowAxis (a unit
+    /// vector) at distance r < flowRadius from the axis through flowOrigin, zero farther out.
+    float3 flowOrigin = float3(0.f);
+    float3 flowAxis = float3(0.f, 0.f, 1.f);
+    float flowRadius = 0.f;
+    float flowMaxSpeed = 0.f;
+    /// Brownian diffusion coefficient of the scatterers (m^2/s), around their motion above.
+    float diffusion = 0.f;
+
+    bool hasFlow() const { return flowMaxSpeed != 0.f && flowRadius > 0.f; }
 
     /// World transform taking the object's pose at time 0 to its pose at time t (rotation about center, then the
     /// translation linear t).
@@ -32,7 +43,9 @@ struct ObjectMotion
 /// Motions are in world space, also for an object whose scene-graph node has a parent.
 using ObjectMotions = std::map<std::string, ObjectMotion>;
 
-/// Parses {"name": {"linear": [..], "angular": [..], "center": [..]}}; missing entries are zero.
+/// Parses {"name": {"linear": [..], "angular": [..], "center": [..], "flowOrigin": [..], "flowAxis": [..],
+/// "flowRadius": .., "flowMaxSpeed": .., "diffusion": ..}}; missing entries are zero (flowAxis: z). flowAxis is
+/// normalized (it must not be zero).
 inline ObjectMotions parseObjectMotions(const Properties& objects)
 {
     ObjectMotions motions;
@@ -43,6 +56,11 @@ inline ObjectMotions parseObjectMotions(const Properties& objects)
         motion.linear = props.get<float3>("linear", float3(0.f));
         motion.angular = props.get<float3>("angular", float3(0.f));
         motion.center = props.get<float3>("center", float3(0.f));
+        motion.flowOrigin = props.get<float3>("flowOrigin", float3(0.f));
+        motion.flowAxis = normalize(props.get<float3>("flowAxis", float3(0.f, 0.f, 1.f)));
+        motion.flowRadius = props.get<float>("flowRadius", 0.f);
+        motion.flowMaxSpeed = props.get<float>("flowMaxSpeed", 0.f);
+        motion.diffusion = props.get<float>("diffusion", 0.f);
         motions[name] = motion;
     }
     return motions;
@@ -57,6 +75,15 @@ inline Properties serializeObjectMotions(const ObjectMotions& motions)
         props["linear"] = motion.linear;
         props["angular"] = motion.angular;
         props["center"] = motion.center;
+        if (motion.hasFlow())
+        {
+            props["flowOrigin"] = motion.flowOrigin;
+            props["flowAxis"] = motion.flowAxis;
+            props["flowRadius"] = motion.flowRadius;
+            props["flowMaxSpeed"] = motion.flowMaxSpeed;
+        }
+        if (motion.diffusion != 0.f)
+            props["diffusion"] = motion.diffusion;
         objects[name] = props;
     }
     return objects;
@@ -118,23 +145,29 @@ inline void warnUnmatchedObjects(const std::vector<SceneObject>& objects, const 
     }
 }
 
-/// Per geometry instance: linear, angular, center (float4 each), for StructuredBuffer<InstanceVelocity> in the shaders.
+/// Per geometry instance, StructuredBuffer<InstanceVelocity> in the shaders (PathVelocity.slang): linear, angular,
+/// center, (flowOrigin, flowRadius), (flowAxis, flowMaxSpeed or 0 without a flow), (diffusion, 0, 0, 0).
 inline ref<Buffer> createInstanceVelocityBuffer(ref<Device> pDevice, const Scene& scene, const ObjectMotions& motions,
     const char* pass)
 {
+    constexpr size_t kStride = 6;
     const auto objects = listSceneObjects(scene);
-    std::vector<float4> data(3 * std::max<size_t>(objects.size(), 1), float4(0.f));
+    std::vector<float4> data(kStride * std::max<size_t>(objects.size(), 1), float4(0.f));
     for (const auto& object : objects)
         if (const auto* entry = findObjectMotion(motions, object))
         {
             const ObjectMotion& motion = entry->second;
-            data[3 * object.instance + 0] = float4(motion.linear, 0.f);
-            data[3 * object.instance + 1] = float4(motion.angular, 0.f);
-            data[3 * object.instance + 2] = float4(motion.center, 0.f);
+            float4* v = &data[kStride * object.instance];
+            v[0] = float4(motion.linear, 0.f);
+            v[1] = float4(motion.angular, 0.f);
+            v[2] = float4(motion.center, 0.f);
+            v[3] = float4(motion.flowOrigin, motion.flowRadius);
+            v[4] = float4(motion.flowAxis, motion.hasFlow() ? motion.flowMaxSpeed : 0.f);
+            v[5] = float4(motion.diffusion, 0.f, 0.f, 0.f);
         }
     warnUnmatchedObjects(objects, motions, pass);
-    return pDevice->createStructuredBuffer(3 * sizeof(float4), (uint32_t)data.size() / 3, ResourceBindFlags::ShaderResource,
-        MemoryType::DeviceLocal, data.data(), false);
+    return pDevice->createStructuredBuffer(kStride * sizeof(float4), (uint32_t)(data.size() / kStride),
+        ResourceBindFlags::ShaderResource, MemoryType::DeviceLocal, data.data(), false);
 }
 
 /// Moves the scene-graph nodes of the named (movable) objects to their pose at a time t, and back. The pose at t = 0 is
@@ -161,6 +194,9 @@ public:
             if (!entry)
                 continue;
             const auto& [name, motion] = *entry;
+            if (motion.hasFlow() || motion.diffusion != 0.f)
+                logWarning("{}: the flow and diffusion of '{}' move no geometry (only the scatterers of a medium, in "
+                           "DopplerHistogramPathTracerInline); its rigid motion does.", pass, name);
             if (!object.movable)
             {
                 logWarning("{}: object '{}' is static and cannot move; build it as animated (e.g. "

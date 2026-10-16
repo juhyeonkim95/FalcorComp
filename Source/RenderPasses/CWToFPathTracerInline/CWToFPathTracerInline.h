@@ -31,6 +31,7 @@
 #include "Utils/Sampling/SampleGenerator.h"
 #include "../Shared/Host/Configs/ContinuousWaveConfig.h"
 #include "../Shared/Host/Configs/PathTracingConfig.h"
+#include "../Shared/Host/Configs/ProbingConfig.h"
 #include "../Shared/Host/Configs/ShiftMappingConfig.h"
 #include "../Shared/Host/LaserState.h"
 #include "../Shared/Host/InlinePassUtils.h"
@@ -39,7 +40,8 @@ using namespace Falcor;
 
 /** Continuous-wave time-of-flight path tracer: paths are weighted by a periodic modulation of their optical
  * length (ContinuousWaveConfig). With antithetic sampling, each BSDF-sampled vertex is paired with a copy moved on
- * its surface (path-length-aware shift mapping) so the modulation has the opposite sign.
+ * its surface (path-length-aware shift mapping) so the modulation has the opposite sign. With transport probing
+ * (ProbingConfig), paths are also weighted by the epipolar lines of their camera and projector rays.
  */
 class CWToFPathTracerInline : public RenderPass
 {
@@ -73,6 +75,7 @@ private:
         ContinuousWaveConfig continuousWave;
         PathTracingConfig pathTracing;
         ShiftMappingConfig shiftMapping;
+        ProbingConfig probing;
         bool useAntitheticSampling = true;
     };
 
@@ -85,6 +88,7 @@ private:
 
     ref<Scene> mpScene;
     LaserInput mLaserInput; ///< The laser of this frame, from the LaserLight pass.
+    bool mWarnedProbingLaser = false; ///< Probing needs a point light or projector: warned once for a laser beam.
     ref<SampleGenerator> mpSampleGenerator;
     ref<ComputePass> mpComputePass;
 };

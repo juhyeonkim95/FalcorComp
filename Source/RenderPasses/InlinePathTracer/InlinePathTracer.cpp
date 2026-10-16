@@ -107,7 +107,7 @@ void InlinePathTracer::bindShaderData(const ShaderVar& var, const RenderData& re
     var["CB"]["gFrameCount"] = mFrameCount;
     var["CB"]["gFrameDim"] = renderData.getDefaultTextureDims();
     var["CB"]["gSamplesPerPixel"] = mOptions.pathTracing.samplesPerPixel;
-    mLaserInput.get().bindShaderData(var["Laser"]);
+    mLaserInput.get().bindShaderData(var);
 
     InlinePass::bindChannels(var, renderData, InlinePass::kPrimaryHitInputChannels);
     InlinePass::bindChannels(var, renderData, InlinePass::kColorOutputChannels);

@@ -245,3 +245,12 @@ typealias ProjectorPattern = ArbitraryPattern;
 #else
 typealias ProjectorPattern = ConstantPattern;
 #endif
+
+/// Value of the pattern shown at uv: gPatternSign * eval(uv) in [-1, 1], or 0.5 of that + 0.5 in [0, 1] with
+/// gPatternUnsigned.
+float shownPatternValue(float2 uv)
+{
+    ProjectorPattern pattern;
+    float value = gPatternSign * pattern.eval(uv);
+    return gPatternUnsigned != 0 ? 0.5f * value + 0.5f : value;
+}

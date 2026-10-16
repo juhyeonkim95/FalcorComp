@@ -2,6 +2,8 @@
 
 falcorcomp is distributed as binary wheels for 64-bit Linux and Windows, for Python 3.9 to 3.13.
 A wheel contains Falcor, its render passes and their shaders, so no separate Falcor build is needed.
+Every release has Linux wheels; only some have Windows wheels (0.2.1 so far), and on Windows pip installs the newest
+release that has one.
 
 ## Requirements
 
@@ -41,7 +43,7 @@ downloaded instead, choose the one whose name matches both (`cp312` is Python 3.
 Linux, `win_amd64` is Windows):
 
 ```bash
-pip install falcorcomp-0.2.1-cp312-cp312-manylinux_2_35_x86_64.whl
+pip install falcorcomp-0.2.2-cp312-cp312-manylinux_2_35_x86_64.whl
 ```
 
 ## Verifying the installation

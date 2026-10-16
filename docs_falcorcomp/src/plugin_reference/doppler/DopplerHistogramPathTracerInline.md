@@ -134,6 +134,81 @@ Sampling and output, as for the [transient histogram path tracer](../transient/T
     (Default: `Default`, `[512, 512]`)
 ```
 
+Participating media (see [Participating media](#doppler-media)):
+
+```{list-table}
+:header-rows: 1
+:widths: 25 10 65
+
+* - Parameter
+  - Type
+  - Description
+* - `useVolumes`
+  - boolean
+  - Render the homogeneous media inside closed meshes, with the point light. Off, or with the laser, a medium's mesh
+    is an ordinary surface. (Default: `false`)
+* - `maxScatterEvents`
+  - integer
+  - Maximum number of scattering events in media on a camera path; Russian roulette ends most paths earlier.
+    (Default: `1024`)
+* - `media`
+  - dictionary
+  - Medium properties in full precision, by material name, replacing the material's own:
+    `{"Blood": {"scattering": [r, g, b], "absorption": [r, g, b], "anisotropy": g}}`, per meter. Missing entries are
+    zero; a listed material holds a medium if a coefficient is positive. (Default: none)
+```
+
+(doppler-media)=
+## Participating media
+
+With `useVolumes`, paths also scatter inside media, and every scattering event is a path vertex: its scatterer adds
+its velocity to the path velocity, as a surface vertex does. This simulates, for example, coherent light scattered by
+tissue with blood flowing in a vessel.
+
+- **Media.** A mesh is a medium when its material has volume absorption or scattering: `volumeAbsorption` and
+  `volumeScattering` (per scene unit, so per meter) and `volumeAnisotropy`, the $g$ of a Henyey-Greenstein phase
+  function. In a Mitsuba scene, give the shape a homogeneous `interior` medium with `sigma_s` and `sigma_a`; the
+  importer reads no phase function, so the medium scatters isotropically. The mesh must be closed, with its normals
+  facing out. Media may be nested, up to 4 deep (a vessel inside tissue), but must not overlap or touch.
+- **Precision.** Falcor stores a material's volume coefficients and $g$ as 16-bit floats: at most 65504 per meter,
+  which the scattering of whole blood in the near infrared (several $10^4$ per meter) can exceed, and about 3
+  significant digits ($g = 0.99$ becomes 0.9902, so $1 - g$ is 2% off). Give such media in `media`, which holds them
+  in full precision.
+- **Boundaries.** A medium's surface is a smooth interface between its material's `indexOfRefraction` and that of
+  what surrounds it (the enclosing medium, or 1). A path reflects or refracts there, chosen by the Fresnel
+  reflectance, and the interface point is a path vertex that moves with the medium's object. Where the two indices
+  are equal, rays cross unchanged and paths have no vertex there (a vessel inside tissue of the same index).
+- **Light connections.** From a vertex in a medium, a connection goes straight to the light through index-matched
+  boundaries, or refracts once, where Snell's law holds on the boundary triangle (for example, at the tissue
+  surface). A connection that would refract at two boundaries is not made, so that light is missing (for example, a
+  vessel whose index differs from its tissue's). Where light could arrive through two faces of a medium (near an edge
+  of a box), only one is found.
+- **Motion.** The scatterers move with their object's motion in `velocities` (see
+  [Velocities](#doppler-velocities)), for example a translating or rotating medium, or blood in a Poiseuille flow
+  (`flowOrigin`, `flowAxis`, `flowRadius`, `flowMaxSpeed`).
+- **Brownian motion.** The scatterers of an object with a `diffusion` coefficient $D$ (m²/s) also diffuse. A
+  scattering event at angle $\theta$ in a medium of index $n$ decorrelates the path's field at the rate $q^2 D$, with
+  $q = 2 k \sin(\theta / 2)$ and $k = 2 \pi n / \lambda$, so a path's line becomes a Lorentzian of half width
+  $\sum q^2 D / (2 \pi) = \sum 4 \pi n^2 D (1 - \cos\theta) / \lambda^2$ around its Doppler shift, summed over its
+  scattering events. Scatterers diffuse independently (as in diffusing-wave spectroscopy). The pass samples each path's
+  Lorentzian, so a broad line needs more samples than a sharp one, and the light of its tails beyond the frequency
+  range is not in the spectrum.
+- **Vessels as grids.** `set_vessels(medium, fraction, velocity, origin, size, scattering, absorption,
+  anisotropy=0, diffusion=0)` puts blood vessels into the medium of the material named `medium`, from numpy arrays:
+  the blood fraction, shape (nz, ny, nx), and the blood's velocity in m/s, shape (nz, ny, nx, 3), at the centers of
+  the cells of the box from `origin` to `origin + size` (x along the last axis), interpolated between them.
+  `scattering` and `absorption` (per meter), `anisotropy` and `diffusion` (m²/s) are the blood's. There, the medium
+  mixes its coefficients with the blood's by the fraction: its free flights are delta tracked and its transmittances
+  ratio tracked, against the larger of the two extinctions, and a scattering event is the blood's or the medium's in
+  proportion to their scattering. The vessels may branch and curve freely. One medium holds vessels at a time;
+  `clear_vessels()` removes them. See the [vascular network](../../applications/lsci_network.md) of the LSCI
+  application.
+- **Light.** Media take the point light (`isLightSourceLaser = false` on the `LaserLight` pass). With the laser,
+  `useVolumes` is ignored and media meshes render as ordinary surfaces.
+- **Counts.** `maxBounces` counts surface vertices only, and `computeDirect` decides only for the path camera ->
+  primary hit -> light: light scattered once in a medium is always included. A path ends after 64 reflections and
+  refractions at medium boundaries.
+
 ## Light
 
 The light is set on the `LaserLight` pass, as for the [time-gated path tracer](#laser). A lidar has its light next to

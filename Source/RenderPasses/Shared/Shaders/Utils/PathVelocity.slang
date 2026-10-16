@@ -1,18 +1,32 @@
 /** Path velocity u(x) (OHD path integral, Kim et al. 2025, Eq. 32): the sum, over the segments of a path, of the
-    velocities of their endpoints along the segment, from the instantaneous rigid motions of the geometry instances
+    velocities of their endpoints along the segment, from the instantaneous motions of the geometry instances
     (gInstanceVelocities; host: createInstanceVelocityBuffer in Shared/Host/ObjectMotion.h).
 */
 import Scene.HitInfo;
 import RenderPasses.Shared.Shaders.Lights.LaserLightSampler;
 
-// Instantaneous rigid motion of a geometry instance: v(x) = linear + angular x (x - center).
+// Instantaneous motion of a geometry instance: v(x) = linear + angular x (x - center), plus a Poiseuille flow,
+// maxSpeed (1 - r^2 / R^2) along the axis within R of it. Its medium's scatterers also diffuse (Brownian motion).
 struct InstanceVelocity
 {
     float4 linear;
     float4 angular;
     float4 center;
+    float4 flowOrigin; ///< xyz: a point on the flow's axis; w: the flow's radius R.
+    float4 flowAxis;   ///< xyz: the axis' unit direction; w: the speed on the axis (0: no flow).
+    float4 diffusion;  ///< x: Brownian diffusion coefficient of the scatterers (m^2/s).
 
-    float3 at(float3 x) { return linear.xyz + cross(angular.xyz, x - center.xyz); }
+    float3 at(float3 x)
+    {
+        float3 v = linear.xyz + cross(angular.xyz, x - center.xyz);
+        if (flowAxis.w != 0.f)
+        {
+            float3 offset = x - flowOrigin.xyz;
+            float3 radial = offset - dot(offset, flowAxis.xyz) * flowAxis.xyz;
+            v += flowAxis.w * max(0.f, 1.f - dot(radial, radial) / (flowOrigin.w * flowOrigin.w)) * flowAxis.xyz;
+        }
+        return v;
+    }
 };
 
 StructuredBuffer<InstanceVelocity> gInstanceVelocities;

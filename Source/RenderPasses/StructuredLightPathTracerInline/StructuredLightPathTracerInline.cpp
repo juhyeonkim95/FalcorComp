@@ -150,7 +150,7 @@ void StructuredLightPathTracerInline::bindShaderData(const ShaderVar& var, const
     var["CB"]["gSamplesPerPixel"] = mOptions.pathTracing.samplesPerPixel;
     var["CB"]["gProjectorSampleCount"] = mOptions.projectorSampleCount;
     mOptions.projector.atCamera(*mpScene->getCamera()).bindShaderData(var);
-    if (mOptions.projector.pattern == ProjectorPatternType::Arbitrary)
+    if (mOptions.projector.pattern.type == ProjectorPatternType::Arbitrary)
         mPatternData.bindShaderData(mpDevice, var);
 
     InlinePass::bindChannels(var, renderData, InlinePass::kPrimaryHitInputChannels);

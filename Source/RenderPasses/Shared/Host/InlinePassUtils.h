@@ -116,6 +116,53 @@ inline void clearChannels(RenderContext* pRenderContext, const RenderData& rende
             pRenderContext->clearTexture(pTexture.get(), float4(0.f));
 }
 
+/// Zeroes textures, including 3D textures deeper than 1024 slices. gfx's UAV clear on Vulkan leaves the depth slices
+/// from 1024 on untouched, so a 3D output that is cleared every frame and then added to would keep accumulating
+/// there. 3D 32-bit float textures with 1, 2 or 4 channels are therefore cleared by a compute shader; everything
+/// else goes through RenderContext::clearTexture().
+class Texture3DClearer
+{
+public:
+    void clear(RenderContext* pRenderContext, const ref<Texture>& pTexture)
+    {
+        if (!pTexture)
+            return;
+        const ResourceFormat format = pTexture->getFormat();
+        const uint32_t channels = getFormatChannelCount(format);
+        const bool float32 = getFormatType(format) == FormatType::Float && getNumChannelBits(format, 0) == 32;
+        if (pTexture->getType() != Resource::Type::Texture3D || !float32 || channels == 3)
+        {
+            pRenderContext->clearTexture(pTexture.get(), float4(0.f));
+            return;
+        }
+        ref<ComputePass>& pPass = mPasses[channels];
+        if (!pPass)
+        {
+            DefineList defines;
+            defines.add("CHANNELS", std::to_string(channels));
+            pPass = ComputePass::create(pTexture->getDevice(), "RenderPasses/Shared/Shaders/Utils/ClearTexture3D.cs.slang", "main", defines);
+        }
+        const uint3 size(pTexture->getWidth(), pTexture->getHeight(), pTexture->getDepth());
+        ShaderVar var = pPass->getRootVar();
+        var["gTexture"] = pTexture;
+        var["CB"]["gSize"] = size;
+        pPass->execute(pRenderContext, size);
+    }
+
+private:
+    ref<ComputePass> mPasses[5]; ///< By channel count.
+};
+
+
+/// clearChannels for outputs that may be 3D textures deeper than 1024 slices: those are zeroed by `clearer`.
+inline void clearChannels(RenderContext* pRenderContext, const RenderData& renderData, const ChannelList& channels,
+    Texture3DClearer& clearer)
+{
+    for (const auto& channel : channels)
+        if (auto pTexture = renderData.getTexture(channel.name))
+            clearer.clear(pRenderContext, pTexture);
+}
+
 /// setProperties() of a pass with validated options: `parse` reads the properties into `options`; when it or `validate`
 /// throws (an unknown enum name, an invalid value), the previous options are restored.
 template<typename Options, typename Parse, typename Validate>

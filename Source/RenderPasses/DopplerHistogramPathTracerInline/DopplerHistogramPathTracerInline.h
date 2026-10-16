@@ -31,9 +31,11 @@
 #include "RenderGraph/RenderPassHelpers.h"
 #include "Utils/Sampling/SampleGenerator.h"
 #include "../Shared/Host/Configs/PathTracingConfig.h"
+#include "../Shared/Host/Configs/VolumeConfig.h"
 #include "../Shared/Host/LaserState.h"
 #include "../Shared/Host/InlinePassUtils.h"
 #include "../Shared/Host/ObjectMotion.h"
+#include "../Shared/Host/VesselGrid.h"
 #include <map>
 
 using namespace Falcor;
@@ -69,6 +71,10 @@ public:
     /// Sets the velocity of the scene objects whose mesh or material is named `name` (or of instance "#<index>").
     void setVelocity(const std::string& name, float3 linear, float3 angular, float3 center);
     void clearVelocities();
+    /// Blood vessels in the medium of material `medium` (VesselGrid::set; with useVolumes).
+    void setVessels(const std::string& medium, const VesselGrid::Array& fraction, const VesselGrid::Array& velocity,
+        float3 origin, float3 size, float3 scattering, float3 absorption, float anisotropy, float diffusion);
+    void clearVessels();
     /// (instance index, mesh name, material name, movable) of every geometry instance of the scene.
     std::vector<std::tuple<uint32_t, std::string, std::string, bool>> getObjectNames() const;
 
@@ -77,6 +83,7 @@ private:
     struct Options
     {
         PathTracingConfig pathTracing;
+        VolumeConfig volumes;
         float wavelength = 1550.f;      ///< Laser wavelength, nm.
         /// Linear chirp (FMCW): the laser frequency sweeps by chirpBandwidth over chirpDuration, up and then down
         /// (a triangular chirp). 0: a single-frequency laser.
@@ -105,6 +112,7 @@ private:
     bool needsReset(const RenderData& renderData) const;
     void bindShaderData(const ShaderVar& var, const RenderData& renderData);
     DefineList getShaderDefines(const RenderData& renderData) const;
+    bool usesMedia() const; ///< useVolumes with the point light.
 
     Options mOptions;
     uint mFrameCount = 0;
@@ -112,10 +120,17 @@ private:
     bool mNeedToClearSpectrum = true;
     bool mOptionsChanged = false;
     bool mVelocitiesDirty = true;
+    bool mMediaDirty = true;
+    bool mSceneHasMedia = false;
+    bool mWarnedLaserInMedia = false; ///< Media with the laser (ignored): warned once.
     std::string mUIWarning; ///< Why the last UI edit was rejected.
     ref<Scene> mpScene;
     LaserInput mLaserInput; ///< The laser of this frame, from the LaserLight pass.
     ref<SampleGenerator> mpSampleGenerator;
     ref<ComputePass> mpComputePass;
-    ref<Buffer> mpInstanceVelocities; ///< Per geometry instance: linear, angular, center (float4 each).
+    /// Clears the 3D outputs in every depth slice (clearTexture leaves slices from 1024 on, on Vulkan).
+    InlinePass::Texture3DClearer mTexture3DClearer;
+    ref<Buffer> mpInstanceVelocities; ///< Per geometry instance: its motion (createInstanceVelocityBuffer).
+    ref<Buffer> mpMediumProperties;   ///< Per material: full-precision medium properties (VolumeConfig::media).
+    VesselGrid mVessels;
 };

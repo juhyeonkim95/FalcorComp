@@ -208,11 +208,78 @@ in a frame (no `LaserLight`, one removed from the graph, or no execution edge) w
   - Moves the laser by this much after every frame, starting from `laserPosition`. Setting the
     properties, the position in the UI or `update_laser_info` restarts the motion; the saved
     `laserPosition` stays its start, so a saved graph replays the motion. (Default: `(0, 0, 0)`)
+* - `patternFrequency`
+  - float3
+  - Makes the point light a projector of sinusoidal fringes: its intensity in the unit direction $d$ is scaled by
+    $(1 + \cos(2\pi\, k \cdot d / (d \cdot a) + \phi)) / 2$, with $k$ = `patternFrequency`, $a$ =
+    `laserDirection` and $\phi$ = `patternPhase`: a sinusoid of $k$ cycles per meter on the plane 1 m in front of
+    the light, normal to $a$ ($k / h$ on a plane at distance $h$). Not used by the laser beam nor by the ReSTIR passes.
+    (Default: `(0, 0, 0)`, no fringes)
+* - `patternPhase`
+  - float
+  - Phase $\phi$ of the fringes, in radians. (Default: `0`)
+* - `patternPhaseShift`
+  - float3
+  - Added to `patternPhase` in each color channel. With `(0, 2.094, 4.189)`, the three channels hold three
+    phase-shifted fringes rendered on the same paths, so that demodulating them cancels the uniform light path by
+    path. (Default: `(0, 0, 0)`)
+* - `projector`
+  - dict
+  - Makes the point light a projector of the structured light patterns; see [Projector](#laser-projector).
+    `{"enabled": False}` turns it off. (Default: off)
 ```
 
 `update_laser_info(position, direction)` moves the laser from a script, for example every frame; `position` becomes
 `laserPosition`. Any change of the light (this, `laserVelocity`, new properties, a collocated laser following the
 camera) restarts downstream accumulation, so an accumulated image never mixes two laser positions.
+
+(laser-projector)=
+### Projector
+
+With `projector`, the point light becomes a pinhole projector along `laserDirection`, which shows a pattern over its
+field of view. Its intensity toward the point $\mathbf{x}$ of the image plane at uv is
+
+$$
+I(\mathbf{x}) = \texttt{laserPower} \cdot \frac{p(u, v)}{\cos^3 \theta},
+$$
+
+with $\theta$ the angle to `laserDirection`, so that the irradiance on the image plane is uniform, as for the
+[structured light projector](#structured-light-projector); it is zero outside the field of view. u runs along the
+projector's right and v along its up, both over $[0, 1]$. The patterns $p$ are those of
+`StructuredLightPathTracerInline`, with the same keys (`pattern`, `patternAxis`, `invertPattern`,
+`unsignedModulation`, `waveform`, `patternWavelength`, `patternPhase`, `patternBits`, `patternBit`, `patternBaseBit`,
+`checkerCells`, `checkerShift`; see [Patterns](#structured-light-patterns)), and three more keys:
+
+```{list-table}
+:header-rows: 1
+:widths: 25 10 65
+
+* - Key
+  - Type
+  - Description
+* - `enabled`
+  - boolean
+  - Turns the projector on or off. (Default: `true` when `projector` is given)
+* - `fov`
+  - float2
+  - Full field of view along u and v, in degrees; `(0, 0)` for the camera's. (Default: `(0, 0)`)
+* - `up`
+  - float3
+  - Up hint, made orthogonal to `laserDirection`: v runs along it. With `laserCollocated`, the camera's up, so that
+    the projector's image lines up with the camera's. (Default: `(0, 1, 0)`)
+```
+
+Here the pattern is `constant` and `unsignedModulation` on by default: a projector shows values in $[0, 1]$. A
+`projector` dictionary merges into the current one, so `set_properties({"projector": {"checkerShift": 3}})` changes
+only the shift. `set_pattern_data(values)` sets the `arbitrary` pattern: 0 or 1 per column along `patternAxis`. Every
+pass that connects to the point light uses the projector; the laser beam ignores it.
+
+```python
+graph.create_pass("Light", "LaserLight", {
+    "isLightSourceLaser": False, "laserCollocated": True, "laserPower": [10.0, 10.0, 10.0],
+    "projector": {"fov": [0.0, 0.0], "pattern": "checkerboard", "checkerCells": [32, 32]},
+})
+```
 
 ## Inputs and outputs
 

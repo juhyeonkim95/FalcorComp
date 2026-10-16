@@ -46,6 +46,7 @@ src/tutorials/optimization_index
 :caption: Applications
 
 src/applications/modulated_index
+src/applications/lsci_index
 ```
 
 ```{toctree}
