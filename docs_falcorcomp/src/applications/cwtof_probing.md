@@ -49,6 +49,23 @@ $i$, from its first vertex. Transport probing (O'Toole et al. 2012) weights it b
 In general the lines are the epipolar planes, through the camera and the projector; with the projector at the
 camera, they all hold the camera ray, hence the rays and the rows (see [Transport probing](#cwtof-probing)).
 
+## The algorithms of the paper
+
+The pass computes each of the paper's photos in one render:
+
+- **Algorithm 1**, a PMD photo: the camera captures four images $i_1, \dots, i_4$ with the correlation
+  $\frac{1}{2}\cos + \frac{1}{2}$ delayed by 0, 1/4, 1/2 and 3/4 of a period (`unsignedModulation`, `phase`), and
+  $I = (i_1 - i_3) + i\,(i_2 - i_4)$. The differences cancel the constant half path by path, so `phaseShift`
+  `(0, 0.25, 0)` with the signed `cos` renders $I$ directly.
+- **Algorithm 2**, a probed PMD photo: the $K$ masks and patterns take turns during one exposure,
+  $\frac{1}{K} \sum_k m_k \odot I(p_k)$, a sum that `masks` evaluates path by path (times 4: a path between two rows
+  passes a mask and its pattern a quarter of the time).
+- **Algorithm 3**, the direct and retro-reflective photo: the conventional photo minus the probed one.
+
+Rendering the four images of Algorithm 1 one by one, or the 128 exposures of Algorithm 2 one by one, the projector
+showing each pattern $p_k = 1 - m_k$ on its rows and the masks applied to the rows of each image, gives the same
+photos, to float rounding, apart from a few paths that land on the edge of a row.
+
 ## 1. Build the scene
 
 A white concave corner, the floor and two walls, with a box in it: light bounces between the faces.
@@ -108,8 +125,8 @@ The true depth is the distance from the camera to the world positions of `GBuffe
   - **0.00 mm**
   - **0.03 mm**
 * - The conventional measurement minus the masks ($K = 128$)
-  - 6.8 mm
-  - 24 mm
+  - 7.7 mm
+  - 25 mm
 ```
 
 The indirect light biases the conventional depth by about 10 cm, the most on the floor near the corner, where the
@@ -117,14 +134,15 @@ light bounces between the faces. The epipolar measurement keeps the direct light
 happens to return within half a pixel of the camera ray: its depth error is a few hundredths of a millimeter. The
 masks remove most of the indirect light but not all of it: with 128 fixed random masks, each indirect path is
 weighted by a random factor around one (about 15% off), and all the pixels of a row share the row's masks, so the
-error comes in rows of a few millimeters. A camera lowers it with more masks.
+error comes in rows of a few millimeters. It falls about as $1/\sqrt{K}$: a median of 29 mm with 8 masks, 14 mm with
+32 and 7.7 mm with 128.
 
 ```{literalinclude} code/cwtof_probing.py
 :language: python
 :start-after: "# 5. Show the measurements and the depth errors"
 ```
 
-The full script: {download}`cwtof_probing.py <code/cwtof_probing.py>`. It builds its scene and takes about 20 seconds.
+The full script: {download}`cwtof_probing.py <code/cwtof_probing.py>`. It builds its scene and takes about 25 seconds.
 
 ## Limitations
 

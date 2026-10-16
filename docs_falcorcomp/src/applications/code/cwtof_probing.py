@@ -119,6 +119,11 @@ for name, estimate in depths.items():
     error = (estimate - true_depth)[lit]
     print(f"{name}: median |depth error| {np.median(np.abs(error)) * 1e3:.2f} mm, "
           f"95th percentile {np.percentile(np.abs(error), 95) * 1e3:.2f} mm")
+# The masks leave less indirect light the more of them take turns in the exposure.
+for count in [8, 32, 128]:
+    masked = measurements["masks"] if count == 128 else measure({"probing": "masks", "probingMaskCount": count})
+    error = (depth(conventional - masked) - true_depth)[lit]
+    print(f"conventional - masks, K = {count}: median |depth error| {np.median(np.abs(error)) * 1e3:.2f} mm")
 
 # 5. Show the measurements and the depth errors
 fig, axes = plt.subplots(2, 4, figsize=(16, 8.4), layout="constrained")
