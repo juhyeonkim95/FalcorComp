@@ -2,7 +2,7 @@
 
 FalcorComp is a GPU renderer for computational imaging, built on NVIDIA's [Falcor](https://github.com/NVIDIAGameWorks/Falcor) rendering framework. It adds render passes that simulate imaging systems beyond conventional cameras — time-of-flight, modulated light, Doppler sensing and event cameras — and it is installed and used as the Python package `falcorcomp`. All renderers run on the GPU with hardware ray tracing, for interactive as well as offline simulation.
 
-The package is a binary wheel for Linux and Windows. It contains Falcor, the render passes and their shaders, so no separate Falcor build is needed.
+The package is a binary wheel for Linux and Windows. It contains Falcor, the render passes and their shaders, so no separate Falcor build is needed. Every release has Linux wheels; only some have Windows wheels (0.2.1 so far), and on Windows pip installs the newest release that has one.
 
 ![The Cornell box rendered as a standard image, a time-gated image, a transient histogram, CW-ToF and structured-light measurements, a Doppler spectrum, a Doppler-gated image, a Doppler ToF velocity map and camera events](https://raw.githubusercontent.com/juhyeonkim95/FalcorComp/master/docs_falcorcomp/src/getting_started/images/overview_outputs.jpg)
 
