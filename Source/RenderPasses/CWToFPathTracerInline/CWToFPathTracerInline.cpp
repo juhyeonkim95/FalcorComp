@@ -62,6 +62,7 @@ void CWToFPathTracerInline::validateOptions(const Options& options)
     options.continuousWave.validate();
     options.pathTracing.validate();
     options.shiftMapping.validate();
+    options.probing.validate();
     if (any(options.continuousWave.phaseShift != float3(0.f)) && options.pathTracing.useSingleChannel)
         FALCOR_THROW("phaseShift renders a phase in each color channel: turn useSingleChannel off.");
 }
@@ -71,7 +72,7 @@ void CWToFPathTracerInline::parseProperties(const Properties& props)
     for (const auto& [key, value] : props)
     {
         if (mOptions.continuousWave.parse(key, value) || mOptions.pathTracing.parse(key, value) ||
-            mOptions.shiftMapping.parse(key, value))
+            mOptions.shiftMapping.parse(key, value) || mOptions.probing.parse(key, value))
             continue;
         if (key == kUseAntitheticSampling)
             mOptions.useAntitheticSampling = value;
@@ -86,6 +87,7 @@ Properties CWToFPathTracerInline::getProperties() const
     mOptions.continuousWave.serialize(props);
     mOptions.pathTracing.serialize(props);
     mOptions.shiftMapping.serialize(props);
+    mOptions.probing.serialize(props);
     props[kUseAntitheticSampling] = mOptions.useAntitheticSampling;
     return props;
 }
@@ -113,6 +115,7 @@ DefineList CWToFPathTracerInline::getShaderDefines(const RenderData& renderData)
     defines.add(mLaserInput.get().getDefines());
     defines.add(InlinePass::getSceneLightDefines(*mpScene));
     defines.add(mOptions.shiftMapping.getDefines());
+    defines.add(mOptions.probing.getDefines());
     defines.add("USE_ANTITHETIC_SAMPLING", mOptions.useAntitheticSampling ? "1" : "0");
 
     // For optional I/O resources, set 'is_valid_<name>' defines to inform the program of which ones it can access.
@@ -129,6 +132,7 @@ void CWToFPathTracerInline::bindShaderData(const ShaderVar& var, const RenderDat
     mLaserInput.get().bindShaderData(var);
     mOptions.continuousWave.bindShaderData(var["ContinuousWave"]);
     mOptions.shiftMapping.bindShaderData(var["ShiftMappingCB"]);
+    mOptions.probing.bindShaderData(var["Probing"], *mpScene->getCamera(), renderData.getDefaultTextureDims());
 
     InlinePass::bindChannels(var, renderData, InlinePass::kPrimaryHitInputChannels);
     InlinePass::bindChannels(var, renderData, InlinePass::kColorOutputChannels);
@@ -137,6 +141,12 @@ void CWToFPathTracerInline::bindShaderData(const ShaderVar& var, const RenderDat
 void CWToFPathTracerInline::execute(RenderContext* pRenderContext, const RenderData& renderData)
 {
     mLaserInput.update(renderData, "CWToFPathTracerInline");
+    if (mOptions.probing.mode != ProbingMode::None && mLaserInput.get().isLaser && !mWarnedProbingLaser)
+    {
+        logWarning("CWToFPathTracerInline: transport probing needs LaserLight's point light or projector; it is off "
+                   "with the laser beam.");
+        mWarnedProbingLaser = true;
+    }
     if (mOptionsChanged)
     {
         InlinePass::flagOptionsChanged(renderData);
@@ -191,6 +201,9 @@ void CWToFPathTracerInline::renderUI(Gui::Widgets& widget)
                 "round-trip check).\nNone pairs the vertex with itself (no variance reduction).");
         }
     }
+
+    if (auto group = widget.group("Transport probing", true))
+        dirty |= options.probing.renderUI(group);
 
     if (auto group = widget.group("Output", true))
         dirty |= options.pathTracing.renderOutputUI(group, true, true);

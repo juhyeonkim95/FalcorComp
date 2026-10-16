@@ -39,6 +39,7 @@ set(shared_shaders
     Antithetic/AntitheticMIS.slang
     Projector/ProjectorLight.slang
     Projector/ProjectorPatterns.slang
+    Probing/Probing.slang
 )
 set(shared_shader_outputs)
 foreach(shader IN LISTS shared_shaders)
