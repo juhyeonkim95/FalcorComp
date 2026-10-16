@@ -124,7 +124,7 @@ void CWToFPathTracerInline::bindShaderData(const ShaderVar& var, const RenderDat
     var["CB"]["gFrameCount"] = mFrameCount;
     var["CB"]["gFrameDim"] = renderData.getDefaultTextureDims();
     var["CB"]["gSamplesPerPixel"] = mOptions.pathTracing.samplesPerPixel;
-    mLaserInput.get().bindShaderData(var["Laser"]);
+    mLaserInput.get().bindShaderData(var);
     mOptions.continuousWave.bindShaderData(var["ContinuousWave"]);
     mOptions.shiftMapping.bindShaderData(var["ShiftMappingCB"]);
 

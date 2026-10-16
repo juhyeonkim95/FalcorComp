@@ -91,15 +91,16 @@ struct LaserState
         return defines;
     }
 
-    /// Sets the Laser constants (Shared/Shaders/Lights/Laser.slang) under `var`.
+    /// Sets the Laser constants (Shared/Shaders/Lights/Laser.slang) under the program's root `var`.
     void bindShaderData(const ShaderVar& var) const
     {
-        var["gLaserOrigin"] = origin;
-        var["gLaserDirection"] = direction;
-        var["gLaserPower"] = power;
-        var["gLaserCosAngle"] = cosAngle;
-        var["gLaserPatternFrequency"] = patternFrequency;
-        var["gLaserPatternPhase"] = patternPhase + patternPhaseShift;
+        auto laserVar = var["Laser"];
+        laserVar["gLaserOrigin"] = origin;
+        laserVar["gLaserDirection"] = direction;
+        laserVar["gLaserPower"] = power;
+        laserVar["gLaserCosAngle"] = cosAngle;
+        laserVar["gLaserPatternFrequency"] = patternFrequency;
+        laserVar["gLaserPatternPhase"] = patternPhase + patternPhaseShift;
     }
 };
 

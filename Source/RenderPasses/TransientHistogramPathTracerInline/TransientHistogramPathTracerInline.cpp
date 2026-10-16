@@ -197,7 +197,7 @@ void TransientHistogramPathTracerInline::bindShaderData(const ShaderVar& var, co
     var["CB"]["gFrameDim"] = uint2(pColor->getWidth(), pColor->getHeight());
     var["CB"]["gSamplesPerPixel"] = mOptions.pathTracing.samplesPerPixel;
     var["CB"]["gInitialWindowRatio"] = mOptions.histogram.initialWindowRatio;
-    mLaserInput.get().bindShaderData(var["Laser"]);
+    mLaserInput.get().bindShaderData(var);
     mOptions.histogram.bindShaderData(var);
     mTriangles.bindShaderData(var);
 

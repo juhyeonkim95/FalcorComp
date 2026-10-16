@@ -178,7 +178,7 @@ void VelocityGroundTruthInline::execute(RenderContext* pRenderContext, const Ren
             ResourceBindFlags::UnorderedAccess | ResourceBindFlags::ShaderResource);
 
     auto var = mpComputePass->getRootVar();
-    mLaserInput.get().bindShaderData(var["Laser"]);
+    mLaserInput.get().bindShaderData(var);
     var["gVelocity"] = pVelocity;
     var["gFirstLength"] = mpFirstLength;
     var["gInstanceVelocities"] = mpInstanceVelocities;
