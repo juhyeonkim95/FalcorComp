@@ -146,3 +146,72 @@ for axis in axes.ravel():
     axis.set_yticks([])
 fig.savefig("cwtof_probing.png", dpi=70)
 np.savez("cwtof_probing.npz", true_depth=true_depth, lit=lit, **measurements)
+
+# 6. The paper's algorithms, one exposure at a time
+# A camera captures each raw image of Algorithm 1 in an exposure of its own, and runs Algorithm 2 within it: K masks
+# and patterns take turns during the exposure. One graph renders them frame by frame, without accumulation, so that
+# each exposure has its own noise, as on a camera.
+graph = testbed.create_render_graph("Exposures")
+graph.create_pass("VBuffer", "VBufferRT", {"samplePattern": "Center", "sampleCount": 1})
+light = graph.create_pass("Light", "LaserLight", {
+    "isLightSourceLaser": False, "laserCollocated": True, "laserPower": [10.0, 10.0, 10.0],
+    "projector": {"fov": [0.0, 0.0], "pattern": "constant"},
+})
+tracer = graph.create_pass("Tracer", "CWToFPathTracerInline", {
+    "samplesPerPixel": 16, "maxBounces": 6, "computeDirect": True,
+    "waveform": "cos", "modulationWavelength": WAVELENGTH,
+    "unsignedModulation": True,  # the correlation of a sensor, 0.5 cos + 0.5: never negative
+})
+graph.add_edge("VBuffer.vbuffer", "Tracer.vbuffer")
+graph.add_edge("VBuffer.viewW", "Tracer.viewW")
+graph.add_edge("Light", "Tracer")
+graph.mark_output("Tracer.color")
+testbed.render_graph = graph
+DELAYS = [0.0, 0.25, 0.5, 0.75]  # of the correlation, in periods
+
+
+def exposure(frames):
+    """The raw image of one exposure: the mean of the tracer's next `frames` frames."""
+    image = np.zeros((SIZE, SIZE))
+    for _ in range(frames):
+        testbed.frame()
+        image += graph.get_output("Tracer.color").to_numpy()[..., 0]
+    return image / frames
+
+
+def pmd_photo(raw):
+    """Algorithm 1: the complex photo from the raw images at the four delays."""
+    i1, i2, i3, i4 = raw
+    return (i1 - i3) + 1j * (i2 - i4)
+
+
+# Algorithm 1 with the all-white pattern: the conventional photo.
+raw = []
+for delay in DELAYS:
+    tracer.set_properties({"phase": delay})
+    raw.append(exposure(FRAMES))
+conventional_alg1 = pmd_photo(raw)
+
+# Algorithm 2 within each exposure of Algorithm 1: K random masks m_k of the camera's rows take turns, each for
+# FRAMES_PER_MASK frames, with their complements p_k = 1 - m_k shown by the projector on its rows (its v runs up the
+# image: its column c is image row SIZE - 1 - c).
+K, FRAMES_PER_MASK = 128, 4
+masks = np.random.default_rng(1).integers(0, 2, (K, SIZE))
+light.set_properties({"projector": {"pattern": "arbitrary", "patternAxis": "v"}})
+raw = []
+for delay in DELAYS:
+    tracer.set_properties({"phase": delay})
+    image = np.zeros((SIZE, SIZE))
+    for k in range(K):
+        light.set_pattern_data((1 - masks[k, ::-1]).tolist())
+        image += masks[k][:, None] * exposure(FRAMES_PER_MASK) / K
+    raw.append(image)
+probed_alg2 = pmd_photo(raw)
+
+# Algorithm 3: the conventional photo minus the probed one, times 4, as a path between two rows passes a mask and its
+# pattern a quarter of the time.
+direct_alg3 = conventional_alg1 - 4.0 * probed_alg2
+for name, photo in [("Algorithm 1 (conventional)", conventional_alg1), ("Algorithm 3 (direct)", direct_alg3)]:
+    error = (depth(photo) - true_depth)[lit]
+    print(f"{name}: median |depth error| {np.median(np.abs(error)) * 1e3:.2f} mm, "
+          f"95th percentile {np.percentile(np.abs(error), 95) * 1e3:.2f} mm")

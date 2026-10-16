@@ -62,9 +62,9 @@ The pass computes each of the paper's photos in one render:
   passes a mask and its pattern a quarter of the time).
 - **Algorithm 3**, the direct and retro-reflective photo: the conventional photo minus the probed one.
 
-Rendering the four images of Algorithm 1 one by one, or the 128 exposures of Algorithm 2 one by one, the projector
-showing each pattern $p_k = 1 - m_k$ on its rows and the masks applied to the rows of each image, gives the same
-photos, to float rounding, apart from a few paths that land on the edge of a row.
+Step 6 runs the algorithms as a camera does, exposure by exposure. With the masks of `masks` and the same paths in
+every exposure, the two give the same photos, to float rounding, apart from a few paths that land on the edge of a
+row.
 
 ## 1. Build the scene
 
@@ -140,9 +140,43 @@ error comes in rows of a few millimeters. It falls about as $1/\sqrt{K}$: a medi
 ```{literalinclude} code/cwtof_probing.py
 :language: python
 :start-after: "# 5. Show the measurements and the depth errors"
+:end-before: "# 6. The paper's algorithms, one exposure at a time"
 ```
 
-The full script: {download}`cwtof_probing.py <code/cwtof_probing.py>`. It builds its scene and takes about 25 seconds.
+## 6. The algorithms, one exposure at a time
+
+A camera captures these photos in exposures. Algorithm 1 takes four raw images, each in an exposure of its own, with
+the correlation $\frac{1}{2}\cos + \frac{1}{2}$ delayed by a quarter period from one to the next
+(`unsignedModulation` and `phase`). Algorithm 2 runs within each of them: the $K$ random masks of the camera's rows
+take turns, here for 4 frames each, while the projector shows their complements on its rows (`set_pattern_data` sets
+the row pattern; the masks multiply the rows of each frame). One graph renders the exposures frame by frame, without
+accumulation, so that each has its own noise, as on a camera.
+
+```{literalinclude} code/cwtof_probing.py
+:language: python
+:start-after: "# 6. The paper's algorithms, one exposure at a time"
+```
+
+```{list-table}
+:header-rows: 1
+:widths: 50 25 25
+
+* - Depth from
+  - Median error
+  - 95th percentile
+* - Algorithm 1, the conventional photo
+  - 101 mm
+  - 163 mm
+* - Algorithm 3, the direct photo ($K = 128$)
+  - 11 mm
+  - 38 mm
+```
+
+The conventional photo has the multipath error of step 5. Algorithm 3 removes most of it, and leaves a little more
+than the photos of step 5 (7.7 mm): its 128 masks are other random masks, with their own errors along the rows, and
+its 4 × 128 short exposures add their own noise.
+
+The full script: {download}`cwtof_probing.py <code/cwtof_probing.py>`. It builds its scene and takes under a minute.
 
 ## Limitations
 
