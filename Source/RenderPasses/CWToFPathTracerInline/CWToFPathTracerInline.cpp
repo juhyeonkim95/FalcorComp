@@ -62,6 +62,8 @@ void CWToFPathTracerInline::validateOptions(const Options& options)
     options.continuousWave.validate();
     options.pathTracing.validate();
     options.shiftMapping.validate();
+    if (any(options.continuousWave.phaseShift != float3(0.f)) && options.pathTracing.useSingleChannel)
+        FALCOR_THROW("phaseShift renders a phase in each color channel: turn useSingleChannel off.");
 }
 
 void CWToFPathTracerInline::parseProperties(const Properties& props)
