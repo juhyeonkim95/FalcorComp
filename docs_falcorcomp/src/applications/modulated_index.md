@@ -12,7 +12,8 @@ to the scripts:
 - {download}`cornell-box-separation.zip <scenes/cornell-box-separation.zip>` (3.6 MB): a glass dragon, a white
   armadillo and a rough gold bunny, for the separation.
 
-The light sources are lights of the render passes, so the scenes have none. The scripts need matplotlib. The numbers
+[Depth without multipath](cwtof_probing.md) builds its own scene. The light sources are lights of the render passes,
+so the scenes have none. The scripts need matplotlib. The numbers
 were measured on an NVIDIA GeForce RTX 3090 with Vulkan.
 
 ````{grid} 1 2 2 3
@@ -44,6 +45,15 @@ XOR codes along both projector axes, decoded and triangulated.
 
 Separate the direct and the global light with shifted fine checkerboards (Nayar et al. 2006).
 ```
+
+```{grid-item-card} Depth without multipath
+:img-top: images/thumbnails/cwtof_probing_thumb.jpg
+:img-alt: Depth error of the conventional and the probed CW-ToF measurements of a white corner
+:link: cwtof_probing
+:link-type: doc
+
+A projector at the camera and transport probing keep only the direct light (O'Toole et al. 2014).
+```
 ````
 
 ```{toctree}
@@ -52,4 +62,5 @@ Separate the direct and the global light with shifted fine checkerboards (Nayar 
 cwtof_depth
 structured_light_depth
 direct_global_separation
+cwtof_probing
 ```
