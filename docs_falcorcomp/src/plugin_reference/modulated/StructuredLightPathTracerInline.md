@@ -18,6 +18,7 @@ the estimate itself; it is not divided by anything.
 Camera paths start at the primary hits from `VBufferRT`, and every vertex is connected to the
 projector.
 
+(structured-light-projector)=
 ## Projector
 
 The projector is a pinhole with a rectangular field of view, after Mitsuba's projector emitter.
@@ -60,6 +61,7 @@ given.
   - Radiant intensity $I_0$ along the axis, per color channel. (Default: `(10, 10, 10)`)
 ```
 
+(structured-light-patterns)=
 ## Patterns
 
 ```{list-table}

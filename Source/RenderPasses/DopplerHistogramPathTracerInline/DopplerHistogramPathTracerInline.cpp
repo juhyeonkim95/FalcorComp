@@ -303,7 +303,7 @@ void DopplerHistogramPathTracerInline::bindShaderData(const ShaderVar& var, cons
         var["gMediumProperties"] = mpMediumProperties;
         mVessels.bindShaderData(mpDevice, var, *mpScene, kPassName);
     }
-    mLaserInput.get().bindShaderData(var["Laser"]);
+    mLaserInput.get().bindShaderData(var);
 
     InlinePass::bindChannels(var, renderData, InlinePass::kPrimaryHitInputChannels);
     InlinePass::bindChannels(var, renderData, InlinePass::kColorOutputChannels);

@@ -237,7 +237,7 @@ void TimeGatedReSTIRInline::bindShaderData(const ShaderVar& var, const RenderDat
     var["CB"]["gTemporalHistoryLength"] = mOptions.restir.temporalHistoryLength;
     var["CB"]["gWideGateSampleRatio"] = shrinkSampleRatio();
 
-    mLaser.bindShaderData(var["Laser"]);
+    mLaser.bindShaderData(var);
 
     mOptions.timeGate.bindShaderData(var["TimeGate"], mGate);
     var["TimeGate"]["gWideGateWindow"] = mOptions.effectiveWideGateWindow();
@@ -273,7 +273,7 @@ void TimeGatedReSTIRInline::bindSpatialReuse(const ref<ComputePass>& pass, const
 
     mOptions.timeGate.bindShaderData(rootVar["TimeGate"], mGate);
     rootVar["TimeGate"]["gWideGateWindow"] = mOptions.effectiveWideGateWindow();
-    mLaser.bindShaderData(rootVar["Laser"]);
+    mLaser.bindShaderData(rootVar);
 }
 
 void TimeGatedReSTIRInline::spatialReuse(RenderContext* pRenderContext, const RenderData& renderData)

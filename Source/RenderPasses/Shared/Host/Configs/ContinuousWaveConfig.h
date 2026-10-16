@@ -10,6 +10,10 @@ struct ContinuousWaveConfig
 {
     float modulationWavelength = 1.0f; ///< Path length of one modulation period (scene units).
     float phase = 0.f;                 ///< Sensor phase offset, in periods.
+    /// Added to the phase in each color channel, in periods: e.g. (0, 0.25, 0) renders the real and imaginary parts of
+    /// the measurement (cos and sin of the path's phase) in red and green, on the same paths. The color channels then
+    /// hold phases instead of colors: use a gray scene and light.
+    float3 phaseShift = float3(0.f);
     Waveform waveform = Waveform::Cos;
     bool unsignedModulation = false;   ///< Weight 0.5 w + 0.5 instead of w.
 
@@ -19,6 +23,8 @@ struct ContinuousWaveConfig
             FALCOR_THROW("modulationWavelength must be finite and greater than zero.");
         if (!std::isfinite(phase))
             FALCOR_THROW("phase must be finite.");
+        if (!std::isfinite(phaseShift.x) || !std::isfinite(phaseShift.y) || !std::isfinite(phaseShift.z))
+            FALCOR_THROW("phaseShift must be finite.");
     }
 
     bool parse(const std::string& key, const Properties::ConstValue& value)
@@ -27,6 +33,8 @@ struct ContinuousWaveConfig
             modulationWavelength = value;
         else if (key == "phase")
             phase = value;
+        else if (key == "phaseShift")
+            phaseShift = value;
         else if (key == "waveform")
             waveform = parseEnumProperty(kWaveforms, value, key);
         else if (key == "unsignedModulation")
@@ -40,6 +48,7 @@ struct ContinuousWaveConfig
     {
         props["modulationWavelength"] = modulationWavelength;
         props["phase"] = phase;
+        props["phaseShift"] = phaseShift;
         props["waveform"] = enumPropertyName(kWaveforms, waveform);
         props["unsignedModulation"] = unsignedModulation;
     }
@@ -48,7 +57,7 @@ struct ContinuousWaveConfig
     void bindShaderData(const ShaderVar& continuousWaveVar) const
     {
         continuousWaveVar["gModulationWavelength"] = modulationWavelength;
-        continuousWaveVar["gModulationPhase"] = phase;
+        continuousWaveVar["gModulationPhase"] = float3(phase) + phaseShift;
         continuousWaveVar["gWaveform"] = uint(waveform);
         continuousWaveVar["gUnsignedModulation"] = uint(unsignedModulation);
     }
@@ -66,6 +75,10 @@ struct ContinuousWaveConfig
 
         dirty |= widget.var("Phase", phase, -1.f, 1.f);
         widget.tooltip("Sensor phase offset, in periods (0.25 = 90 degrees).", true);
+
+        dirty |= widget.var("Phase shift", phaseShift, -1.f, 1.f);
+        widget.tooltip("Added to the phase in each color channel, e.g. (0, 0.25, 0): the real and imaginary parts in red "
+                       "and green, on the same paths (for a gray scene and light).", true);
 
         dirty |= widget.checkbox("Unsigned", unsignedModulation);
         widget.tooltip("Weight paths by 0.5 w + 0.5 in [0, 1] instead of w in [-1, 1].", true);

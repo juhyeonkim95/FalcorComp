@@ -269,7 +269,7 @@ void DopplerToFPathTracerInline::execute(RenderContext* pRenderContext, const Re
 
     auto var = mpComputePass->getRootVar();
     const uint2 frameDim = uint2(pColor->getWidth(), pColor->getHeight());
-    mLaserInput.get().bindShaderData(var["Laser"]);
+    mLaserInput.get().bindShaderData(var);
     var["gOutputColor"] = pColor;
     var["CB"]["gFrameDim"] = frameDim;
     var["CB"]["gSamplesPerPixel"] = mOptions.pathTracing.samplesPerPixel;

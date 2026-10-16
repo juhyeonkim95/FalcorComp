@@ -221,7 +221,7 @@ void TransientHistogramReSTIRInline::bindShaderData(const ShaderVar& var, const 
     // Spatial reuse, when it runs, rewrites every histogram texel; initial generation and temporal reuse write it only
     // if they are the frame's last stage.
     var["CB"]["gWriteHistogram"] = mOptions.restir.spatialReuseIteration == 0;
-    mLaser.bindShaderData(var["Laser"]);
+    mLaser.bindShaderData(var);
     bindTimeGate(var);
 
     if (mOptions.restir.useTemporalReuse)
@@ -254,7 +254,7 @@ void TransientHistogramReSTIRInline::bindSpatialReuse(const ref<ComputePass>& pa
         InlinePass::bindChannels(rootVar, renderData, histogramChannels());
 
     bindTimeGate(rootVar);
-    mLaser.bindShaderData(rootVar["Laser"]);
+    mLaser.bindShaderData(rootVar);
 }
 
 void TransientHistogramReSTIRInline::preparePairs(uint2 frameDim, uint& spatialChunkBins, uint& temporalChunkBins)

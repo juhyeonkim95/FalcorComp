@@ -5,6 +5,7 @@ import RenderPasses.Shared.Shaders.Lights.LightConnection;
 import RenderPasses.Shared.Shaders.ShiftMapping.ShiftMapping;
 import RenderPasses.Shared.Shaders.Antithetic.AntitheticMIS;
 import RenderPasses.Shared.Shaders.Utils.ContinuousWave;
+import RenderPasses.Shared.Shaders.Probing.Probing;
 import RenderPasses.Shared.Shaders.Utils.RayUtils;
 #include "Scene/SceneDefines.slangh"
 #include "Utils/Math/MathConstants.slangh"
@@ -36,14 +37,23 @@ static const bool kUseImportanceSampling = USE_IMPORTANCE_SAMPLING;
 
 
 
-// Connection of `surface` to the light, weighted by the modulation of the whole path.
+// Connection of `surface` to the light, weighted by the modulation of the whole path and by transport probing
+// (Probing.slang) of its camera ray `primaryRayDir` and its projector ray, from the light to `surface`.
 // `pathLength` is the optical length from the camera to `surface`; `totalLength` returns that of the whole path.
 float3 evaluateModulatedConnection(ShadingData surface, IMaterialInstance material, LightSample light,
-    float pathLength, inout SampleGenerator sg, out float totalLength)
+    float pathLength, float3 primaryRayDir, inout SampleGenerator sg, out float totalLength)
 {
-    LightConnection connection = evaluateLightConnection(surface, material, light, sg);
+    bool connected;
+    LightConnection connection = connectToLight(surface, light, connected);
     totalLength = pathLength + connection.distance + light.laserT;
-    return connection.bsdfCosine * connection.incidentRadiance * modulationWeight(totalLength);
+    if (!connected) return float3(0.f);
+    float probing = 1.f;
+#if !IS_LIGHT_SOURCE_LASER
+    probing = probingWeight(gScene.camera.getPosition(), primaryRayDir, light.posW(), -connection.direction);
+    if (probing == 0.f) return float3(0.f); // No visibility ray or BSDF evaluation for a blocked path.
+#endif
+    shadeLightConnection(connection, surface, material, light, sg);
+    return connection.bsdfCosine * connection.incidentRadiance * modulationWeight(totalLength) * probing;
 }
 
 // The light endpoint as a vertex of the shift mapping.
@@ -71,7 +81,7 @@ ShadingData getLightEndpoint(LightSample light)
 */
 float3 estimateWithAntithetic(ShadingData previous, IMaterialInstance previousMaterial, HitInfo hit, ShadingData surface,
     BSDFSample bsdfSample, LightSample light, float3 throughput, float3 primalEstimate, float primalLength,
-    float prefixLength, inout SampleGenerator sg)
+    float prefixLength, float3 primaryRayDir, inout SampleGenerator sg)
 {
     float dt = antitheticPathLengthOffset(primalLength, sampleNext1D(sg));
     if (!light.valid || bsdfSample.isLobe(LobeType::Delta) || !(bsdfSample.pdf > 0.f)) return primalEstimate;
@@ -117,8 +127,8 @@ float3 estimateWithAntithetic(ShadingData previous, IMaterialInstance previousMa
     float antitheticBsdfPdf = previousMaterial.evalPdf(previous, shiftedDir, kUseImportanceSampling);
     float antitheticLength;
     float3 antitheticValue = throughput * previousMaterial.eval(previous, shiftedDir, sg) *
-        evaluateModulatedConnection(shifted, shiftedMaterial, light, prefixLength + shiftedDistance * previous.IoR, sg,
-            antitheticLength);
+        evaluateModulatedConnection(shifted, shiftedMaterial, light, prefixLength + shiftedDistance * previous.IoR,
+            primaryRayDir, sg, antitheticLength);
     return combineAntithetic(primalEstimate, bsdfSample.pdf, antitheticValue, antitheticBsdfPdf, jacobian);
 }
 
@@ -157,7 +167,7 @@ float3 tracePath(const uint2 pixel, const uint2 frameDim)
                 LightSample ls = {};
                 lls.generateLightSample(sg, ls);
                 float totalLength;
-                result += throughput * evaluateModulatedConnection(sd, mi, ls, pathLength, sg, totalLength);
+                result += throughput * evaluateModulatedConnection(sd, mi, ls, pathLength, primaryRayDir, sg, totalLength);
             }
 
             for (uint depth = 1; depth < kMaxBounces; depth++)
@@ -181,10 +191,10 @@ float3 tracePath(const uint2 pixel, const uint2 frameDim)
                 lls.generateLightSample(sg, ls);
                 float primalLength;
                 float3 primalEstimate = throughput * bsdfSample.weight *
-                    evaluateModulatedConnection(sd, mi, ls, pathLength + segmentLength, sg, primalLength);
+                    evaluateModulatedConnection(sd, mi, ls, pathLength + segmentLength, primaryRayDir, sg, primalLength);
 #if USE_ANTITHETIC_SAMPLING
                 result += estimateWithAntithetic(previous, previousMaterial, hit, sd, bsdfSample, ls, throughput,
-                    primalEstimate, primalLength, pathLength, sg);
+                    primalEstimate, primalLength, pathLength, primaryRayDir, sg);
 #else
                 result += primalEstimate;
 #endif
