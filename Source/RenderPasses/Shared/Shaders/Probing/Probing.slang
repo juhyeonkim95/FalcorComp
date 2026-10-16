@@ -2,7 +2,7 @@
     unit direction cameraDir (from the camera) and whose projector ray has the unit direction projectorDir (from the
     light to the path's last vertex) is weighted by Pi(i, j), from the epipolar lines of the two rays. The epipolar
     lines are the planes through the baseline, the line through the camera and the light; with the light at the camera
-    (coaxial), the planes through the camera and its right axis, the image rows.
+    (coaxial), the image rows.
 
       PROBING_EPIPOLAR:     1 when the projector ray lies on the camera ray's line, within half a line width: the
                             direct and retro-reflective photo. Coaxial: when the projector ray is the camera ray.
@@ -25,23 +25,27 @@ import Utils.Math.HashUtils;
 
 cbuffer Probing
 {
-    float gProbingLineAngle;    // Width of an epipolar line, in radians.
-    uint gProbingMaskCount;     // Masks: K, 1 to 128.
-    uint gProbingSeed;          // Masks: seed of the random masks.
-    float3 gProbingCameraRight; // Unit right axis of the camera: the axis of the coaxial lines.
+    float gProbingLineAngle;      // Width of an epipolar line, in radians.
+    float gProbingLineWidth;      // Width of an epipolar line, in pixels: the coaxial lines are rows of this many.
+    uint gProbingMaskCount;       // Masks: K, 1 to 128.
+    uint gProbingSeed;            // Masks: seed of the random masks.
+    float3 gProbingCameraForward; // Unit viewing direction of the camera.
+    float3 gProbingCameraUp;      // Unit, orthogonal to the viewing direction: up in the image.
+    float gProbingTanHalfFovY;    // tan of the camera's half vertical field of view.
+    float gProbingFrameHeight;    // Image height, in pixels.
 }
 
 /// Below this baseline, the light is at the camera (coaxial).
 static const float kCoaxialBaseline = 1e-6f;
 
-/// The axis of the epipolar planes: the baseline's direction, or the camera's right axis when the light is at the
-/// camera.
+/// The axis of the epipolar planes, the baseline's direction; `coaxial` when the light is at the camera, and the axis
+/// then unused.
 float3 epipolarAxis(float3 cameraPos, float3 projectorPos, out bool coaxial)
 {
     float3 baseline = projectorPos - cameraPos;
     float baselineLength = length(baseline);
     coaxial = !(baselineLength > kCoaxialBaseline);
-    return coaxial ? gProbingCameraRight : baseline / baselineLength;
+    return coaxial ? float3(0.f) : baseline / baselineLength;
 }
 
 /// Whether the projector ray lies on the camera ray's epipolar line, within half a line width; coaxial, whether it is
@@ -61,24 +65,33 @@ bool onEpipolarLine(float3 cameraPos, float3 cameraDir, float3 projectorPos, flo
 
 /// Index of the epipolar line, a plane through `axis`, that holds the direction `v`: its angle around the axis in
 /// [0, pi), in lines of gProbingLineAngle.
-uint epipolarLine(float3 axis, float3 v)
+int epipolarLine(float3 axis, float3 v)
 {
     float3 w1 = normalize(cross(axis, abs(axis.x) < 0.9f ? float3(1.f, 0.f, 0.f) : float3(0.f, 1.f, 0.f)));
     float3 w2 = cross(axis, w1);
     float3 normal = cross(axis, v);
     float angle = atan2(dot(normal, w2), dot(normal, w1));
     angle -= M_PI * floor(angle / M_PI); // The planes are unoriented.
-    return uint(angle / gProbingLineAngle);
+    return int(floor(angle / gProbingLineAngle));
+}
+
+/// Index of the line of gProbingLineWidth image rows, counted from the top, that the direction `v` from the camera
+/// falls on (the coaxial lines). Pixel row r spans [r, r + 1).
+int imageRowLine(float3 v)
+{
+    float along = dot(v, gProbingCameraForward);
+    float row = (0.5f - 0.5f * dot(v, gProbingCameraUp) / (along * gProbingTanHalfFovY)) * gProbingFrameHeight;
+    return int(floor(row / gProbingLineWidth));
 }
 
 /// Masks k = 32 word .. 32 word + 31 of the line `line`, one bit each.
-uint maskBits(uint line, uint word)
+uint maskBits(int line, uint word)
 {
-    return jenkinsHash(jenkinsHash(jenkinsHash(gProbingSeed) ^ line) + word);
+    return jenkinsHash(jenkinsHash(jenkinsHash(gProbingSeed) ^ uint(line)) + word);
 }
 
 /// (4 / K) sum_k m_k(lineI) (1 - m_k(lineJ)).
-float maskWeight(uint lineI, uint lineJ)
+float maskWeight(int lineI, int lineJ)
 {
     uint count = 0;
     for (uint word = 0; 32u * word < gProbingMaskCount; word++)
@@ -100,6 +113,7 @@ float probingWeight(float3 cameraPos, float3 cameraDir, float3 projectorPos, flo
 #elif PROBING_MODE == PROBING_MASKS
     bool coaxial;
     float3 axis = epipolarAxis(cameraPos, projectorPos, coaxial);
+    if (coaxial) return maskWeight(imageRowLine(cameraDir), imageRowLine(projectorDir));
     return maskWeight(epipolarLine(axis, cameraDir), epipolarLine(axis, projectorDir));
 #else
     return 1.f;

@@ -72,12 +72,18 @@ struct ProbingConfig
     /// Sets the Probing constants under `probingVar`, for `camera` rendering `frameDim` pixels.
     void bindShaderData(const ShaderVar& probingVar, const Camera& camera, uint2 frameDim) const
     {
-        const float pixelAngle = 2.f * std::atan(0.5f * camera.getFrameHeight() / camera.getFocalLength()) / float(frameDim.y);
+        const float tanHalfFovY = 0.5f * camera.getFrameHeight() / camera.getFocalLength();
+        const float pixelAngle = 2.f * std::atan(tanHalfFovY) / float(frameDim.y);
         const float3 forward = normalize(camera.getTarget() - camera.getPosition());
+        const float3 right = normalize(cross(forward, camera.getUpVector()));
         probingVar["gProbingLineAngle"] = lineWidth * pixelAngle;
+        probingVar["gProbingLineWidth"] = lineWidth;
         probingVar["gProbingMaskCount"] = maskCount;
         probingVar["gProbingSeed"] = seed;
-        probingVar["gProbingCameraRight"] = normalize(cross(forward, camera.getUpVector()));
+        probingVar["gProbingCameraForward"] = forward;
+        probingVar["gProbingCameraUp"] = cross(right, forward);
+        probingVar["gProbingTanHalfFovY"] = tanHalfFovY;
+        probingVar["gProbingFrameHeight"] = float(frameDim.y);
     }
 
     bool renderUI(Gui::Widgets& widget)
