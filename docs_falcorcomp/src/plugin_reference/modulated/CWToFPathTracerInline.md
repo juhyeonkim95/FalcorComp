@@ -57,6 +57,12 @@ Modulation:
 * - `phase`
   - float
   - Sensor phase offset $\phi$, in periods (`0.25` is 90 degrees). (Default: `0`)
+* - `phaseShift`
+  - float3
+  - Added to `phase` in each color channel, in periods. With `(0, 0.25, 0)` and the `cos` waveform, red and green
+    hold the real and imaginary parts of the measurement, $\sum f \cos(2\pi \ell / \lambda)$ and
+    $\sum f \sin(2\pi \ell / \lambda)$, from the same paths. The channels then hold phases instead of colors:
+    use a gray scene and light, and `useSingleChannel` off. (Default: `(0, 0, 0)`)
 * - `waveform`
   - string
   - Modulation waveform: `cos`, `triangle`, `box` or `sawtooth`. (Default: `cos`)
@@ -208,7 +214,49 @@ the primal path and the two are no longer similar.
 
 The light is set on the `LaserLight` pass, as for the time-gated passes (see [Laser](#laser)). A CW-ToF
 camera is usually modeled with a point light at the camera: `isLightSourceLaser = false` and
-`laserCollocated = true`.
+`laserCollocated = true`. With its `projector`, the light shows a pattern, as the projector of a PMD camera with a
+projector does (O'Toole et al. 2014; see [Projector](#laser-projector)).
+
+(cwtof-probing)=
+## Transport probing
+
+Transport probing (O'Toole et al. 2012, 2014) separates the light of a CW-ToF measurement by where it travels. Each
+path is weighted by $\Pi(i, j)$, from its camera ray $i$ and its projector ray $j$, from the light to the path's last
+vertex. The epipolar lines are the planes through the camera and the light. A direct path (camera, surface, light)
+and a retro-reflective one (back along the same rays, e.g. by way of a mirror) always lie on their camera ray's
+line, and most indirect paths do not. With the light at the camera (`laserCollocated`), the planes all hold the
+same line, so a path counts as epipolar when its projector ray is its camera ray, and the masks use the image rows.
+
+```{list-table}
+:header-rows: 1
+:widths: 25 10 65
+
+* - Parameter
+  - Type
+  - Description
+* - `probing`
+  - string
+  - `none`; `epipolar`: $\Pi = 1$ when the projector ray lies on the camera ray's line, within half a line width, so
+    that the measurement keeps the direct and retro-reflective light; `non_epipolar`: $1 - \Pi$, the rest, mostly
+    indirect light; `masks`: $\Pi = \frac{4}{K} \sum_k m_k(i)\, (1 - m_k(j))$ for $K$ random line masks $m_k$ of
+    the camera and their complements shown by the projector (Algorithm 2 of O'Toole et al. 2014): zero on the same
+    line and one on average elsewhere, an approximation of `non_epipolar`. (Default: `none`)
+* - `probingLineWidth`
+  - float
+  - Width of an epipolar line, in camera pixels (the vertical angle of a pixel at the center of the image).
+    (Default: `1`)
+* - `probingMaskCount`
+  - integer
+  - `masks`: the number $K$ of mask and pattern pairs, 1 to 128. (Default: `128`)
+* - `probingSeed`
+  - integer
+  - `masks`: seed of the random masks. (Default: `0`)
+```
+
+`epipolar` and `non_epipolar` add up to the measurement without probing, path by path. Probing needs the point light
+(or its projector); it is off with the laser beam. Depth from the phase of the `epipolar` measurement is free of the
+multipath error that indirect light adds to the conventional one: in a white corner with a box, the median depth
+error falls from 103 mm to below 0.1 mm with the light at the camera, and from 122 mm to 0.8 mm with a 0.3 m baseline.
 
 ## Inputs and outputs
 
@@ -246,3 +294,10 @@ testbed.render_graph = graph
 ```
 
 See the [CW-ToF tutorial](../../tutorials/cwtof_offline.md) for a complete script.
+
+## References
+
+- M. O'Toole, R. Raskar and K. N. Kutulakos. Primal-dual coding to probe light transport. *ACM Transactions on
+  Graphics* (SIGGRAPH) 31(4), 2012.
+- M. O'Toole, F. Heide, L. Xiao, M. B. Hullin, W. Heidrich and K. N. Kutulakos. Temporal frequency probing for 5D
+  transient analysis of global light transport. *ACM Transactions on Graphics* (SIGGRAPH) 33(4), 2014.
