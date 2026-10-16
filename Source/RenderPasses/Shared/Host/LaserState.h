@@ -2,8 +2,90 @@
 #include "Falcor.h"
 #include "RenderGraph/RenderPass.h"
 #include "RenderGraph/RenderPassStandardFlags.h"
+#include "Configs/ProjectorConfig.h"
+#include <memory>
 
 using namespace Falcor;
+
+/** The point light as a projector (LaserLight's "projector"): a pinhole along the light's direction whose image, over the
+ * field of view, shows a pattern of Shared/Shaders/Projector/ProjectorPatterns.slang. The light's intensity toward the
+ * image-plane point uv is laserPower * pattern(uv) / cos^3, with cos the cosine to the light's direction, so that the
+ * image-plane irradiance is uniform, as for ProjectorLight; it is zero outside the field of view. The laser beam
+ * ignores it.
+ */
+struct LaserProjector
+{
+    static constexpr char kEnabled[] = "enabled";
+    static constexpr char kFov[] = "fov";
+    static constexpr char kUp[] = "up";
+
+    bool enabled = false;
+    /// Full field of view along u and v, in degrees; (0, 0): the camera's (LaserLight resolves it every frame).
+    float2 fov = float2(0.f);
+    /// Up hint, made orthogonal to the light's direction: v runs along it. The camera's up when the light is collocated.
+    float3 up = float3(0.f, 1.f, 0.f);
+    ProjectorPatternConfig pattern = defaultPattern();
+    /// The arbitrary pattern (LaserLight.set_pattern_data), with its textures.
+    std::shared_ptr<ProjectorPatternData> patternData;
+
+    /// A constant, unsigned pattern: the projector shows values in [0, 1], white by default.
+    static ProjectorPatternConfig defaultPattern()
+    {
+        ProjectorPatternConfig pattern;
+        pattern.type = ProjectorPatternType::Constant;
+        pattern.unsignedModulation = true;
+        return pattern;
+    }
+
+    bool operator==(const LaserProjector& other) const
+    {
+        return enabled == other.enabled && all(fov == other.fov) && all(up == other.up) && pattern == other.pattern &&
+               patternData == other.patternData;
+    }
+    bool operator!=(const LaserProjector& other) const { return !(*this == other); }
+
+    void validate() const
+    {
+        const bool cameraFov = fov.x == 0.f && fov.y == 0.f;
+        if (!cameraFov && !(fov.x > 0.f && fov.x < 180.f && fov.y > 0.f && fov.y < 180.f))
+            FALCOR_THROW("The projector's fov must be in (0, 180) degrees, or (0, 0) for the camera's.");
+        if (!(length(up) > 0.f) || !std::isfinite(up.x + up.y + up.z))
+            FALCOR_THROW("The projector's up must be a nonzero, finite vector.");
+        pattern.validate();
+    }
+
+    /// Merges LaserLight's "projector" dictionary: enabled (true when not given), fov, up and the pattern keys of
+    /// ProjectorPatternConfig. Throws on an unknown key.
+    void parse(const Properties& props)
+    {
+        enabled = true;
+        for (const auto& [key, value] : props)
+        {
+            if (key == kEnabled)
+                enabled = value;
+            else if (key == kFov)
+                fov = value;
+            else if (key == kUp)
+                up = value;
+            else if (!pattern.parse(key, value))
+                FALCOR_THROW("Unknown key '{}' in LaserLight's projector.", key);
+        }
+        validate();
+    }
+
+    Properties serialize() const
+    {
+        Properties props;
+        props[kEnabled] = enabled;
+        props[kFov] = fov;
+        props[kUp] = up;
+        pattern.serialize(props);
+        return props;
+    }
+
+    /// PROJECTOR_PATTERN of the pattern shown (constant without the projector).
+    DefineList getDefines() const { return enabled ? pattern.getDefines() : defaultPattern().getDefines(); }
+};
 
 /** The laser for one frame. The LaserLight pass publishes it in the render data dictionary (publish()), and the
  * passes that use the laser read it back through a LaserInput, so they all see the same laser, including when it is
@@ -21,6 +103,7 @@ struct LaserState
     static constexpr char kPatternFrequency[] = "patternFrequency";
     static constexpr char kPatternPhase[] = "patternPhase";
     static constexpr char kPatternPhaseShift[] = "patternPhaseShift";
+    static constexpr char kProjector[] = "laserProjector";
     static constexpr char kToken[] = "laserToken"; ///< Changes at every publication (LaserInput).
 
     float3 origin = float3(0.f);
@@ -39,13 +122,15 @@ struct LaserState
     /// Added to patternPhase in each color channel: e.g. (0, 2 pi / 3, 4 pi / 3) renders three phase-shifted fringes
     /// on the same paths, so that their demodulation cancels the uniform light path by path.
     float3 patternPhaseShift = float3(0.f);
+    /// The point light as a projector (LaserProjector), its field of view and up resolved by LaserLight.
+    LaserProjector projector;
 
     bool operator==(const LaserState& other) const
     {
         return all(origin == other.origin) && all(direction == other.direction) && all(power == other.power) &&
                cosAngle == other.cosAngle && isLaser == other.isLaser && collocated == other.collocated &&
                all(patternFrequency == other.patternFrequency) && patternPhase == other.patternPhase &&
-               all(patternPhaseShift == other.patternPhaseShift);
+               all(patternPhaseShift == other.patternPhaseShift) && projector == other.projector;
     }
     bool operator!=(const LaserState& other) const { return !(*this == other); }
 
@@ -64,6 +149,7 @@ struct LaserState
         dict[kPatternFrequency] = patternFrequency;
         dict[kPatternPhase] = patternPhase;
         dict[kPatternPhaseShift] = patternPhaseShift;
+        dict[kProjector] = projector;
     }
 
     /// The laser last published in the dictionary; the defaults where none was. Passes use LaserInput instead.
@@ -80,16 +166,21 @@ struct LaserState
         laser.patternFrequency = dict.getValue(kPatternFrequency, laser.patternFrequency);
         laser.patternPhase = dict.getValue(kPatternPhase, laser.patternPhase);
         laser.patternPhaseShift = dict.getValue(kPatternPhaseShift, laser.patternPhaseShift);
+        laser.projector = dict.getValue(kProjector, laser.projector);
         return laser;
     }
 
-    /// IS_LIGHT_SOURCE_LASER.
+    /// IS_LIGHT_SOURCE_LASER and the projector's PROJECTOR_PATTERN.
     DefineList getDefines() const
     {
         DefineList defines;
         defines.add("IS_LIGHT_SOURCE_LASER", isLaser ? "1" : "0");
+        defines.add(projector.getDefines());
         return defines;
     }
+
+    /// Whether the light is the point light as a projector.
+    bool isProjector() const { return projector.enabled && !isLaser; }
 
     /// Sets the Laser constants (Shared/Shaders/Lights/Laser.slang) under the program's root `var`.
     void bindShaderData(const ShaderVar& var) const
@@ -101,6 +192,28 @@ struct LaserState
         laserVar["gLaserCosAngle"] = cosAngle;
         laserVar["gLaserPatternFrequency"] = patternFrequency;
         laserVar["gLaserPatternPhase"] = patternPhase + patternPhaseShift;
+
+        // The projector (LaserProjector in LaserLightSampler.slang, ProjectorPatternCB in ProjectorPatterns.slang), in
+        // the programs that import them.
+        if (auto projectorVar = var.findMember("LaserProjector"); projectorVar.isValid())
+        {
+            projectorVar["gLaserProjector"] = uint(isProjector());
+            if (isProjector())
+            {
+                const float3 forward = normalize(direction);
+                const float3 right = normalize(cross(forward, projector.up));
+                projectorVar["gLaserProjectorRight"] = right;
+                projectorVar["gLaserProjectorUp"] = cross(right, forward);
+                projectorVar["gLaserProjectorTanHalfFov"] =
+                    float2(std::tan(math::radians(0.5f * projector.fov.x)), std::tan(math::radians(0.5f * projector.fov.y)));
+            }
+        }
+        if (auto patternVar = var.findMember("ProjectorPatternCB"); patternVar.isValid() && isProjector())
+        {
+            projector.pattern.bindShaderData(patternVar);
+            if (projector.pattern.type == ProjectorPatternType::Arbitrary && projector.patternData)
+                projector.patternData->bindShaderData(var);
+        }
     }
 };
 
