@@ -4,7 +4,8 @@ Non-line-of-sight (NLOS) imaging recovers objects that the camera cannot see, fr
 a visible wall, the *relay wall*, and comes back the same way. In scanning NLOS (Pediredla et al. 2019), a laser lights
 one point of the wall at a time and a time-gated camera keeps only the light whose path has a chosen length, so that
 the light focuses, in time, on one point of the hidden scene. This page scans a dragon out of the camera's view, voxel
-by voxel, renders the scan with four time-gated renderers at equal frame time, and reconstructs the dragon from each.
+by voxel, renders the scan with four time-gated renderers at about equal frame time, and reconstructs the dragon from
+each.
 
 ```{image} images/nlos_reconstruction.jpg
 :alt: A frame of each renderer, and the dragon reconstructed from each renderer's scan
@@ -42,8 +43,9 @@ happen to reach with the same path length.
 - **Ellipsoidal + ToF ReSTIR**: the same, with the shift `ray_trace`, which moves the reused path's vertex on the
   dragon so that the path keeps a length in the gate (see [ToF rendering with ReSTIR](../tutorials/restir_index.md)).
 
-ToF ReSTIR renders 32 samples per pixel per frame; the script adjusts the others to the same frame time on the first
-50 voxels of the scan.
+The renderers take 500, 52, 38 and 32 samples per pixel per frame, in this order, for about the same time per frame,
+which the script measures on the first 50 voxels of the scan. ToF ReSTIR stops its Newton solves after 5 iterations
+(`NewtonMaxIteration`).
 
 ## The score
 
@@ -93,14 +95,14 @@ keep ReSTIR's history, so temporal reuse runs along the whole scan.
 ```{literalinclude} code/nlos_reconstruction.py
 :language: python
 :start-after: "# 4. Render the scan"
-:end-before: "# 5. Match the frame time"
+:end-before: "# 5. Measure the frame time"
 ```
 
-## 5. Match the frame time
+## 5. Measure the frame time
 
 ```{literalinclude} code/nlos_reconstruction.py
 :language: python
-:start-after: "# 5. Match the frame time"
+:start-after: "# 5. Measure the frame time"
 :end-before: "# 6. Score every voxel"
 ```
 
@@ -114,7 +116,7 @@ keep ReSTIR's history, so temporal reuse runs along the whole scan.
 
 ## 7. Show a frame and the reconstructions
 
-The dragon's outline comes from its mesh: the voxels that hold a vertex.
+The dragon's outline comes from its mesh: the cells of a grid 4 times finer than the voxels that hold a vertex.
 
 ```{literalinclude} code/nlos_reconstruction.py
 :language: python
@@ -130,20 +132,20 @@ The dragon's outline comes from its mesh: the voxels that hold a vertex.
   - ms per frame
   - Median score
 * - Path tracing
-  - 520
-  - 5.4
-  - 0.0020
+  - 500
+  - 5.3
+  - 0.0019
 * - Ellipsoidal path tracing
-  - 54
-  - 5.4
-  - 0.0173
+  - 52
+  - 5.3
+  - 0.0174
 * - Ellipsoidal + naive reuse
-  - 35
-  - 5.4
-  - 0.0165
+  - 38
+  - 5.9
+  - 0.0167
 * - Ellipsoidal + ToF ReSTIR
   - 32
-  - 5.4
+  - 5.3
   - 0.0174
 ```
 

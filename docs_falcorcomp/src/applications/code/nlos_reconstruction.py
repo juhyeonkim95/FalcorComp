@@ -37,19 +37,30 @@ def path_length(voxel):
 
 
 def ellipse_on_wall(focus, length, count):
-    """count points W of the wall z = 0 with |ORIGIN - W| + |W - focus| = length, at equal angles around the wall
-    point where this sum is smallest; each found by bisection along its direction."""
-    t = ORIGIN[2] / (ORIGIN[2] + focus[2])
-    center = np.array([ORIGIN[0] + t * (focus[0] - ORIGIN[0]), ORIGIN[1] + t * (focus[1] - ORIGIN[1]), 0.0])
-    angles = 2.0 * np.pi * np.arange(count) / count
-    directions = np.stack([np.cos(angles), np.sin(angles), np.zeros(count)], axis=1)
-    near, far = np.zeros(count), np.full(count, length)
-    for _ in range(50):
-        middle = 0.5 * (near + far)
-        points = center + middle[:, None] * directions
-        inside = np.linalg.norm(points - ORIGIN, axis=1) + np.linalg.norm(points - focus, axis=1) < length
-        near, far = np.where(inside, middle, near), np.where(inside, far, middle)
-    return center + near[:, None] * directions
+    """count points W of the wall z = 0 with |ORIGIN - W| + |W - focus| = length: the intersection of the wall with
+    the spheroid of foci ORIGIN and focus, at equal parametric angles of the ellipse."""
+    axis = focus - ORIGIN
+    distance = np.linalg.norm(axis)
+    semi_major = 0.5 * length
+    semi_minor_sq = semi_major ** 2 - (0.5 * distance) ** 2
+    # The spheroid as (X - M)^T A (X - M) = 1, in a frame whose z axis joins the foci.
+    z_axis = axis / distance
+    helper = np.array([1.0, 0.0, 0.0]) if abs(z_axis[0]) <= 0.9 else np.array([0.0, 1.0, 0.0])
+    x_axis = helper - np.dot(helper, z_axis) * z_axis
+    x_axis /= np.linalg.norm(x_axis)
+    rotation = np.stack([x_axis, np.cross(z_axis, x_axis), z_axis], axis=1)
+    A = rotation @ np.diag([1 / semi_minor_sq, 1 / semi_minor_sq, 1 / semi_major ** 2]) @ rotation.T
+    middle = 0.5 * (ORIGIN + focus)
+    # On the wall z = 0: u^T B u + 2 g^T u + k = 0 with u = (x, y), an ellipse with center c and axes from B.
+    B, b, a = A[:2, :2], A[:2, 2], A[2, 2]
+    g = -(B @ middle[:2]) - middle[2] * b
+    k = middle[:2] @ B @ middle[:2] + 2 * middle[2] * (b @ middle[:2]) + middle[2] ** 2 * a - 1.0
+    center = -np.linalg.solve(B, g)
+    eigenvalues, eigenvectors = np.linalg.eigh(B / -(k - g @ np.linalg.solve(B, g)))
+    radii = 1.0 / np.sqrt(eigenvalues)
+    angles = np.linspace(0.0, 2.0 * np.pi, count, endpoint=False)
+    uv = center + np.stack([radii[0] * np.cos(angles), radii[1] * np.sin(angles)], axis=1) @ eigenvectors.T
+    return np.column_stack([uv, np.zeros(count)])
 
 
 def to_pixels(points):
@@ -86,14 +97,15 @@ METHODS = {
     "Ellipsoidal + naive reuse": ("TimeGatedReSTIRInline",
                                   {"samplingMethod": "ellipsoidal", **REUSE, "shiftMappingMethod": "no"}),
     "Ellipsoidal + ToF ReSTIR": ("TimeGatedReSTIRInline",
-                                 {"samplingMethod": "ellipsoidal", **REUSE, "shiftMappingMethod": "ray_trace"}),
+                                 {"samplingMethod": "ellipsoidal", **REUSE, "shiftMappingMethod": "ray_trace",
+                                  "NewtonMaxIteration": 5}),
 }
 
 
 def create_graph(method, spp):
     tracer, options = METHODS[method]
     graph = testbed.create_render_graph("NLOS")
-    graph.create_pass("VBuffer", "VBufferRT", {"samplePattern": "Center", "sampleCount": 1})
+    graph.create_pass("VBuffer", "VBufferRT", {"samplePattern": "Center", "sampleCount": 1, "useAlphaTest": True})
     graph.create_pass("Laser", "LaserLight", {"laserPosition": ORIGIN.tolist(), "laserDirection": [1.0, 0.0, -4.0],
                                               "laserPower": [100.0, 100.0, 100.0], "laserAngle": 0.0})
     graph.create_pass("Tracer", tracer, {"samplesPerPixel": spp, "maxBounces": 2,
@@ -139,24 +151,11 @@ def scan(method, spp, voxels=ORDER, record=True):
     return 1000.0 * float(np.mean(times[LASER_POINTS:])), samples, shown  # the first voxel warms up
 
 
-# 5. Match the frame time: ToF ReSTIR keeps 32 spp, the others are adjusted on the first 50 voxels
-SPP = {"Path tracing": 520, "Ellipsoidal path tracing": 54, "Ellipsoidal + naive reuse": 35,
-       "Ellipsoidal + ToF ReSTIR": 32}  # equal time on an RTX 3090: the starting points
-CALIBRATION, TOLERANCE = ORDER[:50], 0.05
-target = scan("Ellipsoidal + ToF ReSTIR", SPP["Ellipsoidal + ToF ReSTIR"], CALIBRATION, record=False)[0]
-FRAME_MS = {"Ellipsoidal + ToF ReSTIR": target}
-print(f"Ellipsoidal + ToF ReSTIR: {SPP['Ellipsoidal + ToF ReSTIR']} spp, {target:.2f} ms per frame")
-for method in ["Path tracing", "Ellipsoidal path tracing", "Ellipsoidal + naive reuse"]:
-    trials, spp = {}, SPP[method]
-    for attempt in range(4):  # the starting spp, then up to three adjustments
-        trials[spp] = scan(method, spp, CALIBRATION, record=False)[0]
-        if abs(trials[spp] / target - 1.0) <= TOLERANCE:
-            break
-        spp = max(1, round(spp * target / trials[spp]))
-        if spp in trials:
-            break
-    SPP[method] = min(trials, key=lambda count: abs(trials[count] - target))
-    FRAME_MS[method] = trials[SPP[method]]
+# 5. Measure the frame time of every renderer, on the first 50 voxels
+SPP = {"Path tracing": 500, "Ellipsoidal path tracing": 52, "Ellipsoidal + naive reuse": 38,
+       "Ellipsoidal + ToF ReSTIR": 32}  # samples per pixel and frame, of about equal frame time
+FRAME_MS = {method: scan(method, SPP[method], ORDER[:50], record=False)[0] for method in METHODS}
+for method in METHODS:
     print(f"{method}: {SPP[method]} spp, {FRAME_MS[method]:.2f} ms per frame")
 
 start = time.perf_counter()

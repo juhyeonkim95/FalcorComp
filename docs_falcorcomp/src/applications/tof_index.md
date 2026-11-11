@@ -24,7 +24,7 @@ measured on an NVIDIA GeForce RTX 3090 with Vulkan.
 :link: nlos_reconstruction
 :link-type: doc
 
-Scan a hidden dragon voxel by voxel through a relay wall, with four time-gated renderers at equal frame time.
+Scan a hidden dragon voxel by voxel through a relay wall, with four time-gated renderers.
 ```
 
 ```{grid-item-card} Navigating around a corner
