@@ -3,6 +3,17 @@
 // TimeGateMode::Box; macros in imported Slang modules are not exported.
 static const uint kTimeGateBox = 1;
 
+#if IS_SCENE_DYNAMIC && USE_TEMPORAL_REUSE
+// Last frame's laser: temporal reuse re-lights the history with this frame's laser.
+cbuffer PreviousLaser
+{
+    float3 gPreviousLaserOrigin;
+    float3 gPreviousLaserDirection;
+    float3 gPreviousLaserPower;
+    float gPreviousLaserCosAngle;
+}
+#endif
+
 // Bins from 64 on of each pixel: one bit per bin (TouchedBins), getTouchedWordCount() words per pixel.
 RWStructuredBuffer<uint> gTouchedBins;
 
@@ -205,9 +216,15 @@ float3 tracePath(uint2 pixel, uint2 frameDim)
                 float gateCenter = binCenter(bin);
                 ReuseDomain current = { primary, primaryMaterial, primaryLength, gateCenter, gLaserOrigin,
                     gLaserDirection, gLaserPower, gLaserCosAngle };
+#if IS_SCENE_DYNAMIC
+                ReuseDomain last = { history.primary, previousMaterial, history.primaryLength, gateCenter,
+                    gPreviousLaserOrigin, gPreviousLaserDirection, gPreviousLaserPower, gPreviousLaserCosAngle };
+#else
                 ReuseDomain last = { history.primary, previousMaterial, history.primaryLength, gateCenter, gLaserOrigin,
                     gLaserDirection, gLaserPower, gLaserCosAngle };
-                reservoir = mergeReservoirPair(reservoir, current, previous, last, 1.f, false,
+#endif
+                // With a dynamic light, each shifted suffix is re-lit with its target frame's laser.
+                reservoir = mergeReservoirPair(reservoir, current, previous, last, 1.f, IS_SCENE_DYNAMIC != 0,
                     gReconnection, rng);
             }
         }

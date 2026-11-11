@@ -87,10 +87,11 @@ private:
                mOptions.restir.shiftMapping.shiftMappingMethod != ShiftMappingMethod::Identity;
     }
     /// Temporal reuse runs as two passes after initial generation per chunk of bins (the merge shifts of each bin, then
-    /// the merges) when temporalReuseTwoPass is set, unless the shift is `no` (as for spatial reuse).
+    /// the merges) when temporalReuseTwoPass is set, unless the shift is `no` (as for spatial reuse) or the light is
+    /// dynamic (the merge re-lights the history inside initial generation).
     bool useTemporalReusePairs() const
     {
-        return mOptions.restir.useTemporalReuse && mOptions.temporalReuseTwoPass &&
+        return mOptions.restir.useTemporalReuse && mOptions.temporalReuseTwoPass && !mOptions.isSceneDynamic &&
                mOptions.restir.shiftMapping.shiftMappingMethod != ShiftMappingMethod::Identity;
     }
 
@@ -105,6 +106,9 @@ private:
         bool skipEmptyReservoirs = true;
         /// Temporal reuse in two passes after initial generation instead of inside it (TEMPORAL_REUSE_PAIRS).
         bool temporalReuseTwoPass = true;
+        /// Keep the temporal history when the laser moves or changes (e.g. a collocated laser with a moving camera),
+        /// re-lighting the reused paths with this frame's laser (IS_SCENE_DYNAMIC).
+        bool isSceneDynamic = false;
     };
     Options mOptions;
     /// Throws if `options` are invalid: checked on creation and UI edits.

@@ -19,8 +19,8 @@ import torch.nn.functional as F
 import falcorcomp as falcor
 
 # A road of width 0.4 runs along -z to the corner at the origin and turns to +x. A building, a unit cube over
-# x, z in [0.2, 1.2], hides the road after the turn. The box (0.05 x 0.5 x 0.2) stands in the road's inner lane,
-# z in [-0.05, 0.15], at x = the clock time, set by an animation.
+# x, z in [0.2, 1.2], hides the road after the turn. The box (0.05 x 0.5 x 0.2) is centered at (t, 0, 0), t the clock
+# time, set by an animation: x in [t - 0.025, t + 0.025], z in [-0.1, 0.1], and its lower half below the road.
 SCENE = """
 camera = Camera()
 camera.position = float3(0.0, 0.2, 1.0)
@@ -35,12 +35,12 @@ sceneBuilder.addMeshInstance(sceneBuilder.addNode('Floor', Transform(scaling=flo
                              sceneBuilder.addTriangleMesh(TriangleMesh.createQuad(), white))
 sceneBuilder.addMeshInstance(sceneBuilder.addNode('Building', Transform(translation=float3(0.7, 0.5, 0.7))),
                              sceneBuilder.addTriangleMesh(TriangleMesh.createCube(), white))
-box = sceneBuilder.addNode('Box', Transform(translation=float3(0.4, 0.25, 0.05)))
+box = sceneBuilder.addNode('Box', Transform(translation=float3(0.4, 0.0, 0.0)))
 sceneBuilder.addMeshInstance(box, sceneBuilder.addTriangleMesh(TriangleMesh.createCube(float3(0.05, 0.5, 0.2)), white))
-animation = Animation('BoxPosition', box, 1.0)  # at clock time t, the box stands at x = t
+animation = Animation('BoxPosition', box, 1.0)  # at clock time t, the box is centered at (t, 0, 0)
 for t in [0.0, 1.0]:
     key = Transform()
-    key.translation = float3(t, 0.25, 0.05)
+    key.translation = float3(t, 0.0, 0.0)
     animation.addKeyframe(t, key)
 sceneBuilder.addAnimation(animation)
 """
@@ -68,16 +68,14 @@ def place(camera_z, box_x):
 # 2. Build a render graph for each renderer
 HISTOGRAM = {"timeMin": 3.0, "timeMax": 4.28, "timeBin": 64,  # 64 bins of 0.02 in path length
              "maxBounces": 3, "useSingleChannel": True}
-REUSE = {"spatialReuseIteration": 3, "spatialReuseNeighborCount": 3, "spatialReuseGatherRadius": 5.0,
-         "useBinReuse": True,  # also resample the adjacent bins of the same pixel
+# Temporal reuse only. The laser moves with the car: isSceneDynamic keeps the history and re-lights its paths with
+# the new laser.
+REUSE = {"useTemporalReuse": True, "temporalHistoryLength": 5.0, "isSceneDynamic": True, "spatialReuseIteration": 0,
          "gaugeMode": "avg_grad", "reconnectionRoughnessThreshold": 0.05}
 METHODS = {
     "Path tracing": ("TransientHistogramPathTracerInline", {}),
-    # With the shift `no`, a reused path keeps its length and lands in another bin: more rounds and bin reuse only add
-    # cost, so naive reuse gets one round without bin reuse, its best setting at this frame time.
-    "Naive reuse": ("TransientHistogramReSTIRInline",
-                    {**REUSE, "spatialReuseIteration": 1, "useBinReuse": False, "shiftMappingMethod": "no"}),
-    "ToF ReSTIR": ("TransientHistogramReSTIRInline", {**REUSE, "shiftMappingMethod": "local_tangent"}),
+    "Naive reuse": ("TransientHistogramReSTIRInline", {**REUSE, "shiftMappingMethod": "no"}),
+    "ToF ReSTIR": ("TransientHistogramReSTIRInline", {**REUSE, "shiftMappingMethod": "area_adaptive"}),
 }
 
 
@@ -90,6 +88,8 @@ def create_graph(tracer, properties):
     graph.create_pass("Tracer", tracer, {**HISTOGRAM, **properties})
     graph.add_edge("VBuffer.vbuffer", "Tracer.vbuffer")
     graph.add_edge("VBuffer.viewW", "Tracer.viewW")
+    if tracer == "TransientHistogramReSTIRInline":
+        graph.add_edge("VBuffer.mvec", "Tracer.mvec")  # reproject the history as the car moves
     graph.add_edge("Laser", "Tracer")
     graph.mark_output("Tracer.histogram")
     testbed.render_graph = graph
@@ -98,6 +98,7 @@ def create_graph(tracer, properties):
 
 def render_clean(graph, frames=16):
     """Path tracing with accumulate: the mean of `frames` frames of the graph's samples per pixel."""
+    testbed.frame()  # a new graph restarts its sum after its first frame, and a moved camera too: warm up
     graph.get_pass("Tracer").reset()
     for _ in range(frames):
         testbed.frame()
@@ -165,7 +166,7 @@ print(f"Held-out clean histograms: mean error {np.mean(errors):.4f}")
 # 5. Drive: 100 frames toward the corner, the box at x = 0.4, with each renderer at equal frame time
 BOX_X = 0.4
 DRIVE = 1.0 - 0.005 * np.arange(100)  # the car's z in every frame
-SPP = {"Path tracing": 512, "Naive reuse": 192, "ToF ReSTIR": 128}  # equal time on an RTX 3090; ToF ReSTIR keeps 128
+SPP = {"Path tracing": 768, "Naive reuse": 550, "ToF ReSTIR": 440}  # starting points; ToF ReSTIR keeps 440
 
 
 def drive(method, spp, record=True):
@@ -227,7 +228,7 @@ CENTER = np.minimum(np.hypot(X, Z - np.clip(Z, 0, 1)), np.hypot(X - np.clip(X, 0
 
 def plan(box_center_x, margin=0.03):
     """A* from the car's start (0, 1) to the road's end (1, 0), avoiding the box (inflated by margin) and the walls."""
-    free = road & ~((np.abs(X - box_center_x) <= 0.025 + margin) & (np.abs(Z - 0.05) <= 0.1 + margin))
+    free = road & ~((np.abs(X - box_center_x) <= 0.025 + margin) & (np.abs(Z) <= 0.1 + margin))
     free &= (np.abs(X) <= 0.2 - margin) | (np.abs(Z) <= 0.2 - margin)  # keep off the walls
     start, goal = (len(zs) - 1, int(round(0.2 / CELL))), (int(round(0.2 / CELL)), len(xs) - 1)
     cost = 1.0 + 4.0 * np.minimum(CENTER / 0.2, 1.0) ** 2  # prefer the center line
@@ -252,7 +253,7 @@ def plan(box_center_x, margin=0.03):
 
 plans = {name: plan(np.mean(values[50:])) for name, values in estimates.items()}
 # Does the planned path run into the box where it really is?
-hits = {name: bool(np.any((np.abs(path[:, 0] - BOX_X) <= 0.025) & (np.abs(path[:, 1] - 0.05) <= 0.1)))
+hits = {name: bool(np.any((np.abs(path[:, 0] - BOX_X) <= 0.025) & (np.abs(path[:, 1]) <= 0.1)))
         for name, path in plans.items()}
 for name, hit in hits.items():
     print(f"{name}: the planned path {'hits' if hit else 'misses'} the box")
@@ -260,20 +261,25 @@ for name, hit in hits.items():
 # 8. Show the histograms, the estimates and the planned paths
 STYLE = {"Clean render": dict(color="0.6"), "Path tracing": dict(color="C0"), "Naive reuse": dict(color="C1"),
          "ToF ReSTIR": dict(color="C2")}
-SHOWN_FRAME, SHOWN_BINS, ROWS = 50, [10, 20, 30, 40], slice(24, SIZE)  # the rows above row 24 see only the sky
-fig = plt.figure(figsize=(14, 10.5), layout="constrained")
-grid = fig.add_gridspec(3, 4, height_ratios=[1.0, 1.0, 0.9])
+SHOWN_FRAME, SHOWN_BINS = 50, list(range(0, 64, 8))  # 8 of the 64 bins of frame 50
 names = ["Clean render", "Path tracing", "Naive reuse", "ToF ReSTIR"]
-top = np.percentile(renders["Clean render"][SHOWN_FRAME][SHOWN_BINS], 99.5)
-for column, name in enumerate(names):
-    axis = fig.add_subplot(grid[0, column])
-    bins = [renders[name][SHOWN_FRAME][b][ROWS] for b in SHOWN_BINS]
-    tile = np.block([[bins[0], bins[1]], [bins[2], bins[3]]])  # 2 x 2 bins
-    axis.imshow(np.clip(tile / top, 0, 1) ** (1 / 2.2), cmap="gray")
-    title = name if name == "Clean render" else f"{name}: {SPP[name]} spp, {FRAME_MS[name]:.1f} ms"
-    axis.set_title(f"{title}\nbins {', '.join(map(str, SHOWN_BINS))} (frame {SHOWN_FRAME})", fontsize=9)
-    axis.axis("off")
-axis = fig.add_subplot(grid[1, :])
+fig = plt.figure(figsize=(14, 13.5), layout="constrained")
+grid = fig.add_gridspec(3, 1, height_ratios=[1.0, 0.75, 0.75])
+bins_grid = grid[0].subgridspec(len(names), len(SHOWN_BINS))
+for row, name in enumerate(names):
+    for column, b in enumerate(SHOWN_BINS):
+        axis = fig.add_subplot(bins_grid[row, column])
+        top = np.percentile(renders["Clean render"][SHOWN_FRAME][b], 99.5) + 1e-12  # each bin on its own scale
+        axis.imshow(np.clip(renders[name][SHOWN_FRAME][b] / top, 0, 1) ** (1 / 2.2), cmap="gray")
+        axis.set_xticks([])
+        axis.set_yticks([])
+        if row == 0:
+            length = HISTOGRAM["timeMin"] + (b + 0.5) * (HISTOGRAM["timeMax"] - HISTOGRAM["timeMin"]) / 64
+            axis.set_title(f"bin {b} ({length:.2f})", fontsize=9)
+        if column == 0:
+            label = name if name == "Clean render" else f"{name}\n{SPP[name]} spp\n{FRAME_MS[name]:.1f} ms"
+            axis.set_ylabel(label, fontsize=9)
+axis = fig.add_subplot(grid[1])
 axis.axhline(BOX_X, color="red", linestyle="--", label="the box (true)")
 for name in names:
     axis.plot(DRIVE, estimates[name], label=name, **STYLE[name])
@@ -282,12 +288,13 @@ axis.set_ylabel("estimated box position x")
 axis.invert_xaxis()
 axis.legend(ncol=5, fontsize=9)
 axis.grid(alpha=0.3)
+plan_grid = grid[2].subgridspec(1, len(names))
 for column, name in enumerate(names):
-    axis = fig.add_subplot(grid[2, column])
+    axis = fig.add_subplot(plan_grid[0, column])
     axis.imshow(road, extent=[xs[0], xs[-1], zs[0], zs[-1]], origin="lower", cmap="Greys", alpha=0.25)
-    axis.add_patch(plt.Rectangle((BOX_X - 0.025, -0.05), 0.05, 0.2, fill=False, color="red", linewidth=2))
+    axis.add_patch(plt.Rectangle((BOX_X - 0.025, -0.1), 0.05, 0.2, fill=False, color="red", linewidth=2))
     estimate_x = np.mean(estimates[name][50:])
-    axis.add_patch(plt.Rectangle((estimate_x - 0.025, -0.05), 0.05, 0.2, fill=False, linestyle="--", linewidth=1.5,
+    axis.add_patch(plt.Rectangle((estimate_x - 0.025, -0.1), 0.05, 0.2, fill=False, linestyle="--", linewidth=1.5,
                                  **STYLE[name]))
     axis.plot(plans[name][:, 0], plans[name][:, 1], linewidth=2, **STYLE[name])
     axis.set_title(f"{name}: box estimated at x = {estimate_x:.3f}\n"
