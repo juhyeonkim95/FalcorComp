@@ -45,6 +45,7 @@ src/tutorials/optimization_index
 :maxdepth: 2
 :caption: Applications
 
+src/applications/tof_index
 src/applications/modulated_index
 src/applications/lsci_index
 ```
