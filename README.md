@@ -43,7 +43,7 @@ The measurement depends on the total length of each light path (laser → scene 
 | **Time-gated image** | `H × W`: the light whose path length falls inside a time gate | [`TimeGatedPathTracerInline`](https://falcorcomp.readthedocs.io/en/latest/src/plugin_reference/time_gated/TimeGatedPathTracerInline.html), [`TimeGatedReSTIRInline`](https://falcorcomp.readthedocs.io/en/latest/src/plugin_reference/time_gated/TimeGatedReSTIRInline.html) |
 | **Transient histogram** | `H × W × B`: for every pixel, the light arriving at each path length, in `B` bins | [`TransientHistogramPathTracerInline`](https://falcorcomp.readthedocs.io/en/latest/src/plugin_reference/transient/TransientHistogramPathTracerInline.html), [`TransientHistogramReSTIRInline`](https://falcorcomp.readthedocs.io/en/latest/src/plugin_reference/transient/TransientHistogramReSTIRInline.html) |
 
-The [hidden-object reconstruction](https://falcorcomp.readthedocs.io/en/latest/src/applications/nlos_reconstruction.html) application scans a dragon out of the camera's view, voxel by voxel, through a relay wall.
+The [hidden-object reconstruction](https://falcorcomp.readthedocs.io/en/latest/src/applications/nlos_reconstruction.html) application scans a dragon out of the camera's view, voxel by voxel, through a relay wall, and the [navigation](https://falcorcomp.readthedocs.io/en/latest/src/applications/nlos_navigation.html) application finds a box hidden around a corner from transient histograms and plans a path around it.
 
 ### Modulated Light
 
