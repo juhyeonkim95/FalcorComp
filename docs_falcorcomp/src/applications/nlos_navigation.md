@@ -21,23 +21,22 @@ renderers at equal frame time, and plans the car's path around the box from each
 ## The scene and the measurement
 
 A road of width 0.4 runs along $-z$ to a corner at the origin and turns to $+x$. A building, a unit cube over
-$x, z \in [0.2, 1.2]$, hides the road after the turn. The box, $0.05 \times 0.5 \times 0.2$, stands in the inner lane
-($z \in [-0.05, 0.15]$) at a position $x$ that the clock sets through an animation, so that one scene serves every
-position. The car's lidar is 0.2 above the road on its center line, looks 10 degrees down, and records 64 x 64 pixels
+$x, z \in [0.2, 1.2]$, hides the road after the turn. The box, $0.05 \times 0.5 \times 0.2$, is centered at $(x, 0, 0)$,
+across the road's center line and half below the road, at a position $x$ that the clock sets through an animation, so
+that one scene serves every position. The car's lidar is 0.2 above the road on its center line, looks 10 degrees down, and records 64 x 64 pixels
 and 64 bins of 0.02 in path length, from 3.0 to 4.28. Its laser (`laserCollocated`) lights the road ahead of the car.
 
 ## The renderers
 
 - **Path tracing**: `TransientHistogramPathTracerInline`.
-- **ToF ReSTIR**: `TransientHistogramReSTIRInline` with the shift `local_tangent`: three rounds of spatial reuse, and
-  bin reuse (`useBinReuse`), which also resamples the two adjacent bins of the pixel, shifted by one bin width.
-- **Naive reuse**: the same pass with the shift `no`. A reused path keeps its length, so most of the paths it takes
-  from a neighbor or an adjacent bin fall into another bin and are lost: more rounds and bin reuse only cost time. It
-  gets one round without bin reuse, its best setting at this frame time.
+- **ToF ReSTIR**: `TransientHistogramReSTIRInline` with temporal reuse only: every bin of a pixel resamples the same
+  bin of the previous frame, shifted with `area_adaptive` (and `avg_grad`) to the car's new position.
+- **Naive reuse**: the same, with the shift `no`: a reused path keeps its vertices, so its length changes as the car
+  moves and it often falls out of its bin.
 
-The laser moves with the car, and `TransientHistogramReSTIRInline` drops its temporal history whenever the laser
-changes, so neither renderer reuses paths across frames. ToF ReSTIR renders 128 samples per pixel; the script adjusts
-the others to the same frame time on the drive.
+The laser moves with the car. With `isSceneDynamic`, the ReSTIR pass keeps its temporal history anyway and re-lights
+the reused paths with the laser of the current frame. ToF ReSTIR renders 440 samples per pixel; path tracing and naive
+reuse start from 768 and 550, and the script adjusts them to the same frame time on the drive.
 
 ## 1. Build the scene
 
@@ -58,7 +57,7 @@ the others to the same frame time on the drive.
 ## 3. Render clean histograms for training
 
 512 random positions of the car ($z \in [0.5, 1]$) and of the box ($x \in [0.3, 0.6]$), each rendered with path
-tracing at 65,536 samples per pixel (16 frames of 4,096, summed by `accumulate`).
+tracing at 65,536 samples per pixel (16 frames of 4,096, summed by `accumulate`, after a frame that the sum skips).
 
 ```{literalinclude} code/nlos_navigation.py
 :language: python
@@ -126,34 +125,35 @@ puts it (its mean over the last 50 frames), keeping 3 cm from the box and the wa
 * - The clean render
   - 65,536
   - —
-  - 0.414
-  - 0.015
+  - 0.399
+  - 0.0015
 * - Path tracing
-  - 485
-  - 7.8
-  - 0.455
-  - 0.054
+  - 831
+  - 11.8
+  - 0.416
+  - 0.018
 * - Naive reuse
-  - 192
-  - 7.6
-  - 0.484
-  - 0.081
+  - 550
+  - 12.0
+  - 0.414
+  - 0.017
 * - ToF ReSTIR
-  - 128
-  - 7.6
-  - **0.410**
-  - **0.011**
+  - 440
+  - 11.7
+  - **0.403**
+  - **0.0072**
 ```
 
-The box stands at $x = 0.4$. On the clean training renders it has not seen, the network's mean error is 1.8 mm; on
-the clean renders of the drive, its estimates sit 1.4 cm too far, at 0.414. The noise of path tracing and naive reuse
-pushes their estimates 4 and 7 cm farther, in every frame of the drive. ToF ReSTIR's histograms are closer to the clean
-ones: its estimates scatter around the truth, by about 1 cm. Planned around naive reuse's estimate, the car's path
-runs into the box; around path tracing's, it clears the box's corner by a hair.
+The box stands at $x = 0.4$. On the clean training renders it has not seen, the network's mean error is 1.6 mm, and on
+the clean renders of the drive 1.5 mm. The noise of the other renderers shifts its estimates from frame to frame. ToF
+ReSTIR's histograms are the closest to the clean ones (the bins above), and its estimates the closest to the box:
+7 mm off on average, against 17 mm for naive reuse and 18 mm for path tracing. The reuse renderers start without
+history, so their first frames are noisier (ToF ReSTIR's first estimate is 0.46). Every planned path clears the box:
+the planner keeps 3 cm from the box where the renderer puts it, more than these errors.
 
 The video above shows the 64 bins of frame 50, from the shortest path length to the longest.
 
-The full script: {download}`nlos_navigation.py <code/nlos_navigation.py>`. It takes about 11 minutes, most of them
+The full script: {download}`nlos_navigation.py <code/nlos_navigation.py>`. It takes about 12 minutes, most of them
 for the clean training renders, which it saves to `training.npz` and reuses on the next run. It needs PyTorch
 (`pip install torch`) and `ffmpeg` for the video.
 
