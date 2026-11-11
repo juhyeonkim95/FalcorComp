@@ -64,6 +64,7 @@ const ChannelList kHistogramOutputChannelSingle = {
 const char kUseBinReuse[] = "useBinReuse";
 const char kSkipEmptyReservoirs[] = "skipEmptyReservoirs";
 const char kTemporalReuseTwoPass[] = "temporalReuseTwoPass";
+const char kIsSceneDynamic[] = "isSceneDynamic";
 const char kSeed[] = "seed";
 } // namespace
 
@@ -103,6 +104,8 @@ void TransientHistogramReSTIRInline::parseProperties(const Properties& props)
             mOptions.skipEmptyReservoirs = value;
         else if (key == kTemporalReuseTwoPass)
             mOptions.temporalReuseTwoPass = value;
+        else if (key == kIsSceneDynamic)
+            mOptions.isSceneDynamic = value;
         else if (key == kSeed)
             mRandomSeed = value;
         else
@@ -145,6 +148,7 @@ Properties TransientHistogramReSTIRInline::getProperties() const
     props[kUseBinReuse] = mOptions.useBinReuse;
     props[kSkipEmptyReservoirs] = mOptions.skipEmptyReservoirs;
     props[kTemporalReuseTwoPass] = mOptions.temporalReuseTwoPass;
+    props[kIsSceneDynamic] = mOptions.isSceneDynamic;
     props[kSeed] = mRandomSeed;
     return props;
 }
@@ -178,7 +182,7 @@ DefineList TransientHistogramReSTIRInline::getShaderDefines(const RenderData& re
     defines.add(mLaserInput.get().getDefines());
     defines.add(InlinePass::getSceneLightDefines(*mpScene));
     defines.add(mOptions.restir.getDefines());
-    defines.add(PathLengthAwareReSTIRResources::getReservoirDefines(mOptions.pathTracing, false));
+    defines.add(PathLengthAwareReSTIRResources::getReservoirDefines(mOptions.pathTracing, mOptions.isSceneDynamic));
     defines.add("SPATIAL_REUSE_PAIRS", useSpatialReusePairs() ? "1" : "0");
     defines.add("RESERVOIR_SUMMARIES", mOptions.skipEmptyReservoirs ? "1" : "0");
     defines.add("TEMPORAL_REUSE_PAIRS", useTemporalReusePairs() ? "1" : "0");
@@ -231,6 +235,14 @@ void TransientHistogramReSTIRInline::bindShaderData(const ShaderVar& var, const 
         var["CB"]["gTemporalHistoryValid"] = mReSTIR.temporalHistoryValid;
         var["CB"]["gPreviousCameraPosition"] = mReSTIR.previousCameraPosition;
         mOptions.restir.bindShiftMapping(var["ShiftMappingCB"]);
+        // With a dynamic light, the merge re-lights the history, which last frame's laser lit.
+        if (mOptions.isSceneDynamic && var.findMember("PreviousLaser").isValid())
+        {
+            var["PreviousLaser"]["gPreviousLaserOrigin"] = mPreviousLaser.origin;
+            var["PreviousLaser"]["gPreviousLaserDirection"] = mPreviousLaser.direction;
+            var["PreviousLaser"]["gPreviousLaserPower"] = mPreviousLaser.power;
+            var["PreviousLaser"]["gPreviousLaserCosAngle"] = mPreviousLaser.cosAngle;
+        }
     }
     if (useTemporalReusePairs())
     {
@@ -349,9 +361,9 @@ void TransientHistogramReSTIRInline::execute(RenderContext* pRenderContext, cons
         mNeedToClearHistogram = false;
     }
 
-    // Temporal reuse assumes static geometry and light; only the camera may move.
+    // Temporal reuse assumes static geometry; the camera may move, and with isSceneDynamic the laser too.
     mLaser = mLaserInput.get();
-    mReSTIR.invalidateHistory(*mpScene, mLaser != mPreviousLaser, false);
+    mReSTIR.invalidateHistory(*mpScene, mLaser != mPreviousLaser, mOptions.isSceneDynamic);
 
     if (!mpComputePass)
         mpComputePass = InlinePass::createScenePass(mpDevice, pRenderContext, mpScene, mpSampleGenerator, kShaderFile, getShaderDefines(renderData));
@@ -376,8 +388,9 @@ void TransientHistogramReSTIRInline::execute(RenderContext* pRenderContext, cons
             InlinePass::createScenePass(mpDevice, pRenderContext, mpScene, mpSampleGenerator, kTemporalReuseFile, defines);
     }
     const uint2 frameDim = renderData.getDefaultTextureDims();
-    mReSTIR.prepare(mpDevice, mpScene, mpSampleGenerator, mOptions.pathTracing, false, mOptions.histogram.timeBin, frameDim,
-        mOptions.restir.useTemporalReuse, renderData.getTexture("vbuffer")->getFormat(), mOptions.skipEmptyReservoirs);
+    mReSTIR.prepare(mpDevice, mpScene, mpSampleGenerator, mOptions.pathTracing, mOptions.isSceneDynamic,
+        mOptions.histogram.timeBin, frameDim, mOptions.restir.useTemporalReuse, renderData.getTexture("vbuffer")->getFormat(),
+        mOptions.skipEmptyReservoirs);
     uint spatialChunkBins, temporalChunkBins;
     preparePairs(frameDim, spatialChunkBins, temporalChunkBins);
     if (useTemporalReusePairs() && (!mpTemporalRandomState || mpTemporalRandomState->getElementCount() != frameDim.x * frameDim.y))
@@ -433,12 +446,21 @@ void TransientHistogramReSTIRInline::renderUI(Gui::Widgets& widget)
 
     if (auto group = widget.group("Reuse", true))
     {
-        dirty |= mOptions.restir.renderReuseUI(group, " Static scene and light; the camera may move.");
+        dirty |= mOptions.restir.renderReuseUI(group, " Static scene; the camera may move, and with Dynamic light the "
+                                                      "laser too.");
+
+        if (mOptions.restir.useTemporalReuse)
+        {
+            dirty |= group.checkbox("Dynamic light", mOptions.isSceneDynamic);
+            group.tooltip("Keep the history when the laser moves or changes (for example a collocated laser with a "
+                          "moving camera), re-lighting the reused paths with the new laser. Temporal reuse then merges "
+                          "inside initial sampling.", true);
+        }
 
         dirty |= group.checkbox("Reuse adjacent bins", mOptions.useBinReuse);
         group.tooltip("Each spatial reuse iteration also resamples bins j-1 and j+1 of the same pixel.", true);
 
-        if (mOptions.restir.useTemporalReuse)
+        if (mOptions.restir.useTemporalReuse && !mOptions.isSceneDynamic)
         {
             dirty |= group.checkbox("Two-pass temporal reuse", mOptions.temporalReuseTwoPass);
             group.tooltip("Merge the history after initial sampling in two passes (every bin's shifts in its own thread, "
