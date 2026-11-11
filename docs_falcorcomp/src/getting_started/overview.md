@@ -143,6 +143,11 @@ falcorcomp includes the implementations of these papers:
 - **Doppler Time-of-Flight Rendering**, SIGGRAPH Asia 2023 (ACM TOG).
   [Project page](https://juhyeonkim95.github.io/project-pages/dopplertof/). The Doppler ToF render pass.
 
+```{note}
+The code has been optimized and fixed since these papers were published, so its performance (speed, noise and
+results) may differ from what the papers report.
+```
+
 If falcorcomp is useful in your research, please cite the corresponding papers; the BibTeX entries
 are in the [README](https://github.com/juhyeonkim95/FalcorComp#citation).
 

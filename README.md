@@ -112,6 +112,8 @@ FalcorComp includes implementations of the following papers:
 
 For details, please refer to the corresponding project page for each paper.
 
+**Note:** the code has been optimized and fixed since these papers were published, so its performance (speed, noise and results) may differ from what the papers report.
+
 ## Installation
 
 FalcorComp is installed as the Python package `falcorcomp`, which contains Falcor and the render passes, so no separate Falcor build is needed. It requires 64-bit Linux or Windows 11, an NVIDIA GPU with hardware ray tracing (RTX), and Python 3.9 to 3.13.
