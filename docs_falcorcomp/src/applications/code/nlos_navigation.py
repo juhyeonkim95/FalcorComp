@@ -1,56 +1,63 @@
 """Navigation around a corner from transient histograms: a car with a lidar (a camera and a laser at the camera) drives
-toward a corner; a box waits out of sight around it. A small network, trained on clean renders, estimates where the box
+toward a corner; a box stands out of sight around it. A small network, trained on clean renders, estimates where the box
 is from every frame's transient histogram, and the car plans its path around it. Path tracing, naive reuse and
-ToF ReSTIR render the drive at equal frame time."""
+ToF ReSTIR render the drive."""
 # 1. Build the scene
+import heapq
 import shutil
 import subprocess
 import tempfile
 import time
+from collections import deque
 from pathlib import Path
 
-import heapq
 import matplotlib
 matplotlib.use("Agg")  # no window
 import matplotlib.pyplot as plt
 import numpy as np
 import torch
 import torch.nn.functional as F
+from scipy.interpolate import splev, splprep
 import falcorcomp as falcor
 
-# A road of width 0.4 runs along -z to the corner at the origin and turns to +x. A building, a unit cube over
-# x, z in [0.2, 1.2], hides the road after the turn. The box (0.05 x 0.5 x 0.2) is centered at (t, 0, 0), t the clock
-# time, set by an animation: x in [t - 0.025, t + 0.025], z in [-0.1, 0.1], and its lower half below the road.
+# A floor, a building over x, z in [0.2, 1.2] (a unit cube) at the corner of a road of width 0.4 that runs along -z and
+# turns to +x, and a box 0.05 x 0.5 x 0.2. An animation moves the box with the clock: at time t its center is at
+# (t, 0, 0) (the keyframes replace the node's transform), so half of it is below the floor.
 SCENE = """
 camera = Camera()
-camera.position = float3(0.0, 0.2, 1.0)
-camera.target = float3(0.0, 0.2, 0.0)
-camera.up = float3(0.0, 1.0, 0.0)
-camera.focalLength = 48.0
+camera.position = float3(0, 0.2, 1)
+camera.target = float3(0, 0.2, 0)
+camera.up = float3(0, 1, 0)
+camera.focalLength = 48
 sceneBuilder.addCamera(camera)
-white = StandardMaterial('White')
-white.baseColor = float4(1.0, 1.0, 1.0, 1.0)
-white.roughness = 1.0
-sceneBuilder.addMeshInstance(sceneBuilder.addNode('Floor', Transform(scaling=float3(2.0, 2.0, 2.0))),
-                             sceneBuilder.addTriangleMesh(TriangleMesh.createQuad(), white))
-sceneBuilder.addMeshInstance(sceneBuilder.addNode('Building', Transform(translation=float3(0.7, 0.5, 0.7))),
-                             sceneBuilder.addTriangleMesh(TriangleMesh.createCube(), white))
-box = sceneBuilder.addNode('Box', Transform(translation=float3(0.4, 0.0, 0.0)))
-sceneBuilder.addMeshInstance(box, sceneBuilder.addTriangleMesh(TriangleMesh.createCube(float3(0.05, 0.5, 0.2)), white))
-animation = Animation('BoxPosition', box, 1.0)  # at clock time t, the box is centered at (t, 0, 0)
-for t in [0.0, 1.0]:
-    key = Transform()
-    key.translation = float3(t, 0.0, 0.0)
-    animation.addKeyframe(t, key)
-sceneBuilder.addAnimation(animation)
+
+Diffuse = StandardMaterial('Diffuse')
+Diffuse.baseColor = float4(1.0, 1.0, 1.0, 1)
+Diffuse.roughness = 1
+
+sceneBuilder.addMeshInstance(
+    sceneBuilder.addNode('Floor', Transform(scaling=float3(2.0, 2.0, 2.0))),
+    sceneBuilder.addTriangleMesh(TriangleMesh.createQuad(), Diffuse)
+)
+width = 0.2
+sceneBuilder.addMeshInstance(
+    sceneBuilder.addNode('Corner', Transform(translation=float3(0.5 + width, 0.5, 0.5 + width))),
+    sceneBuilder.addTriangleMesh(TriangleMesh.createCube(), Diffuse)
+)
+ObjNodeId = sceneBuilder.addNode('Object', Transform(translation=float3(0.0, 0.25, 0.05)))
+sceneBuilder.addMeshInstance(ObjNodeId, sceneBuilder.addTriangleMesh(TriangleMesh.createCube(float3(0.05, 0.5, width)), Diffuse))
+anim = Animation('ObjAnimation', ObjNodeId, 18)
+for t in [0, 1]:
+    ObjTransform = Transform()
+    ObjTransform.translation = float3(t, 0, 0.0)
+    anim.addKeyframe(t, ObjTransform)
+sceneBuilder.addAnimation(anim)
 """
 Path("nlos_navigation.pyscene").write_text(SCENE)
 
-SIZE = 64
 testbed = falcor.Testbed(create_window=False)
 testbed.load_scene("nlos_navigation.pyscene")
-testbed.resize_frame_buffer(SIZE, SIZE)
-testbed.scene.camera.aspectRatio = 1.0
+testbed.resize_frame_buffer(64, 64)
 testbed.clock.pause()
 
 PITCH = np.deg2rad(10.0)                                  # the lidar looks 10 degrees down the road
@@ -58,38 +65,39 @@ DIRECTION = np.array([0.0, -np.sin(PITCH), -np.cos(PITCH)])
 
 
 def place(camera_z, box_x):
-    """The car at z = camera_z on the road's center line (lidar height 0.2), the box at x = box_x."""
+    """The car at z = camera_z on the road's center line (lidar height 0.2), the box at x = box_x (the clock)."""
     position = np.array([0.0, 0.2, camera_z])
     testbed.scene.camera.position = position.tolist()
     testbed.scene.camera.target = (position + DIRECTION).tolist()
     testbed.clock.time = float(box_x)
+    return position, position + DIRECTION
 
 
 # 2. Build a render graph for each renderer
 HISTOGRAM = {"timeMin": 3.0, "timeMax": 4.28, "timeBin": 64,  # 64 bins of 0.02 in path length
-             "maxBounces": 3, "useSingleChannel": True}
-# Temporal reuse only. The laser moves with the car: isSceneDynamic keeps the history and re-lights its paths with
-# the new laser.
+             "timeGateMode": "box", "maxBounces": 3, "useSingleChannel": True}
+# Temporal reuse only: every bin resamples the same bin of the previous frame. The laser moves with the car, so
+# isSceneDynamic keeps the history and re-lights its paths with the laser of the current frame.
 REUSE = {"useTemporalReuse": True, "temporalHistoryLength": 5.0, "isSceneDynamic": True, "spatialReuseIteration": 0,
-         "gaugeMode": "avg_grad", "reconnectionRoughnessThreshold": 0.05}
+         "reconnectionRoughnessThreshold": 0.05, "NewtonMaxIteration": 5}
 METHODS = {
-    "Path tracing": ("TransientHistogramPathTracerInline", {}),
-    "Naive reuse": ("TransientHistogramReSTIRInline", {**REUSE, "shiftMappingMethod": "no"}),
-    "ToF ReSTIR": ("TransientHistogramReSTIRInline", {**REUSE, "shiftMappingMethod": "area_adaptive"}),
+    "Path tracing": ("TransientHistogramPathTracerInline", {"samplesPerPixel": 768}),
+    "Naive reuse": ("TransientHistogramReSTIRInline", {**REUSE, "samplesPerPixel": 550, "shiftMappingMethod": "no"}),
+    "ToF ReSTIR": ("TransientHistogramReSTIRInline", {**REUSE, "samplesPerPixel": 440,
+                                                      "shiftMappingMethod": "area_adaptive", "gaugeMode": "avg_grad"}),
 }
+CLEAN = ("TransientHistogramPathTracerInline", {"samplesPerPixel": 4096, "accumulate": True})  # x 16 frames
 
 
 def create_graph(tracer, properties):
     graph = testbed.create_render_graph("Navigation")
-    graph.create_pass("VBuffer", "VBufferRT", {"samplePattern": "Center", "sampleCount": 1})
+    graph.create_pass("VBuffer", "VBufferRT", {"samplePattern": "Center", "sampleCount": 1, "useAlphaTest": True})
     # The laser is at the camera, aimed where it looks, with a beam of 5 degrees.
     graph.create_pass("Laser", "LaserLight", {"laserCollocated": True, "laserAngle": 5.0,
                                               "laserPower": [100.0, 100.0, 100.0]})
     graph.create_pass("Tracer", tracer, {**HISTOGRAM, **properties})
     graph.add_edge("VBuffer.vbuffer", "Tracer.vbuffer")
     graph.add_edge("VBuffer.viewW", "Tracer.viewW")
-    if tracer == "TransientHistogramReSTIRInline":
-        graph.add_edge("VBuffer.mvec", "Tracer.mvec")  # reproject the history as the car moves
     graph.add_edge("Laser", "Tracer")
     graph.mark_output("Tracer.histogram")
     testbed.render_graph = graph
@@ -97,8 +105,8 @@ def create_graph(tracer, properties):
 
 
 def render_clean(graph, frames=16):
-    """Path tracing with accumulate: the mean of `frames` frames of the graph's samples per pixel."""
-    testbed.frame()  # a new graph restarts its sum after its first frame, and a moved camera too: warm up
+    """The mean of `frames` frames of 4096 samples per pixel: 65,536 in all."""
+    testbed.frame()  # the sum restarts after a new graph's first frame and after a camera move: skip one frame
     graph.get_pass("Tracer").reset()
     for _ in range(frames):
         testbed.frame()
@@ -106,74 +114,70 @@ def render_clean(graph, frames=16):
 
 
 # 3. Render clean histograms for training: random car and box positions
-CLEAN = {"samplesPerPixel": 4096, "accumulate": True}  # x 16 frames: 65536 samples per pixel
 TRAINING = Path("training.npz")  # rendered below if missing
 if not TRAINING.exists():
     rng = np.random.default_rng(0)
-    camera_z, box_x = rng.uniform(0.5, 1.0, 512), rng.uniform(0.3, 0.6, 512)
-    graph = create_graph("TransientHistogramPathTracerInline", CLEAN)
-    start, histograms = time.perf_counter(), []
-    for z, x in zip(camera_z, box_x):
-        place(z, x)
+    graph = create_graph(*CLEAN)
+    start, histograms, cameras = time.perf_counter(), [], []
+    for _ in range(1024):
+        camera_z = 0.5 + 0.5 * rng.random()
+        box_x = 0.3 + 0.3 * rng.random()
+        cameras.append(place(camera_z, box_x) + (box_x,))
         histograms.append(render_clean(graph))
-    np.savez(TRAINING, histograms=np.array(histograms), camera_z=camera_z, box_x=box_x)
-    print(f"512 training histograms in {time.perf_counter() - start:.0f} s")
+    positions, targets, boxes = map(np.array, zip(*cameras))
+    np.savez_compressed(TRAINING, histograms=np.array(histograms), positions=positions, targets=targets, boxes=boxes)
+    print(f"1024 training histograms in {time.perf_counter() - start:.0f} s")
 training = np.load(TRAINING)
 
 
-# 4. Train the network: histogram and car position -> box position
+# 4. Train the network: histogram, car position and target -> box position
 class HistogramToPosition(torch.nn.Module):
     def __init__(self, bins):
         super().__init__()
         self.conv1 = torch.nn.Conv2d(bins, 32, 3, padding=1)  # the bins are the input channels
         self.conv2 = torch.nn.Conv2d(32, 64, 3, padding=1)
         self.pool = torch.nn.AdaptiveAvgPool2d((4, 4))
-        self.fc1 = torch.nn.Linear(64 * 4 * 4 + 1, 128)
-        self.fc2 = torch.nn.Linear(128, 1)
+        self.fc1 = torch.nn.Linear(64 * 4 * 4 + 3 + 3, 128)
+        self.fc2 = torch.nn.Linear(128, 2)  # the box's x, and a second output trained to 0
 
-    def forward(self, histogram, camera_z):
+    def forward(self, histogram, position, target):
         x = self.pool(F.relu(self.conv2(F.relu(self.conv1(histogram))))).flatten(1)
-        x = F.relu(self.fc1(torch.cat([x, camera_z[:, None]], 1)))
-        return self.fc2(x)[:, 0]
+        x = F.relu(self.fc1(torch.cat([x, position, target], 1)))
+        return self.fc2(x)
 
 
 device = "cuda" if torch.cuda.is_available() else "cpu"
 torch.manual_seed(0)
-histograms = torch.tensor(training["histograms"], dtype=torch.float32, device=device)
-camera_z = torch.tensor(training["camera_z"], dtype=torch.float32, device=device)
-box_x = torch.tensor(training["box_x"], dtype=torch.float32, device=device)
-train, held_out = np.arange(448), np.arange(448, 512)  # the last 64 test the network on positions it has not seen
+tensor = lambda array: torch.tensor(np.asarray(array), dtype=torch.float32, device=device)  # noqa: E731
+histograms, positions, targets = tensor(training["histograms"]), tensor(training["positions"]), tensor(training["targets"])
+labels = torch.stack([tensor(training["boxes"]), torch.zeros(len(training["boxes"]), device=device)], 1)
 model = HistogramToPosition(histograms.shape[1]).to(device)
-optimizer = torch.optim.Adam(model.parameters(), lr=1e-4)
+optimizer = torch.optim.Adam(model.parameters(), lr=1e-5)
+start = time.perf_counter()
 for epoch in range(500):
-    for batch in np.array_split(np.random.default_rng(epoch).permutation(train), len(train) // 32):
-        loss = F.l1_loss(model(histograms[batch], camera_z[batch]), box_x[batch])
+    for batch in torch.randperm(len(labels), device=device).split(32):
+        loss = F.l1_loss(model(histograms[batch], positions[batch], targets[batch]), labels[batch])
         optimizer.zero_grad()
         loss.backward()
         optimizer.step()
 model.eval()
+print(f"Trained in {time.perf_counter() - start:.0f} s, last batch L1 {loss.item():.5f}")
 
 
-def estimate(histogram, z):
+def estimate(histogram, position, target):
     with torch.no_grad():
-        h = torch.tensor(histogram[None], dtype=torch.float32, device=device)
-        return float(model(h, torch.tensor([z], dtype=torch.float32, device=device))[0])
+        return float(model(tensor(histogram[None]), tensor(position[None]), tensor(target[None]))[0, 0])
 
 
-errors = [abs(estimate(training["histograms"][i], training["camera_z"][i]) - training["box_x"][i]) for i in held_out]
-print(f"Held-out clean histograms: mean error {np.mean(errors):.4f}")
-
-# 5. Drive: 100 frames toward the corner, the box at x = 0.4, with each renderer at equal frame time
+# 5. Drive: 100 frames toward the corner, 0.005 per frame, the box at x = 0.4
 BOX_X = 0.4
 DRIVE = 1.0 - 0.005 * np.arange(100)  # the car's z in every frame
-SPP = {"Path tracing": 768, "Naive reuse": 550, "ToF ReSTIR": 440}  # starting points; ToF ReSTIR keeps 440
 
 
-def drive(method, spp, record=True):
+def drive(tracer, properties, record=True):
     """Renders the drive with a new graph; returns the mean frame time in ms and, with record, every frame's histogram.
     Timing runs (record=False) read nothing back."""
-    tracer, options = METHODS[method]
-    graph = create_graph(tracer, {**options, "samplesPerPixel": spp})
+    graph = create_graph(tracer, properties)
     times, frames = [], []
     for z in DRIVE:
         place(z, BOX_X)
@@ -186,128 +190,150 @@ def drive(method, spp, record=True):
     return 1000.0 * float(np.mean(times[10:])), frames  # the first frames compile shaders
 
 
-target = drive("ToF ReSTIR", SPP["ToF ReSTIR"], record=False)[0]
-FRAME_MS = {"ToF ReSTIR": target}
-for method in ["Path tracing", "Naive reuse"]:
-    trials, spp = {}, SPP[method]
-    for attempt in range(4):  # the starting spp, then up to three adjustments
-        trials[spp] = drive(method, spp, record=False)[0]
-        if abs(trials[spp] / target - 1.0) <= 0.05:
-            break
-        spp = max(1, round(spp * target / trials[spp]))
-        if spp in trials:
-            break
-    SPP[method] = min(trials, key=lambda count: abs(trials[count] - target))
-    FRAME_MS[method] = trials[SPP[method]]
-for method in METHODS:
-    print(f"{method}: {SPP[method]} spp, {FRAME_MS[method]:.2f} ms per frame")
-
-renders = {method: drive(method, SPP[method])[1] for method in METHODS}
-graph = create_graph("TransientHistogramPathTracerInline", CLEAN)
+FRAME_MS = {name: drive(*METHODS[name], record=False)[0] for name in METHODS}
+renders = {name: drive(*METHODS[name])[1] for name in METHODS}
+for name in METHODS:
+    print(f"{name}: {METHODS[name][1]['samplesPerPixel']} spp, {FRAME_MS[name]:.2f} ms per frame")
+graph = create_graph(*CLEAN)
 renders["Clean render"] = []
 for z in DRIVE:
     place(z, BOX_X)
     renders["Clean render"].append(render_clean(graph))
 
 # 6. Estimate the box's position in every frame
-estimates = {name: np.array([estimate(h, z) for h, z in zip(frames, DRIVE)]) for name, frames in renders.items()}
-for name, values in estimates.items():
-    print(f"{name}: box at x = {np.mean(values[50:]):.3f} (last 50 frames; true {BOX_X}), "
-          f"mean error {np.mean(np.abs(values - BOX_X)):.4f}")
+NAMES = ["Clean render", "Path tracing", "Naive reuse", "ToF ReSTIR"]
+estimates = {name: np.array([estimate(h, *place(z, BOX_X)) for h, z in zip(renders[name], DRIVE)]) for name in NAMES}
+for name in NAMES:
+    print(f"{name}: box at x = {np.mean(estimates[name][50:]):.4f} (frames 50 to 99; true {BOX_X})")
+STYLE = {"Clean render": dict(color="black", alpha=0.3), "Path tracing": dict(color="C0"),
+         "Naive reuse": dict(color="C1"), "ToF ReSTIR": dict(color="C2")}
+fig, axis = plt.subplots(figsize=(8, 4))
+for name in NAMES:  # from frame 20 on: the reuse renderers start without history
+    axis.plot(np.arange(20, 100), estimates[name][20:], linewidth=2, label=name, **STYLE[name])
+axis.axhline(BOX_X, color="red", linestyle="--", label="the box")
+axis.set_xlabel("frame")
+axis.set_ylabel("estimated box position x")
+axis.grid(True, alpha=0.2)
+axis.legend(ncol=5, fontsize=8)
+fig.tight_layout()
+fig.savefig("nlos_navigation_estimates.png", dpi=200)
 
 
-# 7. Plan the path around the box: A* on a grid of the road, keeping clear of the walls and the box
-CELL = 0.01
-xs = np.arange(-0.2, 1.0 + CELL / 2, CELL)  # the road: x in [-0.2, 0.2] for z in [-0.2, 1]
-zs = np.arange(-0.2, 1.0 + CELL / 2, CELL)  #           and z in [-0.2, 0.2] for x in [-0.2, 1]
-X, Z = np.meshgrid(xs, zs)                   # [z index, x index]
-road = (np.abs(X) <= 0.2) | (np.abs(Z) <= 0.2)
-# Distance to the road's center line, (0, 1) -> (0, 0) -> (1, 0).
+# 7. Plan the path around the box: A* on the road, then shortcuts and a spline
+CELL, ROAD_HALF_WIDTH, BOX_MARGIN, WALL_MARGIN = 0.01, 0.2, 0.01, 0.02
+BOX_Z, BOX_SIZE = 0.05, (0.05, 0.2)  # the footprint the planner avoids: centered at (x, 0.05), in the inner lane
+xs = zs = np.arange(-1.0, 1.0 + 1e-12, CELL)
+X, Z = np.meshgrid(xs, zs)  # [z index, x index]
+# Distance to the road's center line, (0, 1) -> (0, 0) -> (1, 0); the road is within 0.2 of it.
 CENTER = np.minimum(np.hypot(X, Z - np.clip(Z, 0, 1)), np.hypot(X - np.clip(X, 0, 1), Z))
+ROAD = CENTER <= ROAD_HALF_WIDTH
+NEIGHBORS = [(-1, 0), (1, 0), (0, -1), (0, 1), (-1, -1), (-1, 1), (1, -1), (1, 1)]
 
 
-def plan(box_center_x, margin=0.03):
-    """A* from the car's start (0, 1) to the road's end (1, 0), avoiding the box (inflated by margin) and the walls."""
-    free = road & ~((np.abs(X - box_center_x) <= 0.025 + margin) & (np.abs(Z) <= 0.1 + margin))
-    free &= (np.abs(X) <= 0.2 - margin) | (np.abs(Z) <= 0.2 - margin)  # keep off the walls
-    start, goal = (len(zs) - 1, int(round(0.2 / CELL))), (int(round(0.2 / CELL)), len(xs) - 1)
-    cost = 1.0 + 4.0 * np.minimum(CENTER / 0.2, 1.0) ** 2  # prefer the center line
+def distance_in_cells(sources):
+    """Breadth-first distance, in cells (8-connected steps), to the nearest True cell."""
+    distance = np.full(sources.shape, np.inf)
+    queue = deque(zip(*np.nonzero(sources)))
+    distance[sources] = 0
+    while queue:
+        z, x = queue.popleft()
+        for dz, dx in NEIGHBORS:
+            if 0 <= z + dz < distance.shape[0] and 0 <= x + dx < distance.shape[1] and distance[z + dz, x + dx] > distance[z, x] + 1:
+                distance[z + dz, x + dx] = distance[z, x] + 1
+                queue.append((z + dz, x + dx))
+    return distance
+
+
+NEAR_WALL = distance_in_cells(~ROAD) <= np.ceil(WALL_MARGIN / CELL)
+
+
+def cell_of(x, z):
+    return int(round((z - zs[0]) / CELL)), int(round((x - xs[0]) / CELL))
+
+
+def segment_free(p, q, free):
+    for t in np.linspace(0.0, 1.0, max(2, int(np.ceil(np.linalg.norm(q - p) / (CELL / 2))))):
+        if not free[cell_of(*(p + t * (q - p)))]:
+            return False
+    return True
+
+
+def plan(box_x):
+    """The path from (0, 0.51) to (1, 0) around the footprint at x = box_x."""
+    box = (np.abs(X - box_x) <= BOX_SIZE[0] / 2) & (np.abs(Z - BOX_Z) <= BOX_SIZE[1] / 2)
+    free = ROAD & ~NEAR_WALL & ~(distance_in_cells(box) <= np.ceil(BOX_MARGIN / CELL))
+    start, goal = cell_of(0.0, 0.51), cell_of(1.0, 0.0)
     queue, came, best = [(0.0, start)], {}, {start: 0.0}
     while queue:
         _, cell = heapq.heappop(queue)
         if cell == goal:
             break
-        for dz, dx in [(-1, 0), (1, 0), (0, -1), (0, 1), (-1, -1), (-1, 1), (1, -1), (1, 1)]:
+        for dz, dx in NEIGHBORS:
             nz, nx = cell[0] + dz, cell[1] + dx
             if 0 <= nz < len(zs) and 0 <= nx < len(xs) and free[nz, nx]:
-                g = best[cell] + np.hypot(dz, dx) * cost[nz, nx]
+                # A step costs more away from the center line.
+                g = best[cell] + np.hypot(dz, dx) * (1.0 + 4.0 * min(CENTER[nz, nx] / ROAD_HALF_WIDTH, 1.0) ** 2)
                 if g < best.get((nz, nx), np.inf):
                     best[(nz, nx)], came[(nz, nx)] = g, cell
                     heapq.heappush(queue, (g + np.hypot(goal[0] - nz, goal[1] - nx), (nz, nx)))
-    path = [goal]
-    while path[-1] in came:
-        path.append(came[path[-1]])
-    path = np.array(path[::-1])
-    return np.stack([xs[path[:, 1]], zs[path[:, 0]]], axis=1)
+    cells = [goal]
+    while cells[-1] in came:
+        cells.append(came[cells[-1]])
+    path = [np.array([xs[x], zs[z]]) for z, x in cells[::-1]]
+    rng = np.random.default_rng(0)
+    for _ in range(500):  # shortcuts: drop the vertices between two that see each other
+        if len(path) <= 2:
+            break
+        i = int(rng.integers(0, len(path) - 2))
+        j = int(rng.integers(i + 2, len(path)))
+        if segment_free(path[i], path[j], free):
+            path = path[:i + 1] + path[j:]
+    path = np.array(path)
+    lengths = np.concatenate([[0.0], np.cumsum(np.linalg.norm(np.diff(path, axis=0), axis=1))])
+    dense = np.array([np.interp(np.linspace(0, lengths[-1], int(lengths[-1] / 0.02) + 2), lengths, path[:, k])
+                      for k in range(2)]).T
+    spline, _ = splprep(dense.T, s=0.001, k=3)
+    return np.stack(splev(np.linspace(0.0, 1.0, 500), spline), axis=1)
 
 
-plans = {name: plan(np.mean(values[50:])) for name, values in estimates.items()}
-# Does the planned path run into the box where it really is?
-hits = {name: bool(np.any((np.abs(path[:, 0] - BOX_X) <= 0.025) & (np.abs(path[:, 1]) <= 0.1)))
-        for name, path in plans.items()}
-for name, hit in hits.items():
-    print(f"{name}: the planned path {'hits' if hit else 'misses'} the box")
+plans = {name: plan(np.mean(estimates[name][50:])) for name in NAMES}
 
-# 8. Show the histograms, the estimates and the planned paths
-STYLE = {"Clean render": dict(color="0.6"), "Path tracing": dict(color="C0"), "Naive reuse": dict(color="C1"),
-         "ToF ReSTIR": dict(color="C2")}
+# 8. Show the histograms and the planned paths
 SHOWN_FRAME, SHOWN_BINS = 50, list(range(0, 64, 8))  # 8 of the 64 bins of frame 50
-names = ["Clean render", "Path tracing", "Naive reuse", "ToF ReSTIR"]
-fig = plt.figure(figsize=(14, 13.5), layout="constrained")
-grid = fig.add_gridspec(3, 1, height_ratios=[1.0, 0.75, 0.75])
-bins_grid = grid[0].subgridspec(len(names), len(SHOWN_BINS))
-for row, name in enumerate(names):
+fig, axes = plt.subplots(len(NAMES), len(SHOWN_BINS), figsize=(13, 7), layout="constrained")
+for row, name in enumerate(NAMES):
     for column, b in enumerate(SHOWN_BINS):
-        axis = fig.add_subplot(bins_grid[row, column])
         top = np.percentile(renders["Clean render"][SHOWN_FRAME][b], 99.5) + 1e-12  # each bin on its own scale
-        axis.imshow(np.clip(renders[name][SHOWN_FRAME][b] / top, 0, 1) ** (1 / 2.2), cmap="gray")
-        axis.set_xticks([])
-        axis.set_yticks([])
+        axes[row, column].imshow(np.clip(renders[name][SHOWN_FRAME][b] / top, 0, 1) ** (1 / 2.2), cmap="gray")
+        axes[row, column].set_xticks([])
+        axes[row, column].set_yticks([])
         if row == 0:
-            length = HISTOGRAM["timeMin"] + (b + 0.5) * (HISTOGRAM["timeMax"] - HISTOGRAM["timeMin"]) / 64
-            axis.set_title(f"bin {b} ({length:.2f})", fontsize=9)
-        if column == 0:
-            label = name if name == "Clean render" else f"{name}\n{SPP[name]} spp\n{FRAME_MS[name]:.1f} ms"
-            axis.set_ylabel(label, fontsize=9)
-axis = fig.add_subplot(grid[1])
-axis.axhline(BOX_X, color="red", linestyle="--", label="the box (true)")
-for name in names:
-    axis.plot(DRIVE, estimates[name], label=name, **STYLE[name])
-axis.set_xlabel("the car's position z (it drives from z = 1 toward the corner)")
-axis.set_ylabel("estimated box position x")
-axis.invert_xaxis()
-axis.legend(ncol=5, fontsize=9)
-axis.grid(alpha=0.3)
-plan_grid = grid[2].subgridspec(1, len(names))
-for column, name in enumerate(names):
-    axis = fig.add_subplot(plan_grid[0, column])
-    axis.imshow(road, extent=[xs[0], xs[-1], zs[0], zs[-1]], origin="lower", cmap="Greys", alpha=0.25)
-    axis.add_patch(plt.Rectangle((BOX_X - 0.025, -0.1), 0.05, 0.2, fill=False, color="red", linewidth=2))
-    estimate_x = np.mean(estimates[name][50:])
-    axis.add_patch(plt.Rectangle((estimate_x - 0.025, -0.1), 0.05, 0.2, fill=False, linestyle="--", linewidth=1.5,
-                                 **STYLE[name]))
-    axis.plot(plans[name][:, 0], plans[name][:, 1], linewidth=2, **STYLE[name])
-    axis.set_title(f"{name}: box estimated at x = {estimate_x:.3f}\n"
-                   f"the path {'hits' if hits[name] else 'misses'} the box", fontsize=9)
-    axis.set_xlim(-0.25, 1.0)
-    axis.set_ylim(0.6, -0.25)  # the car comes from z = 1, below
-    axis.set_aspect("equal")
-    axis.set_xticks([])
-    axis.set_yticks([])
-fig.savefig("nlos_navigation.png", dpi=110)
+            axes[row, column].set_title(f"bin {b} (path length {3.0 + 0.02 * (b + 0.5):.2f})", fontsize=8)
+    spp = "65,536 spp" if name == "Clean render" else f"{METHODS[name][1]['samplesPerPixel']} spp, {FRAME_MS[name]:.1f} ms"
+    axes[row, 0].set_ylabel(f"{name}\n{spp}", fontsize=9)
+fig.savefig("nlos_navigation_histograms.png", dpi=110)
+
+fig, axis = plt.subplots(figsize=(6, 6))
+axis.imshow(ROAD.astype(float), extent=[xs[0], xs[-1], zs[0], zs[-1]], origin="lower", alpha=0.18)
+footprint = lambda x: (x - BOX_SIZE[0] / 2, BOX_Z - BOX_SIZE[1] / 2)  # noqa: E731
+axis.add_patch(plt.Rectangle(footprint(BOX_X), *BOX_SIZE, fill=False, color="red", linewidth=3))  # the true position
+for name in NAMES[1:]:
+    box_x = np.mean(estimates[name][50:])
+    axis.add_patch(plt.Rectangle(footprint(box_x), *BOX_SIZE, fill=False, linestyle="--", linewidth=2, alpha=0.6,
+                                 color=STYLE[name]["color"]))
+    axis.plot(*plans[name].T, linewidth=2, color=STYLE[name]["color"], label=f"{name} (box at {box_x:.3f})")
+axis.scatter([0.0], [0.51], s=90)
+axis.set_xlim(-0.05, 0.5)
+axis.set_ylim(0.55, -0.1)  # the car comes from below
+axis.set_aspect("equal")
+axis.set_xticks([])
+axis.set_yticks([])
+axis.legend(fontsize=8, loc="lower right")
+fig.tight_layout()
+fig.savefig("nlos_navigation_paths.png", dpi=200)
 
 
-# A video of the transient histograms at the shown frame, bin by bin, one panel per renderer
+# A video of the transient histograms at frame 50, bin by bin, one panel per renderer
 def save_video(path, frame, fps=10):
     ffmpeg = shutil.which("ffmpeg")
     if ffmpeg is None:
@@ -317,12 +343,11 @@ def save_video(path, frame, fps=10):
         for b in range(HISTOGRAM["timeBin"]):
             figure, axes = plt.subplots(1, 4, figsize=(10, 2.9))
             scale = np.percentile(renders["Clean render"][frame][b], 99.5) + 1e-12
-            for axis, name in zip(axes, names):
+            for axis, name in zip(axes, NAMES):
                 axis.imshow(np.clip(renders[name][frame][b] / scale, 0, 1) ** (1 / 2.2), cmap="gray")
                 axis.set_title(name, fontsize=10)
                 axis.axis("off")
-            length = HISTOGRAM["timeMin"] + (b + 0.5) * (HISTOGRAM["timeMax"] - HISTOGRAM["timeMin"]) / 64
-            figure.suptitle(f"path length {length:.2f}", fontsize=10)
+            figure.suptitle(f"path length {3.0 + 0.02 * (b + 0.5):.2f}", fontsize=10)
             figure.savefig(f"{folder}/bin_{b:03d}.png", dpi=100)
             plt.close(figure)
         subprocess.run([ffmpeg, "-y", "-loglevel", "error", "-framerate", str(fps), "-i", f"{folder}/bin_%03d.png",
