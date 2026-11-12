@@ -20,6 +20,9 @@ struct PathLengthAwareReSTIRConfig
     /// Spatial reuse as two passes per iteration (one candidate's shifts per thread, then resampling); false runs the
     /// single-pass kernel. Same results either way; the shift `no` always uses the single pass.
     bool spatialReuseTwoPass = true;
+    /// Research (timing comparisons): run the shift `no` with the two-pass kernels as well when spatialReuseTwoPass is
+    /// set (by default it always uses the single pass).
+    bool spatialReuseTwoPassNoShift = false;
     bool useTemporalReuse = false;
     float temporalHistoryLength = 20.0f;    ///< History cap in frames of samples; 0 ignores the history.
 
@@ -57,6 +60,8 @@ struct PathLengthAwareReSTIRConfig
             spatialReuseGatherRadius = value;
         else if (key == "spatialReuseTwoPass")
             spatialReuseTwoPass = value;
+        else if (key == "spatialReuseTwoPassNoShift")
+            spatialReuseTwoPassNoShift = value;
         else if (key == "useTemporalReuse")
             useTemporalReuse = value;
         else if (key == "temporalHistoryLength")
@@ -76,6 +81,7 @@ struct PathLengthAwareReSTIRConfig
         props["spatialReuseNeighborCount"] = spatialReuseNeighborCount;
         props["spatialReuseGatherRadius"] = spatialReuseGatherRadius;
         props["spatialReuseTwoPass"] = spatialReuseTwoPass;
+        props["spatialReuseTwoPassNoShift"] = spatialReuseTwoPassNoShift;
         props["useTemporalReuse"] = useTemporalReuse;
         props["temporalHistoryLength"] = temporalHistoryLength;
         shiftMapping.serialize(props);
