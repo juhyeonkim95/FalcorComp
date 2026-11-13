@@ -42,6 +42,7 @@
 
 # Local files kept out of the repository
 /temp/
+/talk_slides/
 
 # Reference code (ReSTIR PT, Reservoir Splatting), kept locally only
 /ReSTIR_PT-master/
