@@ -79,20 +79,23 @@ private:
     /// Binds the spatial reuse constants and resources of `pass` (the resampling or the pair pass).
     void bindSpatialReuse(const ref<ComputePass>& pass, const RenderData& renderData);
     /// Spatial reuse runs as two passes per iteration and chunk of bins (pair shifts, then resampling) when
-    /// spatialReuseTwoPass is set, unless the shift is `no`: without shift work, the extra pass and its records cost
-    /// more than the occupancy gains.
+    /// spatialReuseTwoPass is set, unless the shift is `no` (spatialReuseTwoPassNoShift overrides this for timing
+    /// comparisons: with 64 bins the single pass is several times slower).
     bool useSpatialReusePairs() const
     {
         return mOptions.restir.spatialReuseTwoPass &&
-               mOptions.restir.shiftMapping.shiftMappingMethod != ShiftMappingMethod::Identity;
+               (mOptions.restir.shiftMapping.shiftMappingMethod != ShiftMappingMethod::Identity ||
+                mOptions.restir.spatialReuseTwoPassNoShift);
     }
     /// Temporal reuse runs as two passes after initial generation per chunk of bins (the merge shifts of each bin, then
-    /// the merges) when temporalReuseTwoPass is set, unless the shift is `no` (as for spatial reuse) or the light is
-    /// dynamic (the merge re-lights the history inside initial generation).
+    /// the merges) when temporalReuseTwoPass is set, unless the shift is `no` (as for spatial reuse;
+    /// temporalReuseTwoPassNoShift overrides this) or the light is dynamic (the merge re-lights the history inside
+    /// initial generation).
     bool useTemporalReusePairs() const
     {
         return mOptions.restir.useTemporalReuse && mOptions.temporalReuseTwoPass && !mOptions.isSceneDynamic &&
-               mOptions.restir.shiftMapping.shiftMappingMethod != ShiftMappingMethod::Identity;
+               (mOptions.restir.shiftMapping.shiftMappingMethod != ShiftMappingMethod::Identity ||
+                mOptions.temporalReuseTwoPassNoShift);
     }
 
     /// User settings, composed of shared configs (Shared/Host/Configs) plus this pass's own.
@@ -106,6 +109,9 @@ private:
         bool skipEmptyReservoirs = true;
         /// Temporal reuse in two passes after initial generation instead of inside it (TEMPORAL_REUSE_PAIRS).
         bool temporalReuseTwoPass = true;
+        /// Research (timing comparisons): the two temporal passes for the shift `no` as well (by default it merges
+        /// inside initial generation).
+        bool temporalReuseTwoPassNoShift = false;
         /// Keep the temporal history when the laser moves or changes (e.g. a collocated laser with a moving camera),
         /// re-lighting the reused paths with this frame's laser (IS_SCENE_DYNAMIC).
         bool isSceneDynamic = false;
