@@ -264,9 +264,10 @@ a surface, the pixel starts from its own samples).
 The pass keeps two sets of reservoirs, this frame's and the previous one's, each with `timeBin`
 reservoirs of about 100 bytes per pixel: at 480 x 270 with 64 bins that is about 1.8 GB. The
 two-pass reuse adds up to 512 MB of intermediate results, processing the bins in chunks when they
-do not fit at once. These sizes are not checked against the GPU's limits: keep each set of reservoirs,
-a single buffer, below 4 GB, the largest buffer Vulkan binds (with 64 bins, up to about 0.6 megapixels,
-e.g. 960 x 540). The limit of Direct3D 12, the default on Windows, was not tested.
+do not fit at once. Each set of reservoirs is a single GPU buffer, and a buffer can hold at most
+4 GiB, the largest Vulkan binds: with 64 bins, that is up to about 0.6 megapixels (e.g. 960 x 540).
+A larger set, or one the GPU has no memory left for, stops the pass with an error that gives its size.
+Direct3D 12, the default on Windows, is held to the same limit.
 
 ## Limitations
 

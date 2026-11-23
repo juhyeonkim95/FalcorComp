@@ -67,6 +67,9 @@ const char kTemporalReuseTwoPass[] = "temporalReuseTwoPass";
 const char kTemporalReuseTwoPassNoShift[] = "temporalReuseTwoPassNoShift";
 const char kIsSceneDynamic[] = "isSceneDynamic";
 const char kSeed[] = "seed";
+
+/// How to make the per-bin buffers smaller, in their size errors.
+const char kSizeHint[] = "Lower timeBin or the output size.";
 } // namespace
 
 TransientHistogramReSTIRInline::TransientHistogramReSTIRInline(ref<Device> pDevice, const Properties& props) : RenderPass(pDevice)
@@ -394,7 +397,7 @@ void TransientHistogramReSTIRInline::execute(RenderContext* pRenderContext, cons
     const uint2 frameDim = renderData.getDefaultTextureDims();
     mReSTIR.prepare(mpDevice, mpScene, mpSampleGenerator, mOptions.pathTracing, mOptions.isSceneDynamic,
         mOptions.histogram.timeBin, frameDim, mOptions.restir.useTemporalReuse, renderData.getTexture("vbuffer")->getFormat(),
-        mOptions.skipEmptyReservoirs);
+        kSizeHint, mOptions.skipEmptyReservoirs);
     uint spatialChunkBins, temporalChunkBins;
     preparePairs(frameDim, spatialChunkBins, temporalChunkBins);
     if (useTemporalReusePairs() && (!mpTemporalRandomState || mpTemporalRandomState->getElementCount() != frameDim.x * frameDim.y))
@@ -413,10 +416,11 @@ void TransientHistogramReSTIRInline::execute(RenderContext* pRenderContext, cons
     bindShaderData(mpComputePass->getRootVar(), renderData);
     // One bit per pixel and bin from 64 on (InitialSampleGeneration.cs.slang, TouchedBins).
     const uint touchedWords = mOptions.histogram.timeBin > 64 ? (mOptions.histogram.timeBin - 64 + 31) / 32 : 0;
-    const uint32_t touchedCount = std::max(frameDim.x * frameDim.y * touchedWords, 1u);
+    const uint64_t touchedCount = std::max<uint64_t>(uint64_t(frameDim.x) * frameDim.y * touchedWords, 1);
     if (!mpTouchedBins || mpTouchedBins->getElementCount() != touchedCount)
-        mpTouchedBins = mpDevice->createStructuredBuffer(sizeof(uint), touchedCount,
-            ResourceBindFlags::ShaderResource | ResourceBindFlags::UnorderedAccess, MemoryType::DeviceLocal, nullptr, false);
+        mpTouchedBins = InlinePass::createStructuredBufferChecked(mpDevice, uint32_t(sizeof(uint)), touchedCount,
+            fmt::format("The flags of the bins from 64 on ({} x {} pixels x {} bits)", frameDim.x, frameDim.y,
+            touchedWords * 32), kSizeHint);
     mpComputePass->getRootVar()["gTouchedBins"] = mpTouchedBins;
     mpComputePass->execute(pRenderContext, uint3(frameDim, 1));
 

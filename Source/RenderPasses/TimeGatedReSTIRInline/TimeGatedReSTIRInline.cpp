@@ -373,7 +373,7 @@ void TimeGatedReSTIRInline::execute(RenderContext* pRenderContext, const RenderD
     else if (!mOptions.pathTracing.hasDirect())
         mpDirectColor = nullptr;
     mReSTIR.prepare(mpDevice, mpScene, mpSampleGenerator, mOptions.pathTracing, mOptions.isSceneDynamic, 1, frameDim,
-        mOptions.restir.useTemporalReuse, renderData.getTexture("vbuffer")->getFormat());
+        mOptions.restir.useTemporalReuse, renderData.getTexture("vbuffer")->getFormat(), "Lower the output size.");
 
     InlinePass::checkScene(*mpScene, renderData);
     if (mpScene->getRenderSettings().useEmissiveLights)
