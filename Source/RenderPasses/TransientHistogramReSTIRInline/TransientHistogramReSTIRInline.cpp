@@ -64,6 +64,7 @@ const ChannelList kHistogramOutputChannelSingle = {
 const char kUseBinReuse[] = "useBinReuse";
 const char kSkipEmptyReservoirs[] = "skipEmptyReservoirs";
 const char kTemporalReuseTwoPass[] = "temporalReuseTwoPass";
+const char kTemporalReuseTwoPassNoShift[] = "temporalReuseTwoPassNoShift";
 const char kIsSceneDynamic[] = "isSceneDynamic";
 const char kSeed[] = "seed";
 } // namespace
@@ -104,6 +105,8 @@ void TransientHistogramReSTIRInline::parseProperties(const Properties& props)
             mOptions.skipEmptyReservoirs = value;
         else if (key == kTemporalReuseTwoPass)
             mOptions.temporalReuseTwoPass = value;
+        else if (key == kTemporalReuseTwoPassNoShift)
+            mOptions.temporalReuseTwoPassNoShift = value;
         else if (key == kIsSceneDynamic)
             mOptions.isSceneDynamic = value;
         else if (key == kSeed)
@@ -148,6 +151,7 @@ Properties TransientHistogramReSTIRInline::getProperties() const
     props[kUseBinReuse] = mOptions.useBinReuse;
     props[kSkipEmptyReservoirs] = mOptions.skipEmptyReservoirs;
     props[kTemporalReuseTwoPass] = mOptions.temporalReuseTwoPass;
+    props[kTemporalReuseTwoPassNoShift] = mOptions.temporalReuseTwoPassNoShift;
     props[kIsSceneDynamic] = mOptions.isSceneDynamic;
     props[kSeed] = mRandomSeed;
     return props;
