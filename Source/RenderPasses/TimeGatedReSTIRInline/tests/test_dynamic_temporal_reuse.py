@@ -1,3 +1,6 @@
+# Copyright (c) 2026, Juhyeon Kim
+# SPDX-License-Identifier: BSD-3-Clause
+
 """GPU regression for fixed geometry/materials and moving cameras/lights.
 
 Build TimeGatedReSTIRInline and source the build's bin/setpath.sh before running:

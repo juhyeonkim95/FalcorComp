@@ -1,3 +1,6 @@
+// Copyright (c) 2026, Juhyeon Kim
+// SPDX-License-Identifier: BSD-3-Clause
+
 /** Signed patterns shown by the projector (ProjectorLight), with their antithetic maps (AntitheticMIS).
 
     A pattern is a function of the projector uv in [0,1]^2 with values in [-1, 1]. Its antithetic map sends uv to a

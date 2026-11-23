@@ -1,3 +1,6 @@
+// Copyright (c) 2026, Juhyeon Kim
+// SPDX-License-Identifier: BSD-3-Clause
+
 /** Bijectivity test of the path-length-aware shift mappings (ShiftMappingTest.cpp), in the configuration of ReSTIR's
     spatial reuse. Per pixel p: the target path's preceding vertex a_t is p's primary hit; the source's a_s is the primary
     hit of a neighbor q within gNeighborRadius pixels; x is the first hit of a cosine-sampled ray from a_s; y is the

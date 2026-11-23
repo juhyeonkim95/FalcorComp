@@ -1,3 +1,6 @@
+# Copyright (c) 2026, Juhyeon Kim
+# SPDX-License-Identifier: BSD-3-Clause
+
 """GPU checks for per-bin initial RIS; run after building and sourcing bin/setpath.sh."""
 from pathlib import Path
 

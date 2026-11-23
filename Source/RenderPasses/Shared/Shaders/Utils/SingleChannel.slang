@@ -1,3 +1,6 @@
+// Copyright (c) 2026, Juhyeon Kim
+// SPDX-License-Identifier: BSD-3-Clause
+
 /** The channel that single-channel rendering (USE_SINGLE_CHANNEL) keeps. SINGLE_CHANNEL is set by the host
  * (PathTracingConfig::SingleChannel): 0 = luminance, 1 = red, 2 = green, 3 = blue.
  */

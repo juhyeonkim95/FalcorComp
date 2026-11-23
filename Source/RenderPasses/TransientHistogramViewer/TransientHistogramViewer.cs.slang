@@ -1,3 +1,6 @@
+// Copyright (c) 2026, Juhyeon Kim
+// SPDX-License-Identifier: BSD-3-Clause
+
 // main: sum image on the left half, 4 x 4 grid of selected bins on the right half, and a
 // crosshair on the selected pixel. readProfile: the selected pixel's histogram, one thread per bin.
 

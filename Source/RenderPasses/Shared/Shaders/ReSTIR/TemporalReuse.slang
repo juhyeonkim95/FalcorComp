@@ -1,3 +1,6 @@
+// Copyright (c) 2026, Juhyeon Kim
+// SPDX-License-Identifier: BSD-3-Clause
+
 // Temporal reuse shared by the time-gated and histogram ReSTIR passes: the previous frame's
 // primary hit that a pixel reprojects to, and the mass its reservoirs may carry.
 // is_valid_gMotionVector is the pass's define for its optional motion vector input.

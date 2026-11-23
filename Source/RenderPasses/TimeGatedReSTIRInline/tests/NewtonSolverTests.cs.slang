@@ -1,3 +1,6 @@
+// Copyright (c) 2026, Juhyeon Kim
+// SPDX-License-Identifier: BSD-3-Clause
+
 // Standalone numerical regression tests; exercised by test_newton_solver.py.
 import RenderPasses.Shared.Shaders.ShiftMapping.NewtonSolver;
 import RenderPasses.Shared.Shaders.ShiftMapping.Charts.LocalPlaneChart;

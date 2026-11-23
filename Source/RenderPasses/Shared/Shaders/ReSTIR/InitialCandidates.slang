@@ -1,3 +1,6 @@
+// Copyright (c) 2026, Juhyeon Kim
+// SPDX-License-Identifier: BSD-3-Clause
+
 // Initial candidate generation shared by the time-gated and histogram ReSTIR passes.
 // Each pass owns its BSDF walk and gate evaluation; this module records the
 // reconnection state along the walk and submits completed paths to a reservoir.

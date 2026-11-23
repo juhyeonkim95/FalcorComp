@@ -1,3 +1,6 @@
+// Copyright (c) 2026, Juhyeon Kim
+// SPDX-License-Identifier: BSD-3-Clause
+
 #include "Scene/SceneDefines.slangh"
 __exported import Scene.Shading;
 

@@ -1,3 +1,6 @@
+// Copyright (c) 2026, Juhyeon Kim
+// SPDX-License-Identifier: BSD-3-Clause
+
 /** Time gates: a kernel over the optical path length, centered on the gate center with width gTimeGateWindow, and
     samplers for path lengths inside it. The host picks the kernel with gTimeGateMode (Shared/Host/Configs/TimeGate.h)
     and sets the TimeGate constants (TimeGateConfig).

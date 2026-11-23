@@ -1,3 +1,6 @@
+# Copyright (c) 2026, Juhyeon Kim
+# SPDX-License-Identifier: BSD-3-Clause
+
 """Run the active Slang solver on the GPU, reporting residuals and checking failure cases.
 
 Source the build's bin/setpath.sh and build TimeGatedReSTIRInline before running.

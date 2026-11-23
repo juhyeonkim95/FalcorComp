@@ -1,3 +1,6 @@
+// Copyright (c) 2026, Juhyeon Kim
+// SPDX-License-Identifier: BSD-3-Clause
+
 // Shared path payload and RIS update; pass-specific reconstruction stays in each pass.
 // RESERVOIR_SCALAR_TARGET defaults to RGB when undefined. Histogram passes set it
 // consistently for reflection and execution. IS_SCENE_DYNAMIC enables replay data.

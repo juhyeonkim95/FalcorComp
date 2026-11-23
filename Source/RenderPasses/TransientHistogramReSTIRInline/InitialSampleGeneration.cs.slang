@@ -1,3 +1,6 @@
+// Copyright (c) 2026, Juhyeon Kim
+// SPDX-License-Identifier: BSD-3-Clause
+
 #include "RenderPasses/TransientHistogramReSTIRInline/HistogramReSTIRCommon.slangh"
 
 // TimeGateMode::Box; macros in imported Slang modules are not exported.

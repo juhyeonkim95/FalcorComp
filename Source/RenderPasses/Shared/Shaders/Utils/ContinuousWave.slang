@@ -1,3 +1,6 @@
+// Copyright (c) 2026, Juhyeon Kim
+// SPDX-License-Identifier: BSD-3-Clause
+
 /** Continuous-wave time-of-flight modulation: a path of optical length l is weighted by the waveform w (Waveform.slang)
     at t = l / wavelength - phase periods, or by 0.5 w + 0.5 with unsigned modulation, with a phase per color channel
     (phase + phaseShift). The host sets the ContinuousWave constants (Shared/Host/Configs/ContinuousWaveConfig.h).

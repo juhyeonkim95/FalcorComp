@@ -1,3 +1,6 @@
+// Copyright (c) 2026, Juhyeon Kim
+// SPDX-License-Identifier: BSD-3-Clause
+
 // Shared by the histogram ReSTIR kernels (initial generation, and the two-pass temporal reuse): their constants,
 // resources and reservoir helpers. Included by each kernel, so that one binding (bindShaderData) serves all.
 #pragma once

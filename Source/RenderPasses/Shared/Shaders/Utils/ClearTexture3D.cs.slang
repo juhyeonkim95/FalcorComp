@@ -1,3 +1,6 @@
+// Copyright (c) 2026, Juhyeon Kim
+// SPDX-License-Identifier: BSD-3-Clause
+
 /** Zeroes every texel of a 3D float texture (InlinePass::Texture3DClearer).
 
     gfx's UAV clear on Vulkan leaves depth slices from 1024 on untouched, so per-pixel stacks that are cleared every

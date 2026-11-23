@@ -1,3 +1,6 @@
+// Copyright (c) 2026, Juhyeon Kim
+// SPDX-License-Identifier: BSD-3-Clause
+
 #include "LaserLight.h"
 #include "../Shared/Host/InlinePassUtils.h"
 #include <algorithm>

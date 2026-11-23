@@ -1,3 +1,6 @@
+// Copyright (c) 2026, Juhyeon Kim
+// SPDX-License-Identifier: BSD-3-Clause
+
 /** Pinhole projector that shows a signed pattern (ProjectorPatterns), after Mitsuba's projector emitter.
     The host sets the Projector constants (ProjectorConfig).
 */

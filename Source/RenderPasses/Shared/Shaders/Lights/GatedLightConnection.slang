@@ -1,3 +1,6 @@
+// Copyright (c) 2026, Juhyeon Kim
+// SPDX-License-Identifier: BSD-3-Clause
+
 // Next-event estimation under the time gate (gTimeCenter, TimeGate.slang): a connection contributes in proportion to
 // the gate on the total length of its path, pathLength (camera to the surface) + connection.distance + light.laserT.
 __exported import RenderPasses.Shared.Shaders.Lights.LightConnection;

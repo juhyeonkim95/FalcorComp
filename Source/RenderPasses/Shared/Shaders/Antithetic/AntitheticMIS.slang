@@ -1,3 +1,6 @@
+// Copyright (c) 2026, Juhyeon Kim
+// SPDX-License-Identifier: BSD-3-Clause
+
 /** Balance-heuristic MIS for antithetic sampling.
 
     A primal direction w is sampled from the BSDF with density p, and a randomly chosen map T_i gives its

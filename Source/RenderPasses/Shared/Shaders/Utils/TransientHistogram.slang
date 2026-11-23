@@ -1,3 +1,6 @@
+// Copyright (c) 2026, Juhyeon Kim
+// SPDX-License-Identifier: BSD-3-Clause
+
 /** Transient histogram: gTimeBin bins of width gBinWidth over the path lengths [gTimeMin, gTimeMax). The host sets the
     TransientHistogram constants (TransientHistogramConfig).
 */

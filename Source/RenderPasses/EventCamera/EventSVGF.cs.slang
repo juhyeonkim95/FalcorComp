@@ -1,3 +1,6 @@
+// Copyright (c) 2026, Juhyeon Kim
+// SPDX-License-Identifier: BSD-3-Clause
+
 /** EventSVGF (Kim et al., EGSR 2026): SVGF on the demodulated primal and on the non-motion-aligned frame difference
  * from correlated sampling; see EventCamera.h. Kernels, per frame:
  * - reproject: demodulation, temporal accumulation of the primal and of the difference (Eq. 15-16), moments;

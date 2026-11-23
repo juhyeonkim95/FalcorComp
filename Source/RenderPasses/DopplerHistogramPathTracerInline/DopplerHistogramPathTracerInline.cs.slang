@@ -25,6 +25,8 @@
  # (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
  # OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  **************************************************************************/
+// Copyright (c) 2026, Juhyeon Kim
+// SPDX-License-Identifier: BSD-3-Clause
 // Power spectrum of optical heterodyne detection (OHD path integral, Kim et al. 2025, Eq. 26): every path adds its
 // contribution to the bin of its frequency.
 // - Single-frequency laser (B = 0): the Doppler frequency shift

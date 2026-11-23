@@ -1,3 +1,6 @@
+// Copyright (c) 2026, Juhyeon Kim
+// SPDX-License-Identifier: BSD-3-Clause
+
 // =============================================================
 // Ops interface the solver expects
 // Implement this on your surface chart type.

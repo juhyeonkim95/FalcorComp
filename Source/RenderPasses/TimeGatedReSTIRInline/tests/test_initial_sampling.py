@@ -1,3 +1,6 @@
+# Copyright (c) 2026, Juhyeon Kim
+# SPDX-License-Identifier: BSD-3-Clause
+
 """GPU regression checks for initial proposals and their spatial reuse.
 
 Run from the repository root after building TimeGatedReSTIRInline and sourcing the build's bin/setpath.sh:
