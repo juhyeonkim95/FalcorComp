@@ -162,7 +162,8 @@ changes, the render graph is recompiled (e.g. on a resize or a new output), or a
   `useImportanceSampling`, `histogramFilter` and kernel density estimation do not apply. It
   assumes a collimated laser. It uses the same triangles as the time-gated passes' ellipsoidal
   connections (see [the time-gated path tracer](#connection-sampling)), with its own area cutoff,
-  `triangleApproxMaxArea`.
+  `triangleApproxMaxArea`. They follow objects that move; skinned and vertex-animated meshes stop it with
+  an error.
 
 ## Laser
 

@@ -348,7 +348,7 @@ As for the [path tracer](TimeGatedPathTracerInline.md): `direct` connects every 
 laser spot, `ellipsoidal` inserts a vertex whose length fits the gate, and `ellipsoidal_direct_mis`
 combines both. With `isSceneDynamic`, ellipsoidal sampling supports at most 3 bounces. The same surfaces
 as in the path tracer can hold the ellipsoidal vertex (see [its connection sampling](#connection-sampling)): the
-triangles are collected once per scene, so animated geometry is not followed.
+triangles follow objects that move; skinned and vertex-animated meshes stop it with an error.
 
 ## Laser
 

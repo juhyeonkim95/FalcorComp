@@ -235,9 +235,18 @@ void TransientHistogramPathTracerInline::execute(RenderContext* pRenderContext, 
         mSummedFrames = 0;
     }
 
-    // Triangle approximation enumerates all triangles; no triangle sampling distribution is needed.
+    // Triangle approximation enumerates all triangles; no triangle sampling distribution is needed. They follow moving
+    // instances; without tri_approx they are dropped (and rebuilt when it is used again), as they are not updated then.
     if (mOptions.samplingMethod == SamplingMethod::TriangleApprox)
-        mTriangles.get(pRenderContext, mpScene, mOptions.triangleApproxMaxArea)->update(pRenderContext);
+    {
+        mTriangles.get(pRenderContext, mpScene, mOptions.triangleApproxMaxArea);
+        if (mTriangles.meshesChanged())
+            FALCOR_THROW("tri_approx does not follow skinned or vertex-animated meshes: use samplingMethod direct for "
+                         "this scene.");
+        mTriangles.update(pRenderContext);
+    }
+    else
+        mTriangles.reset();
     if (!mpComputePass)
         mpComputePass = InlinePass::createScenePass(mpDevice, pRenderContext, mpScene, mpSampleGenerator, kShaderFile, getShaderDefines(renderData));
     InlinePass::checkScene(*mpScene, renderData);
