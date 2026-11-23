@@ -335,7 +335,7 @@ setup(
     }},
     # From the official list (https://pypi.org/classifiers/): PyPI rejects unknown classifiers.
     classifiers=[
-        "Development Status :: 4 - Beta",
+        "Development Status :: 5 - Production/Stable",
         "Intended Audience :: Science/Research",
         "Environment :: GPU :: NVIDIA CUDA",
         "Operating System :: POSIX :: Linux",
