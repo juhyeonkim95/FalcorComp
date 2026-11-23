@@ -74,6 +74,10 @@ Sampling:
 * - `samplingMethod`
   - string
   - `direct` or `tri_approx`. See [Sampling methods](#sampling-methods). (Default: `direct`)
+* - `triangleApproxMaxArea`
+  - float
+  - `tri_approx` leaves out triangles larger than this (world-space area), e.g. an NLOS relay wall;
+    their light is then missing. Unused with `direct`. (Default: `10000`)
 * - `useImportanceSampling`
   - boolean
   - Importance-sample the BSDF when extending the camera path; otherwise use the material's
@@ -157,8 +161,8 @@ changes, the render graph is recompiled (e.g. on a resize or a new output), or a
   triangle, so it is biased; `samplesPerPixel`, `maxBounces`, `computeDirect`,
   `useImportanceSampling`, `histogramFilter` and kernel density estimation do not apply. It
   assumes a collimated laser. It uses the same triangles as the time-gated passes' ellipsoidal
-  connections (see [the time-gated path tracer](#connection-sampling)), but with a fixed area cutoff:
-  triangles larger than 10000 (world-space area) are left out.
+  connections (see [the time-gated path tracer](#connection-sampling)), with its own area cutoff,
+  `triangleApproxMaxArea`.
 
 ## Laser
 

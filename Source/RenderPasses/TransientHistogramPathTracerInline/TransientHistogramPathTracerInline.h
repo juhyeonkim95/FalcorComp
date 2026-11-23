@@ -73,6 +73,9 @@ private:
         TransientHistogramConfig histogram;
         PathTracingConfig pathTracing;
         SamplingMethod samplingMethod = SamplingMethod::Direct;
+        /// tri_approx: triangles larger than this (world-space area) are left out, e.g. an NLOS relay wall; their light
+        /// is then missing.
+        float triangleApproxMaxArea = 10000.f;
         bool accumulate = false; ///< Sum frames in the histogram instead of writing one frame per histogram.
         RenderPassHelpers::IOSize outputSize = RenderPassHelpers::IOSize::Default;
         uint2 fixedOutputSize = {512, 512}; ///< Output size when outputSize is Fixed.

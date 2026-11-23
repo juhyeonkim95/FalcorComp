@@ -45,9 +45,6 @@ extern "C" FALCOR_API_EXPORT void registerPlugin(Falcor::PluginRegistry& registr
 namespace
 {
 const char kShaderFile[] = "RenderPasses/TransientHistogramPathTracerInline/TransientHistogramPathTracerInline.cs.slang";
-/// tri_approx: triangles larger than this (world-space area) are left out, as in ellipsoidal sampling's default.
-const float kTriangleApproxMaxArea = 10000.f;
-
 const ChannelList kHistogramOutputChannelSingle = {
     { "histogram",          "gTransientHistogram", "Accumulated transient radiance density per bin", false, ResourceFormat::R32Float },
 };
@@ -57,6 +54,7 @@ const ChannelList kHistogramOutputChannelsRGB = {
 };
 
 const char kSamplingMethod[] = "samplingMethod";
+const char kTriangleApproxMaxArea[] = "triangleApproxMaxArea";
 const char kAccumulate[] = "accumulate";
 const char kOutputSize[] = "outputSize";
 const char kFixedOutputSize[] = "fixedOutputSize";
@@ -87,6 +85,8 @@ void TransientHistogramPathTracerInline::parseProperties(const Properties& props
             else if (method == "tri_approx") mOptions.samplingMethod = SamplingMethod::TriangleApprox;
             else FALCOR_THROW("samplingMethod must be direct or tri_approx.");
         }
+        else if (key == kTriangleApproxMaxArea)
+            mOptions.triangleApproxMaxArea = value;
         else if (key == kAccumulate)
             mOptions.accumulate = value;
         else if (key == kOutputSize)
@@ -105,6 +105,8 @@ void TransientHistogramPathTracerInline::validateOptions(const Options& options)
     if (!options.histogram.useKernelDensityEstimation && options.samplingMethod == SamplingMethod::Direct &&
         options.histogram.filter != TimeGateMode::Box && options.histogram.filter != TimeGateMode::Tent)
         FALCOR_THROW("Without KDE, histogram filtering supports box or tent.");
+    if (!(options.triangleApproxMaxArea > 0.f))
+        FALCOR_THROW("triangleApproxMaxArea must be greater than zero.");
 }
 
 void TransientHistogramPathTracerInline::onOptionsChanged(const Options& previous)
@@ -132,6 +134,7 @@ Properties TransientHistogramPathTracerInline::getProperties() const
     mOptions.histogram.serialize(props);
     mOptions.pathTracing.serialize(props);
     props[kSamplingMethod] = mOptions.samplingMethod == SamplingMethod::Direct ? "direct" : "tri_approx";
+    props[kTriangleApproxMaxArea] = mOptions.triangleApproxMaxArea;
     props[kAccumulate] = mOptions.accumulate;
     props[kOutputSize] = mOptions.outputSize;
     if (mOptions.outputSize == RenderPassHelpers::IOSize::Fixed)
@@ -234,7 +237,7 @@ void TransientHistogramPathTracerInline::execute(RenderContext* pRenderContext, 
 
     // Triangle approximation enumerates all triangles; no triangle sampling distribution is needed.
     if (mOptions.samplingMethod == SamplingMethod::TriangleApprox)
-        mTriangles.get(pRenderContext, mpScene, kTriangleApproxMaxArea)->update(pRenderContext);
+        mTriangles.get(pRenderContext, mpScene, mOptions.triangleApproxMaxArea)->update(pRenderContext);
     if (!mpComputePass)
         mpComputePass = InlinePass::createScenePass(mpDevice, pRenderContext, mpScene, mpSampleGenerator, kShaderFile, getShaderDefines(renderData));
     InlinePass::checkScene(*mpScene, renderData);
@@ -295,6 +298,12 @@ void TransientHistogramPathTracerInline::renderUI(Gui::Widgets& widget)
         group.tooltip("Direct: trace camera paths and connect each vertex to the laser spot.\n"
                       "Triangle approximation: integrate paths primary hit -> one scene triangle -> laser spot "
                       "over every triangle (a single intermediate bounce).", true);
+        if (options.samplingMethod == SamplingMethod::TriangleApprox)
+        {
+            dirty |= group.var("Max triangle area", options.triangleApproxMaxArea, 1e-6f, 1e12f);
+            group.tooltip("Triangles larger than this (world-space area) are left out, e.g. an NLOS relay wall; "
+                          "their light is missing.", true);
+        }
     }
 
     if (auto group = widget.group("Output", true))
