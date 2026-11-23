@@ -122,8 +122,9 @@ The last five switch off parts of the method for comparisons.
   - The denoised demodulated difference $\Delta i$, R32Float.
 ```
 
-From Python: `reset()` forgets the history, as do a resize and a change of `iterations`, `feedbackTap`,
-`intensityBias`, `useDemodulation`, `useTemporalAccumulation` or `useDenoisedDifference`.
+From Python: `reset()` forgets the history, as do a new scene, the selection of another camera, a resize and a
+change of `iterations`, `feedbackTap`, `intensityBias`, `useDemodulation`, `useTemporalAccumulation` or
+`useDenoisedDifference`.
 
 ## Example
 

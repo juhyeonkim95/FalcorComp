@@ -66,7 +66,8 @@ Each pixel is an ideal event pixel, updated once per event frame:
   - Signed event count of the event frame completed by this execution (0 if none), R32Float.
 ```
 
-From Python: `reset()` clears the per-pixel state of `accumulate` and restarts the random numbers.
+From Python: `reset()` clears the per-pixel state of `accumulate` and restarts the random numbers, as do a new
+scene and the selection of another camera.
 
 ## Example
 

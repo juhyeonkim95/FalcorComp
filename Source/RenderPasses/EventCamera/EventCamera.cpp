@@ -94,6 +94,12 @@ const ChannelList kGeneratorOutputs = {
     { "events", "", "Signed event count of the event frame completed this frame (0 if none)", false, ResourceFormat::R32Float },
 };
 
+/// Another camera was selected this frame: a cut, after which the passes forget the previous frame.
+bool cameraSwitched(const ref<Scene>& pScene)
+{
+    return pScene && is_set(pScene->getUpdates(), IScene::UpdateFlags::CameraSwitched);
+}
+
 ref<Texture> ensureTexture(ref<Device> pDevice, ref<Texture> pTexture, uint2 dim, ResourceFormat format, bool& created)
 {
     if (pTexture && pTexture->getWidth() == dim.x && pTexture->getHeight() == dim.y)
@@ -175,12 +181,20 @@ void EventDifference::reset()
     mEventFrame = 0;
 }
 
+void EventDifference::setScene(RenderContext* pRenderContext, const ref<Scene>& pScene)
+{
+    mpScene = pScene;
+    reset();
+}
+
 void EventDifference::execute(RenderContext* pRenderContext, const RenderData& renderData)
 {
     const ref<Texture> pColor1 = renderData.getTexture("color1");
     const ref<Texture> pColor2 = renderData.getTexture("color2");
     if (mOptions.correlated && !pColor2)
         FALCOR_THROW("EventDifference: sampling 'correlated' needs the input color2.");
+    if (cameraSwitched(mpScene))
+        reset();
 
     const uint2 dim = uint2(pColor1->getWidth(), pColor1->getHeight());
     bool created = false;
@@ -355,6 +369,12 @@ void EventSVGF::allocate(uint2 dim)
     mDim = dim;
 }
 
+void EventSVGF::setScene(RenderContext* pRenderContext, const ref<Scene>& pScene)
+{
+    mpScene = pScene;
+    reset();
+}
+
 void EventSVGF::clearHistory(RenderContext* pRenderContext)
 {
     for (const auto& pTexture : {mpZN[1], mpMoments[1], mpHistory[1], mpReprojected[1], mpPrevFiltered,
@@ -371,6 +391,8 @@ void EventSVGF::execute(RenderContext* pRenderContext, const RenderData& renderD
         allocate(dim);
         reset();
     }
+    if (cameraSwitched(mpScene))
+        reset();
     if (mClearHistory)
     {
         clearHistory(pRenderContext);
@@ -558,13 +580,19 @@ void EventGenerator::reset()
     mClearResidual = true;
 }
 
+void EventGenerator::setScene(RenderContext* pRenderContext, const ref<Scene>& pScene)
+{
+    mpScene = pScene;
+    reset();
+}
+
 void EventGenerator::execute(RenderContext* pRenderContext, const RenderData& renderData)
 {
     const ref<Texture> pDeltaL = renderData.getTexture("deltaL");
     const uint2 dim = uint2(pDeltaL->getWidth(), pDeltaL->getHeight());
     bool created = false;
     mpResidual = ensureTexture(mpDevice, mpResidual, dim, ResourceFormat::R32Float, created);
-    if (created)
+    if (created || cameraSwitched(mpScene))
         reset();
 
     // Only once per event frame: the EventDifference that produced deltaL may average several executions into one.

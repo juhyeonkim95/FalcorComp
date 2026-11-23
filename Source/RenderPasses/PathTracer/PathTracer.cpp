@@ -173,7 +173,8 @@ void PathTracer::registerBindings(pybind11::module& m)
     );
     pass.def_property("fixedSeed",
         [](const PathTracer* pt) { return pt->mParams.fixedSeed; },
-        [](PathTracer* pt, uint32_t value) { pt->mParams.fixedSeed = value; }
+        // Like the fixedSeed property, a seed set from Python also turns on useFixedSeed.
+        [](PathTracer* pt, uint32_t value) { pt->mParams.fixedSeed = value; pt->mParams.useFixedSeed = 1; }
     );
 }
 
