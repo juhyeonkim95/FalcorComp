@@ -1,3 +1,6 @@
+// Copyright (c) 2026, Juhyeon Kim
+// SPDX-License-Identifier: BSD-3-Clause
+
 // Spatial reuse shared by the time-gated and histogram ReSTIR passes.
 // Reservoirs are stored as [pixel * binCount + bin]; a time-gated pass is the
 // single-bin case (binCount = 1, bin = 0, gateCenter = gTimeCenter).

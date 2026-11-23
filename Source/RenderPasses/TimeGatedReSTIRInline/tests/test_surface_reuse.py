@@ -1,3 +1,6 @@
+# Copyright (c) 2026, Juhyeon Kim
+# SPDX-License-Identifier: BSD-3-Clause
+
 """GPU integration checks for static spatial surface operations (K=1).
 
 Run after building TimeGatedReSTIRInline and sourcing bin/setpath.sh.

@@ -1,3 +1,6 @@
+// Copyright (c) 2026, Juhyeon Kim
+// SPDX-License-Identifier: BSD-3-Clause
+
 /** Events from brightness change; see EventCamera.h. */
 import Utils.Math.HashUtils;
 

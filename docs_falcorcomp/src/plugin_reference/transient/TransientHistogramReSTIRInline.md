@@ -9,7 +9,8 @@ the previous frame (temporal reuse) and, optionally, from the adjacent bins of t
 reused path is moved to the new pixel and bin with the *path-length-aware shift mapping* of
 [time-gated ReSTIR](../time_gated/TimeGatedReSTIRInline.md), which keeps its length inside the bin.
 
-The scene and the laser must be static; only the camera may move.
+The scene must be static: the camera may move, and with `isSceneDynamic` the laser too, for example a laser at the
+camera (`laserCollocated`) that moves with it.
 
 ## Parameters
 
@@ -90,6 +91,13 @@ Reuse:
   - float
   - Cap on the history's sample count, in frames of `samplesPerPixel`; 0 ignores the history.
     Must not be negative. (Default: `20`)
+* - `isSceneDynamic`
+  - boolean
+  - Keep the temporal history when the laser moves or changes, re-evaluating the light of the reused paths with the
+    new laser, as [time-gated ReSTIR](../time_gated/TimeGatedReSTIRInline.md) does. Temporal reuse then merges inside
+    initial sampling. Otherwise any laser change discards the history. In a test with a collocated laser and a moving
+    camera (temporal reuse, `area_adaptive` with `avg_grad`, 16,384 frames), the histogram came out 0.6 % low.
+    (Default: `false`)
 * - `seed`
   - integer
   - Seed of the random numbers in spatial reuse; it advances with every round. (Default: `0`)
@@ -175,8 +183,8 @@ Performance. These options change how the work is split on the GPU, not the resu
 * - `temporalReuseTwoPass`
   - boolean
   - Run temporal reuse as two passes after initial sampling (every bin's shifts in their own
-    thread, then the merges) instead of inside it. Faster with a length-aware shift. The shift `no`
-    always merges inside initial sampling. (Default: `true`)
+    thread, then the merges) instead of inside it. Faster with a length-aware shift. The shift `no` and
+    `isSceneDynamic` always merge inside initial sampling. (Default: `true`)
 * - `skipEmptyReservoirs`
   - boolean
   - Store only the reservoirs of bins that hold a path, plus every bin's weight and sample count in
@@ -240,8 +248,9 @@ consecutive frames share paths.
 The temporal history is discarded, and the next frame starts from its own samples only, when:
 
 - an option changes in the UI,
-- the scene or the laser changes in any way other than camera motion, including a camera animated by
-  the scene,
+- the scene changes in any way other than camera motion, including a camera animated by
+  the scene (without `isSceneDynamic`, any change of the laser counts too, a collocated laser that follows the
+  camera included),
 - the frame size changes, or
 - the camera uses depth of field.
 
@@ -255,20 +264,21 @@ a surface, the pixel starts from its own samples).
 The pass keeps two sets of reservoirs, this frame's and the previous one's, each with `timeBin`
 reservoirs of about 100 bytes per pixel: at 480 x 270 with 64 bins that is about 1.8 GB. The
 two-pass reuse adds up to 512 MB of intermediate results, processing the bins in chunks when they
-do not fit at once. These sizes are not checked against the GPU's limits: keep each set of reservoirs,
-a single buffer, below 4 GB, the largest buffer Vulkan binds (with 64 bins, up to about 0.6 megapixels,
-e.g. 960 x 540). The limit of Direct3D 12, the default on Windows, was not tested.
+do not fit at once. Each set of reservoirs is a single GPU buffer, and a buffer can hold at most
+4 GiB, the largest Vulkan binds: with 64 bins, that is up to about 0.6 megapixels (e.g. 960 x 540).
+A larger set, or one the GPU has no memory left for, stops the pass with an error that gives its size.
+Direct3D 12, the default on Windows, is held to the same limit.
 
 ## Limitations
 
 - Static scene geometry: the camera may move, but objects may not move or deform (the history is discarded when
-  geometry changes, as above), and the laser is assumed static.
+  geometry changes, as above). The laser may move only with `isSceneDynamic`.
 - Layered materials (for example pbrt's `coateddiffuse` and `coatedconductor`) are not supported.
 
 ## Laser
 
 The laser is set on the `LaserLight` pass, as for the
-[time-gated path tracer](#laser). Moving or changing it discards the temporal history.
+[time-gated path tracer](#laser). Moving or changing it discards the temporal history, unless `isSceneDynamic` is on.
 
 ## Inputs and outputs
 

@@ -1,3 +1,6 @@
+# Copyright (c) 2026, Juhyeon Kim
+# SPDX-License-Identifier: BSD-3-Clause
+
 """Independent double-precision checks of the static planar shift equations.
 
 Run with: python Source/RenderPasses/TimeGatedReSTIRInline/tests/test_paired_shift_math.py

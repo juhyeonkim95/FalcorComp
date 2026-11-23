@@ -1,3 +1,6 @@
+# Copyright (c) 2026, Juhyeon Kim
+# SPDX-License-Identifier: BSD-3-Clause
+
 """GPU finite-difference checks for the Cartesian chart's derivatives and area measure.
 
 Build TimeGatedReSTIRInline and source bin/setpath.sh before running.

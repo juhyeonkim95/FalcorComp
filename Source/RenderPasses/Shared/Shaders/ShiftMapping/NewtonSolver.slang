@@ -1,3 +1,5 @@
+// Copyright (c) 2026, Juhyeon Kim
+// SPDX-License-Identifier: BSD-3-Clause
 
 import Charts.ShiftChart;
 

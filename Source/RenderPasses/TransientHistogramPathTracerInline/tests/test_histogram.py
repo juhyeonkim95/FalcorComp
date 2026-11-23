@@ -1,3 +1,6 @@
+# Copyright (c) 2026, Juhyeon Kim
+# SPDX-License-Identifier: BSD-3-Clause
+
 """GPU regression checks for histogram variants, reset, and a missed laser.
 
 Build this pass and GBuffer, source bin/setpath.sh, then run this file.

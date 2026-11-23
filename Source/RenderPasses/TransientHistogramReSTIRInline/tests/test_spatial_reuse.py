@@ -1,3 +1,6 @@
+# Copyright (c) 2026, Juhyeon Kim
+# SPDX-License-Identifier: BSD-3-Clause
+
 """GPU regression for shared reuse, identity preservation, and local-only paths.
 
 Build the histogram pass and source bin/setpath.sh before running.

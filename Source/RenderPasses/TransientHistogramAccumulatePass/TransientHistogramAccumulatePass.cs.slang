@@ -1,3 +1,6 @@
+// Copyright (c) 2026, Juhyeon Kim
+// SPDX-License-Identifier: BSD-3-Clause
+
 // Running mean of a transient histogram (width x height x bins), the 3D counterpart of AccumulatePass.
 
 cbuffer CB

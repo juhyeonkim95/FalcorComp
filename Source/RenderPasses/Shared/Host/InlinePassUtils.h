@@ -1,3 +1,6 @@
+// Copyright (c) 2026, Juhyeon Kim
+// SPDX-License-Identifier: BSD-3-Clause
+
 #pragma once
 #include "Falcor.h"
 #include "RenderGraph/RenderPass.h"
@@ -161,6 +164,54 @@ inline void clearChannels(RenderContext* pRenderContext, const RenderData& rende
     for (const auto& channel : channels)
         if (auto pTexture = renderData.getTexture(channel.name))
             clearer.clear(pRenderContext, pTexture);
+}
+
+/// The largest GPU buffer the passes create: Vulkan binds at most 4 GiB - 1 bytes as one storage buffer (its
+/// maxStorageBufferRange on current NVIDIA and AMD GPUs). Direct3D 12 is held to the same limit.
+inline constexpr uint64_t kMaxBufferBytes = 0xFFFFFFFFull;
+
+/// Creates a buffer of `elementCount` elements of `stride` bytes with `create(elementCount)`, with clear errors: when
+/// it would be larger than kMaxBufferBytes, or the allocation fails (e.g. too little free GPU memory), the error names
+/// the buffer (`what`, with the factors of its size) and says how to make it smaller (`hint`).
+template<typename Create>
+ref<Buffer> createBufferChecked(uint64_t elementCount, uint64_t stride, const std::string& what, const std::string& hint,
+    Create&& create)
+{
+    const uint64_t bytes = elementCount * stride;
+    const double gib = double(bytes) / double(uint64_t(1) << 30);
+    if (bytes > kMaxBufferBytes)
+        FALCOR_THROW("{}: {:.1f} GiB, more than the 4 GiB a GPU buffer can hold. {}", what, gib, hint);
+    try
+    {
+        return create(uint32_t(elementCount));
+    }
+    catch (const std::exception& e)
+    {
+        FALCOR_THROW("Could not allocate {} ({:.1f} GiB), possibly too little free GPU memory ({}). {}", what, gib,
+            e.what(), hint);
+    }
+}
+
+/// createBufferChecked() for a device-local structured buffer (shader resource and unordered access) of `var`'s type.
+inline ref<Buffer> createStructuredBufferChecked(const ref<Device>& pDevice, const ShaderVar& var, uint64_t elementCount,
+    const std::string& what, const std::string& hint)
+{
+    const uint64_t stride =
+        var.getType()->unwrapArray()->asResourceType()->getStructType()->getSlangTypeLayout()->getStride();
+    return createBufferChecked(elementCount, stride, what, hint, [&](uint32_t count) {
+        return pDevice->createStructuredBuffer(var, count, ResourceBindFlags::ShaderResource |
+            ResourceBindFlags::UnorderedAccess, MemoryType::DeviceLocal, nullptr, false);
+    });
+}
+
+/// The same with elements of `structSize` bytes.
+inline ref<Buffer> createStructuredBufferChecked(const ref<Device>& pDevice, uint32_t structSize, uint64_t elementCount,
+    const std::string& what, const std::string& hint)
+{
+    return createBufferChecked(elementCount, structSize, what, hint, [&](uint32_t count) {
+        return pDevice->createStructuredBuffer(structSize, count, ResourceBindFlags::ShaderResource |
+            ResourceBindFlags::UnorderedAccess, MemoryType::DeviceLocal, nullptr, false);
+    });
 }
 
 /// setProperties() of a pass with validated options: `parse` reads the properties into `options`; when it or `validate`

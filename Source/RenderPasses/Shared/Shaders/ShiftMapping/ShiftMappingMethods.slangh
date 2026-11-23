@@ -1,3 +1,6 @@
+// Copyright (c) 2026, Juhyeon Kim
+// SPDX-License-Identifier: BSD-3-Clause
+
 /** The values of SHIFT_MAPPING_METHOD, which the host sets (ShiftMappingConfig.h). A header, so that the shift code
     and the charts it imports can both test the method at compile time.
 */

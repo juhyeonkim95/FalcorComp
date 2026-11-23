@@ -1,3 +1,6 @@
+// Copyright (c) 2026, Juhyeon Kim
+// SPDX-License-Identifier: BSD-3-Clause
+
 // Doppler-gated image of optical heterodyne detection with a single-frequency laser: the light whose Doppler
 // frequency shift falls in a gate, as DopplerHistogramPathTracerInline's spectrum is the light at each shift (OHD path
 // integral, Kim et al. 2025, Eq. 26 with B = 0). Every path is weighted by the gate kernel at its shift

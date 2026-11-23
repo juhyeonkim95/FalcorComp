@@ -62,8 +62,9 @@ the last finite frame.
   - See [Outputs](#event-outputs).
 ```
 
-From Python: `reset()` forgets the previous frame and restarts the event frame; `subframe` is the index of the next
-execution in the event frame, and `event_frame` the number of event frames completed since the last reset.
+From Python: `reset()` forgets the previous frame and restarts the event frame, as do a new scene and the
+selection of another camera; `subframe` is the index of the next execution in the event frame, and `event_frame` the
+number of event frames completed since the last reset.
 
 ## Example
 

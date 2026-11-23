@@ -1,3 +1,6 @@
+// Copyright (c) 2026, Juhyeon Kim
+// SPDX-License-Identifier: BSD-3-Clause
+
 // Next-event estimation: connect a surface to a light sample.
 // A LightConnection describes only the surface -> light-endpoint segment. Path-level
 // quantities (the full path length and its time gate) are computed by the caller:

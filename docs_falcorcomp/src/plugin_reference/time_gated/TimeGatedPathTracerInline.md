@@ -163,7 +163,8 @@ Not every surface can hold the ellipsoidal vertex $y$. Only triangle meshes whos
 `BasicMaterial` (or derives from it, as the PBRT materials do) take part; SDF grids, curves and other
 geometry, and materials such as hair or measured BSDFs, do not. Triangles larger than
 `ellipsoidMaxTriangleArea` are left out, and so are triangles behind the surface at $x$ or at the
-laser spot. The triangles are collected once per scene, so animated geometry is not followed. Paths
+laser spot. The triangles follow objects that move (animated instances); skinned and vertex-animated
+meshes are not followed, and ellipsoidal sampling stops with an error when they change. Paths
 through the surfaces left out come from BSDF sampling, as for `ellipsoidMaxTriangleArea`.
 
 (laser)=

@@ -1,3 +1,6 @@
+// Copyright (c) 2026, Juhyeon Kim
+// SPDX-License-Identifier: BSD-3-Clause
+
 /** Adds the primary-hit direct lighting that InitialSampleGeneration computed (gDirectColor, already divided by
  * the gate width) to the output of the last ReSTIR pass. Runs only with computeDirect.
  */

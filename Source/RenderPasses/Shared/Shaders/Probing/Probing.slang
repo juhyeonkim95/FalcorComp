@@ -1,3 +1,6 @@
+// Copyright (c) 2026, Juhyeon Kim
+// SPDX-License-Identifier: BSD-3-Clause
+
 /** Transport probing (O'Toole et al. 2012, 2014; Shared/Host/Configs/ProbingConfig.h). A path whose camera ray has the
     unit direction cameraDir (from the camera) and whose projector ray has the unit direction projectorDir (from the
     light to the path's last vertex) is weighted by Pi(i, j), from the epipolar lines of the two rays. The epipolar

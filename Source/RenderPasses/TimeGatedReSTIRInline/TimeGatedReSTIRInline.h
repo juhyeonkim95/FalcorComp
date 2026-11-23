@@ -25,6 +25,8 @@
  # (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
  # OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  **************************************************************************/
+// Copyright (c) 2026, Juhyeon Kim
+// SPDX-License-Identifier: BSD-3-Clause
 #pragma once
 #include "Falcor.h"
 #include "RenderGraph/RenderPass.h"
@@ -75,11 +77,13 @@ private:
     void bindSpatialReuse(const ref<ComputePass>& pass, const RenderData& renderData);
     /// Spatial reuse runs as two passes per iteration (pair shifts, then resampling) when spatialReuseTwoPass is set,
     /// unless the Newton debug outputs are on, which only the single-pass kernel writes, or the shift is `no`: without
-    /// shift work, the extra pass and its records cost more than the occupancy gains.
+    /// shift work, the extra pass and its records cost more than the occupancy gains (spatialReuseTwoPassNoShift
+    /// overrides this for timing comparisons).
     bool useSpatialReusePairs() const
     {
         return mOptions.restir.spatialReuseTwoPass && !mOptions.debugNewtonIterations &&
-               mOptions.restir.shiftMapping.shiftMappingMethod != ShiftMappingMethod::Identity;
+               (mOptions.restir.shiftMapping.shiftMappingMethod != ShiftMappingMethod::Identity ||
+                mOptions.restir.spatialReuseTwoPassNoShift);
     }
     DefineList getShaderDefines(const RenderData& renderData) const;
     /// Shrink mapping's wide-gate path fraction, clamped to [0, 1]; the host and the shader derive the wide path

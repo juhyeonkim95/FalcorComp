@@ -25,6 +25,8 @@
  # (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
  # OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  **************************************************************************/
+// Copyright (c) 2026, Juhyeon Kim
+// SPDX-License-Identifier: BSD-3-Clause
 #pragma once
 #include "Falcor.h"
 #include "../Shared/Host/InlinePassUtils.h"
@@ -54,6 +56,8 @@ public:
     void setProperties(const Properties& props) override;
     RenderPassReflection reflect(const CompileData& compileData) override;
     void execute(RenderContext* pRenderContext, const RenderData& renderData) override;
+    /// A new scene forgets the history (reset()); so does a switch to another camera, in execute().
+    void setScene(RenderContext* pRenderContext, const ref<Scene>& pScene) override;
 
     /// Forget the history: the next event frame has no difference (outputs 0).
     void reset();
@@ -76,6 +80,7 @@ private:
     uint32_t mEventFrame = 0; ///< Completed event frames since the last reset.
     ref<ComputePass> mpPass;
     ref<Texture> mpSum1, mpSum2, mpHistory, mpDeltaI, mpDeltaL, mpPrimal;
+    ref<Scene> mpScene;
 };
 
 /** EventSVGF (Kim et al., EGSR 2026): denoises the frame difference from correlated sampling (color1 with the
@@ -98,6 +103,8 @@ public:
     void setProperties(const Properties& props) override;
     RenderPassReflection reflect(const CompileData& compileData) override;
     void execute(RenderContext* pRenderContext, const RenderData& renderData) override;
+    /// A new scene forgets the history (reset()); so does a switch to another camera, in execute().
+    void setScene(RenderContext* pRenderContext, const ref<Scene>& pScene) override;
 
     /// Forget the history: the next frame has no difference (outputs 0).
     void reset() { mFrameCount = 0; mClearHistory = true; }
@@ -139,6 +146,7 @@ private:
     /// The a-trous ping-pong; [0] first holds the temporal accumulation (the filters' input).
     ref<Texture> mpPingPong[2];
     ref<Texture> mpEmitter; ///< Emitter in the current or the previous frame (R8).
+    ref<Scene> mpScene;
 };
 
 /** Events from the brightness change dL of each event frame; output is the signed event count per pixel.
@@ -161,6 +169,8 @@ public:
     void setProperties(const Properties& props) override;
     RenderPassReflection reflect(const CompileData& compileData) override;
     void execute(RenderContext* pRenderContext, const RenderData& renderData) override;
+    /// A new scene forgets the history (reset()); so does a switch to another camera, in execute().
+    void setScene(RenderContext* pRenderContext, const ref<Scene>& pScene) override;
 
     /// Clear the residuals (accumulate) and the frame counter.
     void reset();
@@ -183,4 +193,5 @@ private:
     bool mClearResidual = true;
     ref<ComputePass> mpPass;
     ref<Texture> mpResidual;
+    ref<Scene> mpScene;
 };

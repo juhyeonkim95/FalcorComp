@@ -25,6 +25,8 @@
  # (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
  # OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  **************************************************************************/
+// Copyright (c) 2026, Juhyeon Kim
+// SPDX-License-Identifier: BSD-3-Clause
 // Doppler time-of-flight, low-pass model: at time t, a path x of optical length l(x, t) (m) is weighted by
 //     w(t, l) = cos(2 pi (df t - f_g l / c - phase)),
 // the low-passed product of the light modulation (f_g) and the sensor modulation (f_g - df). The host has moved the

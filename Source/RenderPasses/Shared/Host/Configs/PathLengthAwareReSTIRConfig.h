@@ -1,3 +1,6 @@
+// Copyright (c) 2026, Juhyeon Kim
+// SPDX-License-Identifier: BSD-3-Clause
+
 #pragma once
 #include "ConfigUtils.h"
 #include "ShiftMappingConfig.h"
@@ -20,6 +23,9 @@ struct PathLengthAwareReSTIRConfig
     /// Spatial reuse as two passes per iteration (one candidate's shifts per thread, then resampling); false runs the
     /// single-pass kernel. Same results either way; the shift `no` always uses the single pass.
     bool spatialReuseTwoPass = true;
+    /// Research (timing comparisons): run the shift `no` with the two-pass kernels as well when spatialReuseTwoPass is
+    /// set (by default it always uses the single pass).
+    bool spatialReuseTwoPassNoShift = false;
     bool useTemporalReuse = false;
     float temporalHistoryLength = 20.0f;    ///< History cap in frames of samples; 0 ignores the history.
 
@@ -57,6 +63,8 @@ struct PathLengthAwareReSTIRConfig
             spatialReuseGatherRadius = value;
         else if (key == "spatialReuseTwoPass")
             spatialReuseTwoPass = value;
+        else if (key == "spatialReuseTwoPassNoShift")
+            spatialReuseTwoPassNoShift = value;
         else if (key == "useTemporalReuse")
             useTemporalReuse = value;
         else if (key == "temporalHistoryLength")
@@ -76,6 +84,7 @@ struct PathLengthAwareReSTIRConfig
         props["spatialReuseNeighborCount"] = spatialReuseNeighborCount;
         props["spatialReuseGatherRadius"] = spatialReuseGatherRadius;
         props["spatialReuseTwoPass"] = spatialReuseTwoPass;
+        props["spatialReuseTwoPassNoShift"] = spatialReuseTwoPassNoShift;
         props["useTemporalReuse"] = useTemporalReuse;
         props["temporalHistoryLength"] = temporalHistoryLength;
         shiftMapping.serialize(props);
@@ -178,6 +187,9 @@ public:
     ref<Buffer> reusePairs; ///< Pair records of the two-pass spatial and temporal reuse (preparePairs).
     ref<Buffer> spatialCandidateValid; ///< Spatial neighbors' validity for the two-pass spatial reuse.
     static constexpr size_t kPairBufferBytes = size_t(512) << 20;
+    /// How to make the pair records and neighbor flags smaller, in their size errors.
+    static constexpr char kPairsSizeHint[] = "Lower spatialReuseNeighborCount or the output size, or set "
+                                             "spatialReuseTwoPass to false (the single-pass kernel needs no records).";
     ref<Texture> neighborOffsets;
     ref<Texture> temporalVBuffer;
     bool temporalHistoryValid = false;
@@ -218,7 +230,8 @@ public:
 
     /// (Re)allocates `reservoirsPerPixel` reservoirs per pixel, of the layout getReservoirDefines() gives, and with
     /// `useSummaries` their summaries (RESERVOIR_SUMMARIES); the neighbor offsets; and, with temporal reuse, the previous
-    /// frame's V-buffer. A resize discards the history.
+    /// frame's V-buffer. A resize discards the history. Throws when a set of reservoirs is larger than a GPU buffer can
+    /// be (InlinePass::kMaxBufferBytes); `sizeHint` then says how to make it smaller.
     void prepare(
         ref<Device> pDevice,
         const ref<Scene>& pScene,
@@ -229,6 +242,7 @@ public:
         uint2 frameDim,
         bool useTemporalReuse,
         ResourceFormat vbufferFormat,
+        const std::string& sizeHint,
         bool useSummaries = false
     )
     {
@@ -258,20 +272,24 @@ public:
             temporalHistoryValid = false;
 
         const ShaderVar reservoirVar = mpReflectTypes->getRootVar()["reservoirs"];
-        const uint32_t reservoirCount = frameDim.x * frameDim.y * reservoirsPerPixel;
+        const uint64_t reservoirCount = uint64_t(frameDim.x) * frameDim.y * reservoirsPerPixel;
         // The reservoir layout depends on the defines (e.g. a scalar target with single channel).
         const size_t reservoirStride =
             reservoirVar.getType()->unwrapArray()->asResourceType()->getStructType()->getSlangTypeLayout()->getStride();
+        // "1920 x 1080 pixels x 64 bins x 112 B" in the errors.
+        const auto describe = [&](size_t stride)
+        {
+            return fmt::format("{} x {} pixels{} x {} B", frameDim.x, frameDim.y,
+                reservoirsPerPixel > 1 ? fmt::format(" x {} bins", reservoirsPerPixel) : "", stride);
+        };
         for (ref<Buffer>* pReservoirs : {&prevReservoirs, &currReservoirs})
         {
             if (!*pReservoirs || (*pReservoirs)->getElementCount() != reservoirCount ||
                 (*pReservoirs)->getStructSize() != reservoirStride)
             {
                 temporalHistoryValid = false;
-                *pReservoirs = pDevice->createStructuredBuffer(
-                    reservoirVar, reservoirCount, ResourceBindFlags::ShaderResource | ResourceBindFlags::UnorderedAccess,
-                    MemoryType::DeviceLocal, nullptr, false
-                );
+                *pReservoirs = InlinePass::createStructuredBufferChecked(pDevice, reservoirVar, reservoirCount,
+                    fmt::format("Each of the two sets of ReSTIR reservoirs ({})", describe(reservoirStride)), sizeHint);
             }
         }
         for (ref<Buffer>* pSummaries : {&prevSummaries, &currSummaries})
@@ -281,9 +299,9 @@ public:
             else if (!*pSummaries || (*pSummaries)->getElementCount() != reservoirCount)
             {
                 temporalHistoryValid = false;
-                *pSummaries = pDevice->createStructuredBuffer(sizeof(float2), reservoirCount,
-                    ResourceBindFlags::ShaderResource | ResourceBindFlags::UnorderedAccess, MemoryType::DeviceLocal,
-                    nullptr, false);
+                *pSummaries = InlinePass::createStructuredBufferChecked(pDevice, uint32_t(sizeof(float2)),
+                    reservoirCount, fmt::format("Each of the two sets of reservoir summaries ({})",
+                    describe(sizeof(float2))), sizeHint);
             }
         }
 
@@ -328,29 +346,31 @@ public:
 
     /// (Re)allocates reusePairs, the pair records (ReusePair; `pairsVar` is a shader buffer of them) of the two-pass
     /// spatial and temporal reuse, for `candidates` records per pixel and bin: as many bins per chunk as fit in
-    /// kPairBufferBytes, at least one. Returns the bins per chunk.
+    /// kPairBufferBytes, at least one. Returns the bins per chunk. Throws when one bin's records are larger than a GPU
+    /// buffer can be.
     uint preparePairs(ref<Device> pDevice, const ShaderVar& pairsVar, uint2 frameDim, uint candidates, uint binCount)
     {
         const size_t stride =
             pairsVar.getType()->unwrapArray()->asResourceType()->getStructType()->getSlangTypeLayout()->getStride();
-        const size_t bytesPerBin = std::max<size_t>(size_t(frameDim.x) * frameDim.y * candidates * stride, 1);
-        const uint chunkBins = std::clamp(uint(kPairBufferBytes / bytesPerBin), 1u, std::max(binCount, 1u));
-        const uint32_t count = std::max(frameDim.x * frameDim.y * candidates * chunkBins, 1u);
+        const uint64_t recordsPerBin = uint64_t(frameDim.x) * frameDim.y * candidates;
+        const uint64_t bytesPerBin = std::max<uint64_t>(recordsPerBin * stride, 1);
+        const uint chunkBins = uint(std::clamp<uint64_t>(kPairBufferBytes / bytesPerBin, 1, std::max(binCount, 1u)));
+        const uint64_t count = std::max<uint64_t>(recordsPerBin * chunkBins, 1);
         if (!reusePairs || reusePairs->getElementCount() != count || reusePairs->getStructSize() != stride)
-            reusePairs = pDevice->createStructuredBuffer(pairsVar, count,
-                ResourceBindFlags::ShaderResource | ResourceBindFlags::UnorderedAccess, MemoryType::DeviceLocal, nullptr,
-                false);
+            reusePairs = InlinePass::createStructuredBufferChecked(pDevice, pairsVar, count,
+                fmt::format("The pair records of the two-pass reuse ({} x {} pixels x {} candidates x {} B)", frameDim.x,
+                frameDim.y, candidates, stride), kPairsSizeHint);
         return chunkBins;
     }
 
     /// (Re)allocates spatialCandidateValid (`validVar` is its shader buffer): one flag per pixel and spatial neighbor.
     void prepareCandidateValid(ref<Device> pDevice, const ShaderVar& validVar, uint2 frameDim, uint neighborCount)
     {
-        const uint32_t validCount = std::max(frameDim.x * frameDim.y * neighborCount, 1u);
+        const uint64_t validCount = std::max<uint64_t>(uint64_t(frameDim.x) * frameDim.y * neighborCount, 1);
         if (!spatialCandidateValid || spatialCandidateValid->getElementCount() != validCount)
-            spatialCandidateValid = pDevice->createStructuredBuffer(validVar, validCount,
-                ResourceBindFlags::ShaderResource | ResourceBindFlags::UnorderedAccess, MemoryType::DeviceLocal, nullptr,
-                false);
+            spatialCandidateValid = InlinePass::createStructuredBufferChecked(pDevice, validVar, validCount,
+                fmt::format("The neighbor flags of the two-pass spatial reuse ({} x {} pixels x {} neighbors)",
+                frameDim.x, frameDim.y, neighborCount), kPairsSizeHint);
     }
 
     /// Runs `iterations` spatial reuse iterations, swapping the reservoirs before each; the passes get them and a fresh

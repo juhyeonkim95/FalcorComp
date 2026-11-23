@@ -1,3 +1,6 @@
+// Copyright (c) 2026, Juhyeon Kim
+// SPDX-License-Identifier: BSD-3-Clause
+
 /** Picks the scene triangle that holds the vertex y of an ellipsoidal connection, and evaluates the probability of
     that pick (host: EllipsoidalTriangleSampler in Shared/Host/Configs/EllipsoidalSamplingConfig.h).
 

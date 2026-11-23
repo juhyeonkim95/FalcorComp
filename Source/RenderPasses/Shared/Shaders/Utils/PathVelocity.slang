@@ -1,3 +1,6 @@
+// Copyright (c) 2026, Juhyeon Kim
+// SPDX-License-Identifier: BSD-3-Clause
+
 /** Path velocity u(x) (OHD path integral, Kim et al. 2025, Eq. 32): the sum, over the segments of a path, of the
     velocities of their endpoints along the segment, from the instantaneous motions of the geometry instances
     (gInstanceVelocities; host: createInstanceVelocityBuffer in Shared/Host/ObjectMotion.h).

@@ -25,6 +25,8 @@
  # (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
  # OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  **************************************************************************/
+// Copyright (c) 2026, Juhyeon Kim
+// SPDX-License-Identifier: BSD-3-Clause
 // Ground-truth velocity of the direct path camera -> primary hit (pixel-center ray) -> light; see
 // VelocityGroundTruthInline.h for the modes.
 import RenderPasses.Shared.Shaders.Utils.LoadShadingData;

@@ -1,3 +1,6 @@
+// Copyright (c) 2026, Juhyeon Kim
+// SPDX-License-Identifier: BSD-3-Clause
+
 /** Ray and random-number helpers shared by the inline ray tracing passes. USE_ALPHA_TEST is set by the host
     (PathTracingConfig), and is_valid_gViewW by the passes' resource defines.
 */

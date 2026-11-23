@@ -1,3 +1,6 @@
+// Copyright (c) 2026, Juhyeon Kim
+// SPDX-License-Identifier: BSD-3-Clause
+
 #include "Utils/Math/MathConstants.slangh"
 import RenderPasses.Shared.Shaders.Geometry.Ellipsoid;
 

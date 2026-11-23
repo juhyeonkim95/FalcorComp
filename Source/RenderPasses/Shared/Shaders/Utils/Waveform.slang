@@ -1,3 +1,6 @@
+// Copyright (c) 2026, Juhyeon Kim
+// SPDX-License-Identifier: BSD-3-Clause
+
 /** Periodic waveforms of the continuous-wave time-of-flight modulation and the projector's periodic pattern.
     The host picks them with Shared/Host/Configs/Waveform.h.
 */

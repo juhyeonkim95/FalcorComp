@@ -1,3 +1,6 @@
+// Copyright (c) 2026, Juhyeon Kim
+// SPDX-License-Identifier: BSD-3-Clause
+
 import Utils.Sampling.SampleGenerator;
 import Utils.Math.MathHelpers;
 import RenderPasses.Shared.Shaders.Utils.Frames;

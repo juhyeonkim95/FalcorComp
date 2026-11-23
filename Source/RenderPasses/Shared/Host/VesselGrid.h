@@ -1,3 +1,6 @@
+// Copyright (c) 2026, Juhyeon Kim
+// SPDX-License-Identifier: BSD-3-Clause
+
 #pragma once
 #include "Falcor.h"
 #include <pybind11/numpy.h>

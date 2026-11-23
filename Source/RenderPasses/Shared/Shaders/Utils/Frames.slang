@@ -1,3 +1,6 @@
+// Copyright (c) 2026, Juhyeon Kim
+// SPDX-License-Identifier: BSD-3-Clause
+
 /** Small direction helpers for the shared shaders: a unit vector orthogonal to another, and the inverse of the
     area-preserving map from [0,1)^2 to the unit hemisphere.
 */

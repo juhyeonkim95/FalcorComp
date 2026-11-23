@@ -1,3 +1,6 @@
+// Copyright (c) 2026, Juhyeon Kim
+// SPDX-License-Identifier: BSD-3-Clause
+
 // Cartesian slopes in a FIXED orthonormal frame: d = normalize(n + u*t + v*b).
 // The chart is regular at u=v=0 and has no azimuth seam. Its boundary is the
 // frame's horizon, which must not be crossed or clamped during Newton iteration.

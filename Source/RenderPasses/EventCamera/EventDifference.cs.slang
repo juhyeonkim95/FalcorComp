@@ -1,3 +1,6 @@
+// Copyright (c) 2026, Juhyeon Kim
+// SPDX-License-Identifier: BSD-3-Clause
+
 /** Frame-to-frame difference for event cameras; see EventCamera.h. */
 
 cbuffer CB

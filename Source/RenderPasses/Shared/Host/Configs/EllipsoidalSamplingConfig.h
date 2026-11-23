@@ -1,3 +1,6 @@
+// Copyright (c) 2026, Juhyeon Kim
+// SPDX-License-Identifier: BSD-3-Clause
+
 #pragma once
 #include "ConfigUtils.h"
 #include "../SceneTriangles.h"
@@ -123,7 +126,8 @@ class EllipsoidalTriangleSampler
 {
 public:
     /// Builds the triangles, and the BVH for LightBVH, once `config` uses the ellipsoid; rebuilds them when the area
-    /// cutoff changes. Call reset() after changing the scene.
+    /// cutoff changes. Once built, they follow moving instances every frame (the BVH is refitted); skinned or
+    /// vertex-animated meshes throw while the ellipsoid is in use. Call reset() after changing the scene.
     void prepare(RenderContext* pRenderContext, const ref<Scene>& pScene, const EllipsoidalSamplingConfig& config)
     {
         if (!config.usesEllipsoid() && mTriangles.empty())
@@ -136,6 +140,12 @@ public:
             mpBVH.reset();
             mpBVHTriangles = pTriangles;
         }
+        if (config.usesEllipsoid() && mTriangles.meshesChanged())
+            FALCOR_THROW("Ellipsoidal sampling does not follow skinned or vertex-animated meshes: use samplingMethod "
+                         "direct for this scene.");
+        // Every frame, also while the ellipsoid is unused, so that no move is missed.
+        if (mTriangles.update(pRenderContext) && mpBVH)
+            mpBVH->refit(pRenderContext);
         mUseBVH = config.triSampler == EmissiveLightSamplerType::LightBVH;
         if (mUseBVH && !mpBVH)
         {

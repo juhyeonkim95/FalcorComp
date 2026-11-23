@@ -1,3 +1,6 @@
+// Copyright (c) 2026, Juhyeon Kim
+// SPDX-License-Identifier: BSD-3-Clause
+
 /** ShiftMappingTest: per-pixel bijectivity test of the path-length-aware shift mappings in the configuration of ReSTIR's
     spatial reuse (ShiftMappingTest.cs.slang). Not for release.
     Outputs (RGBA32Float):

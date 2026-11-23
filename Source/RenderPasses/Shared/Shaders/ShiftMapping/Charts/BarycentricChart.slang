@@ -1,3 +1,6 @@
+// Copyright (c) 2026, Juhyeon Kim
+// SPDX-License-Identifier: BSD-3-Clause
+
 import ShiftChart;
 
 // Distance from two points p1, p2 to a point X on a triangle parameterized by barycentric (coordinates.x, coordinates.y).

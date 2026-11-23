@@ -25,6 +25,8 @@
  # (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
  # OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  **************************************************************************/
+// Copyright (c) 2026, Juhyeon Kim
+// SPDX-License-Identifier: BSD-3-Clause
 #pragma once
 #include "Falcor.h"
 #include "RenderGraph/RenderPass.h"
@@ -73,6 +75,9 @@ private:
         TransientHistogramConfig histogram;
         PathTracingConfig pathTracing;
         SamplingMethod samplingMethod = SamplingMethod::Direct;
+        /// tri_approx: triangles larger than this (world-space area) are left out, e.g. an NLOS relay wall; their light
+        /// is then missing.
+        float triangleApproxMaxArea = 10000.f;
         bool accumulate = false; ///< Sum frames in the histogram instead of writing one frame per histogram.
         RenderPassHelpers::IOSize outputSize = RenderPassHelpers::IOSize::Default;
         uint2 fixedOutputSize = {512, 512}; ///< Output size when outputSize is Fixed.

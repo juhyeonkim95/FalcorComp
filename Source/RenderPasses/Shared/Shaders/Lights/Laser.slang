@@ -1,3 +1,6 @@
+// Copyright (c) 2026, Juhyeon Kim
+// SPDX-License-Identifier: BSD-3-Clause
+
 /** The laser of the frame (Shared/Host/LaserState.h), as published by the LaserLight pass. The host sets the Laser
     constants (LaserState::bindShaderData). IS_LIGHT_SOURCE_LASER picks a laser beam or a point light.
 */

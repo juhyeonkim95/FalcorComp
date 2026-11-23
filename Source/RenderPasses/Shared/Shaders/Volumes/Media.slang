@@ -1,3 +1,6 @@
+// Copyright (c) 2026, Juhyeon Kim
+// SPDX-License-Identifier: BSD-3-Clause
+
 /** Participating media for the inline path tracers: homogeneous media inside closed triangle meshes (host:
     VolumeConfig).
 

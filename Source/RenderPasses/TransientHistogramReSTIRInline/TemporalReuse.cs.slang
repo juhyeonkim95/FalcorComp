@@ -1,3 +1,6 @@
+// Copyright (c) 2026, Juhyeon Kim
+// SPDX-License-Identifier: BSD-3-Clause
+
 #include "RenderPasses/TransientHistogramReSTIRInline/HistogramReSTIRCommon.slangh"
 
 // Two-pass temporal reuse (TEMPORAL_REUSE_PAIRS), second pass, per chunk of bins: streams the ReusePairs of

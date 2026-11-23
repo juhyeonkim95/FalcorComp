@@ -1,3 +1,6 @@
+// Copyright (c) 2026, Juhyeon Kim
+// SPDX-License-Identifier: BSD-3-Clause
+
 // Ellipsoidal sampling of x -> y -> light (time-gated path tracer and ReSTIR).
 // y is sampled on the ellipsoid with foci x and the light endpoint whose length
 // |x - y| + |y - light| matches the time gate. It competes with the BSDF technique
